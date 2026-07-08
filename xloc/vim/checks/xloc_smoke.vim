@@ -12,7 +12,10 @@ endif
 execute 'source' fnameescape(s:plugin)
 
 function! s:Write(path, lines) abort
-  call mkdir(fnamemodify(a:path, ':h'), 'p')
+  let l:parent = fnamemodify(a:path, ':h')
+  if !isdirectory(l:parent)
+    call mkdir(l:parent, 'p')
+  endif
   call writefile(a:lines, a:path)
 endfunction
 
@@ -52,7 +55,7 @@ call s:Write(s:map, [
 let g:xloc_repo_root = s:repo
 
 execute 'edit' fnameescape(s:log)
-call s:AssertEqual('n', maparg('gf', 'n', 0, 1).mode, 'buffer gf mapping exists')
+call s:AssertEqual(0, empty(maparg('gf', 'n')), 'buffer gf mapping exists')
 
 call cursor(1, 1)
 XlocGF
