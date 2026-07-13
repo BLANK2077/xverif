@@ -1,6 +1,7 @@
 #pragma once
 
 #include "apb_config.h"
+#include <cstdint>
 #include "npi_fsdb.h"
 #include <string>
 #include <vector>
