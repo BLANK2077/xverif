@@ -16,7 +16,7 @@ xwiki 用来维护芯片验证项目的 LLM wiki。它不是 CLI/MCP 工具，�
 
 1. 读取环境变量 `XWIKI_DIR`，它是当前 session 的 xwiki wiki 根目录。
 2. 如果 `XWIKI_DIR` 未定义或为空，必须询问用户提供路径；不要 fallback 到 `doc/`、当前目录或其他猜测路径。
-3. 初始化 wiki 或第一次为项目建立持续记忆时，如果用户没有告知 spec 路径或 RTL 路径，必须询问用户；不要自己猜测 spec/RTL 根目录。
+3. 第一次为项目 ingest 持续记忆时，如果用户没有告知 spec 路径或 RTL 路径，必须询问用户；不要自己猜测 spec/RTL 根目录。仅创建空 wiki 骨架不要求提供这些路径。
 4. 需要校验格式时运行：
 
 ```bash
@@ -53,13 +53,18 @@ python <xverif-root>/skills/xwiki/scripts/init_xwiki.py --wiki-dir "$XWIKI_DIR" 
 
 严格执行 LLM Wiki 编译过程：raw sources 是事实来源，wiki 是编译产物，schema 由本 skill 规定。每次 ingest/update 必须读旧页面、抽取新事实、合并或新增 concept、更新 index/反向索引、追加 log、运行校验并汇报 unknowns。
 
-### 验证层次 prompt 读取硬规则
+### 验证层次 prompt 生命周期
 
-总结、新增或更新任何验证 topic 页面前，必须先确定当前验证层次是 `bt`、`it`、`st` 还是 `soc`。验证层次可来自用户说明、wiki index、已有 concept、仓库目录或验证环境命名；如果无法确定，必须询问用户，不得猜测。
+prompt 的加载范围由当前操作阶段决定，不得在每次 xwiki 查询或写回时无条件读取同层全部 prompt：
 
-一旦验证层次确定，必须读取该层次目录下的全部 prompt 文件：`references/prompts/<level>/prompts/*.md`。不能只读取最匹配的单个 topic prompt，也不能因为当前任务看似只涉及某个 topic 就跳过同层其它 prompt。读取全部 prompt 后，再结合当前 topic 选择主要约束，并在汇报中说明验证层次、已读取的 prompt 集合和主要使用的 prompt。
+1. **空骨架初始化**：只运行 `init_xwiki.py` 创建目录和 scaffold，不读取 topic prompt，也不要求确定验证层次。
+2. **首次项目 ingest**：先确定当前验证层次是 `bt`、`it`、`st` 还是 `soc`。验证层次可来自用户说明、wiki index、已有 concept、仓库目录或验证环境命名；如果无法确定，必须询问用户，不得猜测。确定后读取该层次 `references/prompts/<level>/prompts/*.md` 下的全部 prompt，并创建 `$XWIKI_DIR/_index/prompt-profile.md`，持久记录验证层次、初始化时间、已读取的 prompt 文件集合、topic 到 prompt 文件的映射和是否需要刷新。profile 不复制 prompt 正文。
+3. **普通查询**：不读取任何 topic prompt；只按查询顺序读取 wiki，必要时再读 raw source。
+4. **增量 concept 更新**：先读取 `prompt-profile.md`，只读取目标 topic 对应的一个或多个 prompt，并结合 [references/prompt-output-requirements.md](references/prompt-output-requirements.md) 生成或更新页面。不得为了更新单个 topic 重新读取同层全部 prompt。
+5. **issue、index 或 log 更新**：不读取 topic prompt；按 wiki schema、CRUD 和证据规则直接维护。
+6. **全量刷新**：只有 prompt profile 缺失、验证层次发生变化或用户明确要求全量重建/刷新时，才重新读取当前层次的全部 prompt 并重建 profile。
 
-输出还必须遵守 [references/prompt-output-requirements.md](references/prompt-output-requirements.md)。
+首次 ingest、增量 concept 更新或全量刷新完成后，汇报验证层次、实际读取的 prompt 集合和主要使用的 prompt；没有读取 prompt 时不需要汇报 prompt 集合。
 
 ### Wiki 描述对象分类硬规则
 
@@ -96,4 +101,4 @@ wiki 允许多层子目录，但 `$XWIKI_DIR` 下除 `_index/`、`archive/`、`d
 
 ## 验证 topic prompts
 
-BT/IT/ST/SoC prompt 保存在 [references/prompts](references/prompts)。确定验证层次后，必须读取对应层次 `prompts/` 目录下的全部 Markdown 文件，并结合 [references/prompt-output-requirements.md](references/prompt-output-requirements.md) 生成或更新 wiki 页面。
+BT/IT/ST/SoC prompt 保存在 [references/prompts](references/prompts)。首次项目 ingest 和全量刷新读取对应层次 `prompts/` 目录下的全部 Markdown 文件；后续增量 concept 更新只读取 `prompt-profile.md` 映射到目标 topic 的 prompt。普通查询及 issue、index、log 更新不读取 topic prompt。

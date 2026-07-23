@@ -14,6 +14,7 @@ xwiki wiki 是芯片验证项目的持久 LLM 记忆。根目录来自 `XWIKI_DI
 - `archive/` 或 `deprecated/`：废弃页面存放区。
 - `_index/backlinks.md`：可选反向索引，也必须有 YAML frontmatter。
 - `_index/tags.md`：可选 tag 索引，也必须有 YAML frontmatter。
+- `_index/prompt-profile.md`：首次项目 ingest 后必须存在的 prompt 生命周期状态；空骨架初始化时不创建。
 
 根目录不要求 `log.md`，时间追溯写入对应对象目录的 `log.md`。wiki 允许多层子目录；除 `_index/`、`archive/`、`deprecated/` 以外，任何包含 Markdown 页面或子目录的目录都必须同时包含 `index.md` 和 `log.md`。例如 `de/interfaces/axi/` 如果存在，则必须有 `de/interfaces/axi/index.md` 和 `de/interfaces/axi/log.md`。
 
@@ -42,7 +43,8 @@ $XWIKI_DIR/
 │   └── log.md
 └── _index/
     ├── backlinks.md
-    └── tags.md
+    ├── tags.md
+    └── prompt-profile.md
 ```
 
 可用 `scripts/init_xwiki.py` 初始化该骨架：
@@ -58,6 +60,49 @@ python scripts/init_xwiki.py --wiki-dir "$XWIKI_DIR" --validate
 - `--force` 覆盖脚本管理的 `index.md`、`log.md`、`_index/backlinks.md`、`_index/tags.md`。
 - `--root` 用于解析相对 `--wiki-dir`。
 - `--validate` 在写入后运行 `validate_xwiki.py`。
+
+空骨架初始化不创建 `_index/prompt-profile.md`。agent 在首次项目 ingest 读取当前验证层次的全部 topic prompt 后创建该文件；后续增量更新用它定位目标 topic prompt。
+
+## Prompt Profile
+
+`_index/prompt-profile.md` 是首次项目 ingest 生成的持久状态，不是 topic prompt 正文的副本。它必须包含普通 Markdown frontmatter 的四个必填字段，并在 frontmatter 或正文中记录：
+
+- `verification_level`：`bt`、`it`、`st` 或 `soc`。
+- `initialized_at`：首次读取当前层次全部 prompt 的日期。
+- `needs_refresh`：是否需要全量刷新。
+- `prompt_files`：首次 ingest 或最近一次全量刷新实际读取的 prompt 文件集合。
+- `topic_prompt_map`：topic 名称到一个或多个 prompt 文件的映射。
+
+推荐格式：
+
+```yaml
+---
+type: Prompt Profile
+title: xwiki Prompt Profile
+description: Prompt loading state for this verification-project wiki.
+object_type: dv
+verification_level: bt
+initialized_at: 2026-07-23
+needs_refresh: false
+prompt_files:
+  - references/prompts/bt/prompts/design_overview.md
+  - references/prompts/bt/prompts/interfaces.md
+topic_prompt_map:
+  design_overview:
+    - references/prompts/bt/prompts/design_overview.md
+  interfaces:
+    - references/prompts/bt/prompts/interfaces.md
+---
+```
+
+prompt 文件路径使用相对于 xwiki skill 根目录的逻辑路径，不写本机绝对路径，也不把它们写成 wiki Markdown 链接。profile 应从根 `index.md` 的维护信息区域可达；创建或更新 profile 时在 `dv/log.md` 记录操作。
+
+prompt 加载规则：
+
+- 普通查询不读取 topic prompt。
+- 增量 concept 更新先读取 profile，只读取目标 topic 映射到的 prompt。
+- issue、index 和 log 更新不读取 topic prompt。
+- profile 缺失、验证层次变化或用户明确要求全量重建/刷新时，重新读取当前层次全部 prompt 并重建 profile。
 
 ## Markdown Frontmatter
 

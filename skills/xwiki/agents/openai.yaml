@@ -7,6 +7,8 @@ interface:
     rg 查询验证环境、DUT 功能、接口、testbench、sequence、checker、
     coverage、BT/IT/ST/SoC workflow 与 debug 入口，并把新知识写回 wiki。
     查询可隐式执行；只有用户、项目规则或任务范围授权写回时，debug 完 case fail
-    后才更新 env_bug、rtl_bug 或 spec_bug 主题。
+    后才更新 env_bug、rtl_bug 或 spec_bug 主题。普通查询及 issue、index、log
+    更新不读取 topic prompt；首次项目 ingest 或全量刷新读取同层全部 prompt，
+    增量 concept 更新只读取 prompt profile 映射到目标 topic 的 prompt。
 policy:
   allow_implicit_invocation: true
