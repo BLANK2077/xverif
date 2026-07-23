@@ -7,6 +7,7 @@ module ai_complex_top;
   reg [7:0] sig_a;
   reg [7:0] sig_b;
   reg [7:0] xz_bus;
+  reg [7:0] mixed_xz_bus;
   reg stable_sig;
   reg stuck_sig;
   reg glitch_sig;
@@ -78,6 +79,7 @@ module ai_complex_top;
     sig_a = 8'h00;
     sig_b = 8'h00;
     xz_bus = 8'h00;
+    mixed_xz_bus = 8'h00;
     stable_sig = 1'b1;
     stuck_sig = 1'b1;
     glitch_sig = 1'b0;
@@ -118,11 +120,13 @@ module ai_complex_top;
 
     @(posedge clk);
     xz_bus <= 8'hxx;
+    mixed_xz_bus <= 8'b10xx_zz00;
     counter_inc <= 8'h04;
     counter_nonmono <= 8'h08;
 
     @(posedge clk);
     xz_bus <= 8'hzz;
+    mixed_xz_bus <= 8'bzz10_xx01;
     counter_inc <= 8'h05;
 
     #1 glitch_sig <= 1'b1;

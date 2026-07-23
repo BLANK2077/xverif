@@ -1,0 +1,222 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xdebug.signal.xz_verify.response.v1",
+  "title": "signal.xz_verify response",
+  "type": "object",
+  "required": [
+    "api_version",
+    "ok",
+    "action",
+    "summary",
+    "data"
+  ],
+  "properties": {
+    "api_version": {
+      "type": "string",
+      "enum": [
+        "xdebug.v1"
+      ]
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "signal.xz_verify"
+      ]
+    },
+    "tool": {
+      "type": "object"
+    },
+    "session": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "signal",
+        "expected_state",
+        "match_mode",
+        "verdict",
+        "always_matched",
+        "analysis_complete",
+        "scan_complete",
+        "checked_value_count",
+        "stop_reason"
+      ],
+      "properties": {
+        "signal": {
+          "type": "string"
+        },
+        "expected_state": {
+          "type": "string",
+          "enum": [
+            "x",
+            "z"
+          ]
+        },
+        "match_mode": {
+          "type": "string",
+          "enum": [
+            "exact",
+            "contains"
+          ]
+        },
+        "verdict": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail"
+          ]
+        },
+        "always_matched": {
+          "type": "boolean"
+        },
+        "analysis_complete": {
+          "type": "boolean",
+          "const": true
+        },
+        "scan_complete": {
+          "type": "boolean"
+        },
+        "checked_value_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "stop_reason": {
+          "type": "string",
+          "enum": [
+            "window_end",
+            "first_mismatch"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "time_range",
+        "initial_value",
+        "first_mismatch",
+        "sample_time_semantics"
+      ],
+      "properties": {
+        "time_range": {
+          "type": "object",
+          "required": [
+            "begin",
+            "end"
+          ],
+          "properties": {
+            "begin": {
+              "type": "string"
+            },
+            "end": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "initial_value": {
+          "$ref": "#/$defs/logic_value"
+        },
+        "first_mismatch": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/mismatch"
+            }
+          ]
+        },
+        "sample_time_semantics": {
+          "type": "string"
+        },
+        "common_blocks": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": false
+    },
+    "suggested_next_actions": {
+      "type": "array"
+    },
+    "error": {},
+    "meta": {
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "logic_value": {
+      "type": "object",
+      "required": [
+        "value",
+        "known",
+        "width",
+        "bits",
+        "has_x",
+        "has_z"
+      ],
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "known": {
+          "type": "boolean"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bits": {
+          "type": "string"
+        },
+        "has_x": {
+          "type": "boolean"
+        },
+        "has_z": {
+          "type": "boolean"
+        },
+        "requested_value_format": {
+          "type": "string"
+        },
+        "effective_value_format": {
+          "type": "string"
+        },
+        "value_format_reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "mismatch": {
+      "type": "object",
+      "required": [
+        "sample_time",
+        "value"
+      ],
+      "properties": {
+        "sample_time": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/logic_value"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "description": "Verify that every raw waveform value in a closed time window matches an X or Z state.",
+  "x-description-zh": "检查信号在闭合时间窗口内是否始终满足指定的 X 或 Z 状态。",
+  "x-output_notes": "返回该 action 的 summary/data/error/meta；具体字段以 response schema 和 response example 为准。"
+}

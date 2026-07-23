@@ -503,6 +503,17 @@ if (spec.name == "signal.statistics") {
     spec.preferred_alternative = Json::object();
     return;
 }
+if (spec.name == "signal.xz_verify") {
+    spec.description_en = "Verify that every raw waveform value in a closed time window matches an X or Z state.";
+    spec.description_zh = "检查信号在闭合时间窗口内是否始终满足指定的 X 或 Z 状态。";
+    spec.purposes = {"verify"};
+    spec.use_for = {"Prove that a signal is all X, all Z, or contains the requested unknown state throughout a raw waveform window."};
+    spec.do_not_use_for = {"Clock-edge expression verification or merely finding whether X/Z occurs at least once."};
+    spec.preferred_alternative = Json::object();
+    spec.preferred_alternative["action"] = "window.verify";
+    spec.preferred_alternative["when"] = "The condition is a clock-edge expression over known values rather than raw X/Z state.";
+    return;
+}
 if (spec.name == "source.context") {
     spec.description_en = "Read source code around a file and line.";
     spec.description_zh = "读取源码上下文。";

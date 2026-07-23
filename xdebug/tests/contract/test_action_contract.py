@@ -451,6 +451,38 @@ def test_waveform_expression_contract_schemas_are_strict(xdebug_root: Path) -> N
 
 
 @pytest.mark.contract
+def test_signal_xz_verify_request_schema_is_strict(xdebug_root: Path) -> None:
+    schema = _load_json(
+        xdebug_root / "schemas" / "v1" / "actions" /
+        "signal.xz_verify.request.schema.json"
+    )
+    validator = jsonschema.Draft202012Validator(schema)
+    base = {
+        "api_version": "xdebug.v1",
+        "action": "signal.xz_verify",
+        "args": {
+            "signal": "top.xz_bus",
+            "expected_state": "x",
+            "time_range": {"begin": "10ns", "end": "20ns"},
+        },
+    }
+    validator.validate(base)
+    for mode in ("exact", "contains"):
+        validator.validate({
+            **base,
+            "args": {**base["args"], "expected_state": "z", "match_mode": mode},
+        })
+    for bad_args in (
+        {**base["args"], "expected_state": "unknown"},
+        {**base["args"], "match_mode": "any"},
+        {**base["args"], "clock": "top.clk"},
+        {key: value for key, value in base["args"].items() if key != "time_range"},
+    ):
+        with pytest.raises(jsonschema.ValidationError):
+            validator.validate({**base, "args": bad_args})
+
+
+@pytest.mark.contract
 def test_bad_parameter_schema_errors_include_ai_repair_hints(
     cli_runner: CliRunner,
 ) -> None:

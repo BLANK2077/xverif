@@ -1062,6 +1062,83 @@ def run_nonaxi(xdebug, fsdb):
         require(stab["summary"]["stable"] is True, "stable_sig should be stable")
         require(stab["summary"]["actual_transition_count"] == 0,
                 "stable initial value must not be counted as a transition")
+        x_exact = r.query("signal.xz_verify", args={
+            "signal": "ai_complex_top.xz_bus",
+            "expected_state": "x",
+            "time_range": {"begin": "86ns", "end": "94ns"},
+        })
+        require(x_exact["summary"]["verdict"] == "pass", "all-X exact window should pass")
+        require(x_exact["summary"]["match_mode"] == "exact", "match_mode should default to exact")
+        require(x_exact["summary"]["scan_complete"] is True, "passing X/Z proof must scan the window")
+        require(x_exact["data"]["first_mismatch"] is None, "passing X/Z proof must not report mismatch")
+
+        z_exact = r.query("signal.xz_verify", args={
+            "signal": "ai_complex_top.xz_bus",
+            "expected_state": "z",
+            "match_mode": "exact",
+            "time_range": {"begin": "96ns", "end": "105ns"},
+        })
+        require(z_exact["summary"]["verdict"] == "pass", "all-Z exact window should pass")
+
+        for expected_state in ("x", "z"):
+            mixed = r.query("signal.xz_verify", args={
+                "signal": "ai_complex_top.mixed_xz_bus",
+                "expected_state": expected_state,
+                "match_mode": "contains",
+                "time_range": {"begin": "86ns", "end": "105ns"},
+            })
+            require(mixed["summary"]["verdict"] == "pass",
+                    "mixed vector should contain {} throughout window".format(expected_state))
+
+        mixed_exact = r.query("signal.xz_verify", args={
+            "signal": "ai_complex_top.mixed_xz_bus",
+            "expected_state": "x",
+            "match_mode": "exact",
+            "time_range": {"begin": "86ns", "end": "105ns"},
+        })
+        require(mixed_exact["summary"]["verdict"] == "fail", "mixed vector must fail exact X")
+        require(mixed_exact["summary"]["analysis_complete"] is True,
+                "first mismatch is a conclusive result")
+        require(mixed_exact["summary"]["scan_complete"] is False,
+                "first mismatch should stop the raw scan")
+        require(mixed_exact["summary"]["stop_reason"] == "first_mismatch",
+                "failed X/Z proof should expose stop reason")
+        require(mixed_exact["data"]["first_mismatch"]["sample_time"] == "86ns",
+                "first mismatch must use the closed-window begin sample")
+
+        end_boundary = r.query("signal.xz_verify", args={
+            "signal": "ai_complex_top.xz_bus",
+            "expected_state": "x",
+            "time_range": {"begin": "86ns", "end": "95ns"},
+        })
+        require(end_boundary["summary"]["verdict"] == "fail",
+                "closed-window end transition must be checked")
+        require(end_boundary["data"]["first_mismatch"]["sample_time"] == "95ns",
+                "end-boundary mismatch time is wrong")
+
+        single_point = r.query("signal.xz_verify", args={
+            "signal": "ai_complex_top.xz_bus",
+            "expected_state": "z",
+            "time_range": {"begin": "95ns", "end": "95ns"},
+        })
+        require(single_point["summary"]["verdict"] == "pass",
+                "begin=end should check one finalized raw value")
+
+        bad_xz_range = r.query("signal.xz_verify", args={
+            "signal": "ai_complex_top.xz_bus",
+            "expected_state": "x",
+            "time_range": {"begin": "100ns", "end": "90ns"},
+        }, expect_ok=False)
+        require(bad_xz_range["error"]["code"] == "TIME_RANGE_INVALID",
+                "reverse X/Z window should be TIME_RANGE_INVALID")
+
+        missing_xz_signal = r.query("signal.xz_verify", args={
+            "signal": "ai_complex_top.no_such",
+            "expected_state": "x",
+            "time_range": {"begin": "86ns", "end": "94ns"},
+        }, expect_ok=False)
+        require(missing_xz_signal["error"]["code"] == "SIGNAL_NOT_FOUND",
+                "missing X/Z signal should be SIGNAL_NOT_FOUND")
         stats = r.query("signal.statistics", args={"signal": "ai_complex_top.hs_valid", "clock": "ai_complex_top.clk", "time_range": {"begin": "120ns", "end": "210ns"}, "line_limit": 1000})
         require_clock_summary(stats, "negedge")
         require(stats["summary"]["sample_count"] > 0 and stats["summary"]["known_count"] > 0, "signal.statistics did not sample")

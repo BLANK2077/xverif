@@ -37,6 +37,10 @@ bool contains_text(const std::string& haystack, const char* needle) {
 
 std::string code_for_handler_message(const std::string& message) {
     std::string lower = lowercase(message);
+    if (contains_text(lower, "value_not_available") ||
+        contains_text(lower, "value not available")) {
+        return "VALUE_NOT_AVAILABLE";
+    }
     if (contains_text(lower, "signal not found") ||
         contains_text(lower, "failed to read value for signal")) {
         return "SIGNAL_NOT_FOUND";

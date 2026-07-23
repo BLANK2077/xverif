@@ -25,6 +25,7 @@ std::unique_ptr<EngineActionHandler> make_cursor_delete_handler();
 std::unique_ptr<EngineActionHandler> make_cursor_use_handler();
 std::unique_ptr<EngineActionHandler> make_signal_changes_handler();
 std::unique_ptr<EngineActionHandler> make_signal_stability_handler();
+std::unique_ptr<EngineActionHandler> make_signal_xz_verify_handler();
 std::unique_ptr<EngineActionHandler> make_signal_statistics_handler();
 std::unique_ptr<EngineActionHandler> make_counter_statistics_handler();
 std::unique_ptr<EngineActionHandler> make_expr_eval_at_handler();
@@ -64,6 +65,7 @@ void register_waveform_handlers(EngineActionRegistry& r) {
     r.add(make_cursor_use_handler());
     r.add(make_signal_changes_handler());
     r.add(make_signal_stability_handler());
+    r.add(make_signal_xz_verify_handler());
     r.add(make_signal_statistics_handler());
     r.add(make_counter_statistics_handler());
     r.add(make_expr_eval_at_handler());

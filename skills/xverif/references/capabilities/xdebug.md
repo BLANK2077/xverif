@@ -21,6 +21,7 @@ xdebug 是 daidir/FSDB 确定性事实入口。本文件覆盖高频决策链，
 | 不知道异常时间，找首次/下一次条件命中 | `event.find` | 边沿、组合条件、阈值、状态转换；X/Z 比较为 unknown |
 | 已知单点，同时验证多个条件 | `verify.conditions` | 单点事实证明 |
 | 验证条件在 clock-edge 窗口持续成立 | `window.verify` | 输出 pass/fail/unknown；不代替事件搜索 |
+| 证明 raw 信号在窗口内持续为 X/Z | `signal.xz_verify` | 闭区间逐变化检查；`exact` 检查全位，`contains` 检查至少一位 |
 
 推荐递进：`signal.statistics/changes` → `event.find` → `value.batch_at` → `verify.conditions/window.verify`。更多 value/signal/event/list/verify action 见 [全量 action 索引](../generated/xdebug-actions.md)。
 
@@ -32,6 +33,8 @@ clock context。无 `clock` 时不要传 `edge` 或 `sample_point`。值默认 h
 ## 3. 解释异常、采样和握手
 
 - `detect_abnormal`：X/Z、glitch、异常短脉冲和 stuck 的 raw waveform smoke。合法 idle/backpressure 不能仅凭 stuck 判为 bug。
+- `signal.xz_verify`：对 raw waveform 闭区间给出持续 X/Z 的 pass/fail 证明；
+  `match_mode=exact` 要求每一位均为目标态，`contains` 要求每个值至少含一位目标态。
 - `sampled_pulse.inspect`：解释 raw valid pulse 是否被指定 clock edge 采到，并保留 payload 在邻近边沿的现场。
 - `handshake.inspect`：解释 valid/ready、backpressure 和 stall；可复用接口的连续分析优先进入 stream workflow。
 - 其它 anomaly/handshake/protocol action 见 [全量 action 索引](../generated/xdebug-actions.md)。

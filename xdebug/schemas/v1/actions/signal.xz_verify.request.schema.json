@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xdebug.signal.xz_verify.request.v1",
+  "title": "signal.xz_verify request",
+  "type": "object",
+  "properties": {
+    "api_version": {
+      "type": "string",
+      "enum": [
+        "xdebug.v1"
+      ]
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "trace_id": {
+      "type": "string"
+    },
+    "span_id": {
+      "type": "string"
+    },
+    "parent_span_id": {
+      "type": "string"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "signal.xz_verify"
+      ]
+    },
+    "target": {
+      "type": "object"
+    },
+    "args": {
+      "type": "object",
+      "required": [
+        "signal",
+        "expected_state",
+        "time_range"
+      ],
+      "properties": {
+        "expected_state": {
+          "type": "string",
+          "enum": [
+            "x",
+            "z"
+          ],
+          "description": "Action-specific expected_state input. Its type and accepted values are defined by this schema."
+        },
+        "match_mode": {
+          "type": "string",
+          "enum": [
+            "exact",
+            "contains"
+          ],
+          "default": "exact",
+          "description": "Action-specific match_mode input. Its type and accepted values are defined by this schema."
+        },
+        "signal": {
+          "type": "string",
+          "description": "Final leaf signal path. Aggregate, array, and struct roots are not expanded automatically."
+        },
+        "time_range": {
+          "type": "object",
+          "properties": {
+            "begin": {
+              "type": "string",
+              "description": "Action-specific begin input. Its type and accepted values are defined by this schema."
+            },
+            "end": {
+              "type": "string",
+              "description": "Action-specific end input. Its type and accepted values are defined by this schema."
+            }
+          },
+          "additionalProperties": false,
+          "description": "Closed analysis interval. begin and end may be omitted independently to use the available waveform bounds."
+        },
+        "time_unit": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "fs",
+            "ps",
+            "ns",
+            "us",
+            "ms",
+            "s"
+          ],
+          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
+        }
+      },
+      "additionalProperties": false
+    },
+    "limits": {
+      "type": "object"
+    },
+    "auth_token": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Verify that every raw waveform value in a closed time window matches an X or Z state.",
+  "x-description-zh": "检查信号在闭合时间窗口内是否始终满足指定的 X 或 Z 状态。",
+  "required": [
+    "api_version",
+    "action",
+    "args"
+  ],
+  "x-purpose": "检查信号在窗口内是否始终满足指定 X/Z 状态。",
+  "x-how_it_works": "扫描 raw waveform 闭区间；exact 要求整向量全为目标态，contains 要求每个值至少含一位目标态。",
+  "x-when_to_use": "证明信号持续全 X、全 Z，或持续包含指定未知态。",
+  "x-arg_contract_notes": "required: signal, expected_state, time_range; optional: match_mode(default exact)",
+  "x-agent": {
+    "use_when": [
+      "需要证明 raw waveform 在整个闭区间内始终为指定 X/Z 状态。"
+    ],
+    "do_not_use_when": [
+      "只需要寻找一次 X/Z，或需要 clock-edge 表达式验证。"
+    ],
+    "alternatives": [
+      {
+        "action": "detect_abnormal",
+        "when": "只需要发现窗口内是否曾出现 X/Z。"
+      },
+      {
+        "action": "window.verify",
+        "when": "需要按 clock edge 验证已知值表达式。"
+      }
+    ],
+    "constraints": [
+      "required: signal, expected_state, time_range; optional: match_mode(default exact)"
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "signal.xz_verify",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {
+    "signal": "top.xz_bus",
+    "expected_state": "x",
+    "match_mode": "exact",
+    "time_range": {
+      "begin": "85ns",
+      "end": "94ns"
+    }
+  }
+}

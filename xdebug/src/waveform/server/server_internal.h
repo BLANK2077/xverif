@@ -127,6 +127,7 @@ bool build_signal_alias_handles(const Json& signals, std::vector<std::string>& a
                                 std::string& error);
 Json ai_signal_changes(const Json& args, std::string& error);
 Json ai_signal_stability(const Json& args, std::string& error);
+Json ai_signal_xz_verify(const Json& args, std::string& error);
 Json ai_expr_eval_at(const Json& args, std::string& error);
 Json ai_window_verify(const Json& args, std::string& error);
 Json ai_signal_statistics(const Json& args, std::string& error);

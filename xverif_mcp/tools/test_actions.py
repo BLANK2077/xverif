@@ -62,6 +62,11 @@ def build_action_args(sig: str, clk: str, session_name: str) -> dict[str, dict]:
     "expr.normalize": {"expr": "a && b"},
     "handshake.inspect": {"clock": clk, "valid": sig, "ready": sig},
     "detect_abnormal": {"signals": [sig, clk], "time_range": {"begin": "0ns", "end": "200ns"}},
+    "signal.xz_verify": {
+        "signal": sig,
+        "expected_state": "x",
+        "time_range": {"begin": "0ns", "end": "200ns"},
+    },
     "event.config.list": {},
     "cursor.list": {},
     "list.create": {"name": list_name, "signals": [sig]},

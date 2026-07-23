@@ -102,6 +102,7 @@
 | `signal.changes` | stable | waveform | 读取信号变化点。 | 扫描 FSDB value changes，支持窗口、line_limit 和聚合。 | 看信号何时跳变。 | required: signal |
 | `signal.stability` | stable | waveform | 检查信号窗口内是否稳定。 | 基于 signal.changes 判断是否只有初始值或无变化。 | 确认控制/状态信号是否保持不变。 | required: signal |
 | `signal.statistics` | stable | waveform | 统计信号活动。 | 无 clock 时统计原始变化；有 clock 时按边沿采样，统计 known/high/low/unknown。 | 量化活跃度、占空和采样质量。 | required: signal |
+| `signal.xz_verify` | experimental | waveform | 检查信号在窗口内是否始终满足指定 X/Z 状态。 | 扫描 raw waveform 闭区间；exact 要求整向量全为目标态，contains 要求每个值至少含一位目标态。 | 证明信号持续全 X、全 Z，或持续包含指定未知态。 | required: signal, expected_state, time_range<br>optional: match_mode(default exact) |
 | `rc.generate` | stable | waveform | 根据分组生成波形 rc。 | 读取配置并写出 output.path，返回 group/signal 统计。 | 把调试信号集合导入波形工具。 | required: config_path, output |
 | `value.at` | stable | waveform | 读取单个信号在指定时间的值。 | 无 clock 时直接点读 time；有 clock 时返回同一 clock/time 的采样上下文。 | 回答某个时间点信号是什么。 | required: signal, time<br>optional: clock, edge, sample_point |
 | `value.batch_at` | stable | waveform | 批量读取多个信号值。 | 无 clock 时直接批量点读 time；有 clock 时返回同一 clock/time 的采样上下文。 | 减少多信号同一时刻检查的开销。 | required: signals, time<br>optional: clock, edge, sample_point |

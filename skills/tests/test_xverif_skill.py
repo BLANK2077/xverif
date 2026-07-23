@@ -38,7 +38,7 @@ def test_generated_action_inventory_matches_canonical_registry() -> None:
     generated = (SKILL / "references/generated/xdebug-actions.md").read_text()
     documented = set(re.findall(r"^\| `([^`]+)` \|", generated, re.MULTILINE))
     assert documented == expected
-    assert len(expected) == 73
+    assert len(expected) == 74
 
 
 def test_generated_references_are_current() -> None:
@@ -78,7 +78,7 @@ def test_xdebug_main_workflow_has_required_decisions_and_routes() -> None:
     required = {
         "scope.roots", "scope.list", "trace.driver", "trace.load", "source.context",
         "trace.active_driver", "trace.active_driver_chain", "value.at", "value.batch_at",
-        "signal.changes", "signal.statistics", "event.find", "verify.conditions",
+        "signal.changes", "signal.statistics", "signal.xz_verify", "event.find", "verify.conditions",
         "window.verify", "detect_abnormal", "sampled_pulse.inspect", "handshake.inspect",
         "stream.config.load", "stream.query", "list.export", "xwaveform", "rc.generate",
         "xdebug/configs/", "xdebug/signals.md", "全量 xdebug action 索引",

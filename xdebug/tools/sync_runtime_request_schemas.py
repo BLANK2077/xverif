@@ -39,6 +39,11 @@ ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
     "dependency_types": {"type": "array", "items": {"type": "string"}},
     "dynamic": {"type": "boolean"},
     "edge": {"type": "string", "enum": ["posedge", "negedge", "dual"]},
+    "expected_state": {
+        "type": "string",
+        "enum": ["x", "z"],
+        "description": PARAM_DESCRIPTIONS["expected_state"],
+    },
     "events": {"type": "boolean"},
     "group_by": {"type": "array"},
     "host": {"type": "string"},
@@ -52,6 +57,12 @@ ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
     "last": {"type": "boolean"},
     "line_limit": {"type": "integer", "minimum": 1},
     "method": {"type": "string", "enum": ["top_n", "threshold"]},
+    "match_mode": {
+        "type": "string",
+        "enum": ["exact", "contains"],
+        "default": "exact",
+        "description": PARAM_DESCRIPTIONS["match_mode"],
+    },
     "limits": {"type": "object"},
     "protocol_query": {
         "type": "object",
@@ -182,6 +193,7 @@ EXTRA_ARGS_BY_ACTION: dict[str, set[str]] = {
     "signal.changes": {"aggregate_only", "line_limit", "mode", "time_range", "value_format"},
     "signal.stability": {"conditions", "mode", "signals", "time_range"},
     "signal.statistics": {"clock", "conditions", "edge", "line_limit", "max_samples", "mode", "sample_point", "signals", "time_range"},
+    "signal.xz_verify": {"match_mode"},
     "source.context": {"context_lines", "symbol", "output"},
     "stream.config.load": {"config", "config_path", "file", "mode"},
     "stream.config.list": {"name", "output"},

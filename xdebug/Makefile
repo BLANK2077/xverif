@@ -139,6 +139,7 @@ ENGINE_SRCS = src/engine/main.cpp \
               src/engine/service/actions/waveform/scope_roots.cpp \
               src/engine/service/actions/waveform/signal_changes.cpp \
               src/engine/service/actions/waveform/signal_stability.cpp \
+              src/engine/service/actions/waveform/signal_xz_verify.cpp \
               src/engine/service/actions/waveform/signal_statistics.cpp \
               src/engine/service/actions/waveform/value_at.cpp \
               src/engine/service/actions/waveform/value_batch_at.cpp \

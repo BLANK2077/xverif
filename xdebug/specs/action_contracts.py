@@ -138,6 +138,14 @@ ACTION_GUIDANCE: dict[str, Json] = {
             {"action": "trace.active_driver_chain", "when": "需要传统单链 active-driver 展开。"},
         ],
     },
+    "signal.xz_verify": {
+        "use_when": ["需要证明 raw waveform 在整个闭区间内始终为指定 X/Z 状态。"],
+        "do_not_use_when": ["只需要寻找一次 X/Z，或需要 clock-edge 表达式验证。"],
+        "alternatives": [
+            {"action": "detect_abnormal", "when": "只需要发现窗口内是否曾出现 X/Z。"},
+            {"action": "window.verify", "when": "需要按 clock edge 验证已知值表达式。"},
+        ],
+    },
     "counter.statistics": {"use_when": ["需要按采样 clock 统计一个 counter 的增量、回绕或活动。"],
                            "do_not_use_when": ["需要多个一般信号的活动统计或原始变化列表。"],
                            "alternatives": [{"action": "signal.statistics", "when": "需要一般信号而非 counter 语义的统计。"}]},

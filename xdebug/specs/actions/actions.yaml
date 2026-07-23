@@ -1950,6 +1950,45 @@
       "preferred_alternative": {}
     },
     {
+      "name": "signal.xz_verify",
+      "category": "waveform",
+      "status": "experimental",
+      "requires": "waveform",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/signal.xz_verify.request.schema.json",
+        "response": "schemas/v1/actions/signal.xz_verify.response.schema.json"
+      },
+      "examples": {
+        "request": [
+          "examples/requests/signal.xz_verify.basic.json"
+        ],
+        "response": [
+          "examples/responses/signal.xz_verify.basic.json"
+        ]
+      },
+      "required_args": [
+        "signal",
+        "expected_state",
+        "time_range"
+      ],
+      "description_en": "Verify that every raw waveform value in a closed time window matches an X or Z state.",
+      "description_zh": "检查信号在闭合时间窗口内是否始终满足指定的 X 或 Z 状态。",
+      "purposes": [
+        "verify"
+      ],
+      "use_for": [
+        "Prove that a signal is all X, all Z, or contains the requested unknown state throughout a raw waveform window."
+      ],
+      "do_not_use_for": [
+        "Clock-edge expression verification or merely finding whether X/Z occurs at least once."
+      ],
+      "preferred_alternative": {
+        "action": "window.verify",
+        "when": "The condition is a clock-edge expression over known values rather than raw X/Z state."
+      }
+    },
+    {
       "name": "source.context",
       "category": "design",
       "status": "stable",

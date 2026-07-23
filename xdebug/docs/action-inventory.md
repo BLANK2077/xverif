@@ -93,6 +93,7 @@ example 和 contract test 迁移使用。状态定义：
 | `signal.changes` | waveform | stable | waveform | waveform engine forward | regression |
 | `signal.stability` | waveform | stable | waveform | waveform engine forward | partial |
 | `signal.statistics` | waveform | stable | waveform | waveform engine forward | regression |
+| `signal.xz_verify` | waveform | experimental | waveform | waveform engine forward | regression |
 | `counter.statistics` | waveform | stable | waveform | waveform engine forward | targeted |
 | `sampled_pulse.inspect` | waveform | experimental | waveform | waveform engine forward | partial |
 | `detect_abnormal` | waveform | stable | waveform | waveform engine forward | partial |

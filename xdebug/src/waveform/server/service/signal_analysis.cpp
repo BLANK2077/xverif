@@ -1,5 +1,6 @@
 #include "../server_internal.h"
 #include "../../common/expression.h"
+#include "../../value/logic_value.h"
 
 namespace xdebug_waveform {
 
@@ -464,6 +465,97 @@ Json ai_signal_stability(const Json& args, std::string& error) {
             }
         }
     }
+    return data;
+}
+
+Json ai_signal_xz_verify(const Json& args, std::string& error) {
+    const std::string signal = args.value("signal", std::string());
+    const std::string expected_state = args.value("expected_state", std::string());
+    const std::string match_mode = args.value("match_mode", std::string("exact"));
+    if (signal.empty() || expected_state.empty()) {
+        error = "INVALID_REQUEST: signal.xz_verify requires args.signal and args.expected_state";
+        return Json();
+    }
+    if (expected_state != "x" && expected_state != "z") {
+        error = "INVALID_REQUEST: args.expected_state must be x or z";
+        return Json();
+    }
+    if (match_mode != "exact" && match_mode != "contains") {
+        error = "INVALID_REQUEST: args.match_mode must be exact or contains";
+        return Json();
+    }
+
+    npiFsdbTime begin = 0, end = 0;
+    if (!json_time_range(args, begin, end, error)) return Json();
+    npiFsdbSigHandle sig = npi_fsdb_sig_by_name(g_fsdb_file, signal.c_str(), nullptr);
+    if (!sig) {
+        error = "Signal not found: " + signal;
+        return Json();
+    }
+
+    const char expected_bit = expected_state[0];
+    bool always_matched = true;
+    bool have_value = false;
+    int checked_value_count = 0;
+    Json initial_value = nullptr;
+    Json first_mismatch = nullptr;
+    TimeBasedVcIterGuard guard;
+    npiFsdbTimeBasedVcIter& iter = guard.iter();
+    iter.add(sig);
+    guard.start(begin, end);
+    npiFsdbTime sample_time = 0;
+    npiFsdbSigHandle changed_sig = nullptr;
+    while (iter.iter_next(sample_time, changed_sig) > 0) {
+        npiFsdbValue raw;
+        raw.format = npiFsdbBinStrVal;
+        if (!iter.get_value(raw) || !raw.value.str) continue;
+        LogicValue value = logic_value_from_fsdb_raw(raw.value.str, 'b');
+        if (!value.valid || value.bits.empty()) continue;
+        Json value_json = logic_value_json(value);
+        if (!have_value) {
+            initial_value = value_json;
+            have_value = true;
+        }
+        ++checked_value_count;
+        const bool matched = match_mode == "exact"
+            ? std::all_of(value.bits.begin(), value.bits.end(),
+                          [expected_bit](char bit) { return bit == expected_bit; })
+            : value.bits.find(expected_bit) != std::string::npos;
+        if (!matched) {
+            always_matched = false;
+            first_mismatch = {
+                {"sample_time", format_time(sample_time)},
+                {"value", value_json}
+            };
+            break;
+        }
+    }
+    if (!have_value) {
+        error = "VALUE_NOT_AVAILABLE: no waveform value is available for signal " +
+                signal + " in the requested window";
+        return Json();
+    }
+
+    Json data;
+    data["summary"] = {
+        {"signal", signal},
+        {"expected_state", expected_state},
+        {"match_mode", match_mode},
+        {"verdict", always_matched ? "pass" : "fail"},
+        {"always_matched", always_matched},
+        {"analysis_complete", true},
+        {"scan_complete", always_matched},
+        {"checked_value_count", checked_value_count},
+        {"stop_reason", always_matched ? "window_end" : "first_mismatch"}
+    };
+    data["time_range"] = {
+        {"begin", format_time(begin)},
+        {"end", format_time(end)}
+    };
+    data["initial_value"] = initial_value;
+    data["first_mismatch"] = first_mismatch;
+    data["sample_time_semantics"] =
+        "sample_time is the finalized raw waveform value-change time in the closed interval";
     return data;
 }
 

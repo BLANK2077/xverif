@@ -1253,6 +1253,23 @@ change item：`time`、`time_ps`、`value`。
 | `data.activity.last_fall_time` | string/null | 最后一次 fall 时间 |
 | `data.activity.max_high_cycles` | number/null | clock 模式下最大连续 high cycles |
 
+### `signal.xz_verify`
+
+| 路径 | 类型 | 含义 |
+| --- | --- | --- |
+| `summary.expected_state` | string | 要求持续满足的 `x` 或 `z` |
+| `summary.match_mode` | string | `exact` 为全位匹配；`contains` 为至少一位匹配 |
+| `summary.verdict` | string | `pass` 或 `fail` |
+| `summary.always_matched` | boolean | 整个已证明窗口是否持续匹配 |
+| `summary.analysis_complete` | boolean | pass 扫完整窗口、fail 找到首个反例时均为 true |
+| `summary.scan_complete` | boolean | 是否扫描至窗口末尾；首个反例提前停止时为 false |
+| `summary.checked_value_count` | number | 检查的 initial/change value 数 |
+| `summary.stop_reason` | string | `window_end` 或 `first_mismatch` |
+| `data.time_range.begin/end` | string | 实际检查的闭区间 |
+| `data.initial_value` | object | 窗口起点的最终 raw waveform 值 |
+| `data.first_mismatch` | object/null | 首个反例的 `sample_time` 与 value |
+| `data.sample_time_semantics` | string | mismatch 时间为闭区间内最终 raw value-change 时间 |
+
 ### `counter.statistics`
 
 `counter.statistics` response schema 当前对 `summary/data` 较宽松；以下字段来自当前 basic response 与 runtime 输出。
@@ -1538,6 +1555,7 @@ scope.roots
 signal.changes
 signal.stability
 signal.statistics
+signal.xz_verify
 rc.generate
 value.at
 value.batch_at

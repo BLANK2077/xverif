@@ -1,0 +1,33 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "signal.xz_verify",
+  "summary": {
+    "signal": "top.xz_bus",
+    "expected_state": "x",
+    "match_mode": "exact",
+    "verdict": "pass",
+    "always_matched": true,
+    "analysis_complete": true,
+    "scan_complete": true,
+    "checked_value_count": 1,
+    "stop_reason": "window_end"
+  },
+  "data": {
+    "time_range": {
+      "begin": "85ns",
+      "end": "94ns"
+    },
+    "initial_value": {
+      "value": "8'hxx",
+      "known": false,
+      "width": 8,
+      "bits": "xxxxxxxx",
+      "has_x": true,
+      "has_z": false
+    },
+    "first_mismatch": null,
+    "sample_time_semantics": "sample_time is the finalized raw waveform value-change time in the closed interval"
+  },
+  "error": null
+}
