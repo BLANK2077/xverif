@@ -534,7 +534,7 @@ if (spec.name == "trace.x") {
     spec.description_en = "Trace an X value backward through bounded DFS branches to its sources or observability boundaries.";
     spec.description_zh = "从指定信号和时间按受限 DFS 多分支追溯 X 的产生位置或不可见边界。";
     spec.purposes = {"trace"};
-    spec.use_for = {"Trace simultaneous X RHS and control dependencies through active drivers, hierarchy, interfaces, and per-branch X onset times."};
+    spec.use_for = {"Trace simultaneous X RHS and control dependencies through active drivers, hierarchy, interfaces, and per-branch X onset times while preserving the requested query time separately."};
     spec.do_not_use_for = {"Static driver enumeration without a waveform X symptom."};
     spec.preferred_alternative = Json::object();
     return;

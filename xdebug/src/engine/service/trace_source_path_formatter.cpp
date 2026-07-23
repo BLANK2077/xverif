@@ -285,6 +285,8 @@ struct SourceRenderItem {
     bool has_hop = false;
     std::string chain_id;
     std::string time;
+    std::string active_time;
+    bool has_x_onset_time = false;
     std::string relation;
     std::string signal_path;
 };
@@ -309,7 +311,10 @@ std::vector<SourceRenderItem> collect_source_items(const Json& items, bool chain
         render_item.has_hop = chain;
         render_item.hop = item.value("index", static_cast<int>(out.size()));
         render_item.chain_id = scalar_text(item, "chain_id");
-        render_item.time = scalar_text(item, "time");
+        render_item.has_x_onset_time = item.contains("x_onset_time");
+        render_item.time = render_item.has_x_onset_time
+            ? scalar_text(item, "x_onset_time") : scalar_text(item, "time");
+        render_item.active_time = scalar_text(item, "active_time");
         render_item.relation = scalar_text(item, "relation");
         if (render_item.file.empty() || render_item.line <= 0 || render_item.signal_path.empty()) continue;
         out.push_back(render_item);
@@ -363,15 +368,29 @@ std::string active_signals_table(const SourceRenderGroup& group) {
     out.emit_section("active_signals");
     std::vector<std::vector<std::string>> rows;
     std::set<std::string> seen;
+    bool x_time_semantics = false;
+    for (const auto& item : group.items) {
+        if (item.has_x_onset_time) {
+            x_time_semantics = true;
+            break;
+        }
+    }
     for (const auto& item : group.items) {
         std::ostringstream key;
         if (item.has_hop) key << item.chain_id << "|" << item.hop << "|";
         key << item.line << "|" << item.signal_path;
         if (!seen.insert(key.str()).second) continue;
         if (item.has_hop) {
-            rows.push_back({item.chain_id.empty() ? "c0" : item.chain_id,
-                            std::to_string(item.hop), item.time, item.relation,
-                            std::to_string(item.line), item.signal_path});
+            if (x_time_semantics) {
+                rows.push_back({item.chain_id.empty() ? "c0" : item.chain_id,
+                                std::to_string(item.hop), item.time,
+                                item.active_time, item.relation,
+                                std::to_string(item.line), item.signal_path});
+            } else {
+                rows.push_back({item.chain_id.empty() ? "c0" : item.chain_id,
+                                std::to_string(item.hop), item.time, item.relation,
+                                std::to_string(item.line), item.signal_path});
+            }
         } else {
             rows.push_back({std::to_string(item.line), item.signal_path});
         }
@@ -379,6 +398,9 @@ std::string active_signals_table(const SourceRenderGroup& group) {
     if (rows.empty()) return std::string();
     if (group.items.empty() || !group.items.front().has_hop) {
         out.emit_table({"line", "signal_path"}, rows);
+    } else if (x_time_semantics) {
+        out.emit_table({"chain", "hop", "x_onset_time", "active_time",
+                        "relation", "line", "signal_path"}, rows);
     } else {
         out.emit_table({"chain", "hop", "time", "relation", "line", "signal_path"}, rows);
     }
@@ -414,16 +436,20 @@ void append_depth_frontiers_xout(std::string& text, const Json& frontiers) {
     xdebug::TextResponseBuilder out("xdebug");
     out.emit_section("depth_frontiers");
     std::vector<std::vector<std::string>> rows;
+    bool has_continue_time = false;
     for (const auto& item : frontiers) {
         if (!item.is_object()) continue;
+        has_continue_time = has_continue_time || item.contains("continue_time");
         rows.push_back({scalar_text(item, "chain_id"), scalar_text(item, "signal"),
-                        scalar_text(item, "time"), scalar_text(item, "value"),
+                        item.contains("continue_time")
+                            ? scalar_text(item, "continue_time") : scalar_text(item, "time"),
+                        scalar_text(item, "value"),
                         scalar_text(item, "x_mask"),
                         scalar_text(item, "stopped_after_depth")});
     }
     if (rows.empty()) return;
-    out.emit_table({"chain", "signal", "time", "value", "x_mask",
-                    "stopped_after_depth"}, rows);
+    out.emit_table({"chain", "signal", has_continue_time ? "continue_time" : "time",
+                    "value", "x_mask", "stopped_after_depth"}, rows);
     while (!text.empty() && text.back() == '\n') text.pop_back();
     text += "\n\n" + out.str();
 }
@@ -454,17 +480,23 @@ void append_chain_states_xout(std::string& text, const Json& chains) {
     xdebug::TextResponseBuilder out("xdebug");
     out.emit_section("chains");
     std::vector<std::vector<std::string>> rows;
+    bool has_x_onset_time = false;
     for (const auto& chain : chains) {
         if (!chain.is_object()) continue;
         Json current = chain.value("current", Json::object());
+        has_x_onset_time = has_x_onset_time || current.contains("x_onset_time");
         std::string reason = scalar_text(chain, "termination_detail");
         if (reason.empty()) reason = scalar_text(chain, "status");
         rows.push_back({scalar_text(chain, "chain_id"), scalar_text(chain, "status"),
-                        scalar_text(current, "signal"), scalar_text(current, "time"),
+                        scalar_text(current, "signal"),
+                        current.contains("x_onset_time")
+                            ? scalar_text(current, "x_onset_time") : scalar_text(current, "time"),
                         scalar_text(current, "value"), reason});
     }
     if (rows.empty()) return;
-    out.emit_table({"chain", "status", "current_signal", "current_time", "value", "reason"}, rows);
+    out.emit_table({"chain", "status", "current_signal",
+                    has_x_onset_time ? "current_x_onset_time" : "current_time",
+                    "value", "reason"}, rows);
     while (!text.empty() && text.back() == '\n') text.pop_back();
     text += "\n\n" + out.str();
 }
@@ -702,6 +734,9 @@ std::string render_source_path_xout(const std::string& action, const Json& respo
     if (query.is_object() && !query.empty()) {
         xdebug::TextResponseBuilder query_out("xdebug");
         query_out.emit_section("query");
+        if (query.contains("query_time")) {
+            query_out.emit_kv("query_time", query["query_time"]);
+        }
         Json value = query.value("value", Json());
         if (value.is_object() && value.contains("value")) {
             query_out.emit_kv("value", value["value"]);

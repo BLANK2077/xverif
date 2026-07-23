@@ -42,7 +42,7 @@
       "type": "object",
       "required": [
         "signal",
-        "time",
+        "query_time",
         "termination",
         "evidence_status",
         "chain_count",
@@ -55,7 +55,7 @@
         "signal": {
           "type": "string"
         },
-        "time": {
+        "query_time": {
           "type": "string"
         },
         "termination": {
@@ -108,7 +108,7 @@
       ],
       "properties": {
         "query": {
-          "$ref": "#/$defs/point"
+          "$ref": "#/$defs/query_point"
         },
         "chains": {
           "type": "array",
@@ -184,11 +184,11 @@
       },
       "additionalProperties": false
     },
-    "point": {
+    "query_point": {
       "type": "object",
       "required": [
         "signal",
-        "time",
+        "query_time",
         "value",
         "x_mask"
       ],
@@ -196,7 +196,31 @@
         "signal": {
           "type": "string"
         },
-        "time": {
+        "query_time": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/logic_value"
+        },
+        "x_mask": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "x_onset_point": {
+      "type": "object",
+      "required": [
+        "signal",
+        "x_onset_time",
+        "value",
+        "x_mask"
+      ],
+      "properties": {
+        "signal": {
+          "type": "string"
+        },
+        "x_onset_time": {
           "type": "string"
         },
         "value": {
@@ -214,7 +238,6 @@
         "index",
         "chain_id",
         "signal",
-        "time",
         "x_onset_time",
         "active_time",
         "value",
@@ -233,9 +256,6 @@
           "type": "string"
         },
         "signal": {
-          "type": "string"
-        },
-        "time": {
           "type": "string"
         },
         "x_onset_time": {
@@ -273,7 +293,7 @@
       "type": "object",
       "required": [
         "signal",
-        "time",
+        "x_onset_time",
         "kind",
         "reason",
         "evidence_status",
@@ -284,7 +304,7 @@
         "signal": {
           "type": "string"
         },
-        "time": {
+        "x_onset_time": {
           "type": "string"
         },
         "kind": {
@@ -321,7 +341,7 @@
         "signal": {
           "type": "string"
         },
-        "time": {
+        "sample_time": {
           "type": "string"
         },
         "value": {
@@ -414,7 +434,7 @@
           "type": "boolean"
         },
         "current": {
-          "$ref": "#/$defs/point"
+          "$ref": "#/$defs/x_onset_point"
         },
         "hops": {
           "type": "array",
@@ -444,7 +464,7 @@
       "type": "object",
       "required": [
         "signal",
-        "time",
+        "continue_time",
         "value",
         "x_mask",
         "chain_id",
@@ -454,7 +474,7 @@
         "signal": {
           "type": "string"
         },
-        "time": {
+        "continue_time": {
           "type": "string"
         },
         "value": {

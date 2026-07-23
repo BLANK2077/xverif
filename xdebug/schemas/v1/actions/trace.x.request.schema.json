@@ -144,12 +144,12 @@
   "description": "Trace an X value backward through bounded DFS branches to its sources or observability boundaries.",
   "x-description-zh": "从指定信号和时间按受限 DFS 多分支追溯 X 的产生位置或不可见边界。",
   "x-purpose": "从指定 signal/time 追溯 X。",
-  "x-how_it_works": "先确认查询值含 X，再按 DFS 同等追踪含 X 的 RHS/control；每条分支每一跳重新定位连续 X 区间起点并可多次向更早时间推进。深度停止时返回可直接续查的 frontier。",
+  "x-how_it_works": "先确认查询值含 X，再按 DFS 同等追踪含 X 的 RHS/control；query_time 保留请求时刻，逐跳 x_onset_time 表示连续 X 区间起点，active_time 表示 NPI active-driver 时刻。深度停止时以 continue_time 返回可直接续查的 frontier。",
   "x-when_to_use": "找到一个或多个 X 候选源、不可见边界或受限现场。",
   "x-arg_contract_notes": "required: signal, time; optional: value_format; limits: max_depth, max_nodes, max_time_steps, max_trace_signals, max_chains(default 8)",
   "x-agent": {
     "use_when": [
-      "查询点含 X，需要按 DFS 同时追踪 RHS、control、端口和时间边界。"
+      "查询点含 X，需要按 DFS 同时追踪 RHS、control、端口和时间边界；响应会区分 query_time、x_onset_time 与 active_time。"
     ],
     "do_not_use_when": [
       "只需要静态 driver 枚举，或查询点不含 X。"

@@ -131,7 +131,7 @@ ACTION_GUIDANCE: dict[str, Json] = {
         "alternatives": [{"action": "trace.x", "when": "需要按 X 可见性进行多分支追踪。"}],
     },
     "trace.x": {
-        "use_when": ["查询点含 X，需要按 DFS 同时追踪 RHS、control、端口和时间边界。"],
+        "use_when": ["查询点含 X，需要按 DFS 同时追踪 RHS、control、端口和时间边界；响应会区分 query_time、x_onset_time 与 active_time。"],
         "do_not_use_when": ["只需要静态 driver 枚举，或查询点不含 X。"],
         "alternatives": [
             {"action": "trace.active_driver", "when": "只需要指定时刻的单级 active driver。"},

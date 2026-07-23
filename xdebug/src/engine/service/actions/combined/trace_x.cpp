@@ -73,10 +73,10 @@ struct XPoint {
     bool at_fsdb_start = false;
 };
 
-Json point_json(const XPoint& point) {
+Json point_json(const XPoint& point, const char* time_field) {
     return {
         {"signal", point.signal},
-        {"time", point.time},
+        {time_field, point.time},
         {"value", xdebug_waveform::logic_value_json(point.value)},
         {"x_mask", x_mask_from_bits(point.value.bits)}
     };
@@ -315,7 +315,7 @@ Json chain_json(const ChainState& chain) {
         {"status", chain.status},
         {"termination_detail", chain.termination_detail},
         {"complete", chain.complete},
-        {"current", point_json(chain.current)},
+        {"current", point_json(chain.current, "x_onset_time")},
         {"hops", chain.hops}
     };
     if (!chain.origin.is_null()) out["origin"] = chain.origin;
@@ -360,10 +360,10 @@ public:
                 {{"signal", signal}, {"time", xdebug_core::format_time(g_fsdb_file, requested_tick)}});
         }
 
-        Json query = point_json(query_point);
+        Json query = point_json(query_point, "query_time");
         if (!query_point.value.has_x) {
             return {
-                {"summary", {{"signal", signal}, {"time", query_point.time},
+                {"summary", {{"signal", signal}, {"query_time", query_point.time},
                               {"termination", "not_x_at_query_time"},
                               {"evidence_status", "proven"}, {"chain_count", 0},
                               {"completed_chain_count", 0}, {"limited_chain_count", 0},
@@ -437,7 +437,6 @@ public:
                 {"index", static_cast<int>(chain.hops.size())},
                 {"chain_id", chain.chain_id},
                 {"signal", chain.current.signal},
-                {"time", chain.current.time},
                 {"x_onset_time", chain.current.time},
                 {"active_time", dependency_result.active_time},
                 {"value", xdebug_waveform::logic_value_json(chain.current.value)},
@@ -451,7 +450,8 @@ public:
             processed_nodes++;
 
             if (dependency_result.force) {
-                chain.origin = {{"signal", chain.current.signal}, {"time", chain.current.time},
+                chain.origin = {{"signal", chain.current.signal},
+                                {"x_onset_time", chain.current.time},
                                 {"kind", "force"}, {"reason", "force_x"},
                                 {"evidence_status", "proven"},
                                 {"file", dependency_result.file}, {"line", dependency_result.line}};
@@ -518,7 +518,8 @@ public:
                     kind = dependency_result.driver_kind.empty()
                         ? "unknown" : dependency_result.driver_kind;
                 }
-                chain.origin = {{"signal", chain.current.signal}, {"time", chain.current.time},
+                chain.origin = {{"signal", chain.current.signal},
+                                {"x_onset_time", chain.current.time},
                                 {"kind", kind}, {"reason", detail},
                                 {"evidence_status", evidence},
                                 {"file", dependency_result.file}, {"line", dependency_result.line}};
@@ -535,7 +536,7 @@ public:
             if (kept_children < static_cast<int>(children.size())) {
                 Json pending = Json::array();
                 for (size_t i = kept_children; i < children.size(); ++i) {
-                    Json item = point_json(children[i].sample);
+                    Json item = point_json(children[i].sample, "sample_time");
                     item["relation"] = relation_text(children[i].dependency);
                     item["x_onset_time"] = children[i].onset.time;
                     pending.push_back(item);
@@ -611,7 +612,7 @@ public:
             if (chain.status == "limit" || !chain.complete) limited_count++;
             else completed_count++;
             if (chain.status == "limit" && chain.termination_detail == "max_depth") {
-                Json frontier = point_json(chain.current);
+                Json frontier = point_json(chain.current, "continue_time");
                 frontier["chain_id"] = chain.chain_id;
                 frontier["stopped_after_depth"] = max_depth;
                 depth_frontiers.push_back(frontier);
@@ -650,7 +651,7 @@ public:
         const bool truncated = limited_count > 0;
 
         Json result = {
-            {"summary", {{"signal", signal}, {"time", query_point.time},
+            {"summary", {{"signal", signal}, {"query_time", query_point.time},
                           {"termination", termination},
                           {"evidence_status", origin_count == 0 ? "unresolved" :
                               (best_effort ? "best_effort" : "proven")},

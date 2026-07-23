@@ -4,7 +4,7 @@
   "action": "trace.x",
   "summary": {
     "signal": "trace_x_xprop_tb.multi_rhs_out",
-    "time": "12ns",
+    "query_time": "12ns",
     "termination": "origin_found",
     "evidence_status": "best_effort",
     "chain_count": 2,
@@ -16,7 +16,7 @@
   "data": {
     "query": {
       "signal": "trace_x_xprop_tb.multi_rhs_out",
-      "time": "12ns",
+      "query_time": "12ns",
       "value": {
         "value": "8'hxx",
         "known": false,
@@ -35,7 +35,7 @@
         "complete": true,
         "current": {
           "signal": "trace_x_xprop_tb.multi_rhs_a",
-          "time": "10ns",
+          "x_onset_time": "10ns",
           "value": {
             "value": "8'hxx",
             "known": false,
@@ -51,7 +51,6 @@
             "index": 0,
             "chain_id": "c0",
             "signal": "trace_x_xprop_tb.multi_rhs_out",
-            "time": "10ns",
             "x_onset_time": "10ns",
             "active_time": "10ns",
             "value": {
@@ -72,7 +71,6 @@
             "index": 1,
             "chain_id": "c0",
             "signal": "trace_x_xprop_tb.multi_rhs_a",
-            "time": "10ns",
             "x_onset_time": "10ns",
             "active_time": "10ns",
             "value": {
@@ -92,7 +90,7 @@
         ],
         "origin": {
           "signal": "trace_x_xprop_tb.multi_rhs_a",
-          "time": "10ns",
+          "x_onset_time": "10ns",
           "kind": "assignment",
           "reason": "candidate_x_source",
           "evidence_status": "best_effort",
@@ -107,7 +105,7 @@
         "complete": true,
         "current": {
           "signal": "trace_x_xprop_tb.multi_rhs_b",
-          "time": "10ns",
+          "x_onset_time": "10ns",
           "value": {
             "value": "8'hxx",
             "known": false,
@@ -123,7 +121,6 @@
             "index": 0,
             "chain_id": "c1",
             "signal": "trace_x_xprop_tb.multi_rhs_out",
-            "time": "10ns",
             "x_onset_time": "10ns",
             "active_time": "10ns",
             "value": {
@@ -144,7 +141,6 @@
             "index": 1,
             "chain_id": "c1",
             "signal": "trace_x_xprop_tb.multi_rhs_b",
-            "time": "10ns",
             "x_onset_time": "10ns",
             "active_time": "10ns",
             "value": {
@@ -164,7 +160,7 @@
         ],
         "origin": {
           "signal": "trace_x_xprop_tb.multi_rhs_b",
-          "time": "10ns",
+          "x_onset_time": "10ns",
           "kind": "assignment",
           "reason": "candidate_x_source",
           "evidence_status": "best_effort",

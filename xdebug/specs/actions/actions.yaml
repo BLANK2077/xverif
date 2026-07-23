@@ -2087,7 +2087,7 @@
         "trace"
       ],
       "use_for": [
-        "Trace simultaneous X RHS and control dependencies through active drivers, hierarchy, interfaces, and per-branch X onset times."
+        "Trace simultaneous X RHS and control dependencies through active drivers, hierarchy, interfaces, and per-branch X onset times while preserving the requested query time separately."
       ],
       "do_not_use_for": [
         "Static driver enumeration without a waveform X symptom."

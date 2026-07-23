@@ -138,6 +138,8 @@ def test_trace_x_xprop_and_clockless_point_reads(
         )
         assert non_x["summary"]["termination"] == "not_x_at_query_time"
         assert non_x["summary"]["evidence_status"] == "proven"
+        assert non_x["summary"]["query_time"] == "18ns"
+        assert non_x["data"]["query"]["query_time"] == "18ns"
 
         control_x = _success(
             run("trace.x", {"signal": "trace_x_xprop_tb.observed", "time": "18ns"}),
@@ -206,10 +208,10 @@ def test_trace_x_xprop_and_clockless_point_reads(
         assert limited_chain["pending_x_dependencies"]
         frontier = branch_limited["data"]["depth_frontiers"][0]
         assert frontier["signal"] == limited_chain["current"]["signal"]
-        assert frontier["time"] == limited_chain["current"]["time"]
+        assert frontier["continue_time"] == limited_chain["current"]["x_onset_time"]
         assert frontier["value"]["value"].startswith("8'h")
         assert branch_limited["suggested_next_actions"][0]["args"]["signal"] == frontier["signal"]
-        assert branch_limited["suggested_next_actions"][0]["args"]["time"] == frontier["time"]
+        assert branch_limited["suggested_next_actions"][0]["args"]["time"] == frontier["continue_time"]
 
         active_chain_limited = _success(
             run(
@@ -236,6 +238,10 @@ def test_trace_x_xprop_and_clockless_point_reads(
             artifact_root,
         )
         assert driver_x["data"]["query"]["value"]["has_x"] is True
+        assert driver_x["summary"]["query_time"] == "22ns"
+        assert driver_x["data"]["query"]["query_time"] == "22ns"
+        assert driver_x["data"]["chains"][0]["hops"][0]["x_onset_time"] == "20ns"
+        assert "time" not in driver_x["data"]["chains"][0]["hops"][0]
         assert driver_x["summary"]["termination"] != "not_x_at_query_time"
 
         indexed_x = _success(
@@ -261,6 +267,10 @@ def test_trace_x_xprop_and_clockless_point_reads(
         assert "8'hxx" in xout.response
         assert "x_mask" in xout.response
         assert "active_signals:" in xout.response
+        assert "query_time: 18ns" in xout.response
+        assert "x_onset_time" in xout.response
+        assert "active_time" in xout.response
+        assert "current_x_onset_time" in xout.response
         assert "chains:" in xout.response
     finally:
         cli_runner.run(

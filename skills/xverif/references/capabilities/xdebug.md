@@ -46,6 +46,8 @@ clock context。无 `clock` 时不要传 `edge` 或 `sample_point`。值默认 h
 6. 单级仍未到根因时用 `trace.active_driver_chain`；递归深度写顶层 `limits.max_depth`，不能写 `args.depth`。若结果为 ambiguous，读取 `data.ambiguity_evidence`。若因深度停止，直接使用 `data.depth_frontiers` 和 `suggested_next_actions` 从 frontier 续查或提高深度重跑；不需要 `clk_period`。
 7. 查询点本身为 X 时可直接用 `trace.x`：它按 DFS 同等追踪含 X 的 RHS/control，
    穿过 module port、interface/modport，并在每一跳重新寻找该分支的 X onset。
+   `query_time` 是请求时刻，`x_onset_time` 是该分支连续为 X 的起点，
+   `active_time` 是 NPI active-driver 时刻；三者不能互相替代。
    `limits.max_chains` 默认 8；读取每个 chain 的 status/current/pending，不能把 partial
    当完整结果。深度停止时使用对应 chain 的 frontier 继续。
 8. 回到 `value.at/batch_at` 验证链上的控制条件。
