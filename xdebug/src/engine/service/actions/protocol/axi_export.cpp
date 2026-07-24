@@ -9,6 +9,7 @@
 #include "waveform/axi/axi_analyzer.h"
 #include "waveform/axi/axi_exporter.h"
 #include "waveform/common/xdebug_waveform_paths.h"
+#include "waveform/server/fsdb_value_reader.h"
 #include "waveform/value/logic_value.h"
 
 #include <fstream>
@@ -96,7 +97,15 @@ public:
         exporter.build(*canonical, cfg, begin, end, result);
         result.format = format;
 
-        auto txn_json = [](const AxiExportTransaction& txn) {
+        auto txn_json = [&](const AxiExportTransaction& txn) {
+            auto render = [&](const std::string& raw,
+                              const std::string& signal) {
+                const FsdbSignalWidth width =
+                    fsdb_signal_width(g_fsdb_file, signal);
+                return render_logic_value(logic_value_from_fsdb_raw(
+                    raw, 'h', width.reliable ? width.width : 0));
+            };
+            const bool write = txn.is_write;
             npiFsdbTime latency = txn.completion_time >= txn.addr_time ? txn.completion_time - txn.addr_time : 0;
             return Json{{"seq", txn.seq},
                         {"direction", txn.is_write ? "write" : "read"},
@@ -107,12 +116,12 @@ public:
                         {"latency", format_duration(latency)},
                         {"phase_order", txn.phase_order},
                         {"response_dependency_violation", txn.response_dependency_violation},
-                        {"id", txn.id},
-                        {"addr", txn.addr},
-                        {"len", txn.len},
-                        {"size", txn.size},
-                        {"burst", txn.burst},
-                        {"resp", txn.resp},
+                        {"id", render(txn.id, write ? cfg.awid : cfg.arid)},
+                        {"addr", render(txn.addr, write ? cfg.awaddr : cfg.araddr)},
+                        {"len", render(txn.len, write ? cfg.awlen : cfg.arlen)},
+                        {"size", render(txn.size, write ? cfg.awsize : cfg.arsize)},
+                        {"burst", render(txn.burst, write ? cfg.awburst : cfg.arburst)},
+                        {"resp", render(txn.resp, write ? cfg.bresp : cfg.rresp)},
                         {"beat_count", txn.beat_count},
                         {"expected_beat_count", txn.expected_beat_count}};
         };

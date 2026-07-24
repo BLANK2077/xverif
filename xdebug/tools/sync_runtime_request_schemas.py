@@ -210,10 +210,49 @@ EXTRA_ARGS_BY_ACTION: dict[str, set[str]] = {
     "trace.load": {"line_limit", "no_statement_only", "role"},
     "value.at": {"clock", "edge", "sample_point", "slice_hint", "value_format"},
     "value.batch_at": {"clock", "edge", "sample_point", "slice_hint", "value_format"},
-    "list.value_at": {"edge", "format", "sample_point", "value_format"},
+    "list.value_at": {"edge", "sample_point", "value_format"},
     "verify.conditions": {"edge", "sample_point", "signals", "value_format"},
     "window.verify": {"edge", "line_limit", "max_samples", "sample_point", "signals", "time_range"},
 }
+
+# Every action that can publish sampled or derived logic values exposes the
+# same display-only selector.  Keep this list centralized so protocol, stream,
+# event and waveform actions cannot drift independently.
+VALUE_BEARING_ACTIONS = {
+    "apb.cursor",
+    "apb.query",
+    "apb.statistics",
+    "apb.transfer_window",
+    "axi.analysis",
+    "axi.cursor",
+    "axi.export",
+    "axi.latency_outlier",
+    "axi.query",
+    "axi.request_response_pair",
+    "axi.statistics",
+    "counter.statistics",
+    "detect_abnormal",
+    "event.export",
+    "event.find",
+    "expr.eval_at",
+    "handshake.inspect",
+    "list.diff",
+    "list.value_at",
+    "sampled_pulse.inspect",
+    "signal.changes",
+    "signal.stability",
+    "signal.statistics",
+    "signal.xz_verify",
+    "stream.export",
+    "stream.query",
+    "trace.x",
+    "value.at",
+    "value.batch_at",
+    "verify.conditions",
+    "window.verify",
+}
+for _action in VALUE_BEARING_ACTIONS:
+    EXTRA_ARGS_BY_ACTION[_action].add("value_format")
 
 
 ENGINE_FORWARD_TIME_UNIT_EXCLUDE = {
@@ -563,6 +602,8 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
         selected_props[key] = apply_argument_contract(action, key, arg_schemas[key])
         if key in PARAM_DESCRIPTIONS:
             selected_props[key].setdefault("description", PARAM_DESCRIPTIONS[key])
+    if action in {"value.at", "value.batch_at", "list.value_at"}:
+        selected_props.pop("format", None)
     if action in ("apb.query", "axi.query") and "query" in selected_props:
         selected_props["query"] = copy.deepcopy(arg_schemas["protocol_query"])
         if action == "axi.query" and "direction" in selected_props:
@@ -709,7 +750,7 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
             "items": {"type": "string"},
             "description": PARAM_DESCRIPTIONS["signals"],
         }
-    if action == "trace.x" and "value_format" in selected_props:
+    if action in VALUE_BEARING_ACTIONS and "value_format" in selected_props:
         selected_props["value_format"]["default"] = "hex"
     if action == "trace.x":
         properties["limits"] = {

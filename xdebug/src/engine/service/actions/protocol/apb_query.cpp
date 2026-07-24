@@ -42,8 +42,10 @@ static bool parse_user_uint64_literal(const std::string& text,
 static Json apb_transaction_json(const xdebug_waveform::ApbTransaction& txn) {
     Json tj;
     tj["time"] = xdebug_core::format_time(xdebug_waveform::g_fsdb_file, txn.time);
-    tj["addr"] = txn.addr;
-    tj["data"] = txn.data;
+    tj["addr"] = xdebug_waveform::render_logic_value(
+        xdebug_waveform::logic_value_from_fsdb_raw(txn.addr, 'h', txn.addr_width));
+    tj["data"] = xdebug_waveform::render_logic_value(
+        xdebug_waveform::logic_value_from_fsdb_raw(txn.data, 'h', txn.data_width));
     tj["is_write"] = txn.is_write;
     tj["has_error"] = txn.has_error;
     return tj;

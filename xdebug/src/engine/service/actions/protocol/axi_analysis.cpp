@@ -53,7 +53,12 @@ static Json pending_txn_json(const xdebug_waveform::AxiTransaction& txn,
                              npiFsdbTime scan_end) {
     using namespace xdebug_waveform;
     Json out = {{"direction", txn.is_write ? "write" : "read"},
-                {"id", txn.id}, {"addr", txn.addr}, {"len", txn.len},
+                {"id", render_logic_value(
+                    logic_value_from_fsdb_raw(txn.id, 'h', txn.id_width))},
+                {"addr", render_logic_value(
+                    logic_value_from_fsdb_raw(txn.addr, 'h', txn.addr_width))},
+                {"len", render_logic_value(
+                    logic_value_from_fsdb_raw(txn.len, 'h', txn.len_width))},
                 {"request_time", xdebug_core::format_time(g_fsdb_file, txn.addr_time)},
                 {"age", xdebug_core::format_duration(
                     g_fsdb_file, scan_end >= txn.addr_time ? scan_end - txn.addr_time : 0)},

@@ -3,6 +3,7 @@
 #include "service/engine_globals.h"
 #include "protocol_action_helpers.h"
 #include "protocol_statistics_filter.h"
+#include "waveform/server/fsdb_value_reader.h"
 
 #include "waveform/axi/axi_analyzer.h"
 #include "waveform/axi/axi_manager.h"
@@ -86,7 +87,51 @@ public:
             {"analysis_quality", ambiguous ? "ambiguous" : "complete"},
             {"full_scan_count", diagnostics.full_scan_count},
         };
-        out["filter"] = statistics_filter_json(filter, true);
+        const FsdbSignalWidth awaddr =
+            fsdb_signal_width(g_fsdb_file, config.awaddr);
+        const FsdbSignalWidth araddr =
+            fsdb_signal_width(g_fsdb_file, config.araddr);
+        const FsdbSignalWidth awid =
+            fsdb_signal_width(g_fsdb_file, config.awid);
+        const FsdbSignalWidth arid =
+            fsdb_signal_width(g_fsdb_file, config.arid);
+        auto select_width = [&](const FsdbSignalWidth& write,
+                                const FsdbSignalWidth& read) {
+            if (filter.direction == StatisticsDirection::Write)
+                return write.reliable ? write.width : 0;
+            if (filter.direction == StatisticsDirection::Read)
+                return read.reliable ? read.width : 0;
+            return write.reliable && read.reliable &&
+                   write.width == read.width ? write.width : 0;
+        };
+        out["filter"] = statistics_filter_json(
+            filter, true, select_width(awaddr, araddr),
+            select_width(awid, arid));
+        if (filter.direction == StatisticsDirection::All) {
+            Json width_diagnostics = Json::array();
+            if (awaddr.reliable && araddr.reliable &&
+                awaddr.width != araddr.width) {
+                for (size_t index = 0; index < filter.address_values.size();
+                     ++index) {
+                    width_diagnostics.push_back({
+                        {"signal", nullptr},
+                        {"role", "filter.addresses[" +
+                             std::to_string(index) + "]"},
+                        {"reason", "conflicting_signal_widths"}});
+                }
+            }
+            if (awid.reliable && arid.reliable &&
+                awid.width != arid.width) {
+                for (size_t index = 0; index < filter.ids.size(); ++index) {
+                    width_diagnostics.push_back({
+                        {"signal", nullptr},
+                        {"role", "filter.ids[" + std::to_string(index) + "]"},
+                        {"reason", "conflicting_signal_widths"}});
+                }
+            }
+            if (!width_diagnostics.empty())
+                out["summary"]["width_diagnostics"] = width_diagnostics;
+        }
         out["notes"] = {{"unresolved_transaction_count",
                          statistics_unresolved_note()}};
         return out;

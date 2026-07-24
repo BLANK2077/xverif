@@ -130,7 +130,7 @@ inline 配置示例：
     "time": "@stall",
     "clock": "top.clk",
     "signals": ["top.u.valid", "top.u.ready", "top.u.full", "top.u.state_q"],
-    "format": "hex"
+    "value_format": "hex"
   }
 }
 ```

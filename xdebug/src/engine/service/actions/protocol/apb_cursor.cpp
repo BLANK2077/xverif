@@ -66,8 +66,12 @@ public:
                           {"at_end", ok && index == total}};
         if (ok && txn) {
             Json tj;
-            tj["time"] = xdebug_core::format_time(g_fsdb_file, txn->time); tj["addr"] = txn->addr;
-            tj["data"] = txn->data; tj["is_write"] = txn->is_write;
+            tj["time"] = xdebug_core::format_time(g_fsdb_file, txn->time);
+            tj["addr"] = render_logic_value(
+                logic_value_from_fsdb_raw(txn->addr, 'h', txn->addr_width));
+            tj["data"] = render_logic_value(
+                logic_value_from_fsdb_raw(txn->data, 'h', txn->data_width));
+            tj["is_write"] = txn->is_write;
             tj["has_error"] = txn->has_error;
             out["transaction"] = tj;
         }

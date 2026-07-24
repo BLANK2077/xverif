@@ -95,6 +95,40 @@
         "origin_count": {
           "type": "integer",
           "minimum": 0
+        },
+        "value_width_complete": {
+          "type": "boolean"
+        },
+        "width_diagnostics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "signal": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "role": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "npi_range_size_unavailable",
+                  "conflicting_signal_widths",
+                  "derived_width_unavailable"
+                ]
+              }
+            },
+            "required": [
+              "signal",
+              "role",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "additionalProperties": false

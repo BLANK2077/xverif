@@ -346,7 +346,34 @@ def test_apb_vip_real_wait_state_and_error_actions(
         assert address_rows["summary"]["count"] == 2
         indexed_transactions = address_rows["data"]["transactions"]
         assert [item["addr"] for item in indexed_transactions] == [
-            "00000004", "00000004"
+            "32'h00000004", "32'h00000004"
+        ]
+        assert [item["data"] for item in indexed_transactions] == [
+            "32'h55667788", "32'h0000abcd"
+        ]
+        assert address_rows["summary"]["value_width_complete"] is True
+        assert address_rows["summary"]["width_diagnostics"] == []
+
+        decimal_rows = _query(
+            cli_runner,
+            {
+                "api_version": "xdebug.v1",
+                "action": "apb.query",
+                "target": target,
+                "args": {
+                    "name": "apb0",
+                    "direction": "write",
+                    "address": "'h4",
+                    "value_format": "dec",
+                    "query": {"line_limit": 10},
+                },
+            },
+            case_name="apb-vip-address-index-decimal",
+            artifact_root=artifact_root,
+            manifest=manifest,
+        )
+        assert [item["addr"] for item in decimal_rows["data"]["transactions"]] == [
+            "32'd4", "32'd4"
         ]
         for case_name, selector, expected in (
             ("first", {}, indexed_transactions[0]),

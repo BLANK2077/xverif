@@ -127,8 +127,22 @@ void handle_axi_stat(int client_fd, const char* name, bool latency, int filter,
 Json event_record_to_json(const xdebug_waveform::EventRecord& rec) {
     Json j;
     j["time"] = format_time(rec.time);
-    j["signals"] = rec.signals;
-    j["fields"] = rec.fields;
+    j["signals"] = Json::object();
+    j["fields"] = Json::object();
+    for (const auto& item : rec.signals) {
+        auto width = rec.signal_widths.find(item.first);
+        j["signals"][item.first] = xdebug_core::render_logic_value(
+            xdebug_core::logic_value_from_fsdb_raw(
+                item.second, 'b',
+                width == rec.signal_widths.end() ? 0 : width->second));
+    }
+    for (const auto& item : rec.fields) {
+        auto width = rec.field_widths.find(item.first);
+        j["fields"][item.first] = xdebug_core::render_logic_value(
+            xdebug_core::logic_value_from_fsdb_raw(
+                item.second, 'b',
+                width == rec.field_widths.end() ? 0 : width->second));
+    }
     return j;
 }
 

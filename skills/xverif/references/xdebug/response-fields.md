@@ -13,6 +13,24 @@
 5. compact 成功响应可能省略空 `session`、空 `warnings`、空 `findings`、空 `suggested_next_actions`、`tool` 和 elapsed 细节。
 6. 如果设置了 `XDEBUG_COMMON_BLOCKS` 且 trace 相关 action 的返回 payload 中有 `file` 精确命中配置，响应会在原有 `data` 末尾追加 `data.common_blocks`；未命中时不新增字段，原输出不变。
 
+### 逻辑值格式与位宽完整性
+
+所有 value-bearing action 共享 `args.value_format:"hex"|"bin"|"dec"`，默认
+`hex`。实际位宽可得时，响应 literal 固定为 `<width>'h...`、`<width>'b...`
+或 `<width>'d...`。decimal 无法表示 X/Z，因此该值会改用同宽 binary；canonical
+value 对象同时返回 `requested_value_format:"dec"` 与
+`effective_value_format:"bin"`。
+
+只要响应中出现逻辑值，`summary` 可包含：
+
+| 字段 | 类型 | 含义 |
+| --- | --- | --- |
+| `value_width_complete` | boolean | 本次响应内所有逻辑值是否都有可证明的真实位宽 |
+| `width_diagnostics` | array | 未定宽值的 signal、响应 role 与原因；原因包括 `npi_range_size_unavailable`、`conflicting_signal_widths`、`derived_width_unavailable` |
+
+位宽不可得时保留无位宽 literal，不能从 FSDB 返回字符串长度、十六进制位数或前导
+零反推实际声明宽度。
+
 ## 1. 顶层 Envelope
 
 所有 action 最终都归一化到 `xdebug.v1` envelope。

@@ -18,7 +18,7 @@ namespace xdebug_waveform {
 
 namespace {
 
-constexpr std::uint32_t kApbFingerprintVersion = 1;
+constexpr std::uint32_t kApbFingerprintVersion = 2;
 const char* kApbResultTypeTag = "apb_result.v1";
 
 std::string normalized_apb_config_semantics(const ApbConfig& config) {
@@ -145,6 +145,9 @@ bool ApbAnalyzer::analyze(const std::string& name, npiFsdbFileHandle file,
 
     ApbResult result;
     bool completion_seen = false;
+    const int paddr_width = fsdb_signal_width(sig_handles[4]).width;
+    const int pwdata_width = fsdb_signal_width(sig_handles[5]).width;
+    const int prdata_width = fsdb_signal_width(sig_handles[6]).width;
 
     auto process_edge = [&](npiFsdbTime t, const std::vector<std::string>& values) {
         if (values.size() < 9) return;
@@ -186,6 +189,10 @@ bool ApbAnalyzer::analyze(const std::string& name, npiFsdbFileHandle file,
         txn.addr = paddr_val;
         txn.data = is_write ? pwdata_val : prdata_val;
         txn.is_write = is_write;
+        txn.addr_width = paddr_width;
+        txn.data_width = is_write ? pwdata_width : prdata_width;
+        txn.addr_signal = config.paddr;
+        txn.data_signal = is_write ? config.pwdata : config.prdata;
         txn.has_numeric_addr = parse_hex_value(txn.addr, txn.numeric_addr);
         const std::string& pslverr_val =
             values[static_cast<size_t>(pslverr_index)];

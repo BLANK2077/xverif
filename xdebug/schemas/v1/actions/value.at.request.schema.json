@@ -38,22 +38,6 @@
           "type": "string",
           "description": "Clock sampling edge. The schema default is authoritative; negedge often matches monitor semantics."
         },
-        "format": {
-          "type": "string",
-          "enum": [
-            "h",
-            "hex",
-            "b",
-            "bin",
-            "binary",
-            "d",
-            "dec",
-            "decimal",
-            "array_indexed"
-          ],
-          "description": "Low-level display format for the sampled value. Hexadecimal, binary, and decimal forms return sampled values. array_indexed is accepted only to return the explicit UNSUPPORTED_AGGREGATE_QUERY capability error; export formats are invalid.",
-          "default": "h"
-        },
         "sample_point": {
           "type": "string",
           "enum": [
@@ -94,7 +78,8 @@
             "bin",
             "dec"
           ],
-          "description": "Action-specific value_format input. Its type and accepted values are defined by this schema."
+          "description": "Action-specific value_format input. Its type and accepted values are defined by this schema.",
+          "default": "hex"
         }
       },
       "additionalProperties": false,

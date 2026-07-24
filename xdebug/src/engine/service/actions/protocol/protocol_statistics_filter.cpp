@@ -9,10 +9,10 @@
 namespace xdebug_design {
 namespace {
 
-std::string hex_value(uint64_t value) {
-    std::ostringstream out;
-    out << "0x" << std::hex << std::nouppercase << value;
-    return out.str();
+std::string rendered_value(uint64_t value, int width) {
+    return xdebug_waveform::render_logic_value(
+        xdebug_waveform::logic_value_from_fsdb_raw(
+            std::to_string(value), 'd', width));
 }
 
 StatisticsMatch from_value_match(xdebug_waveform::ValueFilterMatch match);
@@ -142,27 +142,34 @@ StatisticsMatch match_statistics_transaction(
     return result;
 }
 
-Json statistics_filter_json(const StatisticsFilter& filter, bool include_ids) {
+Json statistics_filter_json(const StatisticsFilter& filter, bool include_ids,
+                            int address_width, int id_width) {
     Json out;
     out["direction"] = filter.direction == StatisticsDirection::Read
                            ? "read"
                            : filter.direction == StatisticsDirection::Write ? "write" : "all";
     if (include_ids && filter.has_ids) {
         out["ids"] = Json::array();
-        for (uint64_t id : filter.ids) out["ids"].push_back(std::to_string(id));
+        for (uint64_t id : filter.ids)
+            out["ids"].push_back(rendered_value(id, id_width));
     }
     if (filter.address_mode == StatisticsAddressMode::Exact) {
         out["address"] = {{"mode", "exact"}, {"values", Json::array()}};
         for (uint64_t value : filter.address_values)
-            out["address"]["values"].push_back(hex_value(value));
+            out["address"]["values"].push_back(
+                rendered_value(value, address_width));
     } else if (filter.address_mode == StatisticsAddressMode::Range) {
         out["address"] = {{"mode", "range"},
-                          {"begin", hex_value(filter.address_begin)},
-                          {"end", hex_value(filter.address_end)}};
+                          {"begin", rendered_value(
+                              filter.address_begin, address_width)},
+                          {"end", rendered_value(
+                              filter.address_end, address_width)}};
     } else if (filter.address_mode == StatisticsAddressMode::Mask) {
         out["address"] = {{"mode", "mask"},
-                          {"value", hex_value(filter.address_value)},
-                          {"mask", hex_value(filter.address_mask)}};
+                          {"value", rendered_value(
+                              filter.address_value, address_width)},
+                          {"mask", rendered_value(
+                              filter.address_mask, address_width)}};
     }
     return out;
 }

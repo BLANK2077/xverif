@@ -49,9 +49,15 @@ bool stream_collect_signal_values(npiFsdbFileHandle file,
             error = "signal not found: " + signals[i];
             return false;
         }
-        std::string bits = lower_bits(strip_prefix(raw[i]));
+        npiFsdbSigHandle signal =
+            npi_fsdb_sig_by_name(file, signals[i].c_str(), nullptr);
+        xdebug_core::LogicValue logic =
+            logic_value_from_fsdb_signal(signal, raw[i], 'b');
+        std::string bits = logic.bits;
+        if (bits.empty()) bits = lower_bits(strip_prefix(raw[i]));
         if (bits.empty()) bits = "x";
-        values[signals[i]] = StreamValue{bits, !has_xz_bits(bits)};
+        values[signals[i]] = StreamValue{
+            bits, !has_xz_bits(bits), logic.width_reliable};
     }
     return true;
 }

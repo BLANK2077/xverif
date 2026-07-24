@@ -18,6 +18,10 @@ struct ApbTransaction {
     bool has_error = false;
     bool has_numeric_addr = false;
     uint64_t numeric_addr = 0;
+    int addr_width = 0;
+    int data_width = 0;
+    std::string addr_signal;
+    std::string data_signal;
 };
 
 struct ApbContextTransaction {

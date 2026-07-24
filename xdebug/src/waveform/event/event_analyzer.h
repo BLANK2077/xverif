@@ -12,6 +12,8 @@ struct EventRecord {
     npiFsdbTime time = 0;
     std::map<std::string, std::string> signals;
     std::map<std::string, std::string> fields;
+    std::map<std::string, int> signal_widths;
+    std::map<std::string, int> field_widths;
 };
 
 struct EventScanStats {

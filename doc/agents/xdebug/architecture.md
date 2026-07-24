@@ -222,6 +222,9 @@ frontend 不直接承载 NPI 重逻辑；NPI/FSDB/engine 能力集中在内部 e
 - value/logic 四态处理必须复用 `LogicValue` 相关组件。
 - signal value 显示使用 `args.value_format`（`hex`、`bin`、`dec`）；decimal 遇 X/Z
   必须明确给出 binary effective format，不能丢失逐位信息。
+- raw signal 的实际位宽只从 NPI range size 取得；派生表达式仅在宽度可证明时定宽，
+  不得从 FSDB 值文本长度或前导零推断。所有 value-bearing action 在 summary 发布
+  `value_width_complete` 与 `width_diagnostics`。
 - `edge:"negedge"` 可以携带 `sample_point` 以统一请求形状，但它不改变既有 negedge
   current-value 采样；响应必须给出 requested/effective sampling。
 - 大 payload 默认 compact；只使用 schema 声明的 action-specific 输出参数、`line_limit` 或 export action 返回细节。AXI transaction 的逐 beat payload 统一由 `args.output.include_data` 控制。

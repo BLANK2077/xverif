@@ -16,10 +16,13 @@ using Json = nlohmann::ordered_json;
 struct StreamValue {
     std::string bits;
     bool known = true;
+    bool width_reliable = true;
 
     StreamValue() {}
-    StreamValue(const std::string& bits_in, bool known_in)
-        : bits(bits_in), known(known_in) {}
+    StreamValue(const std::string& bits_in, bool known_in,
+                bool width_reliable_in = true)
+        : bits(bits_in), known(known_in),
+          width_reliable(width_reliable_in) {}
 
     int width() const { return static_cast<int>(bits.size()); }
 };

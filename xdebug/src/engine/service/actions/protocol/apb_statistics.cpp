@@ -3,6 +3,7 @@
 #include "service/engine_globals.h"
 #include "protocol_action_helpers.h"
 #include "protocol_statistics_filter.h"
+#include "waveform/server/fsdb_value_reader.h"
 
 #include "waveform/apb/apb_analyzer.h"
 #include "waveform/apb/apb_manager.h"
@@ -83,7 +84,11 @@ public:
             {"analysis_quality", ambiguous ? "ambiguous" : "complete"},
             {"full_scan_count", diagnostics.full_scan_count},
         };
-        out["filter"] = statistics_filter_json(filter, false);
+        const FsdbSignalWidth address_width =
+            fsdb_signal_width(g_fsdb_file, config.paddr);
+        out["filter"] = statistics_filter_json(
+            filter, false,
+            address_width.reliable ? address_width.width : 0);
         out["notes"] = {{"unresolved_transaction_count",
                          statistics_unresolved_note()}};
         return out;

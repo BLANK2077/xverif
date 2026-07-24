@@ -52,7 +52,7 @@ int main() {
     assert(json_to_xout_value(unsized_hex) == "'h22");
 
     Json binary_value = {{"value", "'b1010"}, {"known", true}};
-    assert(json_to_xout_value(binary_value) == "4'ha");
+    assert(json_to_xout_value(binary_value) == "'ha");
 
     Json unknown_value = {
         {"value", "0xx"},

@@ -38,25 +38,6 @@
           "type": "string",
           "description": "Clock sampling edge. The schema default is authoritative; negedge often matches monitor semantics."
         },
-        "format": {
-          "type": "string",
-          "enum": [
-            "h",
-            "hex",
-            "b",
-            "bin",
-            "binary",
-            "d",
-            "dec",
-            "decimal",
-            "array_indexed",
-            "json",
-            "tsv",
-            "csv",
-            "u64bin"
-          ],
-          "description": "Action-specific format input. Its type and accepted values are defined by this schema."
-        },
         "name": {
           "type": "string",
           "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
@@ -93,7 +74,8 @@
             "bin",
             "dec"
           ],
-          "description": "Action-specific value_format input. Its type and accepted values are defined by this schema."
+          "description": "Action-specific value_format input. Its type and accepted values are defined by this schema.",
+          "default": "hex"
         }
       },
       "additionalProperties": false,

@@ -31,7 +31,7 @@ CLI envelope 示例：
       "top.u.ready",
       "top.u.data"
     ],
-    "format": "hex"
+    "value_format": "hex"
   }
 }
 ```
@@ -252,7 +252,7 @@ action 使用 `max_samples`；`event.export` 另用 `max_events` 限制写文件
     "signal": "top.u.valid",
     "time": "100ns",
     "clock": "top.clk",
-    "format": "hex"
+    "value_format": "hex"
   }
 }
 ```
@@ -267,7 +267,7 @@ action 使用 `max_samples`；`event.export` 另用 `max_events` 限制写文件
   "args": {
     "time": "100ns",
     "signals": ["top.u.valid", "top.u.ready", "top.u.data"],
-    "format": "hex"
+    "value_format": "hex"
   }
 }
 ```

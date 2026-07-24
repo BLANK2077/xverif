@@ -69,11 +69,12 @@ int nearest_sample_edge(const std::vector<SampledEdgeRecord>& edges, npiFsdbTime
     return prev_dt <= next_dt ? next - 1 : next;
 }
 
-Json sampled_valid_json(const std::vector<SampledEdgeRecord>& edges, int idx) {
+Json sampled_valid_json(const std::vector<SampledEdgeRecord>& edges, int idx,
+                        const std::string& valid_signal) {
     if (idx < 0 || idx >= static_cast<int>(edges.size())) return Json(nullptr);
     auto it = edges[idx].values.find("valid");
     if (it == edges[idx].values.end()) return Json(nullptr);
-    return wave_value_json(it->second, 'b');
+    return wave_value_json(it->second, 'b', valid_signal);
 }
 
 Json sampled_payloads_json(const std::vector<SampledEdgeRecord>& edges,
@@ -86,7 +87,8 @@ Json sampled_payloads_json(const std::vector<SampledEdgeRecord>& edges,
         std::string signal = p.value("signal", std::string());
         auto it = edges[idx].values.find(alias);
         if (it == edges[idx].values.end()) continue;
-        out.push_back({{"alias", alias}, {"signal", signal}, {"value", wave_value_json(it->second, 'b')}});
+        out.push_back({{"alias", alias}, {"signal", signal},
+                       {"value", wave_value_json(it->second, 'b', signal)}});
     }
     return out;
 }
@@ -216,8 +218,8 @@ Json ai_sampled_pulse_inspect(const Json& args, std::string& error) {
         item["previous_sample_edge"] = sample_edge_json(edges, prev);
         item["next_sample_edge"] = sample_edge_json(edges, next);
         item["nearest_sample_edge"] = sample_edge_json(edges, near);
-        item["raw_valid"] = wave_value_json(raw_value, 'b');
-        item["sampled_valid"] = sampled_valid_json(edges, near);
+        item["raw_valid"] = wave_value_json(raw_value, 'b', valid);
+        item["sampled_valid"] = sampled_valid_json(edges, near, valid);
         item["sampled_payloads"] = sampled_payloads_json(edges, near, payload_aliases);
         item["reason"] = "valid was high between sample edges but not high at any sampled edge";
         ++unsampled_pulse_count;
@@ -264,8 +266,10 @@ Json ai_sampled_pulse_inspect(const Json& args, std::string& error) {
             item["previous_sample_edge"] = sample_edge_json(edges, prev);
             item["next_sample_edge"] = sample_edge_json(edges, next);
             item["nearest_sample_edge"] = sample_edge_json(edges, near);
-            item["payload"] = {{"alias", alias}, {"signal", signal}, {"value", wave_value_json(ch.second, value_prefix)}};
-            item["sampled_valid"] = sampled_valid_json(edges, near);
+            item["payload"] = {{"alias", alias}, {"signal", signal},
+                               {"value", wave_value_json(
+                                   ch.second, value_prefix, signal)}};
+            item["sampled_valid"] = sampled_valid_json(edges, near, valid);
             item["sampled_payloads"] = sampled_payloads_json(edges, near, payload_aliases);
             item["reason"] = sampled_valid == ExprTri::Unknown
                 ? "payload changed but sampled valid was unknown"
@@ -402,7 +406,8 @@ Json ai_handshake_inspect(const Json& args, std::string& error) {
                                  {"severity", "error"},
                                  {"begin", format_time(valid_wait_begin)},
                                  {"time", format_time(t)},
-                                 {"observed_valid", wave_value_json(values.at("valid"), 'b')},
+                                 {"observed_valid", wave_value_json(
+                                     values.at("valid"), 'b', valid)},
                                  {"reason", v == ExprTri::Unknown
                                      ? "valid became unknown before a handshake"
                                      : "valid deasserted before a handshake"}});
@@ -596,7 +601,9 @@ Json ai_detect_abnormal(const Json& args, std::string& error) {
         for (size_t i = 0; i < changes.size(); ++i) {
             if (check_unknown && contains_xz_value(changes[i].second)) {
                 add_finding({{"type", "unknown_xz"}, {"signal", signal}, {"severity", "warning"},
-                             {"time", format_time(changes[i].first)}, {"value", wave_value_json(changes[i].second, 'b')}},
+                             {"time", format_time(changes[i].first)},
+                             {"value", wave_value_json(
+                                 changes[i].second, 'b', signal)}},
                             signal_finding_count);
             }
             if (check_glitch && i + 1 < changes.size()) {
@@ -612,7 +619,9 @@ Json ai_detect_abnormal(const Json& args, std::string& error) {
                 if (width >= stuck_duration) {
                     add_finding({{"type", "stuck"}, {"signal", signal}, {"severity", "warning"},
                                  {"begin", format_time(changes[i].first)}, {"end", format_time(changes[i + 1].first)},
-                                 {"duration", format_time(width)}, {"value", wave_value_json(changes[i].second, 'b')}},
+                                 {"duration", format_time(width)},
+                                 {"value", wave_value_json(
+                                     changes[i].second, 'b', signal)}},
                                 signal_finding_count);
                 }
             }
@@ -622,7 +631,9 @@ Json ai_detect_abnormal(const Json& args, std::string& error) {
             npiFsdbTime width = end - changes.back().first;
             add_finding({{"type", "stuck"}, {"signal", signal}, {"severity", "warning"},
                          {"begin", format_time(changes.back().first)}, {"end", format_time(end)},
-                         {"duration", format_time(width)}, {"value", wave_value_json(changes.back().second, 'b')},
+                         {"duration", format_time(width)},
+                         {"value", wave_value_json(
+                             changes.back().second, 'b', signal)},
                          {"open_at_window_end", true}}, signal_finding_count);
         }
         scan_status.push_back({{"signal", signal}, {"status", "ok"},

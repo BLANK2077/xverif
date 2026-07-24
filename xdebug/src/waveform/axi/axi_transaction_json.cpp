@@ -1,7 +1,17 @@
 #include "axi_transaction_json.h"
 #include "core/npi/time_contract.h"
+#include "core/value/logic_value.h"
 
 namespace xdebug_waveform {
+
+namespace {
+
+std::string rendered(const std::string& raw, int width) {
+    return xdebug_core::render_logic_value(
+        xdebug_core::logic_value_from_fsdb_raw(raw, 'h', width));
+}
+
+} // namespace
 
 AxiJson axi_transaction_to_json(npiFsdbFileHandle file,
                                 const AxiTransaction& txn,
@@ -18,11 +28,11 @@ AxiJson axi_transaction_to_json(npiFsdbFileHandle file,
     if (txn.has_addr_valid_begin_time)
         address["valid_begin_time"] = xdebug_core::format_time(file, txn.addr_valid_begin_time);
     address["handshake_time"] = xdebug_core::format_time(file, txn.addr_time);
-    address["addr"] = txn.addr;
-    address["id"] = txn.id;
-    address["len"] = txn.len;
-    address["size"] = txn.size;
-    address["burst"] = txn.burst;
+    address["addr"] = rendered(txn.addr, txn.addr_width);
+    address["id"] = rendered(txn.id, txn.id_width);
+    address["len"] = rendered(txn.len, txn.len_width);
+    address["size"] = rendered(txn.size, txn.size_width);
+    address["burst"] = rendered(txn.burst, txn.burst_width);
     out["address"] = std::move(address);
 
     if (!txn.data_handshake_times.empty() || !txn.data.empty()) {
@@ -43,10 +53,12 @@ AxiJson axi_transaction_to_json(npiFsdbFileHandle file,
                     {"handshake_time", xdebug_core::format_time(
                         file, i < txn.data_handshake_times.size()
                             ? txn.data_handshake_times[i] : txn.first_data_time)},
-                    {"data", txn.data[i]},
+                    {"data", rendered(txn.data[i], txn.data_width)},
                 };
-                if (txn.is_write && i < txn.wstrb.size()) beat["wstrb"] = txn.wstrb[i];
-                if (!txn.is_write && i < txn.data_resp.size()) beat["resp"] = txn.data_resp[i];
+                if (txn.is_write && i < txn.wstrb.size())
+                    beat["wstrb"] = rendered(txn.wstrb[i], txn.wstrb_width);
+                if (!txn.is_write && i < txn.data_resp.size())
+                    beat["resp"] = rendered(txn.data_resp[i], txn.resp_width);
                 beat["last"] = i < txn.data_last.size()
                     ? txn.data_last[i] : i + 1 == txn.data.size();
                 beats.push_back(std::move(beat));
@@ -59,7 +71,7 @@ AxiJson axi_transaction_to_json(npiFsdbFileHandle file,
     out["response"] = {
         {"channel", txn.is_write ? "b" : "r"},
         {"handshake_time", xdebug_core::format_time(file, txn.resp_time)},
-        {"resp", txn.resp},
+        {"resp", rendered(txn.resp, txn.resp_width)},
     };
     return out;
 }

@@ -154,7 +154,8 @@
             "bin",
             "dec"
           ],
-          "description": "Action-specific value_format input. Its type and accepted values are defined by this schema."
+          "description": "Action-specific value_format input. Its type and accepted values are defined by this schema.",
+          "default": "hex"
         }
       },
       "additionalProperties": false,

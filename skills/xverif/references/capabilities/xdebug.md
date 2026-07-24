@@ -27,8 +27,16 @@ xdebug 是 daidir/FSDB 确定性事实入口。本文件覆盖高频决策链，
 
 `value.at` / `value.batch_at` 省略 `clock` 时返回精确 `time` 的最终 FSDB 值和
 `sampling_mode:"raw_time"`；传入 `clock` 时返回 `sampling_mode:"clock_sampled"` 及
-clock context。无 `clock` 时不要传 `edge` 或 `sample_point`。值默认 hex，并始终带
-`'h` / `'b` / `'d` 前缀。
+clock context。无 `clock` 时不要传 `edge` 或 `sample_point`。所有返回逻辑值的
+action 都用 `args.value_format:"hex"|"bin"|"dec"` 选择显示，默认 hex。已取得
+NPI range size 的原始信号和可证明宽度的派生值始终以 `<实际位宽>'h`、
+`<实际位宽>'b` 或 `<实际位宽>'d` 返回；decimal 遇 X/Z 时降为同宽 binary，并在
+canonical value 对象中区分 requested/effective format。不要用 `args.format`
+代替 `value_format`。
+
+若某个值的真实位宽不可证明，响应不会按文本长度猜位宽，而会保留无位宽 literal；
+同时读取 `summary.value_width_complete` 和 `summary.width_diagnostics[]` 判断
+缺失来自 NPI range、冲突信号宽度还是派生表达式。
 
 ## 3. 解释异常、采样和握手
 

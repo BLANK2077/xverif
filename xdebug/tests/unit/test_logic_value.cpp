@@ -18,6 +18,17 @@ int main() {
     assert(logic_value_json(fsdb_sized)["bits"] == "00100010");
     assert(logic_value_json(fsdb_sized, ValueRenderFormat::Dec)["value"] == "8'd34");
     assert(logic_value_json(fsdb_sized, ValueRenderFormat::Bin)["value"] == "8'b00100010");
+    {
+        ScopedValueRenderFormat scoped(ValueRenderFormat::Dec);
+        assert(current_value_render_format() == ValueRenderFormat::Dec);
+        assert(render_logic_value(fsdb_sized) == "8'd34");
+    }
+    assert(current_value_render_format() == ValueRenderFormat::Hex);
+    assert(render_logic_value(fsdb_sized) == "8'h22");
+
+    LogicValue unsized_binary = logic_value_from_fsdb_raw("00100010", 'b');
+    assert(!unsized_binary.width_reliable);
+    assert(render_logic_value(unsized_binary) == "'h22");
 
     LogicValue unknown = logic_value_from_fsdb_raw("xz", 'h', 8);
     assert(unknown.valid);
@@ -52,6 +63,28 @@ int main() {
            "top.u.data");
     assert(incomplete["summary"]["width_diagnostics"][0]["reason"] ==
            "npi_range_size_unavailable");
+
+    Json stream_incomplete = {
+        {"summary", {{"stream", "pipe0"}}},
+        {"transfers", Json::array({{{"data", "'h22"}}})}
+    };
+    apply_value_width_summary(stream_incomplete);
+    assert(stream_incomplete["summary"]["value_width_complete"] == false);
+    assert(stream_incomplete["summary"]["width_diagnostics"][0]["reason"] ==
+           "derived_width_unavailable");
+
+    Json conflicting = {
+        {"summary",
+         {{"width_diagnostics",
+           Json::array({{{"signal", nullptr},
+                         {"role", "filter.addresses[0]"},
+                         {"reason", "conflicting_signal_widths"}}})}}},
+        {"filter", {{"addresses", Json::array({"'h22"})}}}
+    };
+    apply_value_width_summary(conflicting);
+    assert(conflicting["summary"]["width_diagnostics"].size() == 1);
+    assert(conflicting["summary"]["width_diagnostics"][0]["reason"] ==
+           "conflicting_signal_widths");
 
     LogicValue user_sv = parse_user_logic_literal("8'h22");
     assert(user_sv.valid);

@@ -106,6 +106,16 @@
           "minimum": 1,
           "default": 10,
           "description": "Action-specific top_n input. Its type and accepted values are defined by this schema."
+        },
+        "value_format": {
+          "type": "string",
+          "enum": [
+            "hex",
+            "bin",
+            "dec"
+          ],
+          "description": "Action-specific value_format input. Its type and accepted values are defined by this schema.",
+          "default": "hex"
         }
       },
       "additionalProperties": false,

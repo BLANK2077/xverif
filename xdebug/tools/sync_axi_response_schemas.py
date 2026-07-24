@@ -9,6 +9,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+TOOLS_DIR = Path(__file__).resolve().parent
+if str(TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(TOOLS_DIR))
+
+from sync_value_response_schemas import inject as inject_value_contract
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = ROOT / "schemas" / "v1" / "actions"
@@ -26,6 +32,14 @@ AXI_ACTIONS = (
     "axi.query",
     "axi.request_response_pair",
 )
+AXI_VALUE_ACTIONS = {
+    "axi.analysis",
+    "axi.cursor",
+    "axi.export",
+    "axi.latency_outlier",
+    "axi.query",
+    "axi.request_response_pair",
+}
 
 PURPOSES = {
     "axi.analysis": "汇总 AXI 行为。",
@@ -461,7 +475,7 @@ def envelope(action: str) -> dict[str, Any]:
         "additionalProperties": False,
         "x-description-zh": DESCRIPTIONS[action][1],
     }
-    return schema
+    return inject_value_contract(schema) if action in AXI_VALUE_ACTIONS else schema
 
 
 def main(argv: list[str] | None = None) -> int:

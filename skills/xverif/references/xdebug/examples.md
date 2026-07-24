@@ -22,7 +22,7 @@ CLI 场景下先用原生 `session.open` 打开 session，再把后续 action �
       "top.u.valid",
       "top.u.ready"
     ],
-    "format": "hex"
+    "value_format": "hex"
   },
   "limits": {}
 }
@@ -53,7 +53,7 @@ MCP tool 参数壳请使用 `xverif-mcp`。
       "top.u_if.state_q",
       "top.u_if.bp"
     ],
-    "format": "hex"
+    "value_format": "hex"
   }
 }
 ```
@@ -782,7 +782,7 @@ notes:
       "top.u_entry.req_addr",
       "top.u_axi.araddr"
     ],
-    "format": "hex",
+    "value_format": "hex",
     "slice_hint": {
       "chunk_width": 32,
       "count": 4

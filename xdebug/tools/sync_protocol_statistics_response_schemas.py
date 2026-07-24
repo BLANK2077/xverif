@@ -23,6 +23,7 @@ from sync_axi_response_schemas import (
     session_schema,
     tool_schema,
 )
+from sync_value_response_schemas import inject as inject_value_contract
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -82,7 +83,7 @@ def envelope(action: str, description: tuple[str, str]) -> dict[str, Any]:
         {"status": {"const": "error"}, "error_code": STRING},
         ["status", "error_code"],
     )
-    return {
+    return inject_value_contract({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": f"xdebug.{action}.response.v1",
         "title": f"{action} response",
@@ -106,7 +107,7 @@ def envelope(action: str, description: tuple[str, str]) -> dict[str, Any]:
             "meta": closed({"truncated": BOOL}),
         },
         "additionalProperties": False,
-    }
+    })
 
 
 def main(argv: list[str] | None = None) -> int:

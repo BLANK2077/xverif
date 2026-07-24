@@ -15,6 +15,9 @@ xdebug public API 以 action-specific schema 为 source of truth。任何文档�
 辅助生成/校验：
 
 - `xdebug/tools/sync_runtime_request_schemas.py`
+- `xdebug/tools/sync_value_response_schemas.py`
+- `xdebug/tools/sync_axi_response_schemas.py`
+- `xdebug/tools/sync_protocol_statistics_response_schemas.py`
 - `xdebug/tools/sync_action_schema_hints.py`
 - `xdebug/tools/audit_runtime_schema_compatibility.py`
 - `xdebug/tools/validate_schema.py`
@@ -119,6 +122,9 @@ xdebug 参数错误有两层：
 
 ```bash
 python3 xdebug/tools/sync_runtime_request_schemas.py
+python3 xdebug/tools/sync_value_response_schemas.py
+python3 xdebug/tools/sync_axi_response_schemas.py
+python3 xdebug/tools/sync_protocol_statistics_response_schemas.py
 python3 xdebug/tools/sync_action_schema_hints.py
 python3 xdebug/tools/sync_action_metadata.py
 ```
@@ -127,6 +133,9 @@ python3 xdebug/tools/sync_action_metadata.py
 
 ```bash
 python3 xdebug/tools/sync_runtime_request_schemas.py --check
+python3 xdebug/tools/sync_value_response_schemas.py --check
+python3 xdebug/tools/sync_axi_response_schemas.py --check
+python3 xdebug/tools/sync_protocol_statistics_response_schemas.py --check
 python3 xdebug/tools/sync_action_schema_hints.py --check
 python3 xdebug/tools/sync_action_metadata.py --check
 ```

@@ -209,6 +209,16 @@
             "s"
           ],
           "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
+        },
+        "value_format": {
+          "type": "string",
+          "enum": [
+            "hex",
+            "bin",
+            "dec"
+          ],
+          "description": "Action-specific value_format input. Its type and accepted values are defined by this schema.",
+          "default": "hex"
         }
       },
       "additionalProperties": false

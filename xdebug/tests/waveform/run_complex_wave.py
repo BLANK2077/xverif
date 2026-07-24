@@ -724,21 +724,21 @@ def run_nonaxi(xdebug, fsdb):
         require("truncated" not in direct_scope.get("summary", {}) and "truncated" not in direct_scope.get("meta", {}),
                 "complete non-recursive scope.list must omit truncated")
 
-        v = r.query("value.at", args={"signal": "ai_complex_top.sig_a", "clock": "ai_complex_top.clk", "time": "75ns", "format": "hex"})
+        v = r.query("value.at", args={"signal": "ai_complex_top.sig_a", "clock": "ai_complex_top.clk", "time": "75ns", "value_format": "hex"})
         require(v["data"]["value"]["value"] == "'h22" and v["data"]["value"]["known"] is True, "unexpected sig_a value")
-        xz = r.query("value.at", args={"signal": "ai_complex_top.xz_bus", "clock": "ai_complex_top.clk", "time": "95ns", "format": "binary"})
+        xz = r.query("value.at", args={"signal": "ai_complex_top.xz_bus", "clock": "ai_complex_top.clk", "time": "95ns", "value_format": "bin"})
         require(xz["data"]["value"]["known"] is False, "xz_bus should be unknown")
         require("bits" in xz["data"]["value"] and "has_x" in xz["data"]["value"], "xz_bus lacks logic diagnostics")
         batch = r.query(
             "value.batch_at",
-            args={"time": "95ns", "clock": "ai_complex_top.clk", "signals": ["ai_complex_top.sig_a", "ai_complex_top.xz_bus", "ai_complex_top.no_such"], "format": "hex"},
+            args={"time": "95ns", "clock": "ai_complex_top.clk", "signals": ["ai_complex_top.sig_a", "ai_complex_top.xz_bus", "ai_complex_top.no_such"], "value_format": "hex"},
             expect_ok=True,
         )
         require(batch["summary"]["missing_count"] == 1 and batch["summary"]["unknown_count"] == 1, "batch missing/unknown mismatch")
         require(batch["summary"]["missing_by_reason"]["signal_not_found"] == 1, "batch missing reason mismatch")
         missing_rows = [row for row in batch["data"]["values"] if row["status"] != "ok"]
         require(missing_rows and missing_rows[0]["reason"], "batch missing row lacks reason")
-        hint = r.query("value.at", args={"signal": "ai_complex_top.sig_a", "clock": "ai_complex_top.clk", "time": "75ns", "format": "hex", "slice_hint": {"chunk_width": 4, "count": 2}})
+        hint = r.query("value.at", args={"signal": "ai_complex_top.sig_a", "clock": "ai_complex_top.clk", "time": "75ns", "value_format": "hex", "slice_hint": {"chunk_width": 4, "count": 2}})
         require(hint["data"]["xbit_hints"]["status"] == "ready", "xbit hints not generated")
         batch_hint = r.query(
             "value.batch_at",
@@ -746,7 +746,7 @@ def run_nonaxi(xdebug, fsdb):
                 "signals": ["ai_complex_top.sig_a", "ai_complex_top.sig_b"],
                 "clock": "ai_complex_top.clk",
                 "time": "75ns",
-                "format": "hex",
+                "value_format": "hex",
                 "slice_hint": {"chunk_width": 4, "count": 2},
             },
         )
@@ -757,9 +757,10 @@ def run_nonaxi(xdebug, fsdb):
         require(hinted_rows and hinted_rows[0]["xbit_hints"]["status"] == "ready", "batch xbit hints not generated")
         require(v["data"]["clock_context"] == batch_hint["data"]["clock_context"],
                 "value.at and value.batch_at must share one clock bracket contract")
-        unsupported = r.query("value.at", args={"signal": "ai_complex_top.sig_a", "clock": "ai_complex_top.clk", "time": "75ns", "format": "array_indexed"}, expect_ok=False)
-        require(unsupported["error"]["code"] == "UNSUPPORTED_AGGREGATE_QUERY",
-                "array_indexed must return the explicit aggregate capability error")
+        unsupported = r.query("value.at", args={"signal": "ai_complex_top.sig_a", "clock": "ai_complex_top.clk", "time": "75ns", "format": "hex"}, expect_ok=False)
+        require(unsupported["error"]["code"] == "INVALID_REQUEST" and
+                unsupported["error"]["invalid_arg"] == "args.format",
+                "legacy args.format must be rejected by the public schema")
         r.query("value.at", args={"signal": "ai_complex_top.no_such", "clock": "ai_complex_top.clk", "time": "10ns"}, expect_ok=False)
 
         created = r.query("list.create", args={"name": "basic"})
@@ -771,7 +772,7 @@ def run_nonaxi(xdebug, fsdb):
         show = r.query("list.show", args={"name": "basic"})
         require(show["summary"]["signal_count"] == 2, "list.show count mismatch")
         require("count" not in show["data"], "list.show generated redundant data.count")
-        values = r.query("list.value_at", args={"name": "basic", "clock": "ai_complex_top.clk", "time": "75ns", "format": "hex"})
+        values = r.query("list.value_at", args={"name": "basic", "clock": "ai_complex_top.clk", "time": "75ns", "value_format": "hex"})
         require("summary" not in values["data"], "list.value_at generated nested data.summary")
         validated = r.query("list.validate", args={"name": "basic"})
         require("all_found" in validated["summary"], "list.validate did not expose all_found at source")

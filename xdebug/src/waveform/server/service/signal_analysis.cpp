@@ -73,9 +73,10 @@ bool read_signal_changes(const std::string& signal,
 }
 
 Json changes_to_json(const fsdbTimeValPairVec_t& changes,
-                            char prefix,
-                            int limit,
-                            bool& truncated) {
+                     char prefix,
+                     const std::string& signal,
+                     int limit,
+                     bool& truncated) {
     Json arr = Json::array();
     truncated = false;
     for (size_t i = 0; i < changes.size(); ++i) {
@@ -85,7 +86,7 @@ Json changes_to_json(const fsdbTimeValPairVec_t& changes,
         }
         Json item;
         item["time"] = format_time(changes[i].first);
-        item["value"] = wave_value_json(changes[i].second, prefix);
+        item["value"] = wave_value_json(changes[i].second, prefix, signal);
         arr.push_back(item);
     }
     return arr;
@@ -143,9 +144,9 @@ std::string bit_string_from_value(const std::string& value) {
     return bits;
 }
 
-Json bit_value_json(const std::string& bits) {
+Json bit_value_json(const std::string& bits, int width) {
     return logic_value_json(
-        logic_value_from_bits(bits, static_cast<int>(bits.size())));
+        logic_value_from_fsdb_raw(bits, 'b', width));
 }
 
 std::string pad_bits_for_compare(const std::string& bits, size_t width) {
@@ -379,15 +380,18 @@ Json ai_signal_changes(const Json& args, std::string& error) {
     data["includes_initial_value"] = includes_initial;
     data["semantic_note"] = "signal.changes returns value-change rows for timeline inspection. Do not use row counts as sampled high cycles; use signal.statistics.high_cycles for clock-sampled activity.";
     if (!changes.empty()) {
-        data["initial_value"] = wave_value_json(changes.front().second, json_value_prefix(fmt));
-        data["final_value"] = wave_value_json(changes.back().second, json_value_prefix(fmt));
+        data["initial_value"] = wave_value_json(
+            changes.front().second, json_value_prefix(fmt), signal);
+        data["final_value"] = wave_value_json(
+            changes.back().second, json_value_prefix(fmt), signal);
         data["first_change"] = format_time(changes.front().first);
         data["last_change"] = format_time(changes.back().first);
     }
     if (!aggregate_only) {
         data["mode"] = mode == "tail" ? "tail" : "head";
         bool rows_truncated = false;
-        data["changes"] = changes_to_json(selected, json_value_prefix(fmt), -1, rows_truncated);
+        data["changes"] = changes_to_json(
+            selected, json_value_prefix(fmt), signal, -1, rows_truncated);
     }
     return data;
 }
@@ -422,7 +426,8 @@ Json ai_signal_stability(const Json& args, std::string& error) {
         std::string text = value_with_prefix(val.value.str, json_value_prefix(fmt));
         Json item;
         item["time"] = format_time(change_time);
-        item["value"] = wave_value_json(val.value.str, json_value_prefix(fmt));
+        item["value"] = wave_value_json(
+            val.value.str, json_value_prefix(fmt), signal);
         arr.push_back(item);
         if (first.empty()) {
             first = text;
@@ -506,7 +511,7 @@ Json ai_signal_xz_verify(const Json& args, std::string& error) {
         npiFsdbValue raw;
         raw.format = npiFsdbBinStrVal;
         if (!iter.get_value(raw) || !raw.value.str) continue;
-        LogicValue value = logic_value_from_fsdb_raw(raw.value.str, 'b');
+        LogicValue value = logic_value_from_fsdb_signal(sig, raw.value.str, 'b');
         if (!value.valid || value.bits.empty()) continue;
         Json value_json = logic_value_json(value);
         if (!have_value) {
@@ -598,7 +603,8 @@ Json ai_expr_eval_at(const Json& args, std::string& error) {
             value_map[aliases[i]] = cell->raw_value;
             operands.push_back({{"alias", aliases[i]},
                                 {"signal", paths[i]},
-                                {"value", wave_value_json(cell->raw_value, 'b')}});
+                                {"value", wave_value_json(
+                                    cell->raw_value, 'b', paths[i])}});
         }
         if (!xdebug_waveform::eval_event_expression(expr, value_map, result, error)) return false;
         return true;
@@ -684,7 +690,6 @@ Json ai_window_verify(const Json& args, std::string& error) {
     for (size_t i = 0; i < aliases.size(); ++i) {
         sample_signals.push_back({aliases[i], paths[i], handles[i]});
     }
-
     struct CondState { std::string expr; std::string mode; int pass = 0; int fail = 0; int unknown = 0; };
     std::vector<CondState> states;
     for (const auto& cond : args["conditions"]) {
@@ -854,8 +859,10 @@ Json ai_signal_statistics(const Json& args, std::string& error) {
             {"max_high_cycles", nullptr}
         };
         if (!changes.empty()) {
-            data["initial_value"] = wave_value_json(changes.front().second, json_value_prefix(fmt));
-            data["final_value"] = wave_value_json(changes.back().second, json_value_prefix(fmt));
+            data["initial_value"] = wave_value_json(
+                changes.front().second, json_value_prefix(fmt), signal);
+            data["final_value"] = wave_value_json(
+                changes.back().second, json_value_prefix(fmt), signal);
             data["first_change_time"] = format_time(changes.front().first);
             data["last_change_time"] = format_time(changes.back().first);
         }
@@ -864,7 +871,8 @@ Json ai_signal_statistics(const Json& args, std::string& error) {
              (evidence_limit < 0 || static_cast<int>(i) < evidence_limit); ++i) {
             evidence.push_back({{"time", format_time(changes[i].first)},
                                 {"kind", i == 0 ? "initial" : "value_change"},
-                                {"value", wave_value_json(changes[i].second, json_value_prefix(fmt))}});
+                                {"value", wave_value_json(
+                                    changes[i].second, json_value_prefix(fmt), signal)}});
         }
         const bool response_truncated = evidence_limit >= 0 && changes.size() > static_cast<size_t>(evidence_limit);
         data["summary"]["scan_complete"] = !truncated;
@@ -887,6 +895,7 @@ Json ai_signal_statistics(const Json& args, std::string& error) {
     for (size_t i = 0; i < aliases.size(); ++i) {
         sample_signals.push_back({aliases[i], paths[i], handles[i]});
     }
+    const FsdbSignalWidth signal_width = fsdb_signal_width(handles[0]);
 
     const int evidence_limit = args.value("line_limit", 100);
     const int max_samples = args.value("max_samples", -1);
@@ -906,7 +915,7 @@ Json ai_signal_statistics(const Json& args, std::string& error) {
         ++evidence_count;
         if (evidence_limit < 0 || static_cast<int>(evidence.size()) < evidence_limit)
             evidence.push_back({{"time", format_time(time)}, {"kind", kind},
-                                {"value", wave_value_json(value, 'b')}});
+                                {"value", wave_value_json(value, 'b', signal)}});
     };
 
     ClockSampleScanner scanner(g_fsdb_file, clock_sample);
@@ -996,10 +1005,11 @@ Json ai_signal_statistics(const Json& args, std::string& error) {
         data["summary"]["sample_point"] = clock_sample_point_text(clock_sample.sample_point);
     data["transition_count"] = transitions;
     if (have_known) {
-        data["first"] = bit_value_json(first_bits);
-        data["final"] = bit_value_json(final_bits);
-        data["min"] = bit_value_json(min_bits);
-        data["max"] = bit_value_json(max_bits);
+        const int width = signal_width.reliable ? signal_width.width : 0;
+        data["first"] = bit_value_json(first_bits, width);
+        data["final"] = bit_value_json(final_bits, width);
+        data["min"] = bit_value_json(min_bits, width);
+        data["max"] = bit_value_json(max_bits, width);
         data["low_cycles"] = low_cycles;
         data["high_cycles"] = high_cycles;
         data["high_ratio"] = known > 0 ? static_cast<double>(high_cycles) / static_cast<double>(known) : 0.0;

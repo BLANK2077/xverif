@@ -488,6 +488,15 @@ bool EventAnalyzer::analyze(npiFsdbFileHandle file,
             rec.signals = value_map;
             for (const auto& kv : config.fields) rec.signals.erase(kv.first);
             rec.fields = field_map;
+            for (size_t i = 0; i < aliases.size(); ++i) {
+                FsdbSignalWidth width = fsdb_signal_width(signal_handles[i]);
+                rec.signal_widths[aliases[i]] =
+                    width.reliable ? width.width : 0;
+            }
+            for (const auto& kv : config.fields) {
+                rec.field_widths[kv.first] =
+                    std::abs(kv.second.left - kv.second.right) + 1;
+            }
             if (query.retain_last_only && !records.empty()) records[0] = rec;
             else records.push_back(rec);
         }

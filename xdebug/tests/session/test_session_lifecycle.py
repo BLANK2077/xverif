@@ -28,7 +28,7 @@ def _wave_value_at_args() -> dict:
         "signal": "ai_complex_top.sig_a",
         "time": "75ns",
         "clock": "ai_complex_top.clk",
-        "format": "hex",
+        "value_format": "hex",
     }
 
 

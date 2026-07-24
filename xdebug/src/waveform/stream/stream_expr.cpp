@@ -85,7 +85,7 @@ StreamValue literal_value(const std::string& literal) {
         if (static_cast<int>(bits.size()) < width) bits.insert(bits.begin(), width - bits.size(), '0');
         if (static_cast<int>(bits.size()) > width) bits = bits.substr(bits.size() - width);
     }
-    return StreamValue{bits, !has_xz_bits(bits)};
+    return StreamValue{bits, !has_xz_bits(bits), width > 0};
 }
 
 StreamValue align_left(StreamValue value, size_t width) {
@@ -132,19 +132,21 @@ StreamValue eval_node(const StreamExpression::Node& node,
         size_t start = base.bits.size() - 1 - static_cast<size_t>(hi);
         size_t end = base.bits.size() - 1 - static_cast<size_t>(lo);
         std::string bits = base.bits.substr(start, end - start + 1);
-        return StreamValue{bits, !has_xz_bits(bits)};
+        return StreamValue{bits, !has_xz_bits(bits), true};
     }
     if (node.kind == NodeKind::Concat) {
         std::string bits;
         bool known = true;
+        bool width_reliable = true;
         for (const auto& item : node.items) {
             StreamValue v = eval_node(*item, values, error);
             if (!error.empty()) return StreamValue{"x", false};
             bits += v.bits;
             known = known && v.known;
+            width_reliable = width_reliable && v.width_reliable;
         }
         if (bits.empty()) bits = "0";
-        return StreamValue{bits, known && !has_xz_bits(bits)};
+        return StreamValue{bits, known && !has_xz_bits(bits), width_reliable};
     }
     if (node.kind == NodeKind::Unary) {
         StreamValue v = eval_node(*node.a, values, error);
@@ -160,7 +162,7 @@ StreamValue eval_node(const StreamExpression::Node& node,
                 else if (c == '1') c = '0';
                 else c = 'x';
             }
-            return StreamValue{bits, !has_xz_bits(bits)};
+            return StreamValue{bits, !has_xz_bits(bits), v.width_reliable};
         }
     }
 
@@ -188,7 +190,8 @@ StreamValue eval_node(const StreamExpression::Node& node,
             bool out = op == "&" ? (lv && rv) : op == "|" ? (lv || rv) : (lv != rv);
             bits[i] = out ? '1' : '0';
         }
-        return StreamValue{bits, !has_xz_bits(bits)};
+        return StreamValue{bits, !has_xz_bits(bits),
+                           lhs.width_reliable && rhs.width_reliable};
     }
     if (op == "==" || op == "!=" || op == ">" || op == ">=" || op == "<" || op == "<=") {
         unsigned long long l = 0, r = 0;
@@ -425,8 +428,9 @@ private:
 } // namespace
 
 Json stream_value_json(const StreamValue& value) {
-    return Json{{"value", stream_value_hex(value)}, {"bits", value.bits},
-                {"known", value.known}, {"width", value.width()}};
+    LogicValue logic = logic_value_from_fsdb_raw(
+        value.bits, 'b', value.width_reliable ? value.width() : 0);
+    return logic_value_json(logic, current_value_render_format());
 }
 
 bool stream_value_truthy(const StreamValue& value, bool unknown_default) {
@@ -436,7 +440,9 @@ bool stream_value_truthy(const StreamValue& value, bool unknown_default) {
 }
 
 std::string stream_value_hex(const StreamValue& value) {
-    return logic_value_compact_string(logic_value_from_bits(value.bits, value.width()));
+    LogicValue logic = logic_value_from_fsdb_raw(
+        value.bits, 'b', value.width_reliable ? value.width() : 0);
+    return render_logic_value(logic, ValueRenderFormat::Hex);
 }
 
 bool stream_value_has_xz(const StreamValue& value) {

@@ -10,6 +10,6 @@
       "top.u.ready"
     ],
     "time": "100ns",
-    "format": "hex"
+    "value_format": "hex"
   }
 }

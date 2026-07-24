@@ -187,3 +187,9 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 - 错误现象：执行 schema runtime compatibility audit 和 example validation 时使用系统 `python3`，因缺少 `jsonschema` 在脚本导入阶段退出。
 - 误判原因：只按文档命令字面调用解释器，没有先核对仓库 `.conda-xverif` 已提供这些校验脚本的 Python 依赖。
 - 以后规则：仓库 Python 校验和 pytest 默认使用 `.conda-xverif/bin/python` 或其中的 pytest；只有明确验证过依赖齐全时才使用系统 `python3`。
+
+### 2026-07-24 环境错误复盘
+
+- 错误现象：沙箱外 AXI VIP 回归运行期间，沙箱内并发链接同一个 `xdebug/xdebug` 可执行文件，测试进程短暂遇到 `Permission denied`。
+- 误判原因：把编译和真实回归视为互不影响，忽略它们共享工作区中的同一可执行产物。
+- 以后规则：真实 xdebug/NPI/VIP 回归运行期间禁止并发构建或链接 xdebug；先完成构建，再串行启动宿主回归。

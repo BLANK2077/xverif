@@ -23,8 +23,49 @@ namespace xdebug_waveform {
 
 namespace {
 
-constexpr std::uint32_t kAxiFingerprintVersion = 1;
+constexpr std::uint32_t kAxiFingerprintVersion = 2;
 const char* kAxiResultTypeTag = "axi_result.v1";
+
+int declared_width(npiFsdbFileHandle file, const std::string& signal) {
+    const FsdbSignalWidth width = fsdb_signal_width(file, signal);
+    return width.reliable ? width.width : 0;
+}
+
+void decorate_transaction_widths(npiFsdbFileHandle file,
+                                 const AxiConfig& config,
+                                 AxiTransaction& txn) {
+    txn.addr_signal = txn.is_write ? config.awaddr : config.araddr;
+    txn.id_signal = txn.is_write ? config.awid : config.arid;
+    txn.len_signal = txn.is_write ? config.awlen : config.arlen;
+    txn.size_signal = txn.is_write ? config.awsize : config.arsize;
+    txn.burst_signal = txn.is_write ? config.awburst : config.arburst;
+    txn.data_signal = txn.is_write ? config.wdata : config.rdata;
+    txn.wstrb_signal = txn.is_write ? config.wstrb : std::string();
+    txn.resp_signal = txn.is_write ? config.bresp : config.rresp;
+    txn.addr_width = declared_width(file, txn.addr_signal);
+    txn.id_width = declared_width(file, txn.id_signal);
+    txn.len_width = declared_width(file, txn.len_signal);
+    txn.size_width = declared_width(file, txn.size_signal);
+    txn.burst_width = declared_width(file, txn.burst_signal);
+    txn.data_width = declared_width(file, txn.data_signal);
+    txn.wstrb_width = txn.wstrb_signal.empty()
+        ? 0 : declared_width(file, txn.wstrb_signal);
+    txn.resp_width = declared_width(file, txn.resp_signal);
+}
+
+void decorate_result_widths(npiFsdbFileHandle file,
+                            const AxiConfig& config,
+                            AxiResult& result) {
+    auto decorate = [&](std::vector<AxiTransaction>& transactions) {
+        for (auto& txn : transactions)
+            decorate_transaction_widths(file, config, txn);
+    };
+    decorate(result.all);
+    decorate(result.writes);
+    decorate(result.reads);
+    decorate(result.pending_writes);
+    decorate(result.pending_reads);
+}
 
 std::string normalized_axi_config_semantics(const AxiConfig& c) {
     nlohmann::ordered_json j;
@@ -300,6 +341,7 @@ bool AxiAnalyzer::analyze(const std::string& name, npiFsdbFileHandle file,
 
     std::shared_ptr<AxiResult> result(new AxiResult(
         tracker.finish(min_time, max_time, !truncated)));
+    decorate_result_widths(file, config, *result);
     result->diagnostics.full_scan_count = 1;
     const std::uint64_t resident_bytes = estimate_axi_result_bytes(*result);
     if (!repository_->update_canonical_build_bytes(

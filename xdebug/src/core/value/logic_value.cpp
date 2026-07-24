@@ -9,6 +9,8 @@ namespace xdebug_core {
 
 namespace {
 
+thread_local ValueRenderFormat g_value_render_format = ValueRenderFormat::Hex;
+
 std::string trim(std::string s) {
     while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.erase(s.begin());
     while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.pop_back();
@@ -214,6 +216,19 @@ std::string value_render_format_text(ValueRenderFormat format) {
     return "hex";
 }
 
+ValueRenderFormat current_value_render_format() {
+    return g_value_render_format;
+}
+
+ScopedValueRenderFormat::ScopedValueRenderFormat(ValueRenderFormat format)
+    : previous_(g_value_render_format) {
+    g_value_render_format = format;
+}
+
+ScopedValueRenderFormat::~ScopedValueRenderFormat() {
+    g_value_render_format = previous_;
+}
+
 bool is_legacy_0x_literal(const std::string& text) {
     std::string s = trim(text);
     return s.size() > 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X');
@@ -244,7 +259,16 @@ LogicValue logic_value_from_fsdb_raw(const std::string& raw, char radix, int wid
         body = s.substr(2);
     }
     int width = width_hint > 0 ? width_hint : explicit_width;
-    return from_body(raw, r, body, width, width > 0);
+    LogicValue value = from_body(raw, r, body, width, width > 0);
+    // A binary FSDB string often happens to contain every declared bit, but
+    // its text length is not the signal's declared width contract.  Only an
+    // explicit literal width or an NPI-derived width hint is reliable here.
+    if (value.valid && width <= 0) {
+        value.width = 0;
+        value.width_reliable = false;
+        value.display = "'h" + bits_to_hex(value.bits);
+    }
+    return value;
 }
 
 LogicValue logic_value_from_bits(const std::string& bits, int width_hint) {
@@ -299,6 +323,16 @@ LogicJson logic_value_json(const LogicValue& value, ValueRenderFormat format) {
         out["has_z"] = value.has_z;
     }
     return out;
+}
+
+std::string render_logic_value(const LogicValue& value,
+                               ValueRenderFormat format) {
+    LogicJson rendered = logic_value_json(value, format);
+    return rendered.value("value", logic_value_compact_string(value));
+}
+
+std::string render_logic_value(const LogicValue& value) {
+    return render_logic_value(value, current_value_render_format());
 }
 
 void apply_value_render_format(LogicJson& response, ValueRenderFormat format) {
@@ -362,6 +396,7 @@ bool canonical_value_object(const LogicJson& value) {
 void collect_width_diagnostics(const LogicJson& value,
                                const std::string& role,
                                const std::string& inherited_signal,
+                               const std::string& default_reason,
                                LogicJson& diagnostics,
                                std::set<std::string>& seen,
                                bool& found_value) {
@@ -382,7 +417,7 @@ void collect_width_diagnostics(const LogicJson& value,
         diagnostics.push_back({
             {"signal", signal.empty() ? LogicJson(nullptr) : LogicJson(signal)},
             {"role", literal_role},
-            {"reason", "npi_range_size_unavailable"}
+            {"reason", default_reason}
         });
     };
 
@@ -400,6 +435,7 @@ void collect_width_diagnostics(const LogicJson& value,
                 value[index],
                 role + "[" + std::to_string(index) + "]",
                 signal,
+                default_reason,
                 diagnostics,
                 seen,
                 found_value);
@@ -412,7 +448,8 @@ void collect_width_diagnostics(const LogicJson& value,
         const std::string child_role =
             role.empty() ? it.key() : role + "." + it.key();
         collect_width_diagnostics(
-            it.value(), child_role, signal, diagnostics, seen, found_value);
+            it.value(), child_role, signal, default_reason,
+            diagnostics, seen, found_value);
     }
 }
 
@@ -428,9 +465,33 @@ void apply_value_width_summary(LogicJson& response) {
     }
     LogicJson diagnostics = LogicJson::array();
     std::set<std::string> seen;
+    if (response.contains("summary") && response["summary"].is_object() &&
+        response["summary"].contains("width_diagnostics") &&
+        response["summary"]["width_diagnostics"].is_array()) {
+        for (const auto& diagnostic :
+             response["summary"]["width_diagnostics"]) {
+            if (!diagnostic.is_object()) continue;
+            const std::string signal =
+                diagnostic.contains("signal") &&
+                diagnostic["signal"].is_string()
+                    ? diagnostic["signal"].get<std::string>()
+                    : std::string();
+            const std::string role =
+                diagnostic.value("role", std::string());
+            seen.insert(signal + "\x1f" + role);
+            diagnostics.push_back(diagnostic);
+        }
+    }
+    const bool stream_response =
+        response.contains("summary") && response["summary"].is_object() &&
+        response["summary"].contains("stream");
+    const std::string default_reason = stream_response
+        ? "derived_width_unavailable"
+        : "npi_range_size_unavailable";
     bool found_value = false;
     collect_width_diagnostics(
-        response, std::string(), root_signal, diagnostics, seen, found_value);
+        response, std::string(), root_signal, default_reason,
+        diagnostics, seen, found_value);
     if (!found_value) return;
     if (!response.contains("summary") || !response["summary"].is_object())
         response["summary"] = LogicJson::object();

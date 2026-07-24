@@ -25,6 +25,15 @@ enum class ValueRenderFormat { Hex, Bin, Dec };
 
 bool parse_value_render_format(const std::string& text, ValueRenderFormat& out);
 std::string value_render_format_text(ValueRenderFormat format);
+ValueRenderFormat current_value_render_format();
+
+class ScopedValueRenderFormat {
+public:
+    explicit ScopedValueRenderFormat(ValueRenderFormat format);
+    ~ScopedValueRenderFormat();
+private:
+    ValueRenderFormat previous_;
+};
 
 LogicValue logic_value_from_fsdb_raw(const std::string& raw, char radix,
                                      int width_hint = 0);
@@ -33,6 +42,9 @@ LogicValue parse_user_logic_literal(const std::string& text);
 
 LogicJson logic_value_json(const LogicValue& value,
                            ValueRenderFormat format = ValueRenderFormat::Hex);
+std::string render_logic_value(const LogicValue& value,
+                               ValueRenderFormat format);
+std::string render_logic_value(const LogicValue& value);
 // Re-render every logic-value JSON object in a response tree.  Only objects
 // carrying the canonical bits field are touched, so unrelated strings such as
 // times, paths and exported-file metadata keep their original meaning.

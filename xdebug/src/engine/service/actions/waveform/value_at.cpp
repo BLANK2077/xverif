@@ -103,45 +103,14 @@ public:
         Json clock_error;
         if (clock_sampled && !parse_point_clock_args(args, clock_spec, clock_error)) return clock_error;
 
-        if (args.value("format", std::string()) == "array_indexed") {
-            return make_handler_error("UNSUPPORTED_AGGREGATE_QUERY",
-                "aggregate and indexed-element reads are not supported by this FSDB/NPI capability profile",
-                {{"invalid_arg", "args.format"}, {"received", "array_indexed"},
-                 {"supported", Json::array({"h", "hex", "b", "bin", "d", "dec"})},
-                 {"reason", "xdebug does not rewrite aggregate paths or infer indexed leaves"}});
-        }
-
-        if (args.contains("format") && args.contains("value_format") &&
-            args["format"].is_string() && args["value_format"].is_string() &&
-            args["format"].get<std::string>() != "array_indexed") {
-            xdebug_waveform::ValueRenderFormat legacy, requested;
-            if (xdebug_waveform::parse_value_render_format(args["format"].get<std::string>(), legacy) &&
-                xdebug_waveform::parse_value_render_format(args["value_format"].get<std::string>(), requested) &&
-                legacy != requested)
-                return waveform_invalid_arg_error(action_name(), "args.value_format",
-                    "value_format must match legacy args.format when both are provided",
-                    "the same normalized value format as args.format");
-        }
         npiFsdbTime fsdb_time = 0;
         std::string time_error;
         if (!xdebug_waveform::parse_user_time(time_str.c_str(), false, fsdb_time, time_error))
             return waveform_time_error(action_name(), "args.time",
                                        time_error.empty() ? "failed to parse time: " + time_str : time_error);
 
-        // New value_format needs bit-accurate input so decimal can preserve
-        // X/Z by reporting an effective binary format.  Preserve legacy
-        // format's NPI radix and its historical display shape otherwise.
-        char read_format = 'h';
-        if (args.contains("value_format")) {
-            read_format = 'b';
-        } else {
-            const std::string legacy_format = args.value("format", std::string("h"));
-            if (!legacy_format.empty()) {
-                const char candidate = static_cast<char>(std::tolower(
-                    static_cast<unsigned char>(legacy_format[0])));
-                if (candidate == 'h' || candidate == 'b' || candidate == 'd') read_format = candidate;
-            }
-        }
+        // Always read bit-accurate input; value_format controls rendering only.
+        const char read_format = 'b';
         npiFsdbValType vtype = xdebug_waveform::parse_format(read_format);
 
         std::string formatted_time = xdebug_core::format_time(g_fsdb_file, fsdb_time);

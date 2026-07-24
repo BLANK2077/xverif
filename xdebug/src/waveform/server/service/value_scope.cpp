@@ -247,8 +247,10 @@ Json apb_txn_to_json(const xdebug_waveform::ApbTransaction* txn, bool include_ty
     if (!txn) return j;
     j["time"] = format_time(txn->time);
     if (include_type) j["type"] = txn->is_write ? "WR" : "RD";
-    j["addr"] = "'h" + txn->addr;
-    j["data"] = "'h" + txn->data;
+    j["addr"] = xdebug_core::render_logic_value(
+        xdebug_core::logic_value_from_fsdb_raw(txn->addr, 'h', txn->addr_width));
+    j["data"] = xdebug_core::render_logic_value(
+        xdebug_core::logic_value_from_fsdb_raw(txn->data, 'h', txn->data_width));
     j["has_error"] = txn->has_error;
     return j;
 }

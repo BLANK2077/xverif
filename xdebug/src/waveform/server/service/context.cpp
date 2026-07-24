@@ -78,6 +78,13 @@ Json wave_value_json(const std::string& raw, char prefix) {
     return logic_value_json(logic_value_from_fsdb_raw(raw, prefix));
 }
 
+Json wave_value_json(const std::string& raw, char prefix,
+                     const std::string& signal_path) {
+    FsdbSignalWidth width = fsdb_signal_width(g_fsdb_file, signal_path);
+    return logic_value_json(logic_value_from_fsdb_raw(
+        raw, prefix, width.reliable ? width.width : 0));
+}
+
 bool stat_fsdb(long& mtime,
                       long long& size,
                       unsigned long long& dev,

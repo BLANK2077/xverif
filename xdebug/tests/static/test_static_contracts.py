@@ -30,6 +30,10 @@ def test_axi_response_schemas_are_generated_and_synced() -> None:
     assert _module("sync_axi_response_schemas").main(["--check"]) == 0
 
 
+def test_value_response_schemas_are_generated_and_synced() -> None:
+    assert _module("sync_value_response_schemas").main(["--check"]) == 0
+
+
 def test_protocol_statistics_response_schemas_are_generated_and_synced() -> None:
     assert _module("sync_protocol_statistics_response_schemas").main(["--check"]) == 0
 

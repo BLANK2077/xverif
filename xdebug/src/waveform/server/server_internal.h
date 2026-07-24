@@ -80,6 +80,8 @@ std::string json_response(const Json& j);
 bool contains_xz_value(const std::string& value);
 std::string with_value_prefix(const std::string& value, char prefix);
 Json wave_value_json(const std::string& raw, char prefix = 'b');
+Json wave_value_json(const std::string& raw, char prefix,
+                     const std::string& signal_path);
 bool stat_fsdb(long& mtime, long long& size, unsigned long long& dev, unsigned long long& inode);
 bool fsdb_changed();
 void send_error(int client_fd, const std::string& message);
