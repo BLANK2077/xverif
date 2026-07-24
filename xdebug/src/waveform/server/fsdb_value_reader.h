@@ -2,6 +2,7 @@
 
 #include "npi.h"
 #include "npi_fsdb.h"
+#include "core/value/logic_value.h"
 #include <string>
 #include <vector>
 
@@ -10,6 +11,24 @@ namespace xdebug_waveform {
 // Map format char to NPI value type
 // 'H' -> HexStrVal, 'B' -> BinStrVal, 'D' -> DecStrVal
 npiFsdbValType parse_format(char fmt);
+
+struct FsdbSignalWidth {
+    int width = 0;
+    bool reliable = false;
+    std::string reason;
+};
+
+// Resolve and cache the declared packed width for the lifetime of the engine
+// process.  A waveform session owns one FSDB, so signal handles remain scoped
+// to the same database until process exit.
+FsdbSignalWidth fsdb_signal_width(npiFsdbSigHandle signal);
+FsdbSignalWidth fsdb_signal_width(npiFsdbFileHandle file,
+                                  const std::string& signal_path);
+
+xdebug_core::LogicValue logic_value_from_fsdb_signal(
+    npiFsdbSigHandle signal,
+    const std::string& raw,
+    char radix);
 
 // Read a single signal value at a specific time
 bool read_sig_value_at(npiFsdbFileHandle file,

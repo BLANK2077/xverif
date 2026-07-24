@@ -144,11 +144,8 @@ std::string bit_string_from_value(const std::string& value) {
 }
 
 Json bit_value_json(const std::string& bits) {
-    Json value;
-    value["value"] = std::string("'b") + bits;
-    value["known"] = !bits.empty() && !xdebug_waveform::expr_value_has_unknown(bits);
-    value["width"] = bits.size();
-    return value;
+    return logic_value_json(
+        logic_value_from_bits(bits, static_cast<int>(bits.size())));
 }
 
 std::string pad_bits_for_compare(const std::string& bits, size_t width) {

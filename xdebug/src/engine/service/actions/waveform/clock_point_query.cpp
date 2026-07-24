@@ -3,6 +3,7 @@
 #include "service/engine_action_handler.h"
 
 #include "core/npi/time_contract.h"
+#include "waveform/server/fsdb_value_reader.h"
 #include "waveform/value/logic_value.h"
 
 #include "npi_L1.h"
@@ -27,23 +28,26 @@ Json invalid_arg(const std::string& arg, const std::string& expected) {
          {"example_note", "Example only; use the same clock fields on value/list/verify actions that sample waveform values."}});
 }
 
-Json value_object(const std::string& raw, char fmt) {
+Json value_object(npiFsdbSigHandle signal, const std::string& raw, char fmt) {
     // The raw FSDB radix only affects parsing.  Display formatting is applied
     // once at the engine response boundary so all value-bearing fields agree.
     return xdebug_waveform::logic_value_json(
-        xdebug_waveform::logic_value_from_fsdb_raw(raw, fmt));
+        xdebug_waveform::logic_value_from_fsdb_signal(signal, raw, fmt));
 }
 
 Json missing_edge_cell() {
     return Json{{"status", "missing_edge"}, {"value", nullptr}};
 }
 
-Json cell_json(npiFsdbFileHandle fsdb, const xdebug_waveform::ClockPointCell& cell, char prefix) {
+Json cell_json(npiFsdbFileHandle fsdb,
+               npiFsdbSigHandle signal,
+               const xdebug_waveform::ClockPointCell& cell,
+               char prefix) {
     if (cell.status == "missing_edge") return missing_edge_cell();
     Json out = {{"status", cell.status.empty() ? "missing_value" : cell.status}};
     if (cell.status == "ok") {
         if (cell.has_value_time) out["time"] = xdebug_core::format_time(fsdb, cell.value_time);
-        out["value"] = value_object(cell.raw_value, prefix);
+        out["value"] = value_object(signal, cell.raw_value, prefix);
     } else {
         out["value"] = nullptr;
     }
@@ -52,19 +56,25 @@ Json cell_json(npiFsdbFileHandle fsdb, const xdebug_waveform::ClockPointCell& ce
 
 Json sample_rows_json(npiFsdbFileHandle fsdb,
                       const std::vector<xdebug_waveform::ClockPointRow>& rows,
+                      const std::vector<xdebug_waveform::ClockPointSignal>& signals,
                       const char* key,
                       const Json& time,
                       char prefix) {
     if (time.is_null()) return Json::array();
     Json out = Json::array();
-    for (const auto& row : rows) {
+    for (size_t index = 0; index < rows.size(); ++index) {
+        const auto& row = rows[index];
         const xdebug_waveform::ClockPointCell* cell = &row.middle;
         if (std::string(key) == "before") cell = &row.before;
         else if (std::string(key) == "after") cell = &row.after;
         out.push_back({{"signal", row.label},
                        {"path", row.path},
                        {"time", time},
-                       {"cell", cell_json(fsdb, *cell, prefix)}});
+                       {"cell", cell_json(
+                           fsdb,
+                           index < signals.size() ? signals[index].handle : nullptr,
+                           *cell,
+                           prefix)}});
     }
     return out;
 }
@@ -151,13 +161,16 @@ bool build_clock_point_query(npiFsdbFileHandle fsdb,
     }
 
     Json rows = Json::array();
-    for (const auto& row_result : point_result.rows) {
+    for (size_t index = 0; index < point_result.rows.size(); ++index) {
+        const auto& row_result = point_result.rows[index];
+        npiFsdbSigHandle signal =
+            index < point_signals.size() ? point_signals[index].handle : nullptr;
         Json row;
         row["signal"] = row_result.label;
         row["path"] = row_result.path;
-        row["before"] = cell_json(fsdb, row_result.before, value_prefix);
-        row["middle"] = cell_json(fsdb, row_result.middle, value_prefix);
-        row["after"] = cell_json(fsdb, row_result.after, value_prefix);
+        row["before"] = cell_json(fsdb, signal, row_result.before, value_prefix);
+        row["middle"] = cell_json(fsdb, signal, row_result.middle, value_prefix);
+        row["after"] = cell_json(fsdb, signal, row_result.after, value_prefix);
         rows.push_back(row);
     }
 
@@ -192,11 +205,11 @@ bool build_clock_point_query(npiFsdbFileHandle fsdb,
     out.clock_context = context;
     out.rows = rows;
     out.samples = {
-        {"before", sample_rows_json(fsdb, point_result.rows, "before",
+        {"before", sample_rows_json(fsdb, point_result.rows, point_signals, "before",
             context["previous_sample_time"], value_prefix)},
-        {"middle", sample_rows_json(fsdb, point_result.rows, "middle",
+        {"middle", sample_rows_json(fsdb, point_result.rows, point_signals, "middle",
             context["requested_time"], value_prefix)},
-        {"after", sample_rows_json(fsdb, point_result.rows, "after",
+        {"after", sample_rows_json(fsdb, point_result.rows, point_signals, "after",
             context["next_sample_time"], value_prefix)}
     };
     return true;

@@ -1,4 +1,5 @@
 #include "api/text_response_builder.h"
+#include "core/value/logic_value.h"
 
 #include <algorithm>
 #include <cctype>
@@ -33,16 +34,6 @@ std::string trim_copy(const std::string& input) {
     return input.substr(begin, end - begin);
 }
 
-std::string lower_no_underscores(std::string text) {
-    std::string out;
-    out.reserve(text.size());
-    for (char c : text) {
-        if (c == '_' || std::isspace(static_cast<unsigned char>(c))) continue;
-        out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-    }
-    return out;
-}
-
 bool contains_xz_text(const std::string& text) {
     std::string s = trim_copy(text);
     size_t start = 0;
@@ -63,64 +54,6 @@ bool is_value_object(const Json& value) {
     return value.contains("known") || value.contains("bits") || value.contains("width");
 }
 
-std::string strip_value_prefix(const std::string& text, char& base) {
-    std::string s = trim_copy(text);
-    base = 0;
-    size_t tick = s.find('\'');
-    if (tick != std::string::npos && tick + 1 < s.size()) {
-        base = static_cast<char>(std::tolower(static_cast<unsigned char>(s[tick + 1])));
-        return s.substr(tick + 2);
-    }
-    if (s.size() > 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
-        base = 'h';
-        return s.substr(2);
-    }
-    if (s.size() > 2 && s[0] == '0' && (s[1] == 'b' || s[1] == 'B')) {
-        base = 'b';
-        return s.substr(2);
-    }
-    base = 'h';
-    return s;
-}
-
-std::string bits_to_hex(std::string bits) {
-    bits = lower_no_underscores(bits);
-    if (bits.empty()) return "0";
-    size_t pad = (4 - bits.size() % 4) % 4;
-    bits.insert(bits.begin(), pad, '0');
-    static const char* hex = "0123456789abcdef";
-    std::string out;
-    for (size_t i = 0; i < bits.size(); i += 4) {
-        bool has_x = false;
-        bool has_z = false;
-        int v = 0;
-        for (size_t j = 0; j < 4; ++j) {
-            char c = bits[i + j];
-            if (c == 'x') has_x = true;
-            else if (c == 'z') has_z = true;
-            else if (c != '0' && c != '1') has_x = true;
-            v = (v << 1) | (c == '1' ? 1 : 0);
-        }
-        out.push_back(has_x ? 'x' : (has_z ? 'z' : hex[v]));
-    }
-    return out.empty() ? "0" : out;
-}
-
-std::string bin_to_hex(std::string bits) {
-    return bits_to_hex(std::move(bits));
-}
-
-std::string dec_to_hex(const std::string& text) {
-    std::string clean = lower_no_underscores(text);
-    if (clean.empty() || contains_xz_text(clean)) return clean;
-    char* end = nullptr;
-    unsigned long long v = std::strtoull(clean.c_str(), &end, 10);
-    if (!end || *end != '\0') return clean;
-    char buf[32];
-    std::snprintf(buf, sizeof(buf), "%llx", v);
-    return buf;
-}
-
 std::string value_json_text(const Json& value) {
     if (value.is_null()) return "";
     if (value.is_string()) return value.get<std::string>();
@@ -137,36 +70,19 @@ std::string compact_value_object(const Json& value) {
     int width = value.value("width", 0);
     const bool known = value.value("known", !contains_xz_text(raw) && !contains_xz_text(bits));
 
-    std::string hex_text;
-    int inferred_width = width;
+    xdebug_core::LogicValue logic;
     if (!bits.empty()) {
-        std::string clean_bits = lower_no_underscores(bits);
-        if (inferred_width <= 0) inferred_width = static_cast<int>(clean_bits.size());
-        hex_text = bits_to_hex(clean_bits);
+        logic = xdebug_core::logic_value_from_bits(bits, width);
     } else {
-        char base = 0;
-        std::string body = strip_value_prefix(raw, base);
-        body = lower_no_underscores(body);
-        if (base == 'b') {
-            if (inferred_width <= 0) inferred_width = static_cast<int>(body.size());
-            hex_text = bin_to_hex(body);
-            bits = body;
-        } else if (base == 'd') {
-            hex_text = dec_to_hex(body);
-        } else {
-            hex_text = body.empty() ? "0" : body;
-        }
+        logic = xdebug_core::logic_value_from_fsdb_raw(raw, 'h', width);
     }
+    std::string out = xdebug_core::logic_value_compact_string(logic);
 
-    if (hex_text.empty()) hex_text = "0";
-    std::string out = inferred_width > 0
-        ? std::to_string(inferred_width) + "'h" + hex_text
-        : "'h" + hex_text;
-
-    if (!known || contains_xz_text(raw) || contains_xz_text(bits) || contains_xz_text(hex_text)) {
+    if (!known || xdebug_core::logic_value_has_xz(logic)) {
         out += " known=false";
-        if (!bits.empty()) out += " bits=" + lower_no_underscores(bits);
-        if (inferred_width > 0) out += " width=" + std::to_string(inferred_width);
+        if (!logic.bits.empty()) out += " bits=" + logic.bits;
+        if (logic.width_reliable && logic.width > 0)
+            out += " width=" + std::to_string(logic.width);
     }
     return out;
 }

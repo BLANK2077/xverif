@@ -176,7 +176,8 @@ public:
                     row["middle"] = {
                         {"status", "ok"},
                         {"value", xdebug_waveform::logic_value_json(
-                            xdebug_waveform::logic_value_from_fsdb_raw(raw_value, read_format))}
+                            xdebug_waveform::logic_value_from_fsdb_signal(
+                                signal_handle, raw_value, read_format))}
                     };
                 }
                 point.rows.push_back(row);

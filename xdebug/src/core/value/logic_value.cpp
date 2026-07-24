@@ -3,8 +3,9 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <set>
 
-namespace xdebug_waveform {
+namespace xdebug_core {
 
 namespace {
 
@@ -275,8 +276,8 @@ LogicValue parse_user_logic_literal(const std::string& text) {
     return from_body(text, 'd', s, 0, false);
 }
 
-Json logic_value_json(const LogicValue& value, ValueRenderFormat format) {
-    Json out;
+LogicJson logic_value_json(const LogicValue& value, ValueRenderFormat format) {
+    LogicJson out;
     if (format == ValueRenderFormat::Bin) {
         out["value"] = sv_literal(value, 'b', value.bits.empty() ? logic_value_compact_string(value) : value.bits);
     } else if (format == ValueRenderFormat::Dec && value.known && !value.bits.empty()) {
@@ -300,7 +301,7 @@ Json logic_value_json(const LogicValue& value, ValueRenderFormat format) {
     return out;
 }
 
-void apply_value_render_format(Json& response, ValueRenderFormat format) {
+void apply_value_render_format(LogicJson& response, ValueRenderFormat format) {
     if (response.is_array()) {
         for (auto& item : response) apply_value_render_format(item, format);
         return;
@@ -314,11 +315,127 @@ void apply_value_render_format(Json& response, ValueRenderFormat format) {
         response.contains("value") && response["value"].is_string()) {
         const int width = response.value("width", 0);
         LogicValue value = logic_value_from_bits(response["bits"].get<std::string>(), width);
-        Json rendered = logic_value_json(value, format);
+        LogicJson rendered = logic_value_json(value, format);
         for (auto it = rendered.begin(); it != rendered.end(); ++it) response[it.key()] = it.value();
     }
     for (auto it = response.begin(); it != response.end(); ++it)
         apply_value_render_format(it.value(), format);
+}
+
+namespace {
+
+bool sv_literal_width(const std::string& text, bool& sized) {
+    std::string value = trim(text);
+    const size_t tick = value.find('\'');
+    if (tick == std::string::npos || tick + 2 > value.size()) return false;
+    sized = tick > 0;
+    for (size_t i = 0; i < tick; ++i) {
+        if (!std::isdigit(static_cast<unsigned char>(value[i]))) return false;
+    }
+    char radix = static_cast<char>(
+        std::tolower(static_cast<unsigned char>(value[tick + 1])));
+    if (radix != 'h' && radix != 'b' && radix != 'd') return false;
+    if (tick + 2 == value.size()) return false;
+    for (size_t i = tick + 2; i < value.size(); ++i) {
+        char c = static_cast<char>(
+            std::tolower(static_cast<unsigned char>(value[i])));
+        if (c == '_') continue;
+        if (radix == 'h') {
+            if (!std::isdigit(static_cast<unsigned char>(c)) &&
+                (c < 'a' || c > 'f') && c != 'x' && c != 'z') return false;
+        } else if (radix == 'b') {
+            if (c != '0' && c != '1' && c != 'x' && c != 'z') return false;
+        } else if (!std::isdigit(static_cast<unsigned char>(c))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool canonical_value_object(const LogicJson& value) {
+    return value.is_object() && value.contains("value") &&
+           value["value"].is_string() &&
+           (value.contains("known") || value.contains("bits") ||
+            value.contains("width"));
+}
+
+void collect_width_diagnostics(const LogicJson& value,
+                               const std::string& role,
+                               const std::string& inherited_signal,
+                               LogicJson& diagnostics,
+                               std::set<std::string>& seen,
+                               bool& found_value) {
+    std::string signal = inherited_signal;
+    if (value.is_object() && value.contains("signal") &&
+        value["signal"].is_string()) {
+        signal = value["signal"].get<std::string>();
+    }
+
+    auto record_literal = [&](const std::string& literal,
+                              const std::string& literal_role) {
+        bool sized = false;
+        if (!sv_literal_width(literal, sized)) return;
+        found_value = true;
+        if (sized) return;
+        const std::string key = signal + "\x1f" + literal_role;
+        if (!seen.insert(key).second) return;
+        diagnostics.push_back({
+            {"signal", signal.empty() ? LogicJson(nullptr) : LogicJson(signal)},
+            {"role", literal_role},
+            {"reason", "npi_range_size_unavailable"}
+        });
+    };
+
+    if (canonical_value_object(value)) {
+        record_literal(value["value"].get<std::string>(), role);
+        return;
+    }
+    if (value.is_string()) {
+        record_literal(value.get<std::string>(), role);
+        return;
+    }
+    if (value.is_array()) {
+        for (size_t index = 0; index < value.size(); ++index) {
+            collect_width_diagnostics(
+                value[index],
+                role + "[" + std::to_string(index) + "]",
+                signal,
+                diagnostics,
+                seen,
+                found_value);
+        }
+        return;
+    }
+    if (!value.is_object()) return;
+    for (auto it = value.begin(); it != value.end(); ++it) {
+        if (it.key() == "summary" || it.key() == "width_diagnostics") continue;
+        const std::string child_role =
+            role.empty() ? it.key() : role + "." + it.key();
+        collect_width_diagnostics(
+            it.value(), child_role, signal, diagnostics, seen, found_value);
+    }
+}
+
+} // namespace
+
+void apply_value_width_summary(LogicJson& response) {
+    if (!response.is_object()) return;
+    std::string root_signal;
+    if (response.contains("summary") && response["summary"].is_object() &&
+        response["summary"].contains("signal") &&
+        response["summary"]["signal"].is_string()) {
+        root_signal = response["summary"]["signal"].get<std::string>();
+    }
+    LogicJson diagnostics = LogicJson::array();
+    std::set<std::string> seen;
+    bool found_value = false;
+    collect_width_diagnostics(
+        response, std::string(), root_signal, diagnostics, seen, found_value);
+    if (!found_value) return;
+    if (!response.contains("summary") || !response["summary"].is_object())
+        response["summary"] = LogicJson::object();
+    response["summary"]["value_width_complete"] = diagnostics.empty();
+    response["summary"]["width_diagnostics"] = diagnostics;
 }
 
 std::string logic_value_compact_string(const LogicValue& value) {
@@ -336,4 +453,4 @@ bool logic_value_has_xz(const LogicValue& value) {
     return !value.known || value.has_x || value.has_z;
 }
 
-} // namespace xdebug_waveform
+} // namespace xdebug_core

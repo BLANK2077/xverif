@@ -178,7 +178,8 @@ public:
                     {{"signal", signal}, {"time", formatted_time}});
             }
             middle_value = xdebug_waveform::logic_value_json(
-                xdebug_waveform::logic_value_from_fsdb_raw(raw_value, read_format));
+                xdebug_waveform::logic_value_from_fsdb_signal(
+                    signal_handle, raw_value, read_format));
         }
         out["value"] = middle_value;
         const std::string sampling_mode = clock_sampled ? "clock_sampled" : "raw_time";

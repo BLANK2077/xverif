@@ -738,12 +738,13 @@ static bool handle_client(int client_fd, bool& should_quit) {
     if (data.contains("error"))
         return send_response(client_fd, action_error_response(request, data));
     append_sampling_contract(args, data);
-    std::string value_format = args.value("value_format", args.value("format", std::string()));
-    xdebug_waveform::ValueRenderFormat render_format;
-    if (!value_format.empty() &&
-        xdebug_waveform::parse_value_render_format(value_format, render_format)) {
+    std::string value_format =
+        args.value("value_format", args.value("format", std::string("hex")));
+    xdebug_waveform::ValueRenderFormat render_format =
+        xdebug_waveform::ValueRenderFormat::Hex;
+    if (xdebug_waveform::parse_value_render_format(value_format, render_format))
         xdebug_waveform::apply_value_render_format(data, render_format);
-    }
+    xdebug_waveform::apply_value_width_summary(data);
     Json resp = ok_response(data);
     // Propagate truncation flag from handler to response envelope.
     if (data.contains("truncated") && data["truncated"].is_boolean() &&

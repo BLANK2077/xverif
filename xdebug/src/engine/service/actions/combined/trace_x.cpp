@@ -38,7 +38,10 @@ std::string x_mask_from_bits(const std::string& bits) {
     std::string mask;
     mask.reserve(bits.size());
     for (char bit : bits) mask.push_back(bit == 'x' || bit == 'X' ? '1' : '0');
-    return "'b" + mask;
+    return xdebug_waveform::logic_value_json(
+        xdebug_waveform::logic_value_from_bits(
+            mask, static_cast<int>(mask.size())),
+        xdebug_waveform::ValueRenderFormat::Bin)["value"].get<std::string>();
 }
 
 bool is_control_kind(const std::string& kind) {

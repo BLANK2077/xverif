@@ -6,6 +6,7 @@
 #include "fsdb_scan_utils.h"
 #include <set>
 #include <map>
+#include <unordered_map>
 
 namespace xdebug_waveform {
 
@@ -15,6 +16,44 @@ npiFsdbValType parse_format(char fmt) {
         case 'D': case 'd': return npiFsdbDecStrVal;
         case 'H': case 'h': default: return npiFsdbHexStrVal;
     }
+}
+
+FsdbSignalWidth fsdb_signal_width(npiFsdbSigHandle signal) {
+    static std::unordered_map<npiFsdbSigHandle, FsdbSignalWidth> cache;
+    auto found = cache.find(signal);
+    if (found != cache.end()) return found->second;
+
+    FsdbSignalWidth result;
+    if (!signal) {
+        result.reason = "signal_not_found";
+    } else {
+        NPI_INT32 width = 0;
+        if (npi_fsdb_sig_property(npiFsdbSigRangeSize, signal, &width) &&
+            width > 0) {
+            result.width = static_cast<int>(width);
+            result.reliable = true;
+        } else {
+            result.reason = "npi_range_size_unavailable";
+        }
+    }
+    cache[signal] = result;
+    return result;
+}
+
+FsdbSignalWidth fsdb_signal_width(npiFsdbFileHandle file,
+                                  const std::string& signal_path) {
+    return fsdb_signal_width(
+        file ? npi_fsdb_sig_by_name(file, signal_path.c_str(), nullptr)
+             : nullptr);
+}
+
+xdebug_core::LogicValue logic_value_from_fsdb_signal(
+    npiFsdbSigHandle signal,
+    const std::string& raw,
+    char radix) {
+    FsdbSignalWidth metadata = fsdb_signal_width(signal);
+    return xdebug_core::logic_value_from_fsdb_raw(
+        raw, radix, metadata.reliable ? metadata.width : 0);
 }
 
 bool read_sig_value_at(npiFsdbFileHandle file,

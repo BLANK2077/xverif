@@ -37,6 +37,21 @@ int main() {
     assert(nested["stable"]["value"] == "8'bxxxxzzzz");
     assert(nested["changes"][0]["value"]["value"] == "8'd34");
     assert(nested["time"] == "10ns");
+    apply_value_width_summary(nested);
+    assert(nested["summary"]["value_width_complete"] == true);
+    assert(nested["summary"]["width_diagnostics"].empty());
+
+    Json incomplete = {
+        {"signal", "top.u.data"},
+        {"value", logic_value_json(fsdb_hex)}
+    };
+    apply_value_width_summary(incomplete);
+    assert(incomplete["summary"]["value_width_complete"] == false);
+    assert(incomplete["summary"]["width_diagnostics"].size() == 1);
+    assert(incomplete["summary"]["width_diagnostics"][0]["signal"] ==
+           "top.u.data");
+    assert(incomplete["summary"]["width_diagnostics"][0]["reason"] ==
+           "npi_range_size_unavailable");
 
     LogicValue user_sv = parse_user_logic_literal("8'h22");
     assert(user_sv.valid);

@@ -1,47 +1,28 @@
 #pragma once
 
-#include "json.hpp"
+#include "core/value/logic_value.h"
 
-#include <string>
-
+// Transitional source-compatibility surface for waveform code.  The canonical
+// implementation lives in core/value so frontend XOUT and the engine use the
+// same parser and renderer.
 namespace xdebug_waveform {
 
+using xdebug_core::LogicValue;
+using xdebug_core::ValueRenderFormat;
+using xdebug_core::apply_value_render_format;
+using xdebug_core::apply_value_width_summary;
+using xdebug_core::is_legacy_0x_literal;
+using xdebug_core::logic_value_compare_key;
+using xdebug_core::logic_value_compact_string;
+using xdebug_core::logic_value_from_bits;
+using xdebug_core::logic_value_from_fsdb_raw;
+using xdebug_core::logic_value_has_xz;
+using xdebug_core::logic_value_json;
+using xdebug_core::parse_user_logic_literal;
+using xdebug_core::parse_value_render_format;
+using xdebug_core::value_format_invalid_message;
+using xdebug_core::value_render_format_text;
+
 using Json = nlohmann::ordered_json;
-
-struct LogicValue {
-    std::string raw;
-    std::string display;
-    std::string bits;
-    int width = 0;
-    bool width_reliable = false;
-    bool known = true;
-    bool has_x = false;
-    bool has_z = false;
-    bool valid = true;
-    std::string error;
-};
-
-enum class ValueRenderFormat { Hex, Bin, Dec };
-
-bool parse_value_render_format(const std::string& text, ValueRenderFormat& out);
-std::string value_render_format_text(ValueRenderFormat format);
-
-LogicValue logic_value_from_fsdb_raw(const std::string& raw, char radix,
-                                     int width_hint = 0);
-LogicValue logic_value_from_bits(const std::string& bits, int width_hint = 0);
-LogicValue parse_user_logic_literal(const std::string& text);
-
-Json logic_value_json(const LogicValue& value,
-                      ValueRenderFormat format = ValueRenderFormat::Hex);
-// Re-render every logic-value JSON object in a response tree.  Only objects
-// carrying the canonical bits field are touched, so unrelated strings such as
-// times, paths and exported-file metadata keep their original meaning.
-void apply_value_render_format(Json& response, ValueRenderFormat format);
-std::string logic_value_compact_string(const LogicValue& value);
-std::string logic_value_compare_key(const LogicValue& value);
-bool logic_value_has_xz(const LogicValue& value);
-
-bool is_legacy_0x_literal(const std::string& text);
-std::string value_format_invalid_message(const std::string& value);
 
 } // namespace xdebug_waveform
