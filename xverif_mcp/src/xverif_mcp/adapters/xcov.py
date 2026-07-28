@@ -13,6 +13,19 @@ from xverif_loop.logging import configure_mcp_logging
 Json = Dict[str, Any]
 
 
+def _strip_xout_stream_framing(text: str) -> str:
+    """Remove native xcov stream markers from one MCP tool result."""
+    lines = text.splitlines()
+    if (len(lines) < 3
+            or not lines[0].startswith("XOUT_BEGIN ")
+            or not lines[-1].startswith("XOUT_END ")):
+        return text
+    body = lines[1:-1]
+    if body and not body[-1]:
+        body.pop()
+    return "\n".join(body) + ("\n" if body else "")
+
+
 class XverifCoverageAdapter:
     def __init__(self, mode: Optional[str] = None,
                  startup_timeout_sec: Optional[float] = None,
@@ -93,4 +106,7 @@ class XverifCoverageAdapter:
         self._sessions.close_all()
 
     def query(self, **kwargs: Any) -> Any:
-        return self._sessions.query(**kwargs)
+        result = self._sessions.query(**kwargs)
+        if kwargs.get("output_format", "xout") == "xout" and isinstance(result, str):
+            return _strip_xout_stream_framing(result)
+        return result

@@ -334,25 +334,35 @@ def test_cov_session_fake_lifecycle(monkeypatch: pytest.MonkeyPatch):
             "xverif_cov_session_open",
             {"name": "cov_fake", "vdb": "fake"},
         )
-        queried = await server.mcp.call_tool(
+        queried_json = await server.mcp.call_tool(
             "xverif_cov_query",
             {"session_id": "cov_fake", "action": "code_coverage.holes",
              "args": {"metrics": ["toggle", "branch"]},
              "limits": {"max_items": 1},
              "output_format": "json"},
         )
+        queried_xout = await server.mcp.call_tool(
+            "xverif_cov_query",
+            {"session_id": "cov_fake", "action": "code_coverage.summary",
+             "args": {"group_by": "metric"},
+             "output_format": "xout"},
+        )
         closed = await server.mcp.call_tool(
             "xverif_cov_session_close",
             {"session_id": "cov_fake"},
         )
-        return opened, queried, closed
+        return opened, queried_json, queried_xout, closed
 
-    opened, queried, _ = anyio.run(_run)
+    opened, queried_json, queried_xout, _ = anyio.run(_run)
     opened_payload = json.loads(opened[0].text)
-    queried_payload = json.loads(queried[0].text)
+    queried_payload = json.loads(queried_json[0].text)
+    queried_xout_text = queried_xout[0].text
     assert opened_payload["ok"] is True
     assert queried_payload["summary"]["matched_count"] == 1
     assert queried_payload["summary"]["returned"] == 1
+    assert queried_xout_text.startswith("@xcov.v1 ok action=code_coverage.summary")
+    assert "XOUT_BEGIN" not in queried_xout_text
+    assert "XOUT_END" not in queried_xout_text
 
 
 @pytest.mark.parametrize(
