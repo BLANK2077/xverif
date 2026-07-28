@@ -19,7 +19,7 @@ def run_counter_statistics(xdebug, fsdb):
         })
         for key in ("first", "final", "min", "max"):
             value = stats["data"][key]
-            require(isinstance(value, dict) and value["value"].startswith("'b"), "signal.statistics %s is not a bit value object" % key)
+            require(isinstance(value, dict) and value["value"].startswith("8'h"), "signal.statistics %s is not a canonical 8-bit hex value object" % key)
             require(value["known"] is True and value["width"] == 8, "signal.statistics %s width/known mismatch" % key)
 
         direct = r.query("counter.statistics", args={

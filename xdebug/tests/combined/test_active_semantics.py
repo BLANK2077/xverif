@@ -401,12 +401,31 @@ def test_active_trace_semantic_branches_and_gates(
         )
         assert chain_xout.startswith("@xdebug.trace.active_driver_chain.v1")
         assert "\nsummary:\n" in chain_xout
+        chain_summary_block = chain_xout.split(
+            "\nsummary:\n",
+            1,
+        )[1].split("\n\n", 1)[0]
+        chain_summary_lines = [
+            line
+            for line in chain_summary_block.splitlines()
+            if line.startswith("  ") and ":" in line
+        ]
+        assert chain_summary_lines
+        assert len({line.index(":") for line in chain_summary_lines}) == 1
         assert "\nsource: " in chain_xout
         assert "\nactive_signals:\n" in chain_xout
         assert "chain  hop  time" in chain_xout
         assert "relation  line  signal_path" in chain_xout
-        assert "termination       : assignment" in chain_xout
-        assert "termination_detail: constant_or_no_rhs_signal" in chain_xout
+        assert re.search(
+            r"^  termination\s+: assignment$",
+            chain_xout,
+            re.MULTILINE,
+        )
+        assert re.search(
+            r"^  termination_detail\s+: constant_or_no_rhs_signal$",
+            chain_xout,
+            re.MULTILINE,
+        )
         assert "\n>" in chain_xout
         for removed_section in ("\nchain:\n", "\nstats:\n", "\nchain_path:\n"):
             assert removed_section not in chain_xout

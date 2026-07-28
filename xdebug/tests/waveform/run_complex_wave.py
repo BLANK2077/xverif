@@ -725,7 +725,7 @@ def run_nonaxi(xdebug, fsdb):
                 "complete non-recursive scope.list must omit truncated")
 
         v = r.query("value.at", args={"signal": "ai_complex_top.sig_a", "clock": "ai_complex_top.clk", "time": "75ns", "value_format": "hex"})
-        require(v["data"]["value"]["value"] == "'h22" and v["data"]["value"]["known"] is True, "unexpected sig_a value")
+        require(v["data"]["value"]["value"] == "8'h22" and v["data"]["value"]["known"] is True, "unexpected sig_a value")
         xz = r.query("value.at", args={"signal": "ai_complex_top.xz_bus", "clock": "ai_complex_top.clk", "time": "95ns", "value_format": "bin"})
         require(xz["data"]["value"]["known"] is False, "xz_bus should be unknown")
         require("bits" in xz["data"]["value"] and "has_x" in xz["data"]["value"], "xz_bus lacks logic diagnostics")
