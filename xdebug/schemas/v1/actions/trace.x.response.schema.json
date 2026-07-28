@@ -78,23 +78,28 @@
         },
         "chain_count": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Number of returned effective semantic chains after pure port/interface/modport/ref alias routes are coalesced."
         },
         "completed_chain_count": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Number of complete chains in the final effective chain list."
         },
         "limited_chain_count": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Number of incomplete or limited chains in the final effective chain list."
         },
         "hop_count": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Total raw evidence hops retained by the final effective chain representatives."
         },
         "origin_count": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Number of origins present in the final effective chain list."
         },
         "value_width_complete": {
           "type": "boolean"
@@ -146,6 +151,7 @@
         },
         "chains": {
           "type": "array",
+          "description": "Final effective semantic chains; transparent alias-only route variants are represented once.",
           "items": {
             "$ref": "#/$defs/chain"
           }
@@ -608,7 +614,7 @@
     }
   },
   "additionalProperties": true,
-  "description": "Trace an X value backward through bounded DFS branches to its sources or observability boundaries.",
-  "x-description-zh": "从指定信号和时间按受限 DFS 多分支追溯 X 的产生位置或不可见边界。",
+  "description": "Trace an X value backward through effective semantic DFS branches to its sources or observability boundaries.",
+  "x-description-zh": "从指定信号和时间按有效语义 DFS 多分支追溯 X 的产生位置或不可见边界。",
   "x-output_notes": "返回该 action 的 summary/data/error/meta；具体字段以 response schema 和 response example 为准。"
 }

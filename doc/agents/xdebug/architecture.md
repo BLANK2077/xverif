@@ -287,10 +287,15 @@ frontend 不直接承载 NPI 重逻辑；NPI/FSDB/engine 能力集中在内部 e
   的完整性字段显式表达。
 - active chain 因 `max_depth` 停止时必须点读尚未处理的下一信号，并通过
   `depth_frontiers` 与 `suggested_next_actions` 发布可直接续查的 signal/time/value。
+  `limits.max_depth` 的 runtime 与 schema 默认值都为 8；本 action 只接受
+  `max_depth`、`max_nodes`、`max_trace_signals`，不得公开未消费的
+  `max_alias_candidates`。
 - `trace.x` 必须先确认查询点任一 bit 为 X，再按 DFS 同等处理含 X 的 RHS/control，
   穿过 port/interface，并为每一跳重新定位连续 X 区间起点；Z 不等同于 X。
-  `limits.max_chains` 默认 8，超额分支保留 pending 现场。控制 X、动态 select 等无法
-  严格证明的原因只能标为 `best_effort`；所有 limit 必须明确保留 chain 当前状态。
+  仅由 port/interface/modport/ref alias 跳转不同造成的路径必须按非 port 语义前缀
+  归并，`data.chains` 只返回最终有效链。`limits.max_chains` 默认 8，并在归并后
+  应用；超额的真实 RHS/control 语义分支保留 pending 现场。控制 X、动态 select 等
+  无法严格证明的原因只能标为 `best_effort`；所有 limit 必须明确保留 chain 当前状态。
 
 ## Runtime/Work Dir 层
 

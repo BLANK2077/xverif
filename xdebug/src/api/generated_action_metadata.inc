@@ -536,16 +536,16 @@ if (spec.name == "trace.active_driver_chain") {
     spec.description_en = "Trace an active-driver chain across multiple levels.";
     spec.description_zh = "展开 active driver 链。";
     spec.purposes = {"trace"};
-    spec.use_for = {"Trace an active-driver chain across multiple levels."};
+    spec.use_for = {"Trace an active-driver chain across multiple levels with limits.max_depth defaulting to 8."};
     spec.do_not_use_for = {"Tasks outside this action's documented contract."};
     spec.preferred_alternative = Json::object();
     return;
 }
 if (spec.name == "trace.x") {
-    spec.description_en = "Trace an X value backward through bounded DFS branches to its sources or observability boundaries.";
-    spec.description_zh = "从指定信号和时间按受限 DFS 多分支追溯 X 的产生位置或不可见边界。";
+    spec.description_en = "Trace an X value backward through effective semantic DFS branches to its sources or observability boundaries.";
+    spec.description_zh = "从指定信号和时间按有效语义 DFS 多分支追溯 X 的产生位置或不可见边界。";
     spec.purposes = {"trace"};
-    spec.use_for = {"Trace simultaneous X RHS and control dependencies through active drivers, hierarchy, interfaces, and per-branch X onset times while preserving the requested query time separately."};
+    spec.use_for = {"Trace simultaneous X RHS and control dependencies through active drivers, hierarchy, interfaces, and per-branch X onset times while coalescing pure port/interface/modport/ref alias routes before applying max_chains."};
     spec.do_not_use_for = {"Static driver enumeration without a waveform X symptom."};
     spec.preferred_alternative = Json::object();
     return;

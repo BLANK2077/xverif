@@ -1950,7 +1950,13 @@ def test_ai_usability_high_risk_request_shapes_are_strict(
             "args": {"name": "basic", "index": {"bad": 2}},
         })
 
-    active_chain = jsonschema.Draft202012Validator(schema_for("trace.active_driver_chain"))
+    active_chain_schema = schema_for("trace.active_driver_chain")
+    active_chain_limits = active_chain_schema["properties"]["limits"]["properties"]
+    assert active_chain_limits["max_depth"]["default"] == 8
+    assert set(active_chain_limits) == {
+        "max_depth", "max_nodes", "max_trace_signals",
+    }
+    active_chain = jsonschema.Draft202012Validator(active_chain_schema)
     with pytest.raises(jsonschema.ValidationError):
         active_chain.validate({
             "api_version": "xdebug.v1",
@@ -1970,11 +1976,31 @@ def test_ai_usability_high_risk_request_shapes_are_strict(
             "action": "trace.active_driver_chain",
             "args": {"signal": "top.q", "time": "10ns", "clk_period": "10ns"},
         })
+    with pytest.raises(jsonschema.ValidationError):
+        active_chain.validate({
+            "api_version": "xdebug.v1",
+            "action": "trace.active_driver_chain",
+            "args": {"signal": "top.q", "time": "10ns"},
+            "limits": {"max_alias_candidates": 8},
+        })
     active_chain.validate({
         "api_version": "xdebug.v1",
         "action": "trace.active_driver_chain",
         "args": {"signal": "top.q", "time": "10ns"},
-        "limits": {"max_depth": 4},
+        "limits": {
+            "max_depth": 4,
+            "max_nodes": 20,
+            "max_trace_signals": 16,
+        },
+    })
+
+    active_driver = jsonschema.Draft202012Validator(
+        schema_for("trace.active_driver"))
+    active_driver.validate({
+        "api_version": "xdebug.v1",
+        "action": "trace.active_driver",
+        "args": {"signal": "top.q", "time": "10ns"},
+        "limits": {"max_alias_candidates": 8},
     })
 
 

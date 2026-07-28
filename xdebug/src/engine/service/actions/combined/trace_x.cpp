@@ -3,6 +3,7 @@
 #include "service/trace_source_path_formatter.h"
 
 #include "combined/active_trace_common.h"
+#include "combined/trace_x_chain_identity.h"
 #include "core/npi/time_contract.h"
 #include "waveform/server/fsdb_scan_utils.h"
 #include "waveform/value/logic_value.h"
@@ -296,6 +297,8 @@ struct ChainState {
     Json pending_x_dependencies = Json::array();
     Json branch_events = Json::array();
     std::set<std::string> visited;
+    std::vector<xdebug::TraceXSemanticHop> semantic_hops;
+    bool suppressed = false;
 };
 
 std::string visit_key(const XPoint& point) {
@@ -327,6 +330,52 @@ Json chain_json(const ChainState& chain) {
     }
     if (!chain.branch_events.empty()) out["branch_events"] = chain.branch_events;
     return out;
+}
+
+bool prefer_effective_chain(const ChainState& candidate,
+                            const ChainState& current) {
+    if (candidate.complete != current.complete) return candidate.complete;
+    if ((candidate.status == "limit") != (current.status == "limit")) {
+        return candidate.status != "limit";
+    }
+    return candidate.hops.size() < current.hops.size();
+}
+
+int semantic_prefix_hop_index(const ChainState& chain,
+                              std::size_t semantic_prefix_size) {
+    if (semantic_prefix_size == 0) return 0;
+    std::size_t semantic_index = 0;
+    for (const auto& hop : chain.hops) {
+        const std::string relation = hop.value("relation", std::string());
+        if (xdebug::trace_x_is_transparent_relation(relation)) continue;
+        semantic_index++;
+        if (semantic_index == semantic_prefix_size) {
+            return hop.value("index", 0);
+        }
+    }
+    return chain.hops.empty()
+        ? 0 : chain.hops.back().value("index", 0);
+}
+
+Json pending_semantic_branch(const ChainState& chain,
+                             const xdebug::TraceXSemanticHop& hop) {
+    Json pending = {
+        {"signal", hop.signal},
+        {"relation", hop.relation},
+        {"x_onset_time", hop.x_onset_time}
+    };
+    if (!hop.sample_time.empty()) pending["sample_time"] = hop.sample_time;
+    for (const auto& raw_hop : chain.hops) {
+        if (raw_hop.value("signal", std::string()) == hop.signal &&
+            raw_hop.value("x_onset_time", std::string()) == hop.x_onset_time &&
+            xdebug::trace_x_semantic_relation(
+                raw_hop.value("relation", std::string())) == hop.relation) {
+            if (raw_hop.contains("value")) pending["value"] = raw_hop["value"];
+            if (raw_hop.contains("x_mask")) pending["x_mask"] = raw_hop["x_mask"];
+            break;
+        }
+    }
+    return pending;
 }
 
 class TraceXHandler : public EngineActionHandler {
@@ -392,8 +441,13 @@ public:
         initial.chain_id = "c0";
         initial.current = root;
         initial.visited.insert(visit_key(root));
+        initial.semantic_hops.push_back(
+            xdebug::TraceXSemanticHop(root.signal, root.time, "root"));
         chains.push_back(initial);
         std::vector<size_t> stack{0};
+        std::set<std::string> explored_states;
+        explored_states.insert(xdebug::trace_x_exploration_state_key(
+            initial.semantic_hops, root.signal, root.time));
         std::set<std::string> visited_times;
         std::vector<std::string> limitations;
         int processed_nodes = 0;
@@ -533,48 +587,32 @@ public:
                 continue;
             }
 
-            const int available_children =
-                1 + std::max(0, max_chains - static_cast<int>(chains.size()));
-            const int kept_children = std::min(static_cast<int>(children.size()), available_children);
-            if (kept_children < static_cast<int>(children.size())) {
-                Json pending = Json::array();
-                for (size_t i = kept_children; i < children.size(); ++i) {
-                    Json item = point_json(children[i].sample, "sample_time");
-                    item["relation"] = relation_text(children[i].dependency);
-                    item["x_onset_time"] = children[i].onset.time;
-                    pending.push_back(item);
-                    chain.pending_x_dependencies.push_back(item);
-                }
-                chain.branch_events.push_back({
-                    {"hop_index", static_cast<int>(chain.hops.size()) - 1},
-                    {"reason", "max_chains"},
-                    {"x_dependency_count", static_cast<int>(children.size())},
-                    {"returned_x_dependency_count", kept_children},
-                    {"omitted_x_dependency_count", static_cast<int>(children.size()) - kept_children},
-                    {"pending_x_dependencies", pending}
-                });
-                chain.complete = false;
-                limitations.push_back("X branches truncated by limits.max_chains at " +
-                                      chain.current.signal);
-            }
-
             std::vector<size_t> child_indexes;
-            for (int child_index = 0; child_index < kept_children; ++child_index) {
+            int created_children = 0;
+            for (size_t child_index = 0; child_index < children.size(); ++child_index) {
                 ChainState child = chain;
-                if (child_index > 0) {
-                    child.chain_id = "c" + std::to_string(next_chain_id++);
-                    for (auto& prior_hop : child.hops) prior_hop["chain_id"] = child.chain_id;
-                    child.pending_x_dependencies = Json::array();
-                    child.branch_events = Json::array();
-                    child.complete = true;
-                }
+                const std::string child_relation =
+                    relation_text(children[child_index].dependency);
                 child.current = children[child_index].onset;
-                child.relation = relation_text(children[child_index].dependency);
+                child.relation = child_relation;
                 child.depth = chain.depth + 1;
+                const std::string semantic_relation =
+                    xdebug::trace_x_semantic_relation(child_relation);
+                if (!semantic_relation.empty()) {
+                    child.semantic_hops.push_back(xdebug::TraceXSemanticHop(
+                        child.current.signal, child.current.time, semantic_relation,
+                        children[child_index].sample.time));
+                }
+
                 std::string key = visit_key(child.current);
                 if (child.visited.count(key)) {
                     stop_chain(child, "loop_detected", "loop_detected", true);
                 } else {
+                    const std::string state_key =
+                        xdebug::trace_x_exploration_state_key(
+                            child.semantic_hops, child.current.signal,
+                            child.current.time);
+                    if (!explored_states.insert(state_key).second) continue;
                     child.visited.insert(key);
                     child.finished = false;
                     child.status = "pending";
@@ -584,16 +622,99 @@ public:
                     }
                 }
 
-                if (child_index == 0) {
+                if (created_children > 0) {
+                    child.chain_id = "c" + std::to_string(next_chain_id++);
+                    for (auto& prior_hop : child.hops) prior_hop["chain_id"] = child.chain_id;
+                    child.pending_x_dependencies = Json::array();
+                    child.branch_events = Json::array();
+                    child.complete = true;
+                }
+
+                if (created_children == 0) {
                     chains[index] = child;
                     child_indexes.push_back(index);
                 } else {
                     chains.push_back(child);
                     child_indexes.push_back(chains.size() - 1);
                 }
+                created_children++;
+            }
+            if (created_children == 0) {
+                chain.suppressed = true;
+                chain.finished = true;
+                chains[index] = chain;
             }
             for (auto it = child_indexes.rbegin(); it != child_indexes.rend(); ++it) {
                 if (!chains[*it].finished) stack.push_back(*it);
+            }
+        }
+
+        std::vector<ChainState> effective_chains;
+        std::map<std::string, size_t> effective_positions;
+        for (const auto& chain : chains) {
+            if (chain.suppressed) continue;
+            const std::string semantic_key =
+                xdebug::trace_x_semantic_chain_key(chain.semantic_hops);
+            const auto position = effective_positions.find(semantic_key);
+            if (position == effective_positions.end()) {
+                effective_positions[semantic_key] = effective_chains.size();
+                effective_chains.push_back(chain);
+            } else if (prefer_effective_chain(
+                           chain, effective_chains[position->second])) {
+                effective_chains[position->second] = chain;
+            }
+        }
+
+        if (static_cast<int>(effective_chains.size()) > max_chains) {
+            const int effective_count = static_cast<int>(effective_chains.size());
+            ChainState& retained = effective_chains.front();
+            Json pending = Json::array();
+            int branch_hop_index = retained.hops.empty()
+                ? 0 : retained.hops.back().value("index", 0);
+            for (size_t index = static_cast<size_t>(max_chains);
+                 index < effective_chains.size(); ++index) {
+                const ChainState& omitted = effective_chains[index];
+                const std::size_t common_prefix =
+                    xdebug::trace_x_common_semantic_prefix(
+                        retained.semantic_hops, omitted.semantic_hops);
+                if (common_prefix > 0) {
+                    branch_hop_index = std::min(
+                        branch_hop_index,
+                        semantic_prefix_hop_index(retained, common_prefix));
+                } else {
+                    branch_hop_index = 0;
+                }
+                Json item;
+                if (common_prefix < omitted.semantic_hops.size()) {
+                    item = pending_semantic_branch(
+                        omitted, omitted.semantic_hops[common_prefix]);
+                } else {
+                    item = point_json(omitted.current, "sample_time");
+                    item["relation"] = omitted.relation;
+                    item["x_onset_time"] = omitted.current.time;
+                }
+                pending.push_back(item);
+                retained.pending_x_dependencies.push_back(item);
+            }
+            retained.branch_events.push_back({
+                {"hop_index", branch_hop_index},
+                {"reason", "max_chains"},
+                {"x_dependency_count", effective_count},
+                {"returned_x_dependency_count", max_chains},
+                {"omitted_x_dependency_count", effective_count - max_chains},
+                {"pending_x_dependencies", pending}
+            });
+            retained.complete = false;
+            limitations.push_back(
+                "X semantic branches truncated by limits.max_chains");
+            effective_chains.resize(static_cast<size_t>(max_chains));
+        }
+
+        for (size_t index = 0; index < effective_chains.size(); ++index) {
+            const std::string chain_id = "c" + std::to_string(index);
+            effective_chains[index].chain_id = chain_id;
+            for (auto& hop : effective_chains[index].hops) {
+                hop["chain_id"] = chain_id;
             }
         }
 
@@ -605,7 +726,7 @@ public:
         int hop_count = 0;
         int origin_count = 0;
         bool best_effort = false;
-        for (const auto& chain : chains) {
+        for (const auto& chain : effective_chains) {
             chain_array.push_back(chain_json(chain));
             hop_count += static_cast<int>(chain.hops.size());
             if (!chain.origin.is_null()) {
@@ -650,7 +771,8 @@ public:
         if (limited_count > 0 && completed_count > 0) termination = "partial";
         else if (limited_count > 0) termination = "limit";
         else if (origin_count > 0) termination = "origin_found";
-        else termination = chains.empty() ? "x_not_observable_upstream" : chains.front().status;
+        else termination = effective_chains.empty()
+            ? "x_not_observable_upstream" : effective_chains.front().status;
         const bool truncated = limited_count > 0;
 
         Json result = {
@@ -658,7 +780,7 @@ public:
                           {"termination", termination},
                           {"evidence_status", origin_count == 0 ? "unresolved" :
                               (best_effort ? "best_effort" : "proven")},
-                          {"chain_count", static_cast<int>(chains.size())},
+                          {"chain_count", static_cast<int>(effective_chains.size())},
                           {"completed_chain_count", completed_count},
                           {"limited_chain_count", limited_count},
                           {"hop_count", hop_count}, {"origin_count", origin_count},

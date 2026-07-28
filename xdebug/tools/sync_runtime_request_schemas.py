@@ -752,6 +752,32 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
         }
     if action in VALUE_BEARING_ACTIONS and "value_format" in selected_props:
         selected_props["value_format"]["default"] = "hex"
+    if action == "trace.active_driver_chain":
+        properties["limits"] = {
+            "type": "object",
+            "description": "Resource limits for the recursive active trace.",
+            "properties": {
+                "max_depth": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 8,
+                    "description": "Maximum recursion depth through pass-through assignments and aliases.",
+                },
+                "max_nodes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 50,
+                    "description": "Maximum number of trace nodes before truncation.",
+                },
+                "max_trace_signals": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 64,
+                    "description": "Maximum signal count for ambiguity evidence lookup.",
+                },
+            },
+            "additionalProperties": False,
+        }
     if action == "trace.x":
         properties["limits"] = {
             "type": "object",

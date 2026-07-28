@@ -587,8 +587,11 @@ FSDB 最终值并返回 `sampling_mode:"raw_time"`；传入时保持原有 clock
 
 `trace.x` 会先证明查询值是否含 X，再按 DFS 同等追踪传播时刻含 X 的 RHS 与 control，
 并穿过 module port、interface/modport。每个分支的每一跳都会重新定位该信号连续 X
-区间的起点，因此时间可以多次向更早位置推进。`limits.max_chains` 默认 8；超额依赖
-保留在 `pending_x_dependencies`。因 `max_depth` 停止时，`data.depth_frontiers` 和
+区间的起点，因此时间可以多次向更早位置推进。仅由
+port/interface/modport/ref alias 路线不同造成的重复 chain 会先归并；
+`data.chains` 和 `summary.chain_count` 只返回最终有效语义链。`limits.max_chains`
+默认 8，并在归并后应用；超额的真实语义分支保留在
+`pending_x_dependencies`。因 `max_depth` 停止时，`data.depth_frontiers` 和
 `suggested_next_actions` 会给出从 frontier 续查或提高深度重跑所需的完整参数。
 
 unpacked/聚合数组可显式请求结构化显示：

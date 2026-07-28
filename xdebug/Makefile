@@ -268,6 +268,7 @@ cpp-unit-binaries: $(CORE_OBJS) $(API_SUPPORT_OBJS) $(BUILD)/src/api/response.o 
 	$(CXX) $(CXXFLAGS) -o $(BUILD)/tests/test_text_response_builder tests/unit/test_text_response_builder.cpp $(BUILD)/src/api/text_response_builder.o $(BUILD)/src/api/xout_renderer.o $(BUILD)/src/core/value/logic_value.o
 	$(CXX) $(CXXFLAGS) -o $(BUILD)/tests/test_protocol_statistics_filter tests/unit/test_protocol_statistics_filter.cpp $(BUILD)/src/engine/service/actions/protocol/protocol_statistics_filter.o $(BUILD)/src/waveform/filter/value_filter.o $(BUILD)/src/core/value/logic_value.o $(BUILD)/src/api/text_response_builder.o
 	$(CXX) $(CXXFLAGS) -o $(BUILD)/tests/test_trace_source_path_formatter tests/unit/test_trace_source_path_formatter.cpp $(BUILD)/src/engine/service/trace_source_path_formatter.o $(BUILD)/src/api/text_response_builder.o $(CORE_OBJS) $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) -o $(BUILD)/tests/test_trace_x_chain_identity tests/unit/test_trace_x_chain_identity.cpp
 	$(CXX) $(CXXFLAGS) -o $(BUILD)/tests/test_common_blocks tests/unit/test_common_blocks.cpp $(CORE_OBJS) $(BUILD)/src/api/text_response_builder.o $(BUILD)/src/api/xout_renderer.o $(LDFLAGS)
 	$(CXX) $(CXXFLAGS) -o $(BUILD)/tests/test_logic_value tests/unit/test_logic_value.cpp $(BUILD)/src/core/value/logic_value.o
 	$(CXX) $(CXXFLAGS) -o $(BUILD)/tests/test_event_expr tests/unit/test_event_expr.cpp $(BUILD)/src/waveform/event/event_expr.o $(BUILD)/src/waveform/common/expression.o $(BUILD)/src/waveform/stream/stream_expr.o $(BUILD)/src/core/value/logic_value.o

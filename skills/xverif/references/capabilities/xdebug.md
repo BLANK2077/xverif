@@ -54,13 +54,16 @@ canonical value 对象中区分 requested/effective format。不要用 `args.for
 3. `source.context` 获取候选 file:line 周围源码。
 4. `event.find` 定位异常时间，`value.batch_at` 保存控制现场。
 5. 有 daidir + fsdb + signal + time 时用 `trace.active_driver` 查当前真正生效 driver。
-6. 单级仍未到根因时用 `trace.active_driver_chain`；递归深度写顶层 `limits.max_depth`，不能写 `args.depth`。若结果为 ambiguous，读取 `data.ambiguity_evidence`。若因深度停止，直接使用 `data.depth_frontiers` 和 `suggested_next_actions` 从 frontier 续查或提高深度重跑；不需要 `clk_period`。
+6. 单级仍未到根因时用 `trace.active_driver_chain`；递归深度写顶层 `limits.max_depth`，默认 8，不能写 `args.depth`。本 action 不接受 `limits.max_alias_candidates`。若结果为 ambiguous，读取 `data.ambiguity_evidence`。若因深度停止，直接使用 `data.depth_frontiers` 和 `suggested_next_actions` 从 frontier 续查或提高深度重跑；不需要 `clk_period`。
 7. 查询点本身为 X 时可直接用 `trace.x`：它按 DFS 同等追踪含 X 的 RHS/control，
-   穿过 module port、interface/modport，并在每一跳重新寻找该分支的 X onset。
+   穿过 module port、interface/modport，并在每一跳重新寻找该分支的 X onset。纯
+   port/interface/modport/ref alias 路径会先归并，同一 RHS/control 语义路径只返回
+   一个代表 chain。
    `query_time` 是请求时刻，`x_onset_time` 是该分支连续为 X 的起点，
    `active_time` 是 NPI active-driver 时刻；三者不能互相替代。
-   `limits.max_chains` 默认 8；读取每个 chain 的 status/current/pending，不能把 partial
-   当完整结果。深度停止时使用对应 chain 的 frontier 继续。
+   `limits.max_chains` 默认 8，并在 alias 归并后应用；读取每个 chain 的
+   status/current/pending，不能把 partial 当完整结果。深度停止时使用对应 chain 的
+   frontier 继续。
 8. 回到 `value.at/batch_at` 验证链上的控制条件。
 
 保留 `resolved`、`control_only`、`unresolved`；control evidence 不能冒充最终 data driver。更多 trace/source/graph action 见 [全量 action 索引](../generated/xdebug-actions.md)。

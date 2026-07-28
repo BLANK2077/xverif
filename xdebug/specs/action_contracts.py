@@ -78,7 +78,7 @@ FIELD_DESCRIPTIONS = {
     "line": "源码中的 1-based 行号。",
     "line_limit": "只限制返回 evidence 行数；不限制扫描、聚合或 verdict，必须结合 completeness 解读。",
     "max_depth": "递归 scope 或 trace 展开的最大层数；达到上限时 response 标记截断范围。",
-    "max_chains": "trace.x 可同时保留的最大分支 chain 数；省略时默认为 8。",
+    "max_chains": "trace.x 可返回的最大有效语义 chain 数；纯 port/interface/modport/ref alias 路径先归并，省略时默认为 8。",
     "max_events": "允许处理或写出的事件预算；耗尽会影响 analysis/file completeness。",
     "max_samples": "允许扫描的时钟采样预算；耗尽表示分析不完整而非仅 response 截断。",
     "mode": "该 action 的处理或返回模式；合法值、默认值和参数交互由本 action schema 定义。",
@@ -126,12 +126,12 @@ ACTION_GUIDANCE: dict[str, Json] = {
               "do_not_use_when": ["需要一个 MCP session 中的单个 action 查询或跨请求共享结果。"],
               "alternatives": [{"action": "schema", "when": "需要先验证单个 request 合同。"}]},
     "trace.active_driver_chain": {
-        "use_when": ["需要从指定 signal/time 递归展开单条 active-driver chain。"],
+        "use_when": ["需要从指定 signal/time 递归展开单条 active-driver chain；limits.max_depth 默认 8。"],
         "do_not_use_when": ["查询点是 X，且需要同时追踪多个 X RHS/control 分支。"],
         "alternatives": [{"action": "trace.x", "when": "需要按 X 可见性进行多分支追踪。"}],
     },
     "trace.x": {
-        "use_when": ["查询点含 X，需要按 DFS 同时追踪 RHS、control、端口和时间边界；响应会区分 query_time、x_onset_time 与 active_time。"],
+        "use_when": ["查询点含 X，需要按 DFS 同时追踪 RHS、control、端口和时间边界；纯 port/interface/modport/ref alias 路径会归并，响应会区分 query_time、x_onset_time 与 active_time。"],
         "do_not_use_when": ["只需要静态 driver 枚举，或查询点不含 X。"],
         "alternatives": [
             {"action": "trace.active_driver", "when": "只需要指定时刻的单级 active driver。"},

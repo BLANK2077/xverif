@@ -15,11 +15,13 @@ int main() {
     const ActionSpec* value_spec = registry.find_spec("value.at");
     const ActionSpec* trace_spec = registry.find_spec("trace.driver");
     const ActionSpec* active_spec = registry.find_spec("trace.active_driver");
+    const ActionSpec* active_chain_spec =
+        registry.find_spec("trace.active_driver_chain");
     const ActionSpec* actions_spec = registry.find_spec("actions");
     const ActionSpec* abnormal_spec = registry.find_spec("detect_abnormal");
     const ActionSpec* stream_show_spec = registry.find_spec("stream.show");
-    assert(value_spec && trace_spec && active_spec && actions_spec && abnormal_spec &&
-           stream_show_spec);
+    assert(value_spec && trace_spec && active_spec && active_chain_spec &&
+           actions_spec && abnormal_spec && stream_show_spec);
     Json value_descriptor = action_spec_descriptor(*value_spec);
     assert(value_descriptor["required_args"].size() == 2);
     assert(value_descriptor["required_args"][0] == "signal");
@@ -96,6 +98,38 @@ int main() {
     assert(!validation.ok);
     assert(validation.code == "INVALID_REQUEST");
     assert(validation.error["invalid_arg"] == "args.unexpected");
+
+    Json active_chain_json = {
+        {"api_version", "xdebug.v1"},
+        {"action", "trace.active_driver_chain"},
+        {"target", {{"session_id", "case_a"}}},
+        {"args", {{"signal", "top.q"}, {"time", "10ns"}}},
+        {"limits", {{"max_depth", 8},
+                    {"max_nodes", 50},
+                    {"max_trace_signals", 64}}}
+    };
+    RequestEnvelope active_chain =
+        RequestEnvelope::from_json(active_chain_json);
+    validation = validator.validate(active_chain, *active_chain_spec);
+    assert(validation.ok);
+
+    Json removed_alias_limit_json = active_chain_json;
+    removed_alias_limit_json["limits"]["max_alias_candidates"] = 8;
+    RequestEnvelope removed_alias_limit =
+        RequestEnvelope::from_json(removed_alias_limit_json);
+    validation = validator.validate(removed_alias_limit, *active_chain_spec);
+    assert(!validation.ok);
+    assert(validation.code == "INVALID_REQUEST");
+    assert(validation.error["invalid_arg"] ==
+           "limits.max_alias_candidates");
+
+    Json active_alias_limit_json = active_chain_json;
+    active_alias_limit_json["action"] = "trace.active_driver";
+    active_alias_limit_json["limits"] = {{"max_alias_candidates", 8}};
+    RequestEnvelope active_alias_limit =
+        RequestEnvelope::from_json(active_alias_limit_json);
+    validation = validator.validate(active_alias_limit, *active_spec);
+    assert(validation.ok);
 
     Json bad_abnormal_checks_json = {
         {"api_version", "xdebug.v1"},

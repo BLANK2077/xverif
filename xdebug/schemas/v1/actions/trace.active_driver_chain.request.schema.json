@@ -71,27 +71,25 @@
     },
     "limits": {
       "type": "object",
-      "description": "Resource limits for the recursive active trace",
+      "description": "Resource limits for the recursive active trace.",
       "properties": {
         "max_depth": {
           "type": "integer",
           "minimum": 1,
-          "description": "Maximum recursion depth through pass-through assignments and aliases (default 8)"
+          "default": 8,
+          "description": "Maximum recursion depth through pass-through assignments and aliases."
         },
         "max_nodes": {
           "type": "integer",
           "minimum": 1,
-          "description": "Maximum number of trace nodes before truncation (default 50)"
-        },
-        "max_alias_candidates": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Maximum number of alias candidates to explore (default 8)"
+          "default": 50,
+          "description": "Maximum number of trace nodes before truncation."
         },
         "max_trace_signals": {
           "type": "integer",
           "minimum": 1,
-          "description": "Maximum signal count for value lookup (default 64)"
+          "default": 64,
+          "description": "Maximum signal count for ambiguity evidence lookup."
         }
       },
       "additionalProperties": false
@@ -115,13 +113,13 @@
   "additionalProperties": false,
   "description": "Trace an active-driver chain across multiple levels.",
   "x-purpose": "展开 active driver 链。",
-  "x-how_it_works": "从 signal/time 递归追溯 active driver；深度限制写 top-level limits.max_depth。遇到多个 active assignments 或多个 RHS sources 时在精确 active_time 返回前后值证据并停止。因 max_depth 停止时读取 data.depth_frontiers 与 suggested_next_actions，可从 frontier 续查或提高深度重跑。",
+  "x-how_it_works": "从 signal/time 递归追溯 active driver；深度限制写 top-level limits.max_depth，默认 8。遇到多个 active assignments 或多个 RHS sources 时在精确 active_time 返回前后值证据并停止。因 max_depth 停止时读取 data.depth_frontiers 与 suggested_next_actions，可从 frontier 续查或提高深度重跑。",
   "x-when_to_use": "给出跨级根因链及 ambiguous RHS 现场。",
-  "x-arg_contract_notes": "required: signal, time; do not use args.depth or args.clk_period",
+  "x-arg_contract_notes": "required: signal, time; limits: max_depth(default 8), max_nodes(default 50), max_trace_signals(default 64); do not use args.depth, args.clk_period or limits.max_alias_candidates",
   "x-description-zh": "展开 active driver 链。",
   "x-agent": {
     "use_when": [
-      "需要从指定 signal/time 递归展开单条 active-driver chain。"
+      "需要从指定 signal/time 递归展开单条 active-driver chain；limits.max_depth 默认 8。"
     ],
     "do_not_use_when": [
       "查询点是 X，且需要同时追踪多个 X RHS/control 分支。"
@@ -133,7 +131,7 @@
       }
     ],
     "constraints": [
-      "required: signal, time; do not use args.depth or args.clk_period"
+      "required: signal, time; limits: max_depth(default 8), max_nodes(default 50), max_trace_signals(default 64); do not use args.depth, args.clk_period or limits.max_alias_candidates"
     ]
   }
 }

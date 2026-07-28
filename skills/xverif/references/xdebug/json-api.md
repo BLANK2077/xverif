@@ -189,7 +189,7 @@ CLI 输出默认优先使用 xout；需要脚本读取 JSON 字段时使用命�
 
 不要猜测通用 `include_*` 或 `verbose` 参数，只使用 action-specific schema 明确声明的输出参数。AXI transaction action 用 `args.output.include_data:true` 展开逐 beat payload；其它 action 常见为 `args.output.verbose:true`。schema 未声明时按默认 compact/xout 读取核心证据或使用对应 export action。
 
-限制字段要以 action-specific schema 为准。不要把顶层数量字段当成所有 action 的通用字段；例如 APB/AXI query 使用 `args.query.line_limit`，active-driver 链深度使用 top-level `limits.max_depth`，`trace.x` 另用 `limits.max_chains`（默认 8）限制并行保留的 chain。常见形态如下：
+限制字段要以 action-specific schema 为准。不要把顶层数量字段当成所有 action 的通用字段；例如 APB/AXI query 使用 `args.query.line_limit`，active-driver 链深度使用 top-level `limits.max_depth`（默认 8，不接受 `limits.max_alias_candidates`），`trace.x` 另用 `limits.max_chains`（默认 8）限制 alias 归并后返回的有效语义 chain。常见形态如下：
 
 `line_limit` 只限制 JSON/XOUT 的返回证据，不限制分析扫描。支持显式扫描预算的
 action 使用 `max_samples`；`event.export` 另用 `max_events` 限制写文件和聚合输入。

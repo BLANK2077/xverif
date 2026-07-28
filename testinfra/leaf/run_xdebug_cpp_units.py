@@ -19,6 +19,7 @@ BINARIES = (
     "test_text_response_builder",
     "test_protocol_statistics_filter",
     "test_trace_source_path_formatter",
+    "test_trace_x_chain_identity",
     "test_common_blocks",
     "test_logic_value",
     "test_event_expr",

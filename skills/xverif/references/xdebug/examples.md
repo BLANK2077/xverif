@@ -690,9 +690,10 @@ notes:
 
 ### active driver 链深度
 
-`trace.active_driver_chain` 的递归深度放在 top-level `limits.max_depth`，不要写
-`args.depth`。本 action 不接受 `args.clk_period`：ambiguous RHS 统一围绕 resolver
-给出的精确 `active_time` 取严格之前值和该时刻最终值，不做半周期推断。
+`trace.active_driver_chain` 的递归深度放在 top-level `limits.max_depth`，默认 8，
+不要写 `args.depth`。本 action 不接受 `args.clk_period` 或
+`limits.max_alias_candidates`：ambiguous RHS 统一围绕 resolver 给出的精确
+`active_time` 取严格之前值和该时刻最终值，不做半周期推断。
 
 ```json
 {

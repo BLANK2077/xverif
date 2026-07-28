@@ -544,7 +544,7 @@ nlohmann::ordered_json build_active_driver_chain_payload(const Json& request,
             {"message", "FSDB handle is null"}};
 
     Json limits_j = request.value("limits", Json::object());
-    int max_depth = std::max(1, limits_j.value("max_depth", 20));
+    int max_depth = std::max(1, limits_j.value("max_depth", 8));
     int max_nodes = std::max(1, limits_j.value("max_nodes", 50));
     int max_trace_signals = std::max(1, limits_j.value("max_trace_signals", 64));
 

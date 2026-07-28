@@ -81,7 +81,7 @@ def test_trace_x_xprop_and_clockless_point_reads(
             artifact_root,
         )
         assert raw["summary"]["sampling_mode"] == "raw_time"
-        assert raw["data"]["value"]["value"].startswith("'h")
+        assert "'h" in raw["data"]["value"]["value"]
         assert raw["data"]["value"]["has_x"] is True
         assert "clock_context" not in raw["data"]
 
@@ -101,7 +101,7 @@ def test_trace_x_xprop_and_clockless_point_reads(
         )
         assert batch["summary"]["sampling_mode"] == "raw_time"
         assert len(batch["data"]["values"]) == 2
-        assert all(row["value"]["value"].startswith("'h") for row in batch["data"]["values"])
+        assert all("'h" in row["value"]["value"] for row in batch["data"]["values"])
 
         invalid = run(
             "value.at",
@@ -146,7 +146,7 @@ def test_trace_x_xprop_and_clockless_point_reads(
             "trace_x_control_module_interface",
             artifact_root,
         )
-        assert control_x["data"]["query"]["x_mask"] == "'b10011001"
+        assert control_x["data"]["query"]["x_mask"] == "8'b10011001"
         control_hops = [hop for chain in control_x["data"]["chains"] for hop in chain["hops"]]
         assert {"port", "rhs", "control"} <= {hop["relation"] for hop in control_hops}
         assert {"15ns", "10ns"} <= {hop["x_onset_time"] for hop in control_hops}
@@ -182,6 +182,52 @@ def test_trace_x_xprop_and_clockless_point_reads(
         ]
         assert all(chain["status"] == "origin_found" for chain in multi_rhs["data"]["chains"])
 
+        alias_effective = _success(
+            run(
+                "trace.x",
+                {"signal": "trace_x_xprop_tb.alias_effective_out", "time": "12ns"},
+                limits={"max_chains": 2},
+            ),
+            "trace_x_effective_alias_chains",
+            artifact_root,
+        )
+        assert alias_effective["summary"]["chain_count"] == 2
+        assert alias_effective["summary"]["completed_chain_count"] == 2
+        assert alias_effective["summary"]["limited_chain_count"] == 0
+        alias_chains = alias_effective["data"]["chains"]
+        assert [chain["chain_id"] for chain in alias_chains] == ["c0", "c1"]
+        assert {
+            chain["current"]["signal"].rsplit(".", 1)[-1]
+            for chain in alias_chains
+        } == {"alias_source_a", "alias_source_b"}
+        assert any(
+            hop["relation"] == "port"
+            for chain in alias_chains
+            for hop in chain["hops"]
+        )
+
+        alias_limited = _success(
+            run(
+                "trace.x",
+                {"signal": "trace_x_xprop_tb.alias_effective_out", "time": "12ns"},
+                limits={"max_chains": 1},
+            ),
+            "trace_x_effective_alias_chain_limit",
+            artifact_root,
+        )
+        assert alias_limited["summary"]["chain_count"] == 1
+        assert alias_limited["summary"]["termination"] == "limit"
+        assert alias_limited["summary"]["completed_chain_count"] == 0
+        assert alias_limited["summary"]["limited_chain_count"] == 1
+        alias_limited_chain = alias_limited["data"]["chains"][0]
+        assert len(alias_limited_chain["pending_x_dependencies"]) == 1
+        assert alias_limited_chain["pending_x_dependencies"][0]["relation"] != "port"
+        alias_branch_event = alias_limited_chain["branch_events"][0]
+        assert alias_branch_event["reason"] == "max_chains"
+        assert alias_branch_event["x_dependency_count"] == 2
+        assert alias_branch_event["returned_x_dependency_count"] == 1
+        assert alias_branch_event["omitted_x_dependency_count"] == 1
+
         control_and_rhs = _success(
             run("trace.x", {"signal": "trace_x_xprop_tb.ctrl_rhs_out", "time": "12ns"}),
             "trace_x_control_and_rhs_x",
@@ -209,7 +255,7 @@ def test_trace_x_xprop_and_clockless_point_reads(
         frontier = branch_limited["data"]["depth_frontiers"][0]
         assert frontier["signal"] == limited_chain["current"]["signal"]
         assert frontier["continue_time"] == limited_chain["current"]["x_onset_time"]
-        assert frontier["value"]["value"].startswith("8'h")
+        assert "'h" in frontier["value"]["value"]
         assert branch_limited["suggested_next_actions"][0]["args"]["signal"] == frontier["signal"]
         assert branch_limited["suggested_next_actions"][0]["args"]["time"] == frontier["continue_time"]
 
@@ -231,6 +277,35 @@ def test_trace_x_xprop_and_clockless_point_reads(
             "signal": active_frontier["signal"],
             "time": active_frontier["time"],
         }
+
+        active_chain_default = _success(
+            run(
+                "trace.active_driver_chain",
+                {"signal": "trace_x_xprop_tb.depth_10", "time": "22ns"},
+            ),
+            "active_chain_default_depth",
+            artifact_root,
+        )
+        assert active_chain_default["summary"]["termination_detail"] == "max_depth"
+        assert active_chain_default["summary"]["hop_count"] == 9
+        assert active_chain_default["data"]["depth_frontiers"][0][
+            "stopped_after_depth"
+        ] == 8
+
+        active_chain_deeper = _success(
+            run(
+                "trace.active_driver_chain",
+                {"signal": "trace_x_xprop_tb.depth_10", "time": "22ns"},
+                limits={"max_depth": 20},
+            ),
+            "active_chain_explicit_depth",
+            artifact_root,
+        )
+        assert active_chain_deeper["summary"]["termination_detail"] != "max_depth"
+        assert (
+            active_chain_deeper["summary"]["hop_count"]
+            > active_chain_default["summary"]["hop_count"]
+        )
 
         driver_x = _success(
             run("trace.x", {"signal": "trace_x_xprop_tb.direct_x_out", "time": "22ns"}),

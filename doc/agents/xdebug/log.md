@@ -1,5 +1,13 @@
 # xdebug 架构说明书维护日志
 
+## 2026-07-28
+
+- `trace.x` 以非 port 的 RHS/control 语义前缀归并 module port、
+  interface/modport/ref alias 路线，只返回最终有效链，并在归并后应用
+  `limits.max_chains`。
+- `trace.active_driver_chain` 将 runtime/schema 的 `max_depth` 默认值统一为 8，并从
+  公共 limits 合同删除未消费的 `max_alias_candidates`。
+
 ## 2026-07-20
 
 - 清理运行时本机路径绑定：统一临时目录解析，ProcessRunner 支持通过 `PATH` 查找系统工具，日志打包不再固定工具或临时目录绝对路径。

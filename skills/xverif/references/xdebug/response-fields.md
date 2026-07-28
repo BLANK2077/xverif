@@ -429,6 +429,10 @@ compact `value.at` 直接使用 `data.value` 字符串和 `data.known` boolean�
 | 路径 | 类型 | 含义 |
 | --- | --- | --- |
 | `summary.query_time` | string | 用户请求检查 X 的时刻 |
+| `summary.chain_count` | integer | alias 归并并应用 `max_chains` 后实际返回的有效语义链数量 |
+| `summary.completed_chain_count` / `limited_chain_count` | integer | 最终有效链列表中的完整/受限链数量 |
+| `summary.hop_count` / `origin_count` | integer | 最终有效链代表所保留的总 hop/origin 数量 |
+| `data.chains[]` | array | 最终有效语义链；仅由纯 port/interface/modport/ref alias 差异产生的路径只保留一个代表 |
 | `data.query.query_time` | string | query value 对应的实际时刻 |
 | `data.chains[].hops[].x_onset_time` | string | 当前信号连续为 X 的区间起点 |
 | `data.chains[].hops[].active_time` | string | NPI active-driver 判定时刻 |
@@ -440,6 +444,10 @@ compact `value.at` 直接使用 `data.value` 字符串和 `data.known` boolean�
 `query_time`、`x_onset_time` 和 `active_time` 是不同证据。查询 1825ns 时，
 chain 的 `x_onset_time` 可以是 5.001ns，这表示 X 从 5.001ns 连续保持到查询点，
 不表示请求被改写为 5.001ns。
+
+`limits.max_chains` 在 alias 等效归并之后应用。`pending_x_dependencies` 中由
+`max_chains` 留下的项目只对应未返回的真实 RHS/control 语义分支，不把纯 alias
+路线计作一个待查 chain。
 
 ## 5. Design 命令
 
