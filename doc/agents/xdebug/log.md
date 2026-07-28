@@ -2,6 +2,8 @@
 
 ## 2026-07-28
 
+- `rc.generate` 删除 group 配置中的 `expanded` 输入；保留 subgroup 递归，生成的
+  `addGroup` / `addSubGroup` 固定不带 `-e`，旧 `expanded` 配置明确报错。
 - `trace.x` 以非 port 的 RHS/control 语义前缀归并 module port、
   interface/modport/ref alias 路线，只返回最终有效链，并在归并后应用
   `limits.max_chains`。

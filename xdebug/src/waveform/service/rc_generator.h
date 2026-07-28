@@ -49,7 +49,6 @@ struct RcExprSignal {
 
 struct RcGroup {
     std::string name;
-    bool expanded = false;
     std::vector<RcSignal> signals;
     std::vector<RcExprSignal> expr_signals;
     std::vector<RcGroup> subgroups;

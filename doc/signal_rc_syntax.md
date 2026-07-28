@@ -265,6 +265,7 @@ addSignal -h 15 /top/u_axi/awvalid
 
 - `addSignal` 会按当前 signal list 位置追加；手写文件时通常先写 `addGroup`，再写该组下的 `addSignal`。
 - group 展开状态属于显示属性，不影响信号本身。
+- 上述 `-e` 仅作为手写 RC 语法参考；`xdebug rc.generate` 不接受配置字段 `expanded`，并固定生成不带 `-e` 的 `addGroup` / `addSubGroup`。
 
 ## 设置模拟波形：addSignal -w analog
 

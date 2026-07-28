@@ -307,7 +307,10 @@ bool parse_group(const Json& item, RcGroup& group, std::string& err) {
         err = "group requires name";
         return false;
     }
-    group.expanded = bool_field_or(item, "expanded", false);
+    if (item.contains("expanded")) {
+        err = "group.expanded is not supported; rc.generate emits addGroup/addSubGroup without -e";
+        return false;
+    }
     if (item.contains("signals")) {
         if (!item["signals"].is_array()) {
             err = "group.signals must be an array";
@@ -399,7 +402,6 @@ void render_expr_definitions(std::ostringstream& os, const RcGroup& group) {
 
 void render_group(std::ostringstream& os, const RcGroup& group, bool subgroup) {
     os << (subgroup ? "addSubGroup" : "addGroup");
-    if (group.expanded) os << " -e";
     os << " " << quote_rc(group.name) << "\n";
     for (const auto& sig : group.signals) {
         std::vector<std::string> parts;

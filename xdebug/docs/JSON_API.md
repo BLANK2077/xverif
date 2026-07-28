@@ -248,7 +248,7 @@ file transport directory:
 }
 ```
 
-`config_path` 是 JSON 配置，不是 YAML。配置里的信号用点分路径，例如 `top.u.sig[3:0]`；生成 rc 时会转换成 `/top/u/sig[3:0]`。支持 `addSignal`、`addSignal -w analog`、`addExprSig`、`addGroup/addSubGroup` 和 `userMarker`。该 action 不写 `openDirFile` / `activeDirFile`。
+`config_path` 是 JSON 配置，不是 YAML。配置里的信号用点分路径，例如 `top.u.sig[3:0]`；生成 rc 时会转换成 `/top/u/sig[3:0]`。支持 `addSignal`、`addSignal -w analog`、`addExprSig`、`addGroup/addSubGroup` 和 `userMarker`。group 配置不接受 `expanded`，生成的 `addGroup` / `addSubGroup` 不带 `-e`。该 action 不写 `openDirFile` / `activeDirFile`。
 slice 信号会先校验完整路径；若 FSDB signal lookup 不接受 slice，则回退校验 base signal。
 
 `addExprSig` 推荐使用 `$alias`：

@@ -1322,6 +1322,7 @@ def test_rc_generate_emits_fixed_window_unit_marker_and_grouped_expression(
                                 },
                             }
                         ],
+                        "subgroups": [{"name": "SG"}],
                     },
                 ],
                 "user_markers": [
@@ -1372,8 +1373,46 @@ def test_rc_generate_emits_fixed_window_unit_marker_and_grouped_expression(
         expr = lines.index('addExprSig -b 1 -n UU req_fire "/ai_complex_top/hs_valid" & "/ai_complex_top/hs_ready"')
         g2 = lines.index('addGroup "G2"')
         expr_signal = lines.index("addSignal -h 18 /req_fire")
-        assert expr < g2 < expr_signal
+        subgroup = lines.index('addSubGroup "SG"')
+        assert expr < g2 < expr_signal < subgroup
+        assert not any(
+            line.startswith(("addGroup -e ", "addSubGroup -e "))
+            for line in lines
+        )
         assert not any(line.startswith("addExprSig") for line in lines[g2:])
+
+        removed_config_path = tmp_path / "removed_expanded.json"
+        removed_rc_path = tmp_path / "removed_expanded.rc"
+        removed_config_path.write_text(
+            json.dumps(
+                {
+                    "groups": [
+                        {"name": "Removed", "expanded": True},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        removed = cli_runner.run(
+            {
+                "api_version": "xdebug.v1",
+                "action": "rc.generate",
+                "target": target,
+                "args": {
+                    "config_path": str(removed_config_path),
+                    "output": {"path": str(removed_rc_path)},
+                },
+            },
+            output_format="json",
+            timeout_sec=120,
+        )
+        assert not removed.ok
+        error = removed.response["error"]
+        assert error["code"] == "INVALID_ARGUMENT"
+        assert error["invalid_arg"] == "args.config_path"
+        assert error["cause_code"] == "PARSE_FAILED"
+        assert "group.expanded is not supported" in error["message"]
+        assert not removed_rc_path.exists()
     finally:
         cli_runner.run(
             {

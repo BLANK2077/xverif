@@ -8,6 +8,7 @@
 - 配置里的信号路径使用点分层次，例如 `top.u.sig[3:0]`。
 - 生成 rc 时自动转成 nWave slash 路径，例如 `/top/u/sig[3:0]`。
 - 支持 `addSignal`、`addSignal -w analog`、`addExprSig`、`addGroup/addSubGroup`、`cursor/marker/userMarker/zoom`。
+- group 配置不接受 `expanded`；生成的 `addGroup` / `addSubGroup` 固定不带 `-e`。
 - 第一条非注释 RC 语句固定为 `windowTimeUnit 1ns`；配置中不得出现 `window_time_unit`。
 - `user_markers[].time` 必须是带单位的时间字符串，生成的 `userMarker` 使用无后缀 ns 数值。
 - 不写 `openDirFile` 和 `activeDirFile`。
@@ -54,7 +55,6 @@
   "groups": [
     {
       "name": "ClockReset",
-      "expanded": true,
       "signals": [
         "top.clk",
         {
@@ -82,7 +82,6 @@
     },
     {
       "name": "AXI",
-      "expanded": true,
       "subgroups": [
         {
           "name": "AW",

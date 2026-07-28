@@ -22,7 +22,6 @@ int main() {
         {"groups", Json::array({
             {
                 {"name", "ClockReset"},
-                {"expanded", true},
                 {"signals", Json::array({
                     "top.clk",
                     {{"path", "top.rst_n"}, {"radix", "bin"}, {"height", 15}}
@@ -93,7 +92,9 @@ int main() {
     const size_t first_statement = rc.find("windowTimeUnit 1ns");
     assert(first_statement != std::string::npos);
     assert(rc.find("fileTimeScale") > first_statement);
-    assert(rc.find("addGroup -e \"ClockReset\"") != std::string::npos);
+    assert(rc.find("addGroup \"ClockReset\"") != std::string::npos);
+    assert(rc.find("addGroup -e ") == std::string::npos);
+    assert(rc.find("addSubGroup -e ") == std::string::npos);
     assert(rc.find("addSignal -h 15 -BIN /top/rst_n") != std::string::npos);
     assert(rc.find("addSignal -w analog -ds pwl -gx -gy -us m -gs2 10 -h 40 /top/u_adc/sample[11:0]") != std::string::npos);
     assert(rc.find("addSubGroup \"AW\"") != std::string::npos);
@@ -115,6 +116,32 @@ int main() {
     assert(refs.size() == 8);
     auto times = collect_rc_time_refs(cfg);
     assert(times.size() == 5);
+
+    Json removed_expanded = {
+        {"groups", Json::array({
+            {{"name", "Removed"}, {"expanded", true}}
+        })}
+    };
+    RcConfig removed_expanded_cfg;
+    err.clear();
+    assert(!parse_rc_config_json(removed_expanded, removed_expanded_cfg, err));
+    assert(err.find("group.expanded is not supported") != std::string::npos);
+
+    Json nested_removed_expanded = {
+        {"groups", Json::array({
+            {
+                {"name", "Parent"},
+                {"subgroups", Json::array({
+                    {{"name", "RemovedSubgroup"}, {"expanded", false}}
+                })}
+            }
+        })}
+    };
+    RcConfig nested_removed_expanded_cfg;
+    err.clear();
+    assert(!parse_rc_config_json(
+        nested_removed_expanded, nested_removed_expanded_cfg, err));
+    assert(err.find("group.expanded is not supported") != std::string::npos);
 
     Json bad_expr = {
         {"groups", Json::array({

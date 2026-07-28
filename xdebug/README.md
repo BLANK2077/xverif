@@ -648,7 +648,7 @@ unpacked/聚合数组可显式请求结构化显示：
 
 ### 生成 nWave signal.rc：rc.generate
 
-`rc.generate` 从 JSON 配置生成 nWave `signal.rc`。配置中信号路径使用点分层次，xdebug 会校验信号存在于 FSDB，并在生成 rc 时转换成 `/top/u/sig` 风格路径。该 action 只生成 signal list/view rc，不写 `openDirFile` / `activeDirFile`，打开 FSDB 仍由 nWave 会话或外部脚本负责。语法背景见 [signal_rc_syntax.md](../doc/signal_rc_syntax.md)。
+`rc.generate` 从 JSON 配置生成 nWave `signal.rc`。配置中信号路径使用点分层次，xdebug 会校验信号存在于 FSDB，并在生成 rc 时转换成 `/top/u/sig` 风格路径。group 配置不接受 `expanded`，生成的 `addGroup` / `addSubGroup` 固定不带 `-e`，subgroup 递归保持支持。该 action 只生成 signal list/view rc，不写 `openDirFile` / `activeDirFile`，打开 FSDB 仍由 nWave 会话或外部脚本负责。语法背景见 [signal_rc_syntax.md](../doc/signal_rc_syntax.md)。
 对于 `top.u.bus[15:0]` 这类 slice，校验会先查完整路径；若 FSDB 不接受 slice handle，则回退校验 base signal `top.u.bus` 是否存在。
 
 请求：
