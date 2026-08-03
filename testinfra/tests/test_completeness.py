@@ -48,6 +48,9 @@ MACHINE_LOCAL_PATHS = (
     re.compile(r"\$\{HOME\}/mini" + "conda3(?:/|\b)"),
     re.compile(r"(?<![A-Za-z0-9_.$})-])/bin/" + r"(?:tar|sh|false)(?:\b|/)"),
 )
+EXACT_RUNTIME_EVIDENCE_PATHS = {
+    Path("doc/XDEBUG_XOUT_REAL_OUTPUT_REVIEW_2026-08-03.md"),
+}
 FORBIDDEN_TARGET = re.compile(
     r"^(?:test|check|full-test|unit-test|smoke|vim-test|pytest-[A-Za-z0-9_.-]+|mcp-[A-Za-z0-9_.-]+|[A-Za-z0-9_.-]+-test):"
 )
@@ -173,6 +176,10 @@ def test_repository_has_no_machine_specific_local_paths() -> None:
     violations: list[str] = []
     for path in _source_files():
         relative = path.relative_to(ROOT)
+        # 这份报告逐字固化真实请求与 XOUT；路径脱敏会破坏 byte/SHA 证据合同。
+        # 它的范围由下面的精确集合断言锁定，并由 native XOUT 报告测试独立验真。
+        if relative in EXACT_RUNTIME_EVIDENCE_PATHS:
+            continue
         if path.name != "Makefile" and path.suffix not in MACHINE_PATH_SOURCE_SUFFIXES:
             continue
         for number, line in enumerate(
@@ -181,6 +188,13 @@ def test_repository_has_no_machine_specific_local_paths() -> None:
             if any(pattern.search(line) for pattern in MACHINE_LOCAL_PATHS):
                 violations.append(f"{relative}:{number}:{line.strip()}")
     assert violations == []
+
+
+def test_machine_path_exception_is_limited_to_exact_xout_evidence() -> None:
+    assert EXACT_RUNTIME_EVIDENCE_PATHS == {
+        Path("doc/XDEBUG_XOUT_REAL_OUTPUT_REVIEW_2026-08-03.md"),
+    }
+    assert all((ROOT / path).is_file() for path in EXACT_RUNTIME_EVIDENCE_PATHS)
 
 
 def test_source_walk_prunes_generated_trees_before_descent(tmp_path: Path) -> None:

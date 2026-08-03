@@ -461,9 +461,9 @@ action 默认返回 compact summary/evidence。需要 action schema 明确定义
 | --- | --- | --- |
 | 统计 high/active cycles | `signal.statistics` | 有 `clock` 时做 clock-sampled 统计；无 `clock` 时做 raw value-change 统计，并返回 `sampling_mode`。 |
 | 统计 counter min/max/average | `counter.statistics` | 传 `clock`、`time_range`、`vld`、`cnt`，按周期采样最多 64 bit counter；`cnt` 可用 `{hi,lo}` 拼接。 |
-| 看跳变时间线 | `signal.changes` | 用 `line_limit` 限制返回 rows，`mode:"head"` 或 `"tail"` 控制方向；只要聚合时用 `aggregate_only:true`。 |
+| 看跳变时间线 | `signal.changes` | `mode:"timeline"` 返回按时间排序的变化证据，可用 `line_limit` 限制返回 rows；只要聚合时用 `mode:"summary"`。 |
 | 判断窗口内保持 0/1 | `window.verify` 或 `signal.statistics` | 不要用 `signal.changes` 的 row count 当周期数。 |
-| 找 first/last occurrence | `event.find`，或 `signal.changes` + `mode:"head"/"tail"` | `event.find` 支持布尔组合、相等比较和大小比较；`signal.changes aggregate_only:true` 适合先看首末值和跳变总数。 |
+| 找 first/last occurrence | `event.find` | `event.find` 支持布尔组合、相等比较和大小比较；`signal.changes mode:"summary"` 适合先看单信号首末值和跳变总数。 |
 
 `signal.changes.summary.transition_count` 为兼容保留；新代码同时返回 `returned_change_rows`、`includes_initial_value`、`actual_transition_count` 和 `semantic_note`，优先读这些字段判断语义。
 
@@ -533,7 +533,7 @@ action 默认返回 compact summary/evidence。需要 action schema 明确定义
 }
 ```
 
-### 波形取证：value / batch / verify
+### 波形取证：value / list / verify
 
 查询单点值：
 
@@ -545,47 +545,62 @@ action 默认返回 compact summary/evidence。需要 action schema 明确定义
   "args": {
     "signal": "top.u.valid",
     "time": "100ns",
-    "format": "hex"
+    "value_format": "hex"
   }
 }
 ```
 
-批量查询同一时间的多个信号：
+先加载命名信号组，再用同一个 `value.at` 查询一个或多个时间点：
 
 ```json
 {
   "api_version": "xdebug.v1",
-  "action": "value.batch_at",
+  "action": "list.load",
   "target": {"session_id": "case_a"},
   "args": {
-    "time": "100ns",
-    "signals": ["top.u.valid", "top.u.ready", "top.u.data"],
-    "format": "hex"
+    "config": {
+      "lists": [{
+        "name": "handshake_context",
+        "signals": ["top.u.valid", "top.u.ready", "top.u.data"]
+      }]
+    },
+    "mode": "replace"
   }
 }
 ```
 
-`value.batch_at` 对部分信号缺失仍返回整体 ok，并在 `summary.missing_by_reason` 和每个 row 的 `status/reason/suggested_next_actions` 里说明原因。常见状态包括 `signal_not_found`、`not_dumped_or_unreadable`、`time_out_of_range`、`unsupported_format`。
+```json
+{
+  "api_version": "xdebug.v1",
+  "action": "value.at",
+  "target": {"session_id": "case_a"},
+  "args": {
+    "list": "handshake_context",
+    "times": ["100ns", "120ns"],
+    "value_format": "hex"
+  }
+}
+```
 
-`value.at` / `value.batch_at` 的 `clock` 是可选参数。省略时直接读取 `time` 对应的
+`value.at` 的 `clock` 是可选参数。省略时直接读取 `time` / `times` 对应的
 FSDB 最终值并返回 `sampling_mode:"raw_time"`；传入时保持原有 clock-sampled 行为并
 返回 `sampling_mode:"clock_sampled"` 和 `clock_context`。无 `clock` 时传 `edge` 或
 `sample_point` 会返回 `INVALID_ARGUMENT`。默认显示为十六进制，hex/bin/decimal 值
-分别使用 `'h` / `'b` / `'d` 前缀。
+分别使用带真实位宽的 `'h` / `'b` / `'d` literal。
 
 查询点已经出现 X 时，可在 combined session 里一键反向追踪：
 
 ```json
 {
   "api_version": "xdebug.v1",
-  "action": "trace.x",
+  "action": "trace.x_origin",
   "target": {"session_id": "case_a"},
   "args": {"signal": "top.u.data", "time": "100ns"},
   "limits": {"max_depth": 8, "max_nodes": 256, "max_time_steps": 128, "max_chains": 8}
 }
 ```
 
-`trace.x` 会先证明查询值是否含 X，再按 DFS 同等追踪传播时刻含 X 的 RHS 与 control，
+`trace.x_origin` 会先证明查询值是否含 X，再按 DFS 同等追踪传播时刻含 X 的 RHS 与 control，
 并穿过 module port、interface/modport。每个分支的每一跳都会重新定位该信号连续 X
 区间的起点，因此时间可以多次向更早位置推进。仅由
 port/interface/modport/ref alias 路线不同造成的重复 chain 会先归并；
@@ -594,22 +609,8 @@ port/interface/modport/ref alias 路线不同造成的重复 chain 会先归并�
 `pending_x_dependencies`。因 `max_depth` 停止时，`data.depth_frontiers` 和
 `suggested_next_actions` 会给出从 frontier 续查或提高深度重跑所需的完整参数。
 
-unpacked/聚合数组可显式请求结构化显示：
-
-```json
-{
-  "api_version": "xdebug.v1",
-  "action": "value.at",
-  "target": {"session_id": "case_a"},
-  "args": {
-    "signal": "top.u.array_sig",
-    "time": "100ns",
-    "format": "array_indexed"
-  }
-}
-```
-
-返回会保留 raw value，并按 FSDB 打印顺序给出 `elements` 和 `by_index`。普通 scalar 请求该格式时返回 `unsupported_format` 诊断。
+`value.at` 只接受最终 leaf signal，不自动展开 unpacked array、struct 或其它 aggregate；
+需要逐元素读取时先把实际 leaf path 加入 list，再通过 `value.at(list, times)` 一次取值。
 
 需要把波形值交给 xbit 切字段时，显式传 `slice_hint`：
 
@@ -621,7 +622,7 @@ unpacked/聚合数组可显式请求结构化显示：
   "args": {
     "signal": "top.u.data",
     "time": "100ns",
-    "format": "hex",
+    "value_format": "hex",
     "slice_hint": {"chunk_width": 32, "count": 4}
   }
 }
@@ -637,18 +638,22 @@ unpacked/聚合数组可显式请求结构化显示：
   "action": "verify.conditions",
   "target": {"session_id": "case_a"},
   "args": {
+    "clock": "top.u.clk",
     "time": "100ns",
+    "signals": {
+      "valid": "top.u.valid",
+      "ready": "top.u.ready"
+    },
     "conditions": [
-      {"signal": "top.u.valid", "op": "==", "value": "1"},
-      {"signal": "top.u.ready", "op": "==", "value": "0"}
+      {"name": "accepted", "expr": "valid == 'h1 && ready == 'h1"}
     ]
   }
 }
 ```
 
-### 生成 nWave signal.rc：rc.generate
+### 生成 nWave signal.rc：nwave.rc.generate
 
-`rc.generate` 从 JSON 配置生成 nWave `signal.rc`。配置中信号路径使用点分层次，xdebug 会校验信号存在于 FSDB，并在生成 rc 时转换成 `/top/u/sig` 风格路径。group 配置不接受 `expanded`，生成的 `addGroup` / `addSubGroup` 固定不带 `-e`，subgroup 递归保持支持。该 action 只生成 signal list/view rc，不写 `openDirFile` / `activeDirFile`，打开 FSDB 仍由 nWave 会话或外部脚本负责。语法背景见 [signal_rc_syntax.md](../doc/signal_rc_syntax.md)。
+`nwave.rc.generate` 从 JSON 配置生成 nWave `signal.rc`。配置中信号路径使用点分层次，xdebug 会校验信号存在于 FSDB，并在生成 rc 时转换成 `/top/u/sig` 风格路径。group 配置不接受 `expanded`，生成的 `addGroup` / `addSubGroup` 固定不带 `-e`，subgroup 递归保持支持。该 action 只生成 signal list/view rc，不写 `openDirFile` / `activeDirFile`，打开 FSDB 仍由 nWave 会话或外部脚本负责。语法背景见 [signal_rc_syntax.md](../doc/signal_rc_syntax.md)。
 对于 `top.u.bus[15:0]` 这类 slice，校验会先查完整路径；若 FSDB 不接受 slice handle，则回退校验 base signal `top.u.bus` 是否存在。
 
 请求：
@@ -656,7 +661,7 @@ unpacked/聚合数组可显式请求结构化显示：
 ```json
 {
   "api_version": "xdebug.v1",
-  "action": "rc.generate",
+  "action": "nwave.rc.generate",
   "target": {"session_id": "case_a"},
   "args": {
     "config_path": "wave_view.json",
@@ -859,7 +864,7 @@ APB 配置的基础字段为 `paddr/pwdata/prdata/pwrite/penable/psel/clk/rst_n`
 推荐 debug flow：
 
 1. 用 `value.at` 或 `event.export` 找到异常时间。
-2. 用 `value.batch_at` 取相关握手、状态、数据寄存器。
+2. 用 `list.load` 保存相关握手、状态、数据寄存器，再通过一次 `value.at(list, times)` 取现场。
 3. 用 `trace.driver` 或 `trace.load` 查设计依赖。
 4. 如果两类资源都有，用 `trace.active_driver` 给出当前时间点的生效驱动。
 5. 只有当 compact 证据不足且 schema 支持时，再使用该 action 的详细输出参数（AXI transaction 为 `args.output.include_data:true`，其它 action 常见为 `verbose:true`）；大结果优先 export。

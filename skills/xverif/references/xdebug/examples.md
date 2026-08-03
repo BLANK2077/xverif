@@ -14,7 +14,7 @@
 
 ## 加载信号组并多时间点取值
 
-```text
+```json
 {"api_version":"xdebug.v1","action":"list.load","target":{"session_id":"case_a"},"args":{"config":{"lists":[{"name":"ready_path","signals":["top.u.valid","top.u.ready","top.u.full"]}]},"mode":"replace"}}
 ```
 
@@ -31,7 +31,7 @@
 ## 受限变化与事件
 
 ```json
-{"api_version":"xdebug.v1","action":"signal.changes","target":{"session_id":"case_a"},"args":{"signal":"top.u.ready","time_range":{"begin":"100ns","end":"200ns"},"aggregate_only":true}}
+{"api_version":"xdebug.v1","action":"signal.changes","target":{"session_id":"case_a"},"args":{"signal":"top.u.ready","time_range":{"begin":"100ns","end":"200ns"},"mode":"summary"}}
 ```
 
 ```json
