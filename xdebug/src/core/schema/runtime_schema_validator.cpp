@@ -42,6 +42,21 @@ struct CachedBatchValidators {
     std::set<std::string> known_actions;
 };
 
+struct CachedResponseVariantValidators {
+    PlainJson source;
+    std::map<std::string, std::unique_ptr<CachedValidator> > variants;
+};
+
+struct CachedInternalRequestValidators {
+    // Small generated catalog only: known-action validation must not read or
+    // construct the complete large-union schema.
+    std::map<std::string, std::string> schema_refs;
+    std::map<std::string, std::string> helper_dispatch_kinds;
+    std::map<std::string, std::string> helper_schema_refs;
+    std::map<std::string, std::unique_ptr<CachedValidator> > actions;
+    std::map<std::string, std::unique_ptr<CachedValidator> > helper_actions;
+};
+
 std::mutex& cache_mutex() {
     static std::mutex m;
     return m;
@@ -55,6 +70,22 @@ std::map<std::string, std::unique_ptr<CachedValidator> >& validator_cache() {
 std::map<std::string, std::unique_ptr<CachedBatchValidators> >&
 batch_validator_cache() {
     static std::map<std::string, std::unique_ptr<CachedBatchValidators> > cache;
+    return cache;
+}
+
+std::map<std::string, std::unique_ptr<CachedResponseVariantValidators> >&
+response_variant_validator_cache() {
+    static std::map<
+        std::string,
+        std::unique_ptr<CachedResponseVariantValidators> > cache;
+    return cache;
+}
+
+std::map<std::string, std::unique_ptr<CachedInternalRequestValidators> >&
+internal_request_validator_cache() {
+    static std::map<
+        std::string,
+        std::unique_ptr<CachedInternalRequestValidators> > cache;
     return cache;
 }
 
@@ -175,7 +206,7 @@ bool attach_definition_closure(
             result.ok = false;
             result.code = "SCHEMA_VALIDATION_CONFIG_ERROR";
             result.message =
-                "batch response projection references missing definition: " +
+                "response projection references missing definition: " +
                 name;
             result.error =
                 DiagnosticErrorBuilder::internal(
@@ -192,6 +223,326 @@ bool attach_definition_closure(
     }
     projected["$defs"] = selected;
     return true;
+}
+
+const PlainJson* resolve_local_schema(
+    const PlainJson& schema,
+    const PlainJson& definitions) {
+    if (!schema.is_object() || !schema.contains("$ref") ||
+        !schema["$ref"].is_string()) {
+        return &schema;
+    }
+    const std::string name =
+        local_definition_name(schema["$ref"].get<std::string>());
+    if (name.empty() || !definitions.contains(name)) return nullptr;
+    return &definitions[name];
+}
+
+bool discriminator_allows_value(
+    const PlainJson& schema,
+    const OrderedJson& value) {
+    if (!schema.is_object()) return true;
+    const std::string encoded = value.dump();
+    if (schema.contains("const")) {
+        if (schema["const"].dump() != encoded) return false;
+    }
+    if (schema.contains("enum") && schema["enum"].is_array()) {
+        bool found = false;
+        for (const PlainJson& candidate : schema["enum"]) {
+            if (candidate.dump() == encoded) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) return false;
+    }
+    return true;
+}
+
+bool top_response_branch_possible(
+    const PlainJson& branch,
+    const OrderedJson& response) {
+    if (!branch.is_object() || !branch.contains("properties") ||
+        !branch["properties"].is_object() ||
+        !branch["properties"].contains("ok")) {
+        return true;
+    }
+    return discriminator_allows_value(
+        branch["properties"]["ok"], response["ok"]);
+}
+
+bool summary_variant_possible(
+    const PlainJson& variant,
+    const PlainJson& definitions,
+    const OrderedJson& summary) {
+    if (!variant.is_object() || !variant.contains("properties") ||
+        !variant["properties"].is_object() ||
+        !variant["properties"].contains("summary")) {
+        return true;
+    }
+    const PlainJson* summary_schema = resolve_local_schema(
+        variant["properties"]["summary"], definitions);
+    if (!summary_schema || !summary_schema->is_object() ||
+        !summary_schema->contains("properties") ||
+        !(*summary_schema)["properties"].is_object()) {
+        return true;
+    }
+
+    // Generated response variants currently use these stable summary fields
+    // as their mutually exclusive discriminator.  Other fields remain under
+    // the selected projected schema and are still validated in full.
+    for (const char* field : {"query_mode", "found"}) {
+        const PlainJson& properties = (*summary_schema)["properties"];
+        if (!properties.contains(field)) continue;
+        if (!summary.contains(field)) continue;
+        if (!discriminator_allows_value(
+                properties[field], summary[field])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool select_unique_response_branch(
+    const PlainJson& source,
+    const OrderedJson& response,
+    size_t& top_index,
+    bool& has_nested_variant,
+    size_t& nested_index) {
+    has_nested_variant = false;
+    if (!response.is_object() || !response.contains("ok") ||
+        !response["ok"].is_boolean() ||
+        !source.contains("oneOf") || !source["oneOf"].is_array() ||
+        !source.contains("$defs") || !source["$defs"].is_object()) {
+        return false;
+    }
+
+    std::vector<size_t> top_candidates;
+    for (size_t index = 0; index < source["oneOf"].size(); ++index) {
+        if (top_response_branch_possible(source["oneOf"][index], response)) {
+            top_candidates.push_back(index);
+        }
+    }
+    if (top_candidates.size() != 1) return false;
+    top_index = top_candidates.front();
+
+    const PlainJson& top = source["oneOf"][top_index];
+    if (!top.contains("oneOf")) return true;
+    if (!top["oneOf"].is_array() || !response.contains("summary") ||
+        !response["summary"].is_object()) {
+        return false;
+    }
+
+    std::vector<size_t> nested_candidates;
+    for (size_t index = 0; index < top["oneOf"].size(); ++index) {
+        if (summary_variant_possible(
+                top["oneOf"][index],
+                source["$defs"],
+                response["summary"])) {
+            nested_candidates.push_back(index);
+        }
+    }
+    if (nested_candidates.size() != 1) return false;
+    has_nested_variant = true;
+    nested_index = nested_candidates.front();
+    return true;
+}
+
+bool schema_contains_alternative(
+    const PlainJson& general_schema,
+    const PlainJson& selected_schema,
+    const PlainJson& definitions,
+    size_t depth) {
+    if (depth > 32) return false;
+    const PlainJson* general =
+        resolve_local_schema(general_schema, definitions);
+    const PlainJson* selected =
+        resolve_local_schema(selected_schema, definitions);
+    if (!general || !selected) return false;
+    if (*general == *selected) return true;
+    if (!general->is_object() || !general->contains("anyOf") ||
+        !(*general)["anyOf"].is_array()) {
+        return false;
+    }
+    for (const PlainJson& alternative_schema : (*general)["anyOf"]) {
+        if (schema_contains_alternative(
+                alternative_schema,
+                selected_schema,
+                definitions,
+                depth + 1)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool schema_is_same_or_alternative(
+    const PlainJson& general_schema,
+    const PlainJson& selected_schema,
+    const PlainJson& definitions) {
+    return schema_contains_alternative(
+        general_schema, selected_schema, definitions, 0);
+}
+
+void merge_required_fields(
+    PlainJson& projected,
+    const PlainJson& selected) {
+    if (!selected.contains("required") ||
+        !selected["required"].is_array()) {
+        return;
+    }
+    if (!projected.contains("required") ||
+        !projected["required"].is_array()) {
+        projected["required"] = PlainJson::array();
+    }
+    for (const PlainJson& field : selected["required"]) {
+        bool present = false;
+        for (const PlainJson& existing : projected["required"]) {
+            if (existing == field) {
+                present = true;
+                break;
+            }
+        }
+        if (!present) projected["required"].push_back(field);
+    }
+}
+
+void apply_selected_response_branch(
+    PlainJson& projected,
+    const PlainJson& selected,
+    const PlainJson& definitions) {
+    if (selected.contains("properties") &&
+        selected["properties"].is_object()) {
+        if (!projected.contains("properties") ||
+            !projected["properties"].is_object()) {
+            projected["properties"] = PlainJson::object();
+        }
+        for (PlainJson::const_iterator property =
+                 selected["properties"].begin();
+             property != selected["properties"].end(); ++property) {
+            if (!projected["properties"].contains(property.key())) {
+                projected["properties"][property.key()] = property.value();
+                continue;
+            }
+            PlainJson& general =
+                projected["properties"][property.key()];
+            if (schema_is_same_or_alternative(
+                    general, property.value(), definitions)) {
+                general = property.value();
+            } else {
+                PlainJson original = general;
+                general = {
+                    {"allOf", PlainJson::array(
+                        {original, property.value()})}
+                };
+            }
+        }
+    }
+    merge_required_fields(projected, selected);
+
+    PlainJson residual = selected;
+    residual.erase("properties");
+    residual.erase("required");
+    residual.erase("oneOf");
+    if (!residual.empty()) {
+        if (!projected.contains("allOf") ||
+            !projected["allOf"].is_array()) {
+            projected["allOf"] = PlainJson::array();
+        }
+        projected["allOf"].push_back(residual);
+    }
+}
+
+bool compile_projected_validator(
+    CachedValidator& cached,
+    const PlainJson& schema,
+    const std::string& schema_ref,
+    RuntimeSchemaValidationResult& result);
+
+const CachedValidator* get_cached_response_variant_validator(
+    const std::string& schema_ref,
+    const OrderedJson& response,
+    bool& projection_selected,
+    RuntimeSchemaValidationResult& result) {
+    projection_selected = false;
+    std::lock_guard<std::mutex> lock(cache_mutex());
+    std::map<
+        std::string,
+        std::unique_ptr<CachedResponseVariantValidators> >& cache =
+        response_variant_validator_cache();
+    std::map<
+        std::string,
+        std::unique_ptr<CachedResponseVariantValidators> >::iterator found =
+        cache.find(schema_ref);
+    if (found == cache.end()) {
+        std::unique_ptr<CachedResponseVariantValidators> created(
+            new CachedResponseVariantValidators());
+        std::string error;
+        if (!read_plain_json(
+                repo_file_path(schema_ref), created->source, error)) {
+            result.ok = false;
+            result.code = "SCHEMA_VALIDATION_CONFIG_ERROR";
+            result.message = error;
+            result.error =
+                DiagnosticErrorBuilder::internal(
+                    result.code, result.message)
+                    .schema_path(schema_ref)
+                    .to_json();
+            return nullptr;
+        }
+        found = cache.insert(
+            std::make_pair(schema_ref, std::move(created))).first;
+    }
+
+    CachedResponseVariantValidators& variants = *found->second;
+    size_t top_index = 0;
+    size_t nested_index = 0;
+    bool has_nested_variant = false;
+    if (!select_unique_response_branch(
+            variants.source,
+            response,
+            top_index,
+            has_nested_variant,
+            nested_index)) {
+        return nullptr;
+    }
+
+    const std::string variant_key =
+        "top:" + std::to_string(top_index) +
+        (has_nested_variant
+             ? "/nested:" + std::to_string(nested_index)
+             : std::string());
+    std::map<std::string, std::unique_ptr<CachedValidator> >::iterator
+        cached = variants.variants.find(variant_key);
+    if (cached != variants.variants.end()) {
+        projection_selected = true;
+        return cached->second.get();
+    }
+
+    const PlainJson& definitions = variants.source["$defs"];
+    PlainJson projected = variants.source;
+    projected.erase("$defs");
+    projected.erase("oneOf");
+    const PlainJson& top = variants.source["oneOf"][top_index];
+    apply_selected_response_branch(projected, top, definitions);
+    if (has_nested_variant) {
+        apply_selected_response_branch(
+            projected, top["oneOf"][nested_index], definitions);
+    }
+    if (!attach_definition_closure(
+            projected, definitions, result, schema_ref)) {
+        return nullptr;
+    }
+
+    std::unique_ptr<CachedValidator> compiled(new CachedValidator());
+    if (!compile_projected_validator(
+            *compiled, projected, schema_ref, result)) {
+        return nullptr;
+    }
+    const CachedValidator* out = compiled.get();
+    variants.variants[variant_key] = std::move(compiled);
+    projection_selected = true;
+    return out;
 }
 
 bool compile_projected_validator(
@@ -218,6 +569,326 @@ bool compile_projected_validator(
         return false;
     }
     return true;
+}
+
+bool internal_action_discriminator_matches(
+    const PlainJson& branch,
+    const std::string& action,
+    bool& has_discriminator) {
+    has_discriminator = false;
+    if (!branch.is_object() || !branch.contains("properties") ||
+        !branch["properties"].is_object() ||
+        !branch["properties"].contains("action")) {
+        return false;
+    }
+    const PlainJson& discriminator =
+        branch["properties"]["action"];
+    if (!discriminator.is_object()) return false;
+    if (discriminator.contains("const")) {
+        has_discriminator = true;
+        return discriminator["const"].is_string() &&
+               discriminator["const"].get<std::string>() == action;
+    }
+    if (!discriminator.contains("enum") ||
+        !discriminator["enum"].is_array()) {
+        return false;
+    }
+    has_discriminator = true;
+    for (const PlainJson& value : discriminator["enum"]) {
+        if (value.is_string() && value.get<std::string>() == action) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool safe_internal_action_name(const std::string& action) {
+    if (action.empty()) return false;
+    for (size_t index = 0; index < action.size(); ++index) {
+        const char ch = action[index];
+        const bool alphanumeric =
+            (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9');
+        if (alphanumeric) continue;
+        if ((ch != '.' && ch != '_') || index == 0 ||
+            index + 1 == action.size()) {
+            return false;
+        }
+        const char next = action[index + 1];
+        const bool next_alphanumeric =
+            (next >= 'a' && next <= 'z') ||
+            (next >= '0' && next <= '9');
+        if (!next_alphanumeric) return false;
+    }
+    return true;
+}
+
+const CachedInternalRequestValidators* get_cached_internal_request_manifest(
+    RuntimeSchemaValidationResult& result) {
+    std::lock_guard<std::mutex> lock(cache_mutex());
+    std::map<
+        std::string,
+        std::unique_ptr<CachedInternalRequestValidators> >& cache =
+        internal_request_validator_cache();
+    std::map<
+        std::string,
+        std::unique_ptr<CachedInternalRequestValidators> >::iterator found =
+        cache.find(kInternalRequestManifest);
+    if (found != cache.end()) return found->second.get();
+
+    PlainJson manifest;
+    std::string error;
+    if (!read_plain_json(
+            repo_file_path(kInternalRequestManifest), manifest, error)) {
+        result.ok = false;
+        result.code = "SCHEMA_VALIDATION_CONFIG_ERROR";
+        result.message = error;
+        result.error =
+            DiagnosticErrorBuilder::internal(result.code, result.message)
+                .schema_path(kInternalRequestManifest)
+                .to_json();
+        return nullptr;
+    }
+    const std::set<std::string> allowed_fields = {
+        "schema_version",
+        "api_version",
+        "aggregate_schema_ref",
+        "action_count",
+        "actions",
+        "helper_dispatch_kinds",
+        "helper_envelope_schemas",
+    };
+    bool valid = manifest.is_object();
+    if (valid) {
+        for (PlainJson::const_iterator field = manifest.begin();
+             field != manifest.end(); ++field) {
+            if (allowed_fields.count(field.key()) == 0) valid = false;
+        }
+    }
+    valid = valid && manifest.size() == allowed_fields.size() &&
+            manifest.value("schema_version", std::string()) ==
+                "xdebug.internal-request-manifest.v1" &&
+            manifest.value("api_version", std::string()) ==
+                kInternalApiVersion &&
+            manifest.value("aggregate_schema_ref", std::string()) ==
+                kInternalRequestSchema &&
+            manifest.contains("action_count") &&
+            manifest["action_count"].is_number_unsigned() &&
+            manifest.contains("actions") &&
+            manifest["actions"].is_object() &&
+            manifest.contains("helper_dispatch_kinds") &&
+            manifest["helper_dispatch_kinds"].is_object() &&
+            manifest.contains("helper_envelope_schemas") &&
+            manifest["helper_envelope_schemas"].is_object();
+    if (!valid ||
+        manifest["action_count"].get<size_t>() !=
+            manifest["actions"].size() ||
+        manifest["helper_dispatch_kinds"].size() !=
+            manifest["actions"].size()) {
+        result.ok = false;
+        result.code = "SCHEMA_VALIDATION_CONFIG_ERROR";
+        result.message =
+            "internal request manifest is missing or inconsistent";
+        result.error =
+            DiagnosticErrorBuilder::internal(result.code, result.message)
+                .schema_path(kInternalRequestManifest)
+                .to_json();
+        return nullptr;
+    }
+
+    std::unique_ptr<CachedInternalRequestValidators> created(
+        new CachedInternalRequestValidators());
+    std::set<std::string> unique_refs;
+    for (PlainJson::const_iterator entry = manifest["actions"].begin();
+         entry != manifest["actions"].end(); ++entry) {
+        const std::string action = entry.key();
+        const std::string expected_ref =
+            "schemas/v1/internal/actions/" + action +
+            ".request.schema.json";
+        if (!safe_internal_action_name(action) ||
+            !entry.value().is_string() ||
+            entry.value().get<std::string>() != expected_ref ||
+            !unique_refs.insert(expected_ref).second) {
+            result.ok = false;
+            result.code = "SCHEMA_VALIDATION_CONFIG_ERROR";
+            result.message =
+                "internal request manifest contains an invalid or duplicate "
+                "action mapping";
+            result.error =
+                DiagnosticErrorBuilder::internal(
+                    result.code, result.message)
+                    .schema_path(kInternalRequestManifest)
+                    .to_json();
+            return nullptr;
+        }
+        created->schema_refs[action] = expected_ref;
+    }
+    const std::set<std::string> allowed_dispatch_kinds = {
+        "server_forward",
+        "session_local",
+        "server_control",
+        "hybrid_local_forward",
+    };
+    for (PlainJson::const_iterator entry =
+             manifest["helper_dispatch_kinds"].begin();
+         entry != manifest["helper_dispatch_kinds"].end(); ++entry) {
+        if (created->schema_refs.count(entry.key()) == 0 ||
+            !entry.value().is_string() ||
+            allowed_dispatch_kinds.count(
+                entry.value().get<std::string>()) == 0) {
+            result.ok = false;
+            result.code = "SCHEMA_VALIDATION_CONFIG_ERROR";
+            result.message =
+                "internal request manifest contains an invalid helper "
+                "dispatch kind";
+            result.error =
+                DiagnosticErrorBuilder::internal(
+                    result.code, result.message)
+                    .schema_path(kInternalRequestManifest)
+                    .to_json();
+            return nullptr;
+        }
+        created->helper_dispatch_kinds[entry.key()] =
+            entry.value().get<std::string>();
+    }
+    std::set<std::string> unique_helper_refs;
+    for (PlainJson::const_iterator entry =
+             manifest["helper_envelope_schemas"].begin();
+         entry != manifest["helper_envelope_schemas"].end(); ++entry) {
+        const std::string action = entry.key();
+        const std::string expected_ref =
+            "schemas/v1/internal/helper-actions/" + action +
+            ".request.schema.json";
+        if (created->schema_refs.count(action) == 0 ||
+            created->helper_dispatch_kinds.count(action) == 0 ||
+            created->helper_dispatch_kinds.find(action)->second !=
+                "server_forward" ||
+            !entry.value().is_string() ||
+            entry.value().get<std::string>() != expected_ref ||
+            !unique_helper_refs.insert(expected_ref).second) {
+            result.ok = false;
+            result.code = "SCHEMA_VALIDATION_CONFIG_ERROR";
+            result.message =
+                "internal request manifest contains an invalid or duplicate "
+                "helper envelope mapping";
+            result.error =
+                DiagnosticErrorBuilder::internal(
+                    result.code, result.message)
+                    .schema_path(kInternalRequestManifest)
+                    .to_json();
+            return nullptr;
+        }
+        created->helper_schema_refs[action] = expected_ref;
+    }
+    for (std::map<std::string, std::string>::const_iterator entry =
+             created->helper_dispatch_kinds.begin();
+         entry != created->helper_dispatch_kinds.end(); ++entry) {
+        const bool has_helper_schema =
+            created->helper_schema_refs.count(entry->first) != 0;
+        if ((entry->second == "server_forward") != has_helper_schema) {
+            result.ok = false;
+            result.code = "SCHEMA_VALIDATION_CONFIG_ERROR";
+            result.message =
+                "helper dispatch catalog and envelope schemas differ";
+            result.error =
+                DiagnosticErrorBuilder::internal(
+                    result.code, result.message)
+                    .schema_path(kInternalRequestManifest)
+                    .to_json();
+            return nullptr;
+        }
+    }
+    const CachedInternalRequestValidators* out = created.get();
+    cache[kInternalRequestManifest] = std::move(created);
+    return out;
+}
+
+const CachedValidator* get_cached_internal_request_validator(
+    const std::string& action,
+    bool helper_envelope,
+    RuntimeSchemaValidationResult& result) {
+    std::lock_guard<std::mutex> lock(cache_mutex());
+    std::map<
+        std::string,
+        std::unique_ptr<CachedInternalRequestValidators> >& cache =
+        internal_request_validator_cache();
+    std::map<
+        std::string,
+        std::unique_ptr<CachedInternalRequestValidators> >::iterator found =
+        cache.find(kInternalRequestManifest);
+    if (found == cache.end()) {
+        result.ok = false;
+        result.code = "SCHEMA_VALIDATION_CONFIG_ERROR";
+        result.message = "internal request manifest was not loaded";
+        result.error =
+            DiagnosticErrorBuilder::internal(result.code, result.message)
+                .schema_path(kInternalRequestManifest)
+                .to_json();
+        return nullptr;
+    }
+    CachedInternalRequestValidators& actions = *found->second;
+    std::map<std::string, std::unique_ptr<CachedValidator> >& validators =
+        helper_envelope ? actions.helper_actions : actions.actions;
+    std::map<std::string, std::unique_ptr<CachedValidator> >::iterator
+        cached = validators.find(action);
+    if (cached != validators.end()) return cached->second.get();
+    const std::map<std::string, std::string>& schema_refs =
+        helper_envelope ? actions.helper_schema_refs : actions.schema_refs;
+    std::map<std::string, std::string>::const_iterator schema_ref =
+        schema_refs.find(action);
+    if (schema_ref == schema_refs.end()) {
+        result.ok = false;
+        result.code = "SCHEMA_VALIDATION_CONFIG_ERROR";
+        result.message =
+            helper_envelope
+                ? "server-forward action is missing its helper envelope schema"
+                : "known internal action is missing its runtime schema mapping";
+        result.error =
+            DiagnosticErrorBuilder::internal(result.code, result.message)
+                .schema_path(kInternalRequestManifest)
+                .to_json();
+        return nullptr;
+    }
+
+    PlainJson schema;
+    std::string error;
+    if (!read_plain_json(repo_file_path(schema_ref->second), schema, error)) {
+        result.ok = false;
+        result.code = "SCHEMA_VALIDATION_CONFIG_ERROR";
+        result.message = error;
+        result.error =
+            DiagnosticErrorBuilder::internal(result.code, result.message)
+                .schema_path(schema_ref->second)
+                .to_json();
+        return nullptr;
+    }
+    bool has_discriminator = false;
+    const bool exact_action = helper_envelope
+        ? internal_action_discriminator_matches(
+              schema, action, has_discriminator)
+        : schema.contains("allOf") && schema["allOf"].is_array() &&
+              schema["allOf"].size() == 1 &&
+              internal_action_discriminator_matches(
+                  schema["allOf"][0], action, has_discriminator);
+    if (!has_discriminator || !exact_action) {
+        result.ok = false;
+        result.code = "SCHEMA_VALIDATION_CONFIG_ERROR";
+        result.message =
+            "internal request runtime schema discriminator does not match "
+            "its manifest action";
+        result.error =
+            DiagnosticErrorBuilder::internal(result.code, result.message)
+                .schema_path(schema_ref->second)
+                .to_json();
+        return nullptr;
+    }
+    std::unique_ptr<CachedValidator> compiled(new CachedValidator());
+    if (!compile_projected_validator(
+            *compiled, schema, schema_ref->second, result)) {
+        return nullptr;
+    }
+    const CachedValidator* out = compiled.get();
+    validators[action] = std::move(compiled);
+    return out;
 }
 
 const CachedBatchValidators* get_cached_batch_validators(
@@ -782,22 +1453,6 @@ RuntimeSchemaValidationResult validate_response_with_cached_schema(
     return result;
 }
 
-bool internal_action_is_known(
-    const PlainJson& schema,
-    const std::string& action) {
-    if (!schema.contains("x-internal-actions") ||
-        !schema["x-internal-actions"].is_array()) {
-        return false;
-    }
-    for (const PlainJson& value : schema["x-internal-actions"]) {
-        if (value.is_string() &&
-            value.get<std::string>() == action) {
-            return true;
-        }
-    }
-    return false;
-}
-
 }  // namespace
 
 RuntimeSchemaValidationResult RuntimeSchemaValidator::validate_request(const std::string& action,
@@ -818,9 +1473,26 @@ RuntimeSchemaValidator::validate_response(
     const OrderedJson& response,
     const std::string& schema_ref) const {
     RuntimeSchemaValidationResult result;
-    const CachedValidator* cached = get_cached_validator(
+    const std::string resolved_schema_ref =
+        response_schema_ref_for_action(action, schema_ref);
+    bool projection_selected = false;
+    const CachedValidator* cached =
+        get_cached_response_variant_validator(
+            resolved_schema_ref,
+            response,
+            projection_selected,
+            result);
+    if (!result.ok) return result;
+    if (projection_selected) {
+        return validate_response_with_cached_schema(*cached, response);
+    }
+
+    // Some response schemas do not expose a unique ok/query_mode/found
+    // discriminator.  Preserve exact public-schema semantics by using the
+    // complete validator whenever a projection cannot be proven unique.
+    cached = get_cached_validator(
         action,
-        response_schema_ref_for_action(action, schema_ref),
+        resolved_schema_ref,
         result);
     if (!cached) return result;
     return validate_response_with_cached_schema(*cached, response);
@@ -896,14 +1568,12 @@ RuntimeSchemaValidator::validate_internal_request(
                 request["action"].is_string()
             ? request["action"].get<std::string>()
             : std::string();
-    const CachedValidator* cached = get_cached_validator(
-        action,
-        kInternalRequestSchema,
-        result);
-    if (!cached) return result;
-
     if (!request.is_object()) {
-        return validate_with_cached_schema(*cached, action, request);
+        const CachedValidator* complete = get_cached_validator(
+            action, kInternalRequestSchema, result);
+        return complete
+            ? validate_with_cached_schema(*complete, action, request)
+            : result;
     }
     if (!request.contains("api_version") ||
         !request["api_version"].is_string() ||
@@ -918,14 +1588,21 @@ RuntimeSchemaValidator::validate_internal_request(
                 result.message)
                 .invalid_arg("api_version")
                 .expected(kInternalApiVersion)
-                .schema_path(cached->schema_path)
+                .schema_path(kInternalRequestSchema)
                 .to_json();
         return result;
     }
     if (action.empty()) {
-        return validate_with_cached_schema(*cached, action, request);
+        const CachedValidator* complete = get_cached_validator(
+            action, kInternalRequestSchema, result);
+        return complete
+            ? validate_with_cached_schema(*complete, action, request)
+            : result;
     }
-    if (!internal_action_is_known(cached->schema, action)) {
+    const CachedInternalRequestValidators* manifest =
+        get_cached_internal_request_manifest(result);
+    if (!manifest) return result;
+    if (manifest->schema_refs.count(action) == 0) {
         result.ok = false;
         result.code = "UNKNOWN_ACTION";
         result.message = "unknown internal engine action: " + action;
@@ -935,11 +1612,54 @@ RuntimeSchemaValidator::validate_internal_request(
                 result.message)
                 .invalid_arg("action")
                 .received(action)
-                .schema_path(cached->schema_path)
+                .schema_path(kInternalRequestSchema)
                 .to_json();
         return result;
     }
-    return validate_with_cached_schema(*cached, action, request);
+    const CachedValidator* action_cached =
+        get_cached_internal_request_validator(action, false, result);
+    return action_cached
+        ? validate_with_cached_schema(*action_cached, action, request)
+        : result;
+}
+
+RuntimeSchemaValidationResult
+RuntimeSchemaValidator::validate_internal_request_for_helper(
+    const OrderedJson& request,
+    bool& used_forward_envelope) const {
+    used_forward_envelope = false;
+    if (!request.is_object() || !request.contains("action") ||
+        !request["action"].is_string() ||
+        !request.contains("api_version") ||
+        !request["api_version"].is_string() ||
+        request["api_version"].get<std::string>() !=
+            kInternalApiVersion) {
+        return validate_internal_request(request);
+    }
+    const std::string action = request["action"].get<std::string>();
+    const OrderedJson routing =
+        request.value("routing", OrderedJson::object());
+    const bool session_forward =
+        routing.is_object() && routing.contains("session_id") &&
+        routing["session_id"].is_string() &&
+        !routing["session_id"].get<std::string>().empty();
+    if (!session_forward) return validate_internal_request(request);
+
+    RuntimeSchemaValidationResult result;
+    const CachedInternalRequestValidators* manifest =
+        get_cached_internal_request_manifest(result);
+    if (!manifest) return result;
+    std::map<std::string, std::string>::const_iterator dispatch =
+        manifest->helper_dispatch_kinds.find(action);
+    if (dispatch == manifest->helper_dispatch_kinds.end() ||
+        dispatch->second != "server_forward") {
+        return validate_internal_request(request);
+    }
+    const CachedValidator* envelope =
+        get_cached_internal_request_validator(action, true, result);
+    if (!envelope) return result;
+    used_forward_envelope = true;
+    return validate_with_cached_schema(*envelope, action, request);
 }
 
 OrderedJson valid_request_example(const std::string& action) {

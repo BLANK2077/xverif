@@ -1,0 +1,399 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xdebug.internal.engine.request.v1.action.stream.config.load",
+  "title": "xdebug.internal.v1 stream.config.load engine request",
+  "description": "Generated strict per-action projection of the private frontend-to-engine request contract.",
+  "type": "object",
+  "required": [
+    "api_version",
+    "action"
+  ],
+  "properties": {
+    "api_version": {},
+    "action": {},
+    "observability": {},
+    "routing": {},
+    "target": {},
+    "args": {},
+    "limits": {}
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "type": "object",
+      "required": [
+        "api_version",
+        "action",
+        "target",
+        "routing"
+      ],
+      "properties": {
+        "api_version": {
+          "type": "string",
+          "enum": [
+            "xdebug.internal.v1"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "stream.config.load"
+          ]
+        },
+        "observability": {
+          "type": "object",
+          "properties": {
+            "request_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "trace_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "span_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "parent_span_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "routing": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved engine session destination."
+            },
+            "daidir": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved design database path used to open an engine."
+            },
+            "fsdb": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved waveform database path used to open an engine."
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "design",
+                "waveform",
+                "combined"
+              ],
+              "description": "Resource mode derived by the frontend from resolved resources."
+            },
+            "transport_auth_token": {
+              "type": "string",
+              "minLength": 1,
+              "description": "TCP transport credential; never part of xdebug.v1."
+            }
+          },
+          "additionalProperties": false,
+          "oneOf": [
+            {
+              "required": [
+                "fsdb",
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "waveform"
+                }
+              },
+              "not": {
+                "required": [
+                  "daidir"
+                ]
+              }
+            },
+            {
+              "required": [
+                "daidir",
+                "fsdb",
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "combined"
+                }
+              }
+            }
+          ]
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "fsdb": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "session_id"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "fsdb"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "session_id"
+                ]
+              },
+              "required": [
+                "fsdb"
+              ]
+            }
+          ],
+          "additionalProperties": false
+        },
+        "args": {
+          "type": "object",
+          "required": [],
+          "properties": {
+            "config": {
+              "type": "object",
+              "required": [
+                "streams"
+              ],
+              "properties": {
+                "streams": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "name",
+                      "signals",
+                      "clock",
+                      "vld"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                        "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
+                      },
+                      "signals": {
+                        "type": "object",
+                        "minProperties": 1,
+                        "propertyNames": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                        },
+                        "additionalProperties": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "Value for a caller-defined signal alias key. Supply the real signal path or the action-supported expression for that alias."
+                        },
+                        "description": "Signal-path list or alias-to-path/expression map. Expressions must reference aliases rather than nested paths.",
+                        "x-dynamic-map": true,
+                        "x-dynamic-contract": "Each property key is an alias referenced by this action; each value resolves that alias to a signal path or supported expression."
+                      },
+                      "clock": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "采样、统计或协议检查使用的 clock 信号路径。"
+                      },
+                      "edge": {
+                        "type": "string",
+                        "enum": [
+                          "posedge",
+                          "negedge",
+                          "dual"
+                        ],
+                        "description": "Clock sampling edge. The schema default is authoritative; negedge often matches monitor semantics."
+                      },
+                      "sample_point": {
+                        "type": "string",
+                        "enum": [
+                          "before",
+                          "after"
+                        ],
+                        "description": "Before/after observation point for posedge or dual sampling; it does not change the raw waveform range."
+                      },
+                      "reset": {
+                        "type": "object",
+                        "required": [
+                          "signal",
+                          "polarity"
+                        ],
+                        "properties": {
+                          "signal": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "One-bit final waveform signal path used as reset."
+                          },
+                          "polarity": {
+                            "type": "string",
+                            "enum": [
+                              "active_low",
+                              "active_high"
+                            ],
+                            "description": "Level that asserts reset. X, Z, and unavailable samples are conservatively treated as asserted."
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "Reset definition. Both signal and polarity are required when reset is supplied."
+                      },
+                      "vld": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Signal path or expression defining the valid sampling condition for counter statistics."
+                      },
+                      "rdy": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Stream valid-ready 流控中的 ready 信号路径；与 bp 流控分支互斥。"
+                      },
+                      "bp": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "back-pressure 信号路径；与 rdy 只能按 stream 定义的其中一种流控语义使用。"
+                      },
+                      "sop": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Packet stream 的 start-of-packet 边界信号路径。"
+                      },
+                      "eop": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Packet stream 的 end-of-packet 边界信号路径。"
+                      },
+                      "data": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Valid-ready or protocol payload signal path. Data-specific checks run only when it is supplied."
+                      },
+                      "beat_fields": {
+                        "type": "object",
+                        "minProperties": 1,
+                        "propertyNames": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                        },
+                        "additionalProperties": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "Value for a caller-defined stream field name. Supply the signal path sampled for that field."
+                        },
+                        "description": "Stream 每个传输 beat 采样的命名字段到信号路径 mapping。",
+                        "x-dynamic-map": true,
+                        "x-dynamic-contract": "Each property key is a stream field name and each value is its signal path."
+                      },
+                      "packet_stable_fields": {
+                        "type": "object",
+                        "minProperties": 1,
+                        "propertyNames": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                        },
+                        "additionalProperties": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "Value for a caller-defined stream field name. Supply the signal path sampled for that field."
+                        },
+                        "description": "Packet 从 SOP 到 EOP 期间必须保持稳定的命名字段到信号路径 mapping。",
+                        "x-dynamic-map": true,
+                        "x-dynamic-contract": "Each property key is a stream field name and each value is its signal path."
+                      },
+                      "channel_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "用于区分可交错 stream channel 的 ID 信号路径。"
+                      },
+                      "channel_id_valid": {
+                        "type": "string",
+                        "enum": [
+                          "sop",
+                          "eop",
+                          "every_beat"
+                        ],
+                        "description": "指示 channel_id 在当前 stream beat 有效的信号路径。"
+                      },
+                      "allow_interleaving": {
+                        "type": "boolean",
+                        "description": "为 true 时允许不同 channel_id 的 packet beat 交错；同一 channel 内仍按顺序组包。"
+                      },
+                      "description": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "该保存对象的人类可读说明；不参与信号解析、匹配或采样语义。"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "description": "要加载或定义的 stream 配置列表；每项独立声明流控、packet 边界与字段 mapping。"
+                  },
+                  "description": "需要加载的 stream 配置列表。"
+                }
+              },
+              "additionalProperties": false,
+              "description": "内联配置对象。"
+            },
+            "config_path": {
+              "type": "string",
+              "minLength": 1,
+              "description": "输入配置文件路径。"
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "replace",
+                "append"
+              ],
+              "description": "Action processing or return mode. Its legal values, default, and interactions are action-specific."
+            }
+          },
+          "additionalProperties": false,
+          "oneOf": [
+            {
+              "required": [
+                "config"
+              ]
+            },
+            {
+              "required": [
+                "config_path"
+              ]
+            }
+          ]
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "timeout_ms": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647,
+              "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

@@ -157,6 +157,48 @@ int main() {
     assert(registry.get(alias, current).ok());
     assert(current.generation == generation_two);
 
+    // A touch only rewrites the durable registry when time advances.  The
+    // same-second helper/server pair and an older concurrent observation are
+    // successful no-ops, while generation checks still fail closed.
+    assert(
+        registry
+            .touch_if_generation(alias, generation_two, 200)
+            .ok());
+    assert(registry.get(alias, current).ok());
+    assert(current.last_active == 200);
+    struct stat registry_before_noop;
+    assert(
+        stat(
+            xdebug_design::xdebug_design_registry_path().c_str(),
+            &registry_before_noop) == 0);
+    assert(
+        registry
+            .touch_if_generation(alias, generation_two, 200)
+            .ok());
+    assert(
+        registry
+            .touch_if_generation(alias, generation_two, 150)
+            .ok());
+    const xdebug_engine::SessionRegistryResult stale_touch =
+        registry.touch_if_generation(alias, generation_one, 300);
+    assert(
+        stale_touch.status ==
+        xdebug_engine::SessionRegistryStatus::GenerationMismatch);
+    struct stat registry_after_noop;
+    assert(
+        stat(
+            xdebug_design::xdebug_design_registry_path().c_str(),
+            &registry_after_noop) == 0);
+    assert(registry_before_noop.st_ino == registry_after_noop.st_ino);
+    assert(registry.get(alias, current).ok());
+    assert(current.last_active == 200);
+    assert(
+        registry
+            .touch_if_generation(alias, generation_two, 201)
+            .ok());
+    assert(registry.get(alias, current).ok());
+    assert(current.last_active == 201);
+
     retained = second;
     retained.lifecycle_state = "cleanup_failed";
     assert(

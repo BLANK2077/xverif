@@ -468,6 +468,15 @@ SessionRegistryResult SessionRegistry::touch_if_generation(
                 SessionRegistryStatus::GenerationMismatch,
                 "touch generation no longer matches registry"};
         }
+        // Activity timestamps have one-second resolution, while both the
+        // server and its helper may touch the same request.  Do not repeat the
+        // atomic file write and fsync sequence when it cannot advance the
+        // durable timestamp.  Treat an older observation as success as well so
+        // concurrent requests can never move last_active backwards.
+        if (session.last_active >= last_active) {
+            release_registry_lock(lock_fd);
+            return SessionRegistryResult();
+        }
         session.last_active = last_active;
         found = true;
         break;

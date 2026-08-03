@@ -1,0 +1,363 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xdebug.internal.engine.request.v1.action.protocol.handshake.inspect",
+  "title": "xdebug.internal.v1 protocol.handshake.inspect engine request",
+  "description": "Generated strict per-action projection of the private frontend-to-engine request contract.",
+  "type": "object",
+  "required": [
+    "api_version",
+    "action"
+  ],
+  "properties": {
+    "api_version": {},
+    "action": {},
+    "observability": {},
+    "routing": {},
+    "target": {},
+    "args": {},
+    "limits": {}
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "type": "object",
+      "required": [
+        "api_version",
+        "action",
+        "args",
+        "target",
+        "routing"
+      ],
+      "properties": {
+        "api_version": {
+          "type": "string",
+          "enum": [
+            "xdebug.internal.v1"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "protocol.handshake.inspect"
+          ]
+        },
+        "observability": {
+          "type": "object",
+          "properties": {
+            "request_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "trace_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "span_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "parent_span_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "routing": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved engine session destination."
+            },
+            "daidir": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved design database path used to open an engine."
+            },
+            "fsdb": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved waveform database path used to open an engine."
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "design",
+                "waveform",
+                "combined"
+              ],
+              "description": "Resource mode derived by the frontend from resolved resources."
+            },
+            "transport_auth_token": {
+              "type": "string",
+              "minLength": 1,
+              "description": "TCP transport credential; never part of xdebug.v1."
+            }
+          },
+          "additionalProperties": false,
+          "oneOf": [
+            {
+              "required": [
+                "fsdb",
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "waveform"
+                }
+              },
+              "not": {
+                "required": [
+                  "daidir"
+                ]
+              }
+            },
+            {
+              "required": [
+                "daidir",
+                "fsdb",
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "combined"
+                }
+              }
+            }
+          ]
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "fsdb": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "session_id"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "fsdb"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "session_id"
+                ]
+              },
+              "required": [
+                "fsdb"
+              ]
+            }
+          ],
+          "additionalProperties": false
+        },
+        "args": {
+          "type": "object",
+          "required": [
+            "clock",
+            "valid",
+            "ready"
+          ],
+          "properties": {
+            "clock": {
+              "type": "string",
+              "description": "采样、统计或协议检查使用的 clock 信号路径。"
+            },
+            "data": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Valid-ready or protocol payload signal path. Data-specific checks run only when it is supplied."
+                },
+                {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Valid-ready or protocol payload signal path. Data-specific checks run only when it is supplied."
+                  },
+                  "description": "Valid-ready or protocol payload signal path. Data-specific checks run only when it is supplied."
+                }
+              ],
+              "description": "可选 payload 信号路径或路径列表；仅提供时才可检查 stalled-data stability。"
+            },
+            "edge": {
+              "type": "string",
+              "description": "Clock sampling edge. The schema default is authoritative; negedge often matches monitor semantics."
+            },
+            "line_limit": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Limits returned evidence rows only, not scanning, aggregation, or the verdict; read completeness fields as well."
+            },
+            "ready": {
+              "type": "string",
+              "description": "valid-ready 握手中的 ready 信号路径。"
+            },
+            "render_time_unit": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "ps",
+                "ns",
+                "us"
+              ],
+              "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
+            },
+            "rules": {
+              "type": "object",
+              "properties": {
+                "max_wait_cycles": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Maximum consecutive wait cycles from a sampled valid=1 until handshake."
+                },
+                "check_data_stable_when_stalled": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Effective only when data is supplied; checks whether data changes while valid=1 and ready=0."
+                },
+                "require_valid_hold_until_handshake": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "Checks that valid remains asserted from its first assertion through valid&&ready handshake."
+                },
+                "ready_without_valid": {
+                  "type": "string",
+                  "enum": [
+                    "summary",
+                    "intervals",
+                    "all"
+                  ],
+                  "default": "summary",
+                  "description": "Reporting granularity for ready=1 and valid=0. This is activity information, not by itself a protocol violation."
+                }
+              },
+              "additionalProperties": false,
+              "description": "Valid-ready inspection rules. Omitted fields use their declared schema defaults."
+            },
+            "sample_point": {
+              "type": "string",
+              "enum": [
+                "before",
+                "after"
+              ],
+              "description": "Before/after observation point for posedge or dual sampling; it does not change the raw waveform range."
+            },
+            "time_range": {
+              "type": "object",
+              "minProperties": 1,
+              "properties": {
+                "begin": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "闭区间起点；省略时使用可用波形窗口起点。"
+                },
+                "end": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "闭区间终点；省略时使用可用波形窗口终点。"
+                }
+              },
+              "additionalProperties": false,
+              "description": "Closed analysis interval. begin and end may be omitted independently to use the available waveform bounds."
+            },
+            "valid": {
+              "type": "string",
+              "description": "valid-ready 握手中的 valid 信号路径。"
+            },
+            "value_format": {
+              "type": "string",
+              "enum": [
+                "hex",
+                "bin",
+                "dec"
+              ],
+              "default": "hex",
+              "description": "返回 LogicValue 的显示格式；不改变比较、采样或底层四态值。"
+            }
+          },
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "data"
+                ]
+              },
+              "then": {
+                "required": [
+                  "rules"
+                ],
+                "properties": {
+                  "rules": {
+                    "required": [
+                      "check_data_stable_when_stalled"
+                    ],
+                    "properties": {
+                      "check_data_stable_when_stalled": {
+                        "const": true
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "rules"
+                ],
+                "properties": {
+                  "rules": {
+                    "required": [
+                      "check_data_stable_when_stalled"
+                    ]
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "data"
+                ]
+              }
+            }
+          ]
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "timeout_ms": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647,
+              "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

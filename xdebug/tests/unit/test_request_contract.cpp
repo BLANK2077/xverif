@@ -25,11 +25,12 @@ int main() {
     const ActionSpec* actions_spec = registry.find_spec("actions");
     const ActionSpec* abnormal_spec = registry.find_spec("signal.anomaly.inspect");
     const ActionSpec* list_delete_spec = registry.find_spec("list.delete");
+    const ActionSpec* apb_query_spec = registry.find_spec("apb.query");
     const ActionSpec* stream_describe_spec = registry.find_spec("stream.describe");
     assert(value_spec && trace_spec && active_spec && active_chain_spec &&
            session_open_spec &&
            actions_spec && abnormal_spec && list_delete_spec &&
-           stream_describe_spec);
+           apb_query_spec && stream_describe_spec);
     Json value_descriptor = action_spec_descriptor(*value_spec);
     // value.at uses schema-level exactly-one constraints for
     // signal|list|apb|stream|axi and time|times, so no argument is
@@ -474,6 +475,119 @@ int main() {
     assert(response_validation.error["error_layer"] == "internal");
     assert(response_validation.error["validation"]["issues"].is_array());
 
+    Json apb_count_response =
+        make_response(Json::object(), "apb.query");
+    apb_count_response["summary"] = {
+        {"name", "apb0"},
+        {"direction", "all"},
+        {"query_mode", "count"},
+        {"scan_complete", true},
+        {"analysis_complete", true},
+        {"response_truncated", false},
+        {"total_count", 2},
+        {"returned_count", 0},
+        {"truncation_scopes", Json::array()},
+    };
+    apb_count_response["data"] = {
+        {"filter", {{"direction", "all"}}},
+    };
+
+    Json apb_list_response = apb_count_response;
+    apb_list_response["summary"]["query_mode"] = "list";
+    apb_list_response["summary"]["returned_count"] = 1;
+    apb_list_response["data"]["transactions"] = Json::array({
+        {
+            {"time", "105ns"},
+            {"addr", "32'h00001020"},
+            {"data", "32'h00000012"},
+            {"is_write", false},
+            {"has_error", false},
+        },
+    });
+
+    // Exercise both the initial compile and repeated cache-hit validation.
+    // The APB count/list variants deliberately share most fields, so these
+    // responses also force oneOf to inspect the non-selected branches.
+    for (int iteration = 0; iteration < 3; ++iteration) {
+        response_validation =
+            runtime_validator.validate_response(
+                "apb.query",
+                apb_count_response,
+                apb_query_spec->response_schema);
+        assert(response_validation.ok);
+        response_validation =
+            runtime_validator.validate_response(
+                "apb.query",
+                apb_list_response,
+                apb_query_spec->response_schema);
+        assert(response_validation.ok);
+    }
+
+    Json apb_mismatched_count = apb_list_response;
+    apb_mismatched_count["summary"]["query_mode"] = "count";
+    response_validation =
+        runtime_validator.validate_response(
+            "apb.query",
+            apb_mismatched_count,
+            apb_query_spec->response_schema);
+    assert(!response_validation.ok);
+    assert(response_validation.code ==
+           "INTERNAL_RESPONSE_SCHEMA_VIOLATION");
+    assert(response_validation.error["validation"]["issues"].is_array());
+    assert(!response_validation.error["validation"]["issues"].empty());
+
+    Json apb_missing_discriminator = apb_count_response;
+    apb_missing_discriminator["summary"].erase("query_mode");
+    response_validation =
+        runtime_validator.validate_response(
+            "apb.query",
+            apb_missing_discriminator,
+            apb_query_spec->response_schema);
+    assert(!response_validation.ok);
+    assert(response_validation.code ==
+           "INTERNAL_RESPONSE_SCHEMA_VIOLATION");
+
+    Json apb_mismatched_list = apb_count_response;
+    apb_mismatched_list["summary"]["query_mode"] = "list";
+    response_validation =
+        runtime_validator.validate_response(
+            "apb.query",
+            apb_mismatched_list,
+            apb_query_spec->response_schema);
+    assert(!response_validation.ok);
+
+    Json apb_unexpected_top = apb_count_response;
+    apb_unexpected_top["unexpected"] = true;
+    response_validation =
+        runtime_validator.validate_response(
+            "apb.query",
+            apb_unexpected_top,
+            apb_query_spec->response_schema);
+    assert(!response_validation.ok);
+
+    Json apb_unexpected_filter = apb_count_response;
+    apb_unexpected_filter["data"]["filter"]["address"] = {
+        {"mode", "exact"},
+        {"values", Json::array({"32'h00001020"})},
+        {"unexpected", true},
+    };
+    response_validation =
+        runtime_validator.validate_response(
+            "apb.query",
+            apb_unexpected_filter,
+            apb_query_spec->response_schema);
+    assert(!response_validation.ok);
+
+    Json apb_unexpected_transaction = apb_list_response;
+    apb_unexpected_transaction["data"]["transactions"][0]["unexpected"] =
+        true;
+    response_validation =
+        runtime_validator.validate_response(
+            "apb.query",
+            apb_unexpected_transaction,
+            apb_query_spec->response_schema);
+    assert(!response_validation.ok);
+
     Json batch_response = make_response(Json::object(), "batch");
     batch_response["summary"] = {
         {"count", 0},
@@ -604,6 +718,118 @@ int main() {
     xdebug_core::RuntimeSchemaValidationResult internal_validation =
         runtime_validator.validate_internal_request(internal_open);
     assert(internal_validation.ok);
+    // Revalidate the same action to exercise the per-action compiled cache.
+    internal_validation =
+        runtime_validator.validate_internal_request(internal_open);
+    assert(internal_validation.ok);
+
+    Json helper_apb = {
+        {"api_version", "xdebug.internal.v1"},
+        {"action", "apb.query"},
+        {"target", {{"session_id", "case_a"}}},
+        {"args", {{"name", "apb0"}, {"direction", "all"}}},
+        {"limits", {{"timeout_ms", 1000}}},
+        {"routing", {
+            {"session_id", "case_a"},
+            {"fsdb", "/resolved/waves.fsdb"},
+            {"mode", "waveform"},
+        }},
+    };
+    bool used_forward_envelope = false;
+    internal_validation =
+        runtime_validator.validate_internal_request_for_helper(
+            helper_apb, used_forward_envelope);
+    assert(internal_validation.ok);
+    assert(used_forward_envelope);
+
+    Json helper_apb_unknown_arg = helper_apb;
+    helper_apb_unknown_arg["args"]["legacy"] = true;
+    internal_validation =
+        runtime_validator.validate_internal_request_for_helper(
+            helper_apb_unknown_arg, used_forward_envelope);
+    assert(internal_validation.ok);
+    assert(used_forward_envelope);
+    internal_validation = runtime_validator.validate_internal_request(
+        helper_apb_unknown_arg);
+    assert(!internal_validation.ok);
+    assert(internal_validation.code == "INVALID_REQUEST");
+
+    Json helper_apb_unknown_top = helper_apb;
+    helper_apb_unknown_top["unexpected"] = true;
+    internal_validation =
+        runtime_validator.validate_internal_request_for_helper(
+            helper_apb_unknown_top, used_forward_envelope);
+    assert(!internal_validation.ok);
+    assert(used_forward_envelope);
+
+    Json helper_apb_unknown_routing = helper_apb;
+    helper_apb_unknown_routing["routing"]["unexpected"] = true;
+    internal_validation =
+        runtime_validator.validate_internal_request_for_helper(
+            helper_apb_unknown_routing, used_forward_envelope);
+    assert(!internal_validation.ok);
+    assert(used_forward_envelope);
+
+    Json helper_apb_unknown_limits = helper_apb;
+    helper_apb_unknown_limits["limits"]["unexpected"] = true;
+    internal_validation =
+        runtime_validator.validate_internal_request_for_helper(
+            helper_apb_unknown_limits, used_forward_envelope);
+    assert(!internal_validation.ok);
+    assert(used_forward_envelope);
+
+    Json direct_apb = helper_apb;
+    direct_apb["target"] = {{"fsdb", "waves.fsdb"}};
+    direct_apb["routing"] = {
+        {"fsdb", "/resolved/waves.fsdb"},
+        {"mode", "waveform"},
+    };
+    internal_validation =
+        runtime_validator.validate_internal_request_for_helper(
+            direct_apb, used_forward_envelope);
+    assert(internal_validation.ok);
+    assert(!used_forward_envelope);
+    direct_apb["args"]["legacy"] = true;
+    internal_validation =
+        runtime_validator.validate_internal_request_for_helper(
+            direct_apb, used_forward_envelope);
+    assert(!internal_validation.ok);
+    assert(!used_forward_envelope);
+
+    internal_validation =
+        runtime_validator.validate_internal_request_for_helper(
+            internal_open, used_forward_envelope);
+    assert(internal_validation.ok);
+    assert(!used_forward_envelope);
+
+    Json internal_open_missing_name = internal_open;
+    internal_open_missing_name["args"].erase("name");
+    internal_validation = runtime_validator.validate_internal_request(
+        internal_open_missing_name);
+    assert(!internal_validation.ok);
+    assert(internal_validation.code == "INVALID_REQUEST");
+
+    Json internal_open_extra_arg = internal_open;
+    internal_open_extra_arg["args"]["legacy"] = true;
+    internal_validation = runtime_validator.validate_internal_request(
+        internal_open_extra_arg);
+    assert(!internal_validation.ok);
+    assert(internal_validation.code == "INVALID_REQUEST");
+
+    Json internal_open_extra_target = internal_open;
+    internal_open_extra_target["target"]["run_manifest"] =
+        "run.manifest.json";
+    internal_validation = runtime_validator.validate_internal_request(
+        internal_open_extra_target);
+    assert(!internal_validation.ok);
+    assert(internal_validation.code == "INVALID_REQUEST");
+
+    Json internal_open_extra_routing = internal_open;
+    internal_open_extra_routing["routing"]["auth_token"] = "legacy";
+    internal_validation = runtime_validator.validate_internal_request(
+        internal_open_extra_routing);
+    assert(!internal_validation.ok);
+    assert(internal_validation.code == "INVALID_REQUEST");
 
     Json ping =
         xdebug_core::make_internal_control_request("server.ping");
@@ -634,6 +860,18 @@ int main() {
     assert(!internal_validation.ok);
     assert(internal_validation.code == "UNKNOWN_ACTION");
     assert(internal_validation.error["invalid_arg"] == "action");
+
+    Json missing_internal_action = ping;
+    missing_internal_action.erase("action");
+    internal_validation = runtime_validator.validate_internal_request(
+        missing_internal_action);
+    assert(!internal_validation.ok);
+    assert(internal_validation.code == "INVALID_REQUEST");
+
+    internal_validation = runtime_validator.validate_internal_request(
+        Json::array());
+    assert(!internal_validation.ok);
+    assert(internal_validation.code == "INVALID_REQUEST");
 
     Json typo_internal = ping;
     typo_internal["routing"] = {{"auth_token", "legacy"}};

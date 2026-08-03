@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xdebug.internal.engine.helper-envelope.v1.list.first_change",
+  "title": "xdebug internal helper envelope for list.first_change",
+  "description": "Generated strict short-lived-helper envelope. The persistent engine server validates the complete action payload.",
+  "type": "object",
+  "required": [
+    "api_version",
+    "action",
+    "routing"
+  ],
+  "properties": {
+    "api_version": {
+      "type": "string",
+      "enum": [
+        "xdebug.internal.v1"
+      ]
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "list.first_change"
+      ]
+    },
+    "observability": {
+      "type": "object",
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trace_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "span_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parent_span_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "routing": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Resolved engine session destination."
+        },
+        "daidir": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Resolved design database path used to open an engine."
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Resolved waveform database path used to open an engine."
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "design",
+            "waveform",
+            "combined"
+          ],
+          "description": "Resource mode derived by the frontend from resolved resources."
+        },
+        "transport_auth_token": {
+          "type": "string",
+          "minLength": 1,
+          "description": "TCP transport credential; never part of xdebug.v1."
+        }
+      },
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": [
+            "fsdb",
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "const": "waveform"
+            }
+          },
+          "not": {
+            "required": [
+              "daidir"
+            ]
+          }
+        },
+        {
+          "required": [
+            "daidir",
+            "fsdb",
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "const": "combined"
+            }
+          }
+        }
+      ]
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "array",
+          "boolean",
+          "integer",
+          "null",
+          "number",
+          "object",
+          "string"
+        ]
+      }
+    },
+    "args": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "array",
+          "boolean",
+          "integer",
+          "null",
+          "number",
+          "object",
+          "string"
+        ]
+      }
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

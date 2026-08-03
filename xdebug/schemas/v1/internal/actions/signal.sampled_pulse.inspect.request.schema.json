@@ -1,0 +1,309 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xdebug.internal.engine.request.v1.action.signal.sampled_pulse.inspect",
+  "title": "xdebug.internal.v1 signal.sampled_pulse.inspect engine request",
+  "description": "Generated strict per-action projection of the private frontend-to-engine request contract.",
+  "type": "object",
+  "required": [
+    "api_version",
+    "action"
+  ],
+  "properties": {
+    "api_version": {},
+    "action": {},
+    "observability": {},
+    "routing": {},
+    "target": {},
+    "args": {},
+    "limits": {}
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "type": "object",
+      "required": [
+        "api_version",
+        "action",
+        "args",
+        "target",
+        "routing"
+      ],
+      "properties": {
+        "api_version": {
+          "type": "string",
+          "enum": [
+            "xdebug.internal.v1"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "signal.sampled_pulse.inspect"
+          ]
+        },
+        "observability": {
+          "type": "object",
+          "properties": {
+            "request_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "trace_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "span_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "parent_span_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "routing": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved engine session destination."
+            },
+            "daidir": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved design database path used to open an engine."
+            },
+            "fsdb": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved waveform database path used to open an engine."
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "design",
+                "waveform",
+                "combined"
+              ],
+              "description": "Resource mode derived by the frontend from resolved resources."
+            },
+            "transport_auth_token": {
+              "type": "string",
+              "minLength": 1,
+              "description": "TCP transport credential; never part of xdebug.v1."
+            }
+          },
+          "additionalProperties": false,
+          "oneOf": [
+            {
+              "required": [
+                "fsdb",
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "waveform"
+                }
+              },
+              "not": {
+                "required": [
+                  "daidir"
+                ]
+              }
+            },
+            {
+              "required": [
+                "daidir",
+                "fsdb",
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "combined"
+                }
+              }
+            }
+          ]
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "fsdb": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "session_id"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "fsdb"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "session_id"
+                ]
+              },
+              "required": [
+                "fsdb"
+              ]
+            }
+          ],
+          "additionalProperties": false
+        },
+        "args": {
+          "type": "object",
+          "required": [
+            "clock",
+            "valid"
+          ],
+          "properties": {
+            "clock": {
+              "type": "string",
+              "description": "采样、统计或协议检查使用的 clock 信号路径。"
+            },
+            "edge": {
+              "type": "string",
+              "description": "Clock sampling edge. The schema default is authoritative; negedge often matches monitor semantics."
+            },
+            "line_limit": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Limits returned evidence rows only, not scanning, aggregation, or the verdict; read completeness fields as well."
+            },
+            "payloads": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "description": "payload 信号列表；每项按同一采样合同检查。"
+              },
+              "description": "Non-empty payload signal list inspected under one sampling contract."
+            },
+            "render_time_unit": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "ps",
+                "ns",
+                "us"
+              ],
+              "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
+            },
+            "rules": {
+              "type": "object",
+              "properties": {
+                "payload_changed_without_sampled_valid": {
+                  "type": "string",
+                  "enum": [
+                    "off",
+                    "summary",
+                    "all"
+                  ],
+                  "default": "summary",
+                  "description": "payload 在 sampled valid 未成立时发生变化的报告粒度：off 禁用，summary 仅汇总，all 返回逐项 evidence。"
+                }
+              },
+              "additionalProperties": false,
+              "description": "Protocol or check-rule object. Nested fields define each rule default and applicability."
+            },
+            "sample_point": {
+              "type": "string",
+              "enum": [
+                "before",
+                "after"
+              ],
+              "description": "Before/after observation point for posedge or dual sampling; it does not change the raw waveform range."
+            },
+            "time_range": {
+              "type": "object",
+              "minProperties": 1,
+              "properties": {
+                "begin": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "闭区间起点；省略时使用可用波形窗口起点。"
+                },
+                "end": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "闭区间终点；省略时使用可用波形窗口终点。"
+                }
+              },
+              "additionalProperties": false,
+              "description": "Closed analysis interval. begin and end may be omitted independently to use the available waveform bounds."
+            },
+            "valid": {
+              "type": "string",
+              "description": "valid-ready 握手中的 valid 信号路径。"
+            },
+            "value_format": {
+              "type": "string",
+              "enum": [
+                "hex",
+                "bin",
+                "dec"
+              ],
+              "default": "hex",
+              "description": "返回 LogicValue 的显示格式；不改变比较、采样或底层四态值。"
+            }
+          },
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "rules"
+                ],
+                "properties": {
+                  "rules": {
+                    "required": [
+                      "payload_changed_without_sampled_valid"
+                    ]
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "payloads"
+                ]
+              }
+            }
+          ]
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "timeout_ms": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647,
+              "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

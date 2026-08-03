@@ -9,12 +9,17 @@ xdebug public API 以 action-specific schema 为 source of truth。任何文档�
 - `xdebug/specs/actions/actions.yaml`
 - `xdebug/schemas/v1/actions/*.request.schema.json`
 - `xdebug/schemas/v1/actions/*.response.schema.json`
+- `xdebug/schemas/v1/internal/engine.request.schema.json`
+- `xdebug/schemas/v1/internal/engine.request.manifest.json`
+- `xdebug/schemas/v1/internal/actions/*.request.schema.json`
+- `xdebug/schemas/v1/internal/helper-actions/*.request.schema.json`
 - `xdebug/examples/requests/*.json`
 - `xdebug/examples/responses/*.json`
 
 辅助生成/校验：
 
 - `xdebug/tools/sync_runtime_request_schemas.py`
+- `xdebug/tools/sync_internal_request_schema.py`
 - `xdebug/tools/sync_value_response_schemas.py`
 - `xdebug/tools/sync_axi_response_schemas.py`
 - `xdebug/tools/sync_protocol_statistics_response_schemas.py`
@@ -32,6 +37,14 @@ third-party validator 在运行时按 Draft-7 兼容子集编译 request schema�
 使用 `$dynamicRef`、`unevaluatedProperties`、`prefixItems`、`dependentSchemas` 等未
 确认支持的后期关键字；提交前运行 `audit_runtime_schema_compatibility.py`。response
 schema 不进入 runtime request validator，但仍须经 example/contract 校验。
+
+public request 进入 engine 时使用同源生成的 internal contract。完整 aggregate schema
+保留作全量审计；runtime 根据 generated manifest 选择单 action schema，避免每个短命
+helper 解析和编译整个 action union。仅已有 live session 的纯 `server_forward` 路径可先
+使用严格 helper envelope，再由 server 对 args/target 执行完整 action 校验；session
+不可达或发送前失败时 helper 必须补做完整校验，保持 schema 错误优先级。manifest、
+aggregate、单 action schema 与 helper envelope 必须由
+`sync_internal_request_schema.py` 一次生成并以 `--check` 验收，禁止手改投影产物。
 
 每个 public action 必须有独立 request schema。
 
@@ -122,6 +135,7 @@ xdebug 参数错误有两层：
 
 ```bash
 python3 xdebug/tools/sync_runtime_request_schemas.py
+python3 xdebug/tools/sync_internal_request_schema.py
 python3 xdebug/tools/sync_value_response_schemas.py
 python3 xdebug/tools/sync_axi_response_schemas.py
 python3 xdebug/tools/sync_protocol_statistics_response_schemas.py
@@ -133,6 +147,7 @@ python3 xdebug/tools/sync_action_metadata.py
 
 ```bash
 python3 xdebug/tools/sync_runtime_request_schemas.py --check
+python3 xdebug/tools/sync_internal_request_schema.py --check
 python3 xdebug/tools/sync_value_response_schemas.py --check
 python3 xdebug/tools/sync_axi_response_schemas.py --check
 python3 xdebug/tools/sync_protocol_statistics_response_schemas.py --check

@@ -10,6 +10,7 @@ using OrderedJson = nlohmann::ordered_json;
 
 extern const char* const kInternalApiVersion;
 extern const char* const kInternalRequestSchema;
+extern const char* const kInternalRequestManifest;
 
 // Project a validated xdebug.v1 request into the private engine envelope.
 // Public action payload remains under target/args/limits.  Resolved resources,

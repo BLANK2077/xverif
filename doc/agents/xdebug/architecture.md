@@ -52,11 +52,15 @@ frontend 不直接承载 NPI 重逻辑；NPI/FSDB/engine 能力集中在内部 e
 - `schemas/v1/actions/*.response.schema.json`
 - `examples/requests/*.json`
 - `examples/responses/*.json`
+- `schemas/v1/internal/engine.request.manifest.json`
+- `schemas/v1/internal/actions/*.request.schema.json`
+- `schemas/v1/internal/helper-actions/*.request.schema.json`
 - `src/core/schema/runtime_schema_validator.*`
 - `src/api/request_validator.*`
 - `tools/validate_schema.py`
 - `tools/validate_examples.py`
 - `tools/sync_runtime_request_schemas.py`
+- `tools/sync_internal_request_schema.py`
 - `tools/sync_action_schema_hints.py`
 - `tools/sync_action_metadata.py`
 - `tools/audit_action_schema_coverage.py`
@@ -69,6 +73,9 @@ frontend 不直接承载 NPI 重逻辑；NPI/FSDB/engine 能力集中在内部 e
   action metadata 由此生成。
 - action-specific schema 是 public request/response contract。
 - runtime validator 在执行前拦截非法 envelope 和非法 action 参数。
+- internal runtime validator 由 generated manifest 选择单 action schema；纯
+  server-forward helper 只校验严格转发 envelope，engine server 仍执行完整 action
+  校验，避免 aggregate union 的重复解析和编译。
 - examples 是可执行合同样例，必须被 schema 校验。
 
 修改要求：

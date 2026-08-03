@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xdebug.internal.engine.request.v1.action.session.doctor",
+  "title": "xdebug.internal.v1 session.doctor engine request",
+  "description": "Generated strict per-action projection of the private frontend-to-engine request contract.",
+  "type": "object",
+  "required": [
+    "api_version",
+    "action"
+  ],
+  "properties": {
+    "api_version": {},
+    "action": {},
+    "observability": {},
+    "routing": {},
+    "target": {},
+    "args": {},
+    "limits": {}
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "type": "object",
+      "required": [
+        "api_version",
+        "action",
+        "target",
+        "routing"
+      ],
+      "properties": {
+        "api_version": {
+          "type": "string",
+          "enum": [
+            "xdebug.internal.v1"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "session.doctor"
+          ]
+        },
+        "observability": {
+          "type": "object",
+          "properties": {
+            "request_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "trace_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "span_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "parent_span_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "routing": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved engine session destination."
+            },
+            "daidir": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved design database path used to open an engine."
+            },
+            "fsdb": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved waveform database path used to open an engine."
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "design",
+                "waveform",
+                "combined"
+              ],
+              "description": "Resource mode derived by the frontend from resolved resources."
+            },
+            "transport_auth_token": {
+              "type": "string",
+              "minLength": 1,
+              "description": "TCP transport credential; never part of xdebug.v1."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "session_id"
+          ]
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "session_id"
+          ],
+          "additionalProperties": false
+        },
+        "args": {
+          "type": "object",
+          "required": [],
+          "properties": {},
+          "additionalProperties": false
+        },
+        "limits": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

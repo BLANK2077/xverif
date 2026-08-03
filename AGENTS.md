@@ -253,3 +253,15 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 - 错误现象：在双引号包裹的 `rg` 搜索模式中写入 Markdown 反引号，shell 再次把 action 标题片段当作命令替换执行。
 - 误判原因：组合多个报告标题模式时没有继续遵守仓库既有的反引号搜索规则。
 - 以后规则：任何包含 Markdown 反引号的 shell 搜索模式一律使用单引号；需要组合变量时拆成多个不含反引号的模式，不在双引号中嵌入反引号。
+
+### 2026-08-04 环境错误复盘
+
+- 错误现象：子 agent 正在重生成 internal runtime manifest/schema 时，主线程用旧二进制并行运行 AXI VIP，旧二进制读取新 manifest 后返回 `SCHEMA_VALIDATION_CONFIG_ERROR`。
+- 误判原因：只冻结了二进制，忽略 runtime schema 会在进程启动或请求时从共享工作树动态读取；源码和生成产物更新同样会使已构建产物失配。
+- 以后规则：任何 runtime schema、manifest 或 generator owner 修改期间禁止并行真实回归；owner 冻结后先执行生成一致性检查，再统一重建，之后才启动宿主回归。
+
+### 2026-08-04 环境错误复盘
+
+- 错误现象：统一构建后对 `xdebug.axi_vip` 做 focused 验证时误用 `--xverif-gate regression`，被 suite membership 门禁在收集前拒绝。
+- 误判原因：沿用此前大部分 xdebug runtime suite 的 gate，没有先从当前 catalog 或 `--xverif-plan` 核对 AXI VIP 实际属于 nightly。
+- 以后规则：每个 focused suite 即使本轮此前运行过，也必须在执行前以当前 catalog 或目标 gate 的 `--xverif-plan` 核实 membership；不能依据相邻 suite 或旧运行记录推断 gate。

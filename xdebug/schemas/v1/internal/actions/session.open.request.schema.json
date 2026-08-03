@@ -1,0 +1,275 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xdebug.internal.engine.request.v1.action.session.open",
+  "title": "xdebug.internal.v1 session.open engine request",
+  "description": "Generated strict per-action projection of the private frontend-to-engine request contract.",
+  "type": "object",
+  "required": [
+    "api_version",
+    "action"
+  ],
+  "properties": {
+    "api_version": {},
+    "action": {},
+    "observability": {},
+    "routing": {},
+    "target": {},
+    "args": {},
+    "limits": {}
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "type": "object",
+      "required": [
+        "api_version",
+        "action",
+        "args",
+        "target",
+        "routing"
+      ],
+      "properties": {
+        "api_version": {
+          "type": "string",
+          "enum": [
+            "xdebug.internal.v1"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "session.open"
+          ]
+        },
+        "observability": {
+          "type": "object",
+          "properties": {
+            "request_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "trace_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "span_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "parent_span_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "routing": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved engine session destination."
+            },
+            "daidir": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved design database path used to open an engine."
+            },
+            "fsdb": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved waveform database path used to open an engine."
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "design",
+                "waveform",
+                "combined"
+              ],
+              "description": "Resource mode derived by the frontend from resolved resources."
+            },
+            "transport_auth_token": {
+              "type": "string",
+              "minLength": 1,
+              "description": "TCP transport credential; never part of xdebug.v1."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "mode"
+          ],
+          "oneOf": [
+            {
+              "required": [
+                "daidir"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "design"
+                }
+              },
+              "not": {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            },
+            {
+              "required": [
+                "fsdb"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "waveform"
+                }
+              },
+              "not": {
+                "required": [
+                  "daidir"
+                ]
+              }
+            },
+            {
+              "required": [
+                "daidir",
+                "fsdb"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "combined"
+                }
+              }
+            }
+          ]
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "daidir": {
+              "type": "string",
+              "minLength": 1
+            },
+            "fsdb": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "daidir"
+              ]
+            },
+            {
+              "required": [
+                "fsdb"
+              ]
+            }
+          ],
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "run_manifest"
+                ]
+              },
+              "then": {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            }
+          ],
+          "additionalProperties": false
+        },
+        "args": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "bind_host": {
+              "type": "string",
+              "description": "TCP session server 的监听主机地址。"
+            },
+            "host": {
+              "type": "string",
+              "description": "要连接或启动 session server 的主机名。"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$",
+              "description": "Session name: start with an ASCII letter, then use only ASCII letters, digits, or underscores; maximum 64 characters."
+            },
+            "ownership_token": {
+              "type": "string",
+              "minLength": 64,
+              "maxLength": 64,
+              "pattern": "^[0-9a-f]{64}$",
+              "description": "Opaque 256-bit conditional-cleanup token encoded as exactly 64 lowercase hexadecimal characters. A managed wrapper may supply it at session.open and provide it to session.kill as an optional match precondition, not as authorization. When session.open omits it, the frontend binds a fail-closed internally generated token; never log or publish either form."
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535,
+              "description": "session TCP 端口号。"
+            },
+            "transport": {
+              "type": "string",
+              "enum": [
+                "uds",
+                "tcp",
+                "file"
+              ],
+              "description": "session transport 类型；只使用 schema enum 中明确支持的模式。"
+            }
+          },
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "host"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "bind_host"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "port"
+                    ]
+                  }
+                ]
+              },
+              "then": {
+                "required": [
+                  "transport"
+                ],
+                "properties": {
+                  "transport": {
+                    "const": "tcp"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "limits": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

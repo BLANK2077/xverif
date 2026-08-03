@@ -1,0 +1,502 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xdebug.internal.engine.request.v1.action.value.at",
+  "title": "xdebug.internal.v1 value.at engine request",
+  "description": "Generated strict per-action projection of the private frontend-to-engine request contract.",
+  "type": "object",
+  "required": [
+    "api_version",
+    "action"
+  ],
+  "properties": {
+    "api_version": {},
+    "action": {},
+    "observability": {},
+    "routing": {},
+    "target": {},
+    "args": {},
+    "limits": {}
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "type": "object",
+      "required": [
+        "api_version",
+        "action",
+        "target",
+        "routing"
+      ],
+      "properties": {
+        "api_version": {
+          "type": "string",
+          "enum": [
+            "xdebug.internal.v1"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "value.at"
+          ]
+        },
+        "observability": {
+          "type": "object",
+          "properties": {
+            "request_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "trace_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "span_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "parent_span_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "routing": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved engine session destination."
+            },
+            "daidir": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved design database path used to open an engine."
+            },
+            "fsdb": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved waveform database path used to open an engine."
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "design",
+                "waveform",
+                "combined"
+              ],
+              "description": "Resource mode derived by the frontend from resolved resources."
+            },
+            "transport_auth_token": {
+              "type": "string",
+              "minLength": 1,
+              "description": "TCP transport credential; never part of xdebug.v1."
+            }
+          },
+          "additionalProperties": false,
+          "oneOf": [
+            {
+              "required": [
+                "fsdb",
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "waveform"
+                }
+              },
+              "not": {
+                "required": [
+                  "daidir"
+                ]
+              }
+            },
+            {
+              "required": [
+                "daidir",
+                "fsdb",
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "combined"
+                }
+              }
+            }
+          ]
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "fsdb": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "session_id"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "fsdb"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "session_id"
+                ]
+              },
+              "required": [
+                "fsdb"
+              ]
+            }
+          ],
+          "additionalProperties": false
+        },
+        "args": {
+          "type": "object",
+          "required": [],
+          "properties": {
+            "apb": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Name of a loaded APB interface configuration."
+            },
+            "axi": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Name of a loaded AXI interface configuration."
+            },
+            "clock": {
+              "type": "string",
+              "description": "采样、统计或协议检查使用的 clock 信号路径。"
+            },
+            "edge": {
+              "type": "string",
+              "description": "Clock sampling edge. The schema default is authoritative; negedge often matches monitor semantics."
+            },
+            "list": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Name of a loaded waveform signal list."
+            },
+            "render_time_unit": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "ps",
+                "ns",
+                "us"
+              ],
+              "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
+            },
+            "sample_point": {
+              "type": "string",
+              "enum": [
+                "before",
+                "after"
+              ],
+              "description": "Before/after observation point for posedge or dual sampling; it does not change the raw waveform range."
+            },
+            "signal": {
+              "type": "string",
+              "description": "Final leaf signal path. Aggregate, array, and struct roots are not expanded automatically."
+            },
+            "slice_hint": {
+              "type": "object",
+              "required": [
+                "chunk_width"
+              ],
+              "properties": {
+                "chunk_width": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Width in bits of each deterministic xbit slice."
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 1,
+                  "description": "Number of consecutive chunks starting at bit zero."
+                }
+              },
+              "additionalProperties": false,
+              "description": "值显示的可选位段提示；不改变被读取的底层 signal。"
+            },
+            "stream": {
+              "type": "string",
+              "description": "已加载的 stream 配置名称。"
+            },
+            "time": {
+              "type": "string",
+              "description": "Target sample time. Prefer a canonical string with a unit; a bare number is interpreted as nanoseconds."
+            },
+            "times": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "description": "按请求顺序提供的非空且不重复时间列表；同时公开 time 的 action 使用 time 表示单点，使用 times 表示一个或多个点。"
+              },
+              "description": "按请求顺序提供的非空且不重复时间列表；同时公开 time 的 action 使用 time 表示单点，使用 times 表示一个或多个点。"
+            },
+            "value_format": {
+              "type": "string",
+              "enum": [
+                "hex",
+                "bin",
+                "dec"
+              ],
+              "default": "hex",
+              "description": "返回 LogicValue 的显示格式；不改变比较、采样或底层四态值。"
+            }
+          },
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "description": "Select exactly one value source: a direct signal or a loaded list, APB, stream, or AXI configuration.",
+              "oneOf": [
+                {
+                  "required": [
+                    "signal"
+                  ],
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "list"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "apb"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "stream"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "axi"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                {
+                  "required": [
+                    "list"
+                  ],
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "signal"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "apb"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "stream"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "axi"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                {
+                  "required": [
+                    "apb"
+                  ],
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "signal"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "list"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "stream"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "axi"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                {
+                  "required": [
+                    "stream"
+                  ],
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "signal"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "list"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "apb"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "axi"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                {
+                  "required": [
+                    "axi"
+                  ],
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "signal"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "list"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "apb"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "stream"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "description": "Select exactly one time form: time for one point or times for one or more ordered unique points.",
+              "oneOf": [
+                {
+                  "required": [
+                    "time"
+                  ],
+                  "not": {
+                    "required": [
+                      "times"
+                    ]
+                  }
+                },
+                {
+                  "required": [
+                    "times"
+                  ],
+                  "not": {
+                    "required": [
+                      "time"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "if": {
+                "required": [
+                  "slice_hint"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signal"
+                ]
+              }
+            },
+            {
+              "if": {
+                "not": {
+                  "required": [
+                    "clock"
+                  ]
+                }
+              },
+              "then": {
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "edge"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "sample_point"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "timeout_ms": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647,
+              "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

@@ -42,14 +42,12 @@ def main() -> int:
             "*.request.schema.json"
         )
     )
-    paths.append(
-        ROOT
-        / "schemas"
-        / "v1"
-        / "internal"
-        / "engine.request.schema.json"
+    paths.extend(
+        (ROOT / "schemas" / "v1" / "internal").rglob(
+            "*.request.schema.json"
+        )
     )
-    for path in sorted(paths):
+    for path in sorted(set(paths)):
         if not path.is_file():
             errors.append(
                 f"{path.relative_to(ROOT)}: runtime request schema is missing"

@@ -710,7 +710,10 @@ OrderedJson handle_session_action(
     return make_error(request, action, "UNKNOWN_ACTION", "unknown session action: " + action);
 }
 
-OrderedJson handle_engine_forward(const OrderedJson& request, const std::string& action) {
+OrderedJson handle_engine_forward(
+    const OrderedJson& request,
+    const std::string& action,
+    bool used_forward_envelope) {
     std::string sid = session_id_from_request(request);
     SessionManager manager;
     SessionInfo session_info;
@@ -911,6 +914,17 @@ OrderedJson handle_engine_forward(const OrderedJson& request, const std::string&
                 evidence);
         }
     }
+    if (used_forward_envelope && !sent && engine_error.is_null()) {
+        // The persistent server did not observe this request.  Re-establish
+        // the historical schema-error priority before returning a dead-session,
+        // timeout, or transport failure from the helper.
+        xdebug_core::RuntimeSchemaValidator validator;
+        xdebug_core::RuntimeSchemaValidationResult validation =
+            validator.validate_internal_request(request);
+        if (!validation.ok) {
+            return internal_validation_error(request, validation);
+        }
+    }
     if (!pending_error.is_null()) {
         return pending_error;
     }
@@ -931,8 +945,10 @@ OrderedJson handle_engine_forward(const OrderedJson& request, const std::string&
 
 OrderedJson handle_query(const OrderedJson& request) {
     xdebug_core::RuntimeSchemaValidator validator;
+    bool used_forward_envelope = false;
     xdebug_core::RuntimeSchemaValidationResult validation =
-        validator.validate_internal_request(request);
+        validator.validate_internal_request_for_helper(
+            request, used_forward_envelope);
     if (!validation.ok) {
         return internal_validation_error(request, validation);
     }
@@ -977,7 +993,8 @@ OrderedJson handle_query(const OrderedJson& request) {
         }
         return local;
     }
-    return handle_engine_forward(request, action);
+    return handle_engine_forward(
+        request, action, used_forward_envelope);
 }
 
 int print_json_and_return(const OrderedJson& response) {

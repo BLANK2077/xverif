@@ -1,0 +1,440 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xdebug.internal.engine.request.v1.action.apb.query",
+  "title": "xdebug.internal.v1 apb.query engine request",
+  "description": "Generated strict per-action projection of the private frontend-to-engine request contract.",
+  "type": "object",
+  "required": [
+    "api_version",
+    "action"
+  ],
+  "properties": {
+    "api_version": {},
+    "action": {},
+    "observability": {},
+    "routing": {},
+    "target": {},
+    "args": {},
+    "limits": {}
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "type": "object",
+      "required": [
+        "api_version",
+        "action",
+        "args",
+        "target",
+        "routing"
+      ],
+      "properties": {
+        "api_version": {
+          "type": "string",
+          "enum": [
+            "xdebug.internal.v1"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "apb.query"
+          ]
+        },
+        "observability": {
+          "type": "object",
+          "properties": {
+            "request_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "trace_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "span_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "parent_span_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "routing": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved engine session destination."
+            },
+            "daidir": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved design database path used to open an engine."
+            },
+            "fsdb": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved waveform database path used to open an engine."
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "design",
+                "waveform",
+                "combined"
+              ],
+              "description": "Resource mode derived by the frontend from resolved resources."
+            },
+            "transport_auth_token": {
+              "type": "string",
+              "minLength": 1,
+              "description": "TCP transport credential; never part of xdebug.v1."
+            }
+          },
+          "additionalProperties": false,
+          "oneOf": [
+            {
+              "required": [
+                "fsdb",
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "waveform"
+                }
+              },
+              "not": {
+                "required": [
+                  "daidir"
+                ]
+              }
+            },
+            {
+              "required": [
+                "daidir",
+                "fsdb",
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "combined"
+                }
+              }
+            }
+          ]
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "fsdb": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "session_id"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "fsdb"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "session_id"
+                ]
+              },
+              "required": [
+                "fsdb"
+              ]
+            }
+          ],
+          "additionalProperties": false
+        },
+        "args": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "address": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "description": "Exact-match branch: at least one listed value must equal the sampled field value.",
+                  "required": [
+                    "mode",
+                    "values"
+                  ],
+                  "properties": {
+                    "mode": {
+                      "const": "exact",
+                      "description": "Action processing or return mode. Its legal values, default, and interactions are action-specific."
+                    },
+                    "values": {
+                      "type": "array",
+                      "minItems": 1,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "oneOf": [
+                          {
+                            "pattern": "^[0-9]+$",
+                            "description": "地址或字段过滤的候选值列表；候选之间按 OR 匹配，空列表不合法。"
+                          },
+                          {
+                            "pattern": "^(?:[1-9][0-9]*)?'[bB][01](?:_?[01])*$",
+                            "description": "地址或字段过滤的候选值列表；候选之间按 OR 匹配，空列表不合法。"
+                          },
+                          {
+                            "pattern": "^(?:[1-9][0-9]*)?'[dD][0-9](?:_?[0-9])*$",
+                            "description": "地址或字段过滤的候选值列表；候选之间按 OR 匹配，空列表不合法。"
+                          },
+                          {
+                            "pattern": "^(?:[1-9][0-9]*)?'[hH][0-9a-fA-F](?:_?[0-9a-fA-F])*$",
+                            "description": "地址或字段过滤的候选值列表；候选之间按 OR 匹配，空列表不合法。"
+                          }
+                        ],
+                        "description": "Known unsigned decimal or b/d/h SystemVerilog literal up to 64 bits; X/Z and C-style 0x are rejected."
+                      },
+                      "description": "地址或字段过滤的候选值列表；候选之间按 OR 匹配，空列表不合法。"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "description": "Inclusive-range branch: the sampled field value must lie between begin and end.",
+                  "required": [
+                    "mode",
+                    "begin",
+                    "end"
+                  ],
+                  "properties": {
+                    "mode": {
+                      "const": "range",
+                      "description": "Action processing or return mode. Its legal values, default, and interactions are action-specific."
+                    },
+                    "begin": {
+                      "type": "string",
+                      "minLength": 1,
+                      "oneOf": [
+                        {
+                          "pattern": "^[0-9]+$",
+                          "description": "闭区间起点；省略时使用可用波形窗口起点。"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[bB][01](?:_?[01])*$",
+                          "description": "闭区间起点；省略时使用可用波形窗口起点。"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[dD][0-9](?:_?[0-9])*$",
+                          "description": "闭区间起点；省略时使用可用波形窗口起点。"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[hH][0-9a-fA-F](?:_?[0-9a-fA-F])*$",
+                          "description": "闭区间起点；省略时使用可用波形窗口起点。"
+                        }
+                      ],
+                      "description": "Known unsigned decimal or b/d/h SystemVerilog literal up to 64 bits; X/Z and C-style 0x are rejected."
+                    },
+                    "end": {
+                      "type": "string",
+                      "minLength": 1,
+                      "oneOf": [
+                        {
+                          "pattern": "^[0-9]+$",
+                          "description": "闭区间终点；省略时使用可用波形窗口终点。"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[bB][01](?:_?[01])*$",
+                          "description": "闭区间终点；省略时使用可用波形窗口终点。"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[dD][0-9](?:_?[0-9])*$",
+                          "description": "闭区间终点；省略时使用可用波形窗口终点。"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[hH][0-9a-fA-F](?:_?[0-9a-fA-F])*$",
+                          "description": "闭区间终点；省略时使用可用波形窗口终点。"
+                        }
+                      ],
+                      "description": "Known unsigned decimal or b/d/h SystemVerilog literal up to 64 bits; X/Z and C-style 0x are rejected."
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "description": "Masked-match branch: compare only the bits selected by mask against value.",
+                  "required": [
+                    "mode",
+                    "value",
+                    "mask"
+                  ],
+                  "properties": {
+                    "mode": {
+                      "const": "mask",
+                      "description": "Action processing or return mode. Its legal values, default, and interactions are action-specific."
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 1,
+                      "oneOf": [
+                        {
+                          "pattern": "^[0-9]+$"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[bB][01](?:_?[01])*$"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[dD][0-9](?:_?[0-9])*$"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[hH][0-9a-fA-F](?:_?[0-9a-fA-F])*$"
+                        }
+                      ],
+                      "description": "Known unsigned decimal or b/d/h SystemVerilog literal up to 64 bits; X/Z and C-style 0x are rejected."
+                    },
+                    "mask": {
+                      "type": "string",
+                      "minLength": 1,
+                      "oneOf": [
+                        {
+                          "pattern": "^[0-9]+$"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[bB][01](?:_?[01])*$"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[dD][0-9](?:_?[0-9])*$"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[hH][0-9a-fA-F](?:_?[0-9a-fA-F])*$"
+                        }
+                      ],
+                      "description": "Known unsigned decimal or b/d/h SystemVerilog literal up to 64 bits; X/Z and C-style 0x are rejected."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ],
+              "description": "Exactly one address filtering mode: exact queue, inclusive range, or value/mask."
+            },
+            "direction": {
+              "type": "string",
+              "enum": [
+                "write",
+                "read",
+                "all"
+              ],
+              "description": "协议 transaction 的方向过滤；read/write/all 的可用性以本 action enum 为准。"
+            },
+            "last": {
+              "const": true,
+              "description": "Select the final transaction matching the other transaction filters."
+            },
+            "name": {
+              "type": "string",
+              "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
+            },
+            "query": {
+              "type": "object",
+              "minProperties": 1,
+              "properties": {
+                "line_limit": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Limits returned evidence rows only, not scanning, aggregation, or the verdict; read completeness fields as well."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "One-based query, cursor, or list position; the action schema defines its exact reference set."
+                }
+              },
+              "anyOf": [
+                {
+                  "required": [
+                    "line_limit"
+                  ],
+                  "description": "Closed query selector; use only the index, channel, time, or filter branches declared by this action's schema."
+                },
+                {
+                  "required": [
+                    "index"
+                  ],
+                  "description": "Closed query selector; use only the index, channel, time, or filter branches declared by this action's schema."
+                }
+              ],
+              "additionalProperties": false,
+              "description": "Protocol query controls; use 1-based query.index and query.line_limit; legacy quantity fields are rejected."
+            },
+            "render_time_unit": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "ps",
+                "ns",
+                "us"
+              ],
+              "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
+            },
+            "value_format": {
+              "type": "string",
+              "enum": [
+                "hex",
+                "bin",
+                "dec"
+              ],
+              "default": "hex",
+              "description": "返回 LogicValue 的显示格式；不改变比较、采样或底层四态值。"
+            }
+          },
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "last",
+                  "query"
+                ]
+              }
+            }
+          ]
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "timeout_ms": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647,
+              "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

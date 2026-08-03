@@ -8,6 +8,8 @@ namespace xdebug_core {
 const char* const kInternalApiVersion = "xdebug.internal.v1";
 const char* const kInternalRequestSchema =
     "schemas/v1/internal/engine.request.schema.json";
+const char* const kInternalRequestManifest =
+    "schemas/v1/internal/engine.request.manifest.json";
 
 namespace {
 

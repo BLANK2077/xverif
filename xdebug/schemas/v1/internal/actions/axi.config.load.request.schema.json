@@ -1,0 +1,448 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xdebug.internal.engine.request.v1.action.axi.config.load",
+  "title": "xdebug.internal.v1 axi.config.load engine request",
+  "description": "Generated strict per-action projection of the private frontend-to-engine request contract.",
+  "type": "object",
+  "required": [
+    "api_version",
+    "action"
+  ],
+  "properties": {
+    "api_version": {},
+    "action": {},
+    "observability": {},
+    "routing": {},
+    "target": {},
+    "args": {},
+    "limits": {}
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "type": "object",
+      "required": [
+        "api_version",
+        "action",
+        "args",
+        "target",
+        "routing"
+      ],
+      "properties": {
+        "api_version": {
+          "type": "string",
+          "enum": [
+            "xdebug.internal.v1"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "axi.config.load"
+          ]
+        },
+        "observability": {
+          "type": "object",
+          "properties": {
+            "request_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "trace_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "span_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "parent_span_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "routing": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved engine session destination."
+            },
+            "daidir": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved design database path used to open an engine."
+            },
+            "fsdb": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved waveform database path used to open an engine."
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "design",
+                "waveform",
+                "combined"
+              ],
+              "description": "Resource mode derived by the frontend from resolved resources."
+            },
+            "transport_auth_token": {
+              "type": "string",
+              "minLength": 1,
+              "description": "TCP transport credential; never part of xdebug.v1."
+            }
+          },
+          "additionalProperties": false,
+          "oneOf": [
+            {
+              "required": [
+                "fsdb",
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "waveform"
+                }
+              },
+              "not": {
+                "required": [
+                  "daidir"
+                ]
+              }
+            },
+            {
+              "required": [
+                "daidir",
+                "fsdb",
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "combined"
+                }
+              }
+            }
+          ]
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "fsdb": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "session_id"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "fsdb"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "session_id"
+                ]
+              },
+              "required": [
+                "fsdb"
+              ]
+            }
+          ],
+          "additionalProperties": false
+        },
+        "args": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "config": {
+              "type": "object",
+              "description": "内联配置对象。",
+              "properties": {
+                "clock": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "采样、统计或协议检查使用的 clock 信号路径。"
+                },
+                "awvalid": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI AWVALID 信号路径。"
+                },
+                "awready": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI AWREADY 信号路径。"
+                },
+                "awaddr": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI AWADDR 信号路径。"
+                },
+                "awid": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI AWID 信号路径；当前 AXI config schema 和 manager 要求显式提供。"
+                },
+                "awlen": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI AWLEN burst-length 信号路径。"
+                },
+                "awsize": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI AWSIZE beat-byte-size 信号路径。"
+                },
+                "awburst": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI AWBURST burst-type 信号路径。"
+                },
+                "wvalid": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI WVALID 信号路径。"
+                },
+                "wready": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI WREADY 信号路径。"
+                },
+                "wdata": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI WDATA 写数据总线信号路径。"
+                },
+                "wstrb": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI WSTRB 写字节使能信号路径。"
+                },
+                "wlast": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI WLAST 最后一拍指示信号路径。"
+                },
+                "bvalid": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI BVALID 信号路径。"
+                },
+                "bready": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI BREADY 信号路径。"
+                },
+                "bid": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI BID 写响应 ID 信号路径。"
+                },
+                "bresp": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI BRESP 写响应状态信号路径。"
+                },
+                "arvalid": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI ARVALID 信号路径。"
+                },
+                "arready": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI ARREADY 信号路径。"
+                },
+                "araddr": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI ARADDR 信号路径。"
+                },
+                "arid": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI ARID 信号路径；当前 AXI config schema 和 manager 要求显式提供。"
+                },
+                "arlen": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI ARLEN burst-length 信号路径。"
+                },
+                "arsize": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI ARSIZE beat-byte-size 信号路径。"
+                },
+                "arburst": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI ARBURST burst-type 信号路径。"
+                },
+                "rvalid": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI RVALID 信号路径。"
+                },
+                "rready": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI RREADY 信号路径。"
+                },
+                "rdata": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI RDATA 读数据总线信号路径。"
+                },
+                "rid": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI RID 读数据 ID 信号路径。"
+                },
+                "rresp": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI RRESP 读响应状态信号路径。"
+                },
+                "rlast": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AXI RLAST 最后一拍指示信号路径。"
+                },
+                "edge": {
+                  "type": "string",
+                  "enum": [
+                    "posedge",
+                    "negedge",
+                    "dual"
+                  ],
+                  "description": "Clock sampling edge. The schema default is authoritative; negedge often matches monitor semantics."
+                },
+                "sample_point": {
+                  "type": "string",
+                  "enum": [
+                    "before",
+                    "after"
+                  ],
+                  "description": "Before/after observation point for posedge or dual sampling; it does not change the raw waveform range."
+                },
+                "reset": {
+                  "type": "object",
+                  "required": [
+                    "signal",
+                    "polarity"
+                  ],
+                  "properties": {
+                    "signal": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "One-bit final waveform signal path used as reset."
+                    },
+                    "polarity": {
+                      "type": "string",
+                      "enum": [
+                        "active_low",
+                        "active_high"
+                      ],
+                      "description": "Level that asserts reset. X, Z, and unavailable samples are conservatively treated as asserted."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Reset definition. Both signal and polarity are required when reset is supplied."
+                }
+              },
+              "required": [
+                "clock",
+                "awvalid",
+                "awready",
+                "awaddr",
+                "awid",
+                "awlen",
+                "awsize",
+                "awburst",
+                "wvalid",
+                "wready",
+                "wdata",
+                "wstrb",
+                "wlast",
+                "bvalid",
+                "bready",
+                "bid",
+                "bresp",
+                "arvalid",
+                "arready",
+                "araddr",
+                "arid",
+                "arlen",
+                "arsize",
+                "arburst",
+                "rvalid",
+                "rready",
+                "rdata",
+                "rid",
+                "rresp",
+                "rlast",
+                "reset"
+              ],
+              "additionalProperties": false
+            },
+            "config_path": {
+              "type": "string",
+              "minLength": 1,
+              "description": "输入配置文件路径。"
+            },
+            "name": {
+              "type": "string",
+              "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
+            }
+          },
+          "additionalProperties": false,
+          "oneOf": [
+            {
+              "required": [
+                "config"
+              ]
+            },
+            {
+              "required": [
+                "config_path"
+              ]
+            }
+          ]
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "timeout_ms": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647,
+              "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

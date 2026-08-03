@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,11 @@ from jsonschema import Draft7Validator
 ROOT = Path(__file__).resolve().parents[1]
 ACTION_SPEC = ROOT / "specs" / "actions" / "actions.yaml"
 OUTPUT = ROOT / "schemas" / "v1" / "internal" / "engine.request.schema.json"
+MANIFEST_OUTPUT = (
+    ROOT / "schemas" / "v1" / "internal" / "engine.request.manifest.json"
+)
+ACTION_OUTPUT_DIR = ROOT / "schemas" / "v1" / "internal" / "actions"
+HELPER_OUTPUT_DIR = ROOT / "schemas" / "v1" / "internal" / "helper-actions"
 
 INTERNAL_API_VERSION = "xdebug.internal.v1"
 PUBLIC_PAYLOAD_FIELDS = ("target", "args", "limits")
@@ -34,6 +40,7 @@ PUBLIC_ONLY_ENVELOPE_FIELDS = {
     "parent_span_id",
     "auth_token",
 }
+ACTION_NAME_RE = re.compile(r"^[a-z0-9]+(?:[._][a-z0-9]+)*$")
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -135,6 +142,23 @@ def _observability_schema() -> dict[str, Any]:
             )
         },
         "additionalProperties": False,
+    }
+
+
+def _opaque_object_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "additionalProperties": {
+            "type": [
+                "array",
+                "boolean",
+                "integer",
+                "null",
+                "number",
+                "object",
+                "string",
+            ]
+        },
     }
 
 
@@ -311,6 +335,13 @@ def generate() -> dict[str, Any]:
 
     names = [action["name"] for action in actions]
     names.extend(INTERNAL_CONTROL_ACTIONS)
+    if len(names) != len(set(names)):
+        raise ValueError("internal action names must be unique")
+    invalid_names = [name for name in names if not ACTION_NAME_RE.fullmatch(name)]
+    if invalid_names:
+        raise ValueError(
+            f"internal action names are not safe schema filenames: {invalid_names}"
+        )
     branches = [_public_action_branch(action) for action in actions]
     branches.extend(_control_branch(action) for action in INTERNAL_CONTROL_ACTIONS)
 
@@ -348,22 +379,248 @@ def generate() -> dict[str, Any]:
     return schema
 
 
+def _branch_action(branch: dict[str, Any]) -> str:
+    action_schema = branch.get("properties", {}).get("action", {})
+    if not isinstance(action_schema, dict):
+        raise ValueError("internal branch action discriminator must be an object")
+    if "const" in action_schema:
+        values = [action_schema["const"]]
+    else:
+        values = action_schema.get("enum", [])
+    if (
+        not isinstance(values, list)
+        or len(values) != 1
+        or not isinstance(values[0], str)
+    ):
+        raise ValueError(
+            "each internal branch must have exactly one string action discriminator"
+        )
+    return values[0]
+
+
+def generate_runtime_artifacts(
+    aggregate: dict[str, Any],
+) -> tuple[
+    dict[str, Any],
+    dict[str, dict[str, Any]],
+    dict[str, dict[str, Any]],
+]:
+    branches = aggregate.get("oneOf")
+    declared = aggregate.get("x-internal-actions")
+    if not isinstance(branches, list) or not isinstance(declared, list):
+        raise ValueError("aggregate internal schema is missing its action union")
+
+    outer = {
+        key: copy.deepcopy(value)
+        for key, value in aggregate.items()
+        if key not in {"oneOf", "x-internal-actions"}
+    }
+    action_schemas: dict[str, dict[str, Any]] = {}
+    branches_by_action: dict[str, dict[str, Any]] = {}
+    for branch in branches:
+        if not isinstance(branch, dict):
+            raise ValueError("internal action branch must be an object")
+        action = _branch_action(branch)
+        if action in action_schemas:
+            raise ValueError(f"duplicate internal action branch: {action}")
+        projected = copy.deepcopy(outer)
+        projected["$id"] = f"xdebug.internal.engine.request.v1.action.{action}"
+        projected["title"] = f"xdebug.internal.v1 {action} engine request"
+        projected["description"] = (
+            "Generated strict per-action projection of the private "
+            "frontend-to-engine request contract."
+        )
+        projected["allOf"] = [copy.deepcopy(branch)]
+        _assert_closed_objects(projected)
+        Draft7Validator.check_schema(projected)
+        action_schemas[action] = projected
+        branches_by_action[action] = branch
+
+    declared_actions = sorted(declared)
+    if declared_actions != sorted(action_schemas):
+        raise ValueError(
+            "aggregate action catalog and discriminated branches differ"
+        )
+    refs = {
+        action: f"schemas/v1/internal/actions/{action}.request.schema.json"
+        for action in declared_actions
+    }
+    spec = _load(ACTION_SPEC)
+    action_contracts = {
+        action["name"]: action for action in spec.get("actions", [])
+    }
+    dispatch_kinds: dict[str, str] = {}
+    helper_schemas: dict[str, dict[str, Any]] = {}
+    helper_refs: dict[str, str] = {}
+    for action in declared_actions:
+        if action in INTERNAL_SESSION_ACTIONS:
+            dispatch_kinds[action] = "session_local"
+            continue
+        if action in INTERNAL_CONTROL_ACTIONS:
+            dispatch_kinds[action] = "server_control"
+            continue
+        contract = action_contracts.get(action)
+        if not isinstance(contract, dict):
+            raise ValueError(f"internal action is missing from actions.yaml: {action}")
+        variants = contract.get("resource_variants", [])
+        requirements = (
+            [variant["requires"] for variant in variants]
+            if variants
+            else [contract.get("requires")]
+        )
+        if (
+            contract.get("handler_kind") != "engine_forward"
+            or "none" in requirements
+        ):
+            dispatch_kinds[action] = "hybrid_local_forward"
+            continue
+
+        dispatch_kinds[action] = "server_forward"
+        accepted_modes: list[str] = []
+        for requires in requirements:
+            for mode in _accepted_resource_modes(requires):
+                if mode not in accepted_modes:
+                    accepted_modes.append(mode)
+        branch = branches_by_action[action]
+        branch_properties = branch.get("properties", {})
+        properties: dict[str, Any] = {
+            "api_version": copy.deepcopy(branch_properties["api_version"]),
+            "action": copy.deepcopy(branch_properties["action"]),
+            "observability": _observability_schema(),
+            "routing": _routing_schema(
+                accepted_modes=tuple(accepted_modes)
+            ),
+            # The helper only transports these typed payload objects.  The
+            # persistent server validates every nested action-specific field.
+            "target": _opaque_object_schema(),
+            "args": _opaque_object_schema(),
+        }
+        if "limits" in branch_properties:
+            properties["limits"] = copy.deepcopy(
+                branch_properties["limits"]
+            )
+        helper_schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": f"xdebug.internal.engine.helper-envelope.v1.{action}",
+            "title": f"xdebug internal helper envelope for {action}",
+            "description": (
+                "Generated strict short-lived-helper envelope. The persistent "
+                "engine server validates the complete action payload."
+            ),
+            "type": "object",
+            "required": ["api_version", "action", "routing"],
+            "properties": properties,
+            "additionalProperties": False,
+        }
+        _assert_closed_objects(helper_schema)
+        Draft7Validator.check_schema(helper_schema)
+        helper_schemas[action] = helper_schema
+        helper_refs[action] = (
+            f"schemas/v1/internal/helper-actions/{action}.request.schema.json"
+        )
+
+    manifest = {
+        "schema_version": "xdebug.internal-request-manifest.v1",
+        "api_version": INTERNAL_API_VERSION,
+        "aggregate_schema_ref": (
+            "schemas/v1/internal/engine.request.schema.json"
+        ),
+        "action_count": len(refs),
+        "actions": refs,
+        "helper_dispatch_kinds": dispatch_kinds,
+        "helper_envelope_schemas": helper_refs,
+    }
+    if set(dispatch_kinds) != set(refs):
+        raise ValueError("helper dispatch catalog differs from internal actions")
+    if set(helper_refs) != {
+        action
+        for action, kind in dispatch_kinds.items()
+        if kind == "server_forward"
+    }:
+        raise ValueError("helper envelope catalog differs from server-forward actions")
+    return manifest, action_schemas, helper_schemas
+
+
+def _render(value: dict[str, Any]) -> str:
+    return json.dumps(value, indent=2, ensure_ascii=False) + "\n"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args(argv)
 
-    rendered = json.dumps(generate(), indent=2, ensure_ascii=False) + "\n"
+    aggregate = generate()
+    manifest, action_schemas, helper_schemas = generate_runtime_artifacts(
+        aggregate
+    )
+    expected = {
+        OUTPUT: _render(aggregate),
+        MANIFEST_OUTPUT: _render(manifest),
+    }
+    expected.update(
+        {
+            ACTION_OUTPUT_DIR / f"{action}.request.schema.json": _render(schema)
+            for action, schema in action_schemas.items()
+        }
+    )
+    expected.update(
+        {
+            HELPER_OUTPUT_DIR / f"{action}.request.schema.json": _render(schema)
+            for action, schema in helper_schemas.items()
+        }
+    )
+    expected_action_paths = {
+        path for path in expected if path.parent == ACTION_OUTPUT_DIR
+    }
+    actual_action_paths = (
+        set(ACTION_OUTPUT_DIR.glob("*.request.schema.json"))
+        if ACTION_OUTPUT_DIR.is_dir()
+        else set()
+    )
+    expected_helper_paths = {
+        path for path in expected if path.parent == HELPER_OUTPUT_DIR
+    }
+    actual_helper_paths = (
+        set(HELPER_OUTPUT_DIR.glob("*.request.schema.json"))
+        if HELPER_OUTPUT_DIR.is_dir()
+        else set()
+    )
     if args.check:
-        if not OUTPUT.exists() or OUTPUT.read_text(encoding="utf-8") != rendered:
-            print(f"internal request schema is out of date: {OUTPUT}")
+        stale = sorted(
+            (actual_action_paths - expected_action_paths)
+            | (actual_helper_paths - expected_helper_paths)
+        )
+        missing_or_changed = [
+            path
+            for path, rendered in expected.items()
+            if not path.exists() or path.read_text(encoding="utf-8") != rendered
+        ]
+        if stale or missing_or_changed:
+            for path in missing_or_changed:
+                print(f"internal request artifact is out of date: {path}")
+            for path in stale:
+                print(f"stale internal request action schema: {path}")
             return 1
-        print("internal request schema is synchronized")
+        print(
+            "internal request schemas are synchronized "
+            f"({len(action_schemas)} actions, "
+            f"{len(helper_schemas)} helper envelopes)"
+        )
         return 0
 
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT.write_text(rendered, encoding="utf-8")
-    print(f"wrote {OUTPUT}")
+    ACTION_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    HELPER_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    for path in sorted(
+        (actual_action_paths - expected_action_paths)
+        | (actual_helper_paths - expected_helper_paths)
+    ):
+        path.unlink()
+        print(f"removed stale {path}")
+    for path, rendered in expected.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(rendered, encoding="utf-8")
+        print(f"wrote {path}")
     return 0
 
 

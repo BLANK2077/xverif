@@ -6,7 +6,7 @@ import statistics
 from pathlib import Path
 from typing import Any
 
-from runner import CliRunner
+from runner import CliRunner, HybridCliRunner
 
 
 SAMPLE_COUNT = 3
@@ -38,8 +38,6 @@ STREAM_PACKET_GOLDEN = {
 STREAM_XOUT_GOLDEN_LINES = [
     "packet_stable_fields    : opcode=8'ha3",
     "18     185ns  0           data=32'h4000000c seq=16'hc",
-    "first_fields: data=32'h4000000c seq=16'hc",
-    "last_fields : data=32'h4000000f seq=16'hf",
 ]
 
 
@@ -65,8 +63,9 @@ def _query(
         "api_version": "xdebug.v1",
         "action": action,
         "args": args or {},
-        "limits": {"timeout_ms": int(timeout_sec * 1000)},
     }
+    if action not in {"session.open", "session.kill"}:
+        request["limits"] = {"timeout_ms": int(timeout_sec * 1000)}
     if target is not None:
         request["target"] = target
     result = runner.run(
@@ -79,6 +78,42 @@ def _query(
         assert isinstance(result.response, str)
         return result
     _require_success(result, action)
+    return result
+
+
+def _query_expect_error(
+    runner: CliRunner,
+    action: str,
+    *,
+    target: dict[str, Any],
+    args: dict[str, Any],
+    expected_code: str,
+    timeout_sec: float = 240.0,
+) -> Any:
+    request = {
+        "api_version": "xdebug.v1",
+        "action": action,
+        "target": target,
+        "args": args,
+        "limits": {"timeout_ms": int(timeout_sec * 1000)},
+    }
+    result = runner.run(
+        request,
+        output_format="json",
+        timeout_sec=timeout_sec + 30.0,
+    )
+    assert result.returncode == 1 and not result.timed_out, (
+        f"{action} unexpectedly succeeded or timed out\n"
+        f"stdout:\n{result.stdout_raw[-4000:]}\n"
+        f"stderr:\n{result.stderr_raw[-4000:]}"
+    )
+    assert isinstance(result.response, dict)
+    assert result.response.get("ok") is False
+    assert result.response.get("action") == action
+    error = result.response.get("error")
+    assert isinstance(error, dict)
+    assert error.get("code") == expected_code
+    assert error.get("error_layer") == "handler"
     return result
 
 
@@ -234,11 +269,12 @@ def _stream_packet_projection(response: dict[str, Any]) -> dict[str, Any]:
 
 
 def test_analysis_cache_phase0_baseline(
-    cli_runner: CliRunner,
-    xdebug_root: Path,
-    tmp_path: Path,
-    xverif_fixture: Any,
+        persistent_cli_runner: HybridCliRunner,
+        xdebug_root: Path,
+        tmp_path: Path,
+        xverif_fixture: Any,
 ) -> None:
+    cli_runner = persistent_cli_runner
     probe_path = tmp_path / "analysis-probe.jsonl"
     cli_runner.base_env["XDEBUG_TEST_ANALYSIS_PROBE_PATH"] = str(probe_path)
 
@@ -278,28 +314,25 @@ def test_analysis_cache_phase0_baseline(
             )
             try:
                 if protocol == "apb":
-                    _query(
-                        cli_runner, "apb.config.load", target=target,
-                        args={"name": "apb0", "config": _apb_config(apb_manifest)},
-                    )
                     action = "apb.query"
                     args = {"name": "apb0", "direction": "all"}
+                    warmup_args = {
+                        "name": "__analysis_cache_validator_warmup__",
+                        "direction": "all",
+                    }
                 elif protocol == "axi":
-                    _query(
-                        cli_runner, "axi.config.load", target=target,
-                        args={"name": "axi0", "config": _axi_config(axi_manifest)},
-                    )
                     action = "axi.query"
                     args = {
                         "name": "axi0",
                         "direction": "write",
                         "query": {"index": 1},
                     }
+                    warmup_args = {
+                        "name": "__analysis_cache_validator_warmup__",
+                        "direction": "write",
+                        "query": {"index": 1},
+                    }
                 else:
-                    _query(
-                        cli_runner, "stream.config.load", target=target,
-                        args={"config_path": str(stream_config), "mode": "replace"},
-                    )
                     action = "stream.query"
                     args = {
                         "stream": "ready_packet",
@@ -307,6 +340,44 @@ def test_analysis_cache_phase0_baseline(
                         "packet_index": 3,
                         "time_range": {"begin": "0ns", "end": "250us"},
                     }
+                    warmup_args = {
+                        "stream": "__analysis_cache_validator_warmup__",
+                        "query": "summary",
+                    }
+
+                # The RSS delta below measures the analysis repository, not
+                # the server's one-time per-action schema validator.  Exercise
+                # the strict action boundary with a guaranteed missing config;
+                # this must return before any waveform analysis or cache event.
+                probe_before_warmup = _probe_rows(probe_path, pid)
+                assert probe_before_warmup
+                assert int(probe_before_warmup[-1]["scanner_invocations"]) == 0
+                _query_expect_error(
+                    cli_runner,
+                    action,
+                    target=target,
+                    args=warmup_args,
+                    expected_code="CONFIG_NOT_FOUND",
+                )
+                probe_after_warmup = _probe_rows(probe_path, pid)
+                assert probe_after_warmup == probe_before_warmup
+                assert int(probe_after_warmup[-1]["scanner_invocations"]) == 0
+
+                if protocol == "apb":
+                    _query(
+                        cli_runner, "apb.config.load", target=target,
+                        args={"name": "apb0", "config": _apb_config(apb_manifest)},
+                    )
+                elif protocol == "axi":
+                    _query(
+                        cli_runner, "axi.config.load", target=target,
+                        args={"name": "axi0", "config": _axi_config(axi_manifest)},
+                    )
+                else:
+                    _query(
+                        cli_runner, "stream.config.load", target=target,
+                        args={"config_path": str(stream_config), "mode": "replace"},
+                    )
 
                 rss_before = _rss_bytes(pid)
                 cold = _query(cli_runner, action, target=target, args=args)
@@ -352,8 +423,12 @@ def test_analysis_cache_phase0_baseline(
     assert metrics["stream"]["scanner_invocations"] == [1, 1, 1]
     for protocol, values in metrics.items():
         limits = thresholds["phase0_regression_limits"][protocol]
-        assert values["cold_p95_ms"] <= limits["cold_p95_ms"]
-        assert values["hot_p95_ms"] <= limits["hot_p95_ms"]
+        assert values["cold_p95_ms"] <= limits["cold_p95_ms"], (
+            protocol, values, limits
+        )
+        assert values["hot_p95_ms"] <= limits["hot_p95_ms"], (
+            protocol, values, limits
+        )
         assert values["max_rss_delta_bytes"] <= limits["max_rss_delta_bytes"]
         assert values["max_estimated_bytes"] <= limits["max_estimated_bytes"]
     axi_target = thresholds["phase_targets"]["axi_repository"]

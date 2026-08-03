@@ -1,0 +1,364 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xdebug.internal.engine.request.v1.action.stream.export",
+  "title": "xdebug.internal.v1 stream.export engine request",
+  "description": "Generated strict per-action projection of the private frontend-to-engine request contract.",
+  "type": "object",
+  "required": [
+    "api_version",
+    "action"
+  ],
+  "properties": {
+    "api_version": {},
+    "action": {},
+    "observability": {},
+    "routing": {},
+    "target": {},
+    "args": {},
+    "limits": {}
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "type": "object",
+      "required": [
+        "api_version",
+        "action",
+        "args",
+        "target",
+        "routing"
+      ],
+      "properties": {
+        "api_version": {
+          "type": "string",
+          "enum": [
+            "xdebug.internal.v1"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "stream.export"
+          ]
+        },
+        "observability": {
+          "type": "object",
+          "properties": {
+            "request_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "trace_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "span_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "parent_span_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "routing": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved engine session destination."
+            },
+            "daidir": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved design database path used to open an engine."
+            },
+            "fsdb": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved waveform database path used to open an engine."
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "design",
+                "waveform",
+                "combined"
+              ],
+              "description": "Resource mode derived by the frontend from resolved resources."
+            },
+            "transport_auth_token": {
+              "type": "string",
+              "minLength": 1,
+              "description": "TCP transport credential; never part of xdebug.v1."
+            }
+          },
+          "additionalProperties": false,
+          "oneOf": [
+            {
+              "required": [
+                "fsdb",
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "waveform"
+                }
+              },
+              "not": {
+                "required": [
+                  "daidir"
+                ]
+              }
+            },
+            {
+              "required": [
+                "daidir",
+                "fsdb",
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "combined"
+                }
+              }
+            }
+          ]
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "fsdb": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "session_id"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "fsdb"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "session_id"
+                ]
+              },
+              "required": [
+                "fsdb"
+              ]
+            }
+          ],
+          "additionalProperties": false
+        },
+        "args": {
+          "type": "object",
+          "required": [
+            "stream"
+          ],
+          "properties": {
+            "cache_scope": {
+              "type": "string",
+              "enum": [
+                "full",
+                "range"
+              ],
+              "default": "full",
+              "description": "Base-analysis cache scope. full (default) is reusable by query, export, and dynamic validate; range requires a non-empty time_range and caches only that one-off normalized interval."
+            },
+            "channel": {
+              "type": "string",
+              "description": "协议或 stream 的逻辑 channel 选择；可用值由本 action 的 enum 决定。"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "transfer",
+                "packet",
+                "packet_beats"
+              ],
+              "description": "导出或查询的结果类型。"
+            },
+            "line_limit": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Limits returned evidence rows only, not scanning, aggregation, or the verdict; read completeness fields as well."
+            },
+            "output": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Artifact path; omit it to return an in-response preview."
+                },
+                "file_format": {
+                  "type": "string",
+                  "enum": [
+                    "tsv",
+                    "csv",
+                    "xout"
+                  ],
+                  "default": "tsv",
+                  "description": "Stream artifact file format."
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "required": [
+                      "file_format"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "path"
+                    ]
+                  },
+                  "description": "Export destination and rendering controls. path, file_format, and verbose are supported only where this action declares them."
+                }
+              ],
+              "additionalProperties": false,
+              "description": "Export destination and rendering controls. path, file_format, and verbose are supported only where this action declares them."
+            },
+            "render_time_unit": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "ps",
+                "ns",
+                "us"
+              ],
+              "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
+            },
+            "stream": {
+              "type": "string",
+              "description": "已加载的 stream 配置名称。"
+            },
+            "time_range": {
+              "type": "object",
+              "minProperties": 1,
+              "properties": {
+                "begin": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "闭区间起点；省略时使用可用波形窗口起点。"
+                },
+                "end": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "闭区间终点；省略时使用可用波形窗口终点。"
+                }
+              },
+              "additionalProperties": false,
+              "description": "Closed analysis interval. begin and end may be omitted independently to use the available waveform bounds."
+            },
+            "value_format": {
+              "type": "string",
+              "enum": [
+                "hex",
+                "bin",
+                "dec"
+              ],
+              "default": "hex",
+              "description": "返回 LogicValue 的显示格式；不改变比较、采样或底层四态值。"
+            }
+          },
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "output"
+                ],
+                "properties": {
+                  "output": {
+                    "required": [
+                      "path"
+                    ],
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                }
+              },
+              "then": {
+                "not": {
+                  "required": [
+                    "line_limit"
+                  ]
+                }
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "cache_scope"
+                ],
+                "properties": {
+                  "cache_scope": {
+                    "const": "range"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "time_range"
+                ],
+                "properties": {
+                  "time_range": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "begin"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "end"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "timeout_ms": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647,
+              "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

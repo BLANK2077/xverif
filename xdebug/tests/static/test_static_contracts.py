@@ -2338,6 +2338,101 @@ def test_internal_request_schema_is_generated_and_synced() -> None:
     assert _module("sync_internal_request_schema").main(["--check"]) == 0
 
 
+def test_internal_runtime_manifest_and_action_schemas_match_union() -> None:
+    module = _module("sync_internal_request_schema")
+    aggregate = module.generate()
+    expected_manifest, expected_actions, expected_helper_actions = (
+        module.generate_runtime_artifacts(aggregate)
+    )
+    internal_root = XDEBUG / "schemas" / "v1" / "internal"
+    manifest = json.loads(
+        (internal_root / "engine.request.manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert manifest == expected_manifest
+    assert manifest["action_count"] == len(expected_actions)
+    assert set(manifest["actions"]) == set(expected_actions)
+
+    action_root = internal_root / "actions"
+    actual_paths = set(action_root.glob("*.request.schema.json"))
+    expected_paths = {
+        XDEBUG / schema_ref
+        for schema_ref in manifest["actions"].values()
+    }
+    assert actual_paths == expected_paths
+    for action, schema_ref in manifest["actions"].items():
+        action_schema = json.loads(
+            (XDEBUG / schema_ref).read_text(encoding="utf-8")
+        )
+        assert action_schema == expected_actions[action]
+        Draft7Validator.check_schema(action_schema)
+
+    helper_paths = set(
+        (internal_root / "helper-actions").glob(
+            "*.request.schema.json"
+        )
+    )
+    expected_helper_paths = {
+        XDEBUG / schema_ref
+        for schema_ref in manifest["helper_envelope_schemas"].values()
+    }
+    assert helper_paths == expected_helper_paths
+    assert set(manifest["helper_dispatch_kinds"]) == set(expected_actions)
+    assert set(manifest["helper_envelope_schemas"]) == {
+        action
+        for action, kind in manifest["helper_dispatch_kinds"].items()
+        if kind == "server_forward"
+    }
+    assert manifest["helper_dispatch_kinds"]["session.open"] == (
+        "session_local"
+    )
+    assert manifest["helper_dispatch_kinds"]["server.ping"] == (
+        "server_control"
+    )
+    assert manifest["helper_dispatch_kinds"]["expr.normalize"] == (
+        "hybrid_local_forward"
+    )
+    assert manifest["helper_dispatch_kinds"]["apb.query"] == (
+        "server_forward"
+    )
+    for action, schema_ref in manifest["helper_envelope_schemas"].items():
+        helper_schema = json.loads(
+            (XDEBUG / schema_ref).read_text(encoding="utf-8")
+        )
+        assert helper_schema == expected_helper_actions[action]
+        assert helper_schema["additionalProperties"] is False
+        assert helper_schema["properties"]["routing"][
+            "additionalProperties"
+        ] is False
+        assert helper_schema["properties"]["limits"][
+            "additionalProperties"
+        ] is False
+        Draft7Validator.check_schema(helper_schema)
+
+
+def test_internal_helper_fast_path_preserves_server_full_validation() -> None:
+    engine_query = (
+        XDEBUG / "src" / "engine" / "engine_query.cpp"
+    ).read_text(encoding="utf-8")
+    server = (
+        XDEBUG / "src" / "engine" / "server.cpp"
+    ).read_text(encoding="utf-8")
+    assert "validate_internal_request_for_helper" in engine_query
+    forward = engine_query.split(
+        "OrderedJson handle_engine_forward(", 1
+    )[1].split("\nOrderedJson handle_query(", 1)[0]
+    assert "used_forward_envelope && !sent && engine_error.is_null()" in (
+        forward
+    )
+    assert "validator.validate_internal_request(request)" in forward
+    assert forward.index("validator.validate_internal_request(request)") < (
+        forward.index("if (!pending_error.is_null())")
+    )
+    assert "schema_validator.validate_internal_request(request)" in server
+    assert "validate_internal_request_for_helper" not in server
+
+
 def test_internal_request_schema_closes_payload_routing_and_observability() -> None:
     schema = json.loads(
         (

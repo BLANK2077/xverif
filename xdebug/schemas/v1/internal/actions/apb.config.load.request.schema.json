@@ -1,0 +1,320 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xdebug.internal.engine.request.v1.action.apb.config.load",
+  "title": "xdebug.internal.v1 apb.config.load engine request",
+  "description": "Generated strict per-action projection of the private frontend-to-engine request contract.",
+  "type": "object",
+  "required": [
+    "api_version",
+    "action"
+  ],
+  "properties": {
+    "api_version": {},
+    "action": {},
+    "observability": {},
+    "routing": {},
+    "target": {},
+    "args": {},
+    "limits": {}
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "type": "object",
+      "required": [
+        "api_version",
+        "action",
+        "args",
+        "target",
+        "routing"
+      ],
+      "properties": {
+        "api_version": {
+          "type": "string",
+          "enum": [
+            "xdebug.internal.v1"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "apb.config.load"
+          ]
+        },
+        "observability": {
+          "type": "object",
+          "properties": {
+            "request_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "trace_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "span_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "parent_span_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "routing": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved engine session destination."
+            },
+            "daidir": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved design database path used to open an engine."
+            },
+            "fsdb": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved waveform database path used to open an engine."
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "design",
+                "waveform",
+                "combined"
+              ],
+              "description": "Resource mode derived by the frontend from resolved resources."
+            },
+            "transport_auth_token": {
+              "type": "string",
+              "minLength": 1,
+              "description": "TCP transport credential; never part of xdebug.v1."
+            }
+          },
+          "additionalProperties": false,
+          "oneOf": [
+            {
+              "required": [
+                "fsdb",
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "waveform"
+                }
+              },
+              "not": {
+                "required": [
+                  "daidir"
+                ]
+              }
+            },
+            {
+              "required": [
+                "daidir",
+                "fsdb",
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "combined"
+                }
+              }
+            }
+          ]
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "fsdb": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "session_id"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "fsdb"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "session_id"
+                ]
+              },
+              "required": [
+                "fsdb"
+              ]
+            }
+          ],
+          "additionalProperties": false
+        },
+        "args": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "config": {
+              "type": "object",
+              "description": "内联配置对象。",
+              "properties": {
+                "clock": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "采样、统计或协议检查使用的 clock 信号路径。"
+                },
+                "edge": {
+                  "type": "string",
+                  "enum": [
+                    "posedge",
+                    "negedge",
+                    "dual"
+                  ],
+                  "description": "Clock sampling edge. The schema default is authoritative; negedge often matches monitor semantics."
+                },
+                "sample_point": {
+                  "type": "string",
+                  "enum": [
+                    "before",
+                    "after"
+                  ],
+                  "description": "Before/after observation point for posedge or dual sampling; it does not change the raw waveform range."
+                },
+                "paddr": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "APB PADDR 信号路径。"
+                },
+                "psel": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "APB PSEL 信号路径。"
+                },
+                "penable": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "APB PENABLE 信号路径。"
+                },
+                "pwrite": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "APB PWRITE 方向信号路径。"
+                },
+                "pwdata": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "APB PWDATA 写数据总线信号路径。"
+                },
+                "prdata": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "APB PRDATA 读数据总线信号路径。"
+                },
+                "pready": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "可选 APB PREADY 信号路径；省略表示该接口没有 PREADY，access phase 按 APB2 语义完成。"
+                },
+                "pslverr": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "APB PSLVERR 信号路径；接口不实现错误响应时可按 config schema 省略。"
+                },
+                "reset": {
+                  "type": "object",
+                  "required": [
+                    "signal",
+                    "polarity"
+                  ],
+                  "properties": {
+                    "signal": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "One-bit final waveform signal path used as reset."
+                    },
+                    "polarity": {
+                      "type": "string",
+                      "enum": [
+                        "active_low",
+                        "active_high"
+                      ],
+                      "description": "Level that asserts reset. X, Z, and unavailable samples are conservatively treated as asserted."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Reset definition. Both signal and polarity are required when reset is supplied."
+                }
+              },
+              "required": [
+                "clock",
+                "paddr",
+                "psel",
+                "penable",
+                "pwrite",
+                "pwdata",
+                "prdata",
+                "reset"
+              ],
+              "additionalProperties": false
+            },
+            "config_path": {
+              "type": "string",
+              "minLength": 1,
+              "description": "输入配置文件路径。"
+            },
+            "name": {
+              "type": "string",
+              "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
+            }
+          },
+          "additionalProperties": false,
+          "oneOf": [
+            {
+              "required": [
+                "config"
+              ]
+            },
+            {
+              "required": [
+                "config_path"
+              ]
+            }
+          ]
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "timeout_ms": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647,
+              "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}
