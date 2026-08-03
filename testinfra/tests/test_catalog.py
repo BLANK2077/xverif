@@ -40,6 +40,10 @@ def test_gate_selection_is_monotonic() -> None:
     assert "xdebug.apb_vip" not in regression
     assert "xdebug.apb_vip" in nightly
     assert "xdebug.cpp_unit" in regression
+    assert "skills.x_npi_real" in regression
+    assert "skills.x_npi_real" in nightly
+    assert "skills.x_npi_perf" not in regression
+    assert "skills.x_npi_perf" in nightly
 
 
 def test_optional_real_lsf_identity_is_preserved_in_nightly() -> None:
@@ -63,17 +67,39 @@ def test_suite_filter_can_only_narrow_a_gate() -> None:
         filter_plan(build_plan(load_catalog(), "fast"), ["xloc.vim"])
 
 
-def test_npi_capability_implies_common_xdist_resource_group() -> None:
+class FakeResourceItem:
+    def __init__(self, fixturenames: tuple[str, ...] = ()) -> None:
+        self.fixturenames = fixturenames
+        self.marker = None
+
+    def add_marker(self, marker: object) -> None:
+        self.marker = marker
+
+
+def test_npi_capability_and_fixture_imply_common_xdist_resource_group() -> None:
     catalog = load_catalog()
     suite = next(item for item in catalog.suites if item.id == "xdebug.stream")
 
-    class FakeItem:
-        marker = None
+    item = FakeResourceItem(("artifact_root", "xverif_fixture"))
+    apply_xdist_resource_group(item, suite)  # type: ignore[arg-type]
+    assert item.marker is not None
+    assert item.marker.kwargs["name"] == "xverif-resource-verdi_npi"
 
-        def add_marker(self, marker: object) -> None:
-            self.marker = marker
 
-    item = FakeItem()
+def test_npi_capability_without_fixture_does_not_serialize_item() -> None:
+    catalog = load_catalog()
+    suite = next(item for item in catalog.suites if item.id == "xdebug.contract")
+
+    item = FakeResourceItem(("artifact_root",))
+    apply_xdist_resource_group(item, suite)  # type: ignore[arg-type]
+    assert item.marker is None
+
+
+def test_explicit_resource_token_serializes_complete_suite() -> None:
+    catalog = load_catalog()
+    suite = next(item for item in catalog.suites if item.id == "skills.x_npi_real")
+
+    item = FakeResourceItem()
     apply_xdist_resource_group(item, suite)  # type: ignore[arg-type]
     assert item.marker is not None
     assert item.marker.kwargs["name"] == "xverif-resource-verdi_npi"

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import re
+from functools import lru_cache
 from pathlib import Path
 
 from testinfra.xverif_test.catalog import Catalog
@@ -8,6 +10,17 @@ from testinfra.xverif_test.catalog import Catalog
 
 ROOT = Path(__file__).resolve().parents[2]
 IGNORED_TREE_PARTS = {".conda-xverif", ".xverif-test-cache", ".xverif-test-results", "tmp"}
+GENERATED_TREE_PARTS = {
+    ".git",
+    ".pytest_cache",
+    "artifacts",
+    "build",
+    "csrc",
+    "dist",
+    "npiLog",
+    "out",
+}
+SOURCE_TREE_PRUNES = IGNORED_TREE_PARTS | GENERATED_TREE_PARTS
 MACHINE_PATH_SOURCE_SUFFIXES = {
     ".c",
     ".cc",
@@ -47,6 +60,23 @@ def _catalog() -> Catalog:
     )
 
 
+def _walk_files(root: Path, pruned_names: frozenset[str]) -> tuple[Path, ...]:
+    files: list[Path] = []
+    for directory, dirnames, filenames in os.walk(root, topdown=True):
+        dirnames[:] = sorted(
+            name for name in dirnames
+            if name not in pruned_names
+        )
+        base = Path(directory)
+        files.extend(base / name for name in sorted(filenames))
+    return tuple(files)
+
+
+@lru_cache(maxsize=1)
+def _source_files() -> tuple[Path, ...]:
+    return _walk_files(ROOT, frozenset(SOURCE_TREE_PRUNES))
+
+
 def test_every_collected_python_test_has_catalog_owner() -> None:
     catalog = _catalog()
     leaf_paths = {
@@ -55,19 +85,22 @@ def test_every_collected_python_test_has_catalog_owner() -> None:
         for value in suite.runner.get("leaf_paths", [])
     }
     missing: list[str] = []
-    for path in sorted(ROOT.rglob("test_*.py")):
-        relative = path.relative_to(ROOT)
-        if any(part in IGNORED_TREE_PARTS for part in relative.parts):
+    for path in _source_files():
+        if not path.name.startswith("test_") or path.suffix != ".py":
             continue
+        relative = path.relative_to(ROOT)
         if not catalog.owners_for_path(path, ROOT) and relative not in leaf_paths:
             missing.append(relative.as_posix())
     assert missing == []
 
 
 def test_legacy_pytest_configs_and_gate_scripts_are_absent() -> None:
-    assert list(ROOT.rglob("pytest.ini")) == []
+    files = _source_files()
+    assert [path for path in files if path.name == "pytest.ini"] == []
     nested_pytest_configs: list[Path] = []
-    for path in ROOT.rglob("pyproject.toml"):
+    for path in files:
+        if path.name != "pyproject.toml":
+            continue
         if path == ROOT / "pyproject.toml":
             continue
         if "[tool.pytest.ini_options]" in path.read_text(encoding="utf-8"):
@@ -79,10 +112,10 @@ def test_legacy_pytest_configs_and_gate_scripts_are_absent() -> None:
 
 def test_makefiles_do_not_reintroduce_public_test_targets() -> None:
     violations: list[str] = []
-    for path in sorted(ROOT.rglob("Makefile*")):
-        relative = path.relative_to(ROOT)
-        if any(part in IGNORED_TREE_PARTS | {"out", "csrc"} for part in relative.parts):
+    for path in _source_files():
+        if not path.name.startswith("Makefile"):
             continue
+        relative = path.relative_to(ROOT)
         if relative.parts and relative.parts[0] == "third_party":
             continue
         for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
@@ -103,7 +136,10 @@ def test_active_trace_cases_use_the_shared_builder_profile() -> None:
 def test_product_test_consumers_do_not_prepare_fixtures() -> None:
     forbidden = ('["make", "clean"]', '["make", "run"]', '["make", "fixture"]', "build_p3_db")
     violations: list[str] = []
-    for path in sorted((ROOT / "xdebug/tests").rglob("*")):
+    tests_root = ROOT / "xdebug/tests"
+    for path in _source_files():
+        if tests_root not in path.parents:
+            continue
         if path.suffix not in {".py", ".sh"}:
             continue
         text = path.read_text(encoding="utf-8", errors="replace")
@@ -135,22 +171,8 @@ def test_every_testinfra_leaf_is_declared_by_catalog_or_fixture_registry() -> No
 
 def test_repository_has_no_machine_specific_local_paths() -> None:
     violations: list[str] = []
-    ignored = IGNORED_TREE_PARTS | {
-        ".git",
-        ".pytest_cache",
-        "artifacts",
-        "build",
-        "csrc",
-        "dist",
-        "npiLog",
-        "out",
-    }
-    for path in sorted(ROOT.rglob("*")):
-        if not path.is_file():
-            continue
+    for path in _source_files():
         relative = path.relative_to(ROOT)
-        if any(part in ignored for part in relative.parts):
-            continue
         if path.name != "Makefile" and path.suffix not in MACHINE_PATH_SOURCE_SUFFIXES:
             continue
         for number, line in enumerate(
@@ -159,3 +181,17 @@ def test_repository_has_no_machine_specific_local_paths() -> None:
             if any(pattern.search(line) for pattern in MACHINE_LOCAL_PATHS):
                 violations.append(f"{relative}:{number}:{line.strip()}")
     assert violations == []
+
+
+def test_source_walk_prunes_generated_trees_before_descent(tmp_path: Path) -> None:
+    source = tmp_path / "src/test_visible.py"
+    ignored = tmp_path / "build/nested/test_hidden.py"
+    source.parent.mkdir()
+    ignored.parent.mkdir(parents=True)
+    source.write_text("visible = True\n", encoding="utf-8")
+    ignored.write_text("hidden = True\n", encoding="utf-8")
+
+    files = _walk_files(tmp_path, frozenset({"build"}))
+
+    assert source in files
+    assert ignored not in files

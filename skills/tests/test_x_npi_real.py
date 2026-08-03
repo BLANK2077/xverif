@@ -36,22 +36,6 @@ def _run_example(name: str, *args: str) -> dict[str, Any]:
     return document
 
 
-def _run_perf_probe(fsdb: Path, mode: str, edge: str) -> dict[str, Any]:
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(SKILL / "scripts")
-    proc = subprocess.run(
-        [
-            sys.executable, str(ROOT / "skills/tests/x_npi_perf_probe.py"),
-            "--fsdb", str(fsdb), "--config", str(CONFIGS / "axi_vip.json"),
-            "--mode", mode, "--edge", edge,
-        ],
-        cwd=ROOT, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        timeout=180, check=False,
-    )
-    assert proc.returncode == 0, proc.stderr[-8000:]
-    return json.loads(proc.stdout)
-
-
 def test_x_npi_axi_fixed_and_random_cached_waveforms(
     xverif_fixture: Any, tmp_path: Path
 ) -> None:
@@ -107,28 +91,3 @@ def test_x_npi_stream_posedge_after_cached_waveform(xverif_fixture: Any) -> None
     assert report["meta"]["sample_point"] == "after"
     assert report["summary"]["transfers"] == 20000
     assert report["summary"]["packets"] == 5000
-
-
-def test_x_npi_streaming_performance_guard(xverif_fixture: Any) -> None:
-    resources = xverif_fixture("xdebug.axi_vip")
-    fsdb = resources / "out/regression/test/axi_fixed_delay/waves.fsdb"
-    neg_legacy = _run_perf_probe(fsdb, "legacy", "negedge")
-    neg_stream = _run_perf_probe(fsdb, "stream", "negedge")
-    assert neg_stream["sample_count"] == neg_legacy["sample_count"]
-    # Wall clock includes host scheduling delays from unrelated xdist workers.
-    # CPU time keeps this a real per-process throughput guard without making
-    # the host-only test depend on concurrent suite load.
-    # Streaming preserves iterator semantics but performs per-edge normalization;
-    # the current verified NPI baseline is within 15% of legacy CPU time.
-    # Keep headroom for library/allocator variation while rejecting material
-    # throughput regressions.
-    assert neg_stream["cpu_sec"] <= neg_legacy["cpu_sec"] * 1.25
-    # ru_maxrss is measured per fresh Python/NPI process.  A small fixed
-    # allocator/runtime variance is expected on the same waveform, so retain
-    # a meaningful regression guard without making the host-only suite flaky.
-    assert neg_stream["max_rss_kb"] <= neg_legacy["max_rss_kb"] * 1.05
-
-    pos_legacy = _run_perf_probe(fsdb, "legacy", "posedge")
-    pos_stream = _run_perf_probe(fsdb, "stream", "posedge")
-    assert pos_stream["sample_count"] == pos_legacy["sample_count"]
-    assert pos_stream["cpu_sec"] <= pos_legacy["cpu_sec"] * 1.50

@@ -7,12 +7,15 @@ from .catalog import Suite
 
 def apply_xdist_resource_group(item: pytest.Item, suite: Suite) -> None:
     tokens = {str(value) for value in suite.resources.get("tokens", [])}
-    # NPI libraries and the underlying Verdi databases can be used from child
-    # processes but are not a freely parallel resource on the supported host. Derive
-    # the common token from the capability so every suite with identical
-    # semantics receives the same scheduling contract, even when its catalog
-    # entry does not need any suite-specific resource metadata.
-    if "npi" in suite.capabilities:
+    # Explicit catalog tokens are authoritative for the complete suite. For
+    # capability-derived NPI serialization, constrain only pytest items that
+    # actually consume a catalog fixture. Pytest's fixturenames includes
+    # transitive dependencies, so wrapper fixtures remain covered while pure
+    # schema/static tests in mixed suites can run in parallel.
+    fixturenames = {
+        str(value) for value in getattr(item, "fixturenames", ())
+    }
+    if "npi" in suite.capabilities and "xverif_fixture" in fixturenames:
         tokens.add("verdi_npi")
     if not tokens:
         return
