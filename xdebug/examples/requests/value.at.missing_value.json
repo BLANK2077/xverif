@@ -1,0 +1,14 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "value.at",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {
+    "signal": "top.u.ready",
+    "time": "100.1ns",
+    "clock": "top.u.clk",
+    "edge": "posedge",
+    "value_format": "hex"
+  }
+}

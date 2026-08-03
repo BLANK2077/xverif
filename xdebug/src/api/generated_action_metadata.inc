@@ -65,7 +65,7 @@
     {
         ActionRecommendation recommendation;
         recommendation.action = "value.at";
-        recommendation.purpose = "读取单个信号在指定时间的值。";
+        recommendation.purpose = "按一个或多个指定时间读取单信号、命名信号列表或接口配置维护的值。";
         spec.recommended_actions.push_back(recommendation);
     }
     {
@@ -291,7 +291,7 @@
     {
         ActionRecommendation recommendation;
         recommendation.action = "value.at";
-        recommendation.purpose = "读取单个信号在指定时间的值。";
+        recommendation.purpose = "按一个或多个指定时间读取单信号、命名信号列表或接口配置维护的值。";
         spec.recommended_actions.push_back(recommendation);
     }
     {
@@ -892,7 +892,7 @@
     {
         ActionRecommendation recommendation;
         recommendation.action = "value.at";
-        recommendation.purpose = "读取单个信号在指定时间的值。";
+        recommendation.purpose = "按一个或多个指定时间读取单信号、命名信号列表或接口配置维护的值。";
         spec.recommended_actions.push_back(recommendation);
     }
     {
@@ -1519,11 +1519,11 @@
     spec.handler_kind = "engine_forward";
     spec.request_schema = "schemas/v1/actions/value.at.request.schema.json";
     spec.response_schema = "schemas/v1/actions/value.at.response.schema.json";
-    spec.request_examples = {"examples/requests/value.at.basic.json"};
-    spec.response_examples = {"examples/responses/value.at.basic.json"};
-    spec.args.required = {"signal", "time"};
-    spec.description_en = "Read one signal at an exact waveform time, optionally using clock-sampled context.";
-    spec.description_zh = "读取单个信号在指定时间的值。";
+    spec.request_examples = {"examples/requests/value.at.basic.json", "examples/requests/value.at.clock.json", "examples/requests/value.at.unknown.json", "examples/requests/value.at.clock_unknown.json", "examples/requests/value.at.missing_value.json", "examples/requests/value.at.xbit.json", "examples/requests/value.at.list.json"};
+    spec.response_examples = {"examples/responses/value.at.basic.json", "examples/responses/value.at.clock.json", "examples/responses/value.at.unknown.json", "examples/responses/value.at.clock_unknown.json", "examples/responses/value.at.missing_value.json", "examples/responses/value.at.xbit.json", "examples/responses/value.at.list.json"};
+    spec.args.required = {};
+    spec.description_en = "Read a signal or every value maintained by a named list, APB, stream, or AXI configuration at one or more exact waveform times.";
+    spec.description_zh = "按一个或多个指定时间读取单信号、命名信号列表或接口配置维护的值。";
     spec.purposes = {"query"};
     spec.use_when = {"需要在一个或多个精确时间批量读取单信号、list、APB、stream 或 AXI 配置中的值，或显式 clock 采样上下文。"};
     spec.do_not_use_when = {"需要原始值变化时间线或连续时间范围导出。", "需要未加载的临时多信号布尔表达式求值。"};
@@ -1600,7 +1600,7 @@
     {
         ActionRecommendation recommendation;
         recommendation.action = "value.at";
-        recommendation.purpose = "读取单个信号在指定时间的值。";
+        recommendation.purpose = "按一个或多个指定时间读取单信号、命名信号列表或接口配置维护的值。";
         spec.recommended_actions.push_back(recommendation);
     }
     {

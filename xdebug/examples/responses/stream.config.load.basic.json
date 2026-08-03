@@ -2,6 +2,18 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "stream.config.load",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "wave0",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/wave0.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
   "summary": {
     "loaded": 1,
     "mode": "replace"
@@ -10,6 +22,110 @@
     "streams": [
       "req_stream"
     ],
-    "issues": []
-  }
+    "issues": [],
+    "validation": [
+      {
+        "stream": "req_stream",
+        "status": "ok",
+        "signals": [
+          {
+            "alias": "addr_hi",
+            "requested_path": "top.addr_hi",
+            "resolved_path": "top.addr_hi",
+            "width": 16,
+            "status": "ok"
+          },
+          {
+            "alias": "addr_lo",
+            "requested_path": "top.addr_lo",
+            "resolved_path": "top.addr_lo",
+            "width": 16,
+            "status": "ok"
+          },
+          {
+            "alias": "clk",
+            "requested_path": "top.clk",
+            "resolved_path": "top.clk",
+            "width": 1,
+            "status": "ok"
+          },
+          {
+            "alias": "req_cmd",
+            "requested_path": "top.req_cmd",
+            "resolved_path": "top.req_cmd",
+            "width": 2,
+            "status": "ok"
+          },
+          {
+            "alias": "req_data",
+            "requested_path": "top.req_data",
+            "resolved_path": "top.req_data",
+            "width": 8,
+            "status": "ok"
+          },
+          {
+            "alias": "req_eop",
+            "requested_path": "top.req_eop",
+            "resolved_path": "top.req_eop",
+            "width": 1,
+            "status": "ok"
+          },
+          {
+            "alias": "req_rdy",
+            "requested_path": "top.req_rdy",
+            "resolved_path": "top.req_rdy",
+            "width": 1,
+            "status": "ok"
+          },
+          {
+            "alias": "req_sop",
+            "requested_path": "top.req_sop",
+            "resolved_path": "top.req_sop",
+            "width": 1,
+            "status": "ok"
+          },
+          {
+            "alias": "req_vld",
+            "requested_path": "top.req_vld",
+            "resolved_path": "top.req_vld",
+            "width": 1,
+            "status": "ok"
+          }
+        ],
+        "sampling": {
+          "clock": "clk",
+          "edge": "posedge",
+          "sample_point": "before"
+        },
+        "packet_rules": {
+          "packet_enabled": true,
+          "channel_id_valid": "every_beat",
+          "allow_interleaving": false
+        }
+      }
+    ],
+    "recommended_actions": [
+      {
+        "action": "value.at",
+        "purpose": "按一个或多个指定时间读取单信号、命名信号列表或接口配置维护的值。"
+      },
+      {
+        "action": "stream.describe",
+        "purpose": "显示 stream 定义和摘要。"
+      },
+      {
+        "action": "stream.validate",
+        "purpose": "验证 stream 配置；动态验证可显式选择 full 或 range 基础分析缓存范围。"
+      },
+      {
+        "action": "stream.query",
+        "purpose": "以显式 full 或 range 基础分析缓存范围查询并按多个字段过滤 stream transfer 或 packet。"
+      },
+      {
+        "action": "stream.export",
+        "purpose": "从显式 full 或 range 基础分析缓存范围导出 stream 查询结果。"
+      }
+    ]
+  },
+  "error": null
 }

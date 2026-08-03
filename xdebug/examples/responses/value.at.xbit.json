@@ -1,0 +1,73 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "value.at",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
+  "summary": {
+    "source_kind": "signal",
+    "source_name": "top.u.payload",
+    "sampling_mode": "raw_time",
+    "time_count": 1,
+    "entry_count": 1
+  },
+  "data": {
+    "entries": [
+      {
+        "key": "top.u.payload",
+        "kind": "signal",
+        "path": "top.u.payload"
+      }
+    ],
+    "samples": [
+      {
+        "time": "100ns",
+        "sampling_mode": "raw_time",
+        "values": [
+          {
+            "key": "top.u.payload",
+            "status": "ok",
+            "value": {
+              "value": "64'h0123456789abcdef",
+              "known": true,
+              "width": 64,
+              "bits": "0000000100100011010001010110011110001001101010111100110111101111"
+            },
+            "xbit_hints": {
+              "status": "ready",
+              "signal": "top.u.payload",
+              "raw_value": "64'h0123456789abcdef",
+              "chunk_width": 32,
+              "count": 2,
+              "slices": [
+                {
+                  "index": 0,
+                  "range": "[31:0]"
+                },
+                {
+                  "index": 1,
+                  "range": "[63:32]"
+                }
+              ],
+              "commands": [
+                "tools/xbit slice \"64'h0123456789abcdef\" 31 0 --json",
+                "tools/xbit slice \"64'h0123456789abcdef\" 63 32 --json"
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "error": null
+}

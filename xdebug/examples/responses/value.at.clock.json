@@ -17,7 +17,7 @@
   "summary": {
     "source_kind": "signal",
     "source_name": "top.u.ready",
-    "sampling_mode": "raw_time",
+    "sampling_mode": "clock_sampled",
     "time_count": 1,
     "entry_count": 1
   },
@@ -32,7 +32,7 @@
     "samples": [
       {
         "time": "100ns",
-        "sampling_mode": "raw_time",
+        "sampling_mode": "clock_sampled",
         "values": [
           {
             "key": "top.u.ready",
@@ -44,7 +44,27 @@
               "bits": "1"
             }
           }
-        ]
+        ],
+        "clock_context": {
+          "clock": "top.u.clk",
+          "requested_sampling": {
+            "edge": "posedge",
+            "sample_point": "after"
+          },
+          "effective_sampling": {
+            "edge": "posedge",
+            "sample_point": "after"
+          },
+          "sample_point_applied": true,
+          "sample_point_ignored_for_negedge": false,
+          "requested_time": "100ns",
+          "requested_any_edge_hit": true,
+          "clock_edge_kind": "posedge",
+          "requested_target_edge_hit": true,
+          "previous_sample_time": "90ns",
+          "next_sample_time": "110ns",
+          "bracket_complete": true
+        }
       }
     ]
   },

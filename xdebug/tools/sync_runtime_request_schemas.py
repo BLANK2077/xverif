@@ -43,6 +43,7 @@ RENAMED_FROM = {
 ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
     "action": {"type": "string"},
     "analysis": {"type": "string", "enum": ["latency", "osd", "pending"]},
+    "apb": {"type": "string", "minLength": 1},
     "address": {"type": "string"},
     "addr": {"type": "string"},
     "aggregate": {"type": "object"},
@@ -75,6 +76,7 @@ ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
     "id": {"type": "string"},
     "last": {"type": "boolean"},
     "line_limit": {"type": "integer", "minimum": 1},
+    "list": {"type": "string", "minLength": 1},
     "method": {"type": "string", "enum": ["top_n", "threshold"]},
     "match_mode": {
         "type": "string",
@@ -117,6 +119,7 @@ ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
     "rules": {"oneOf": [{"type": "array"}, {"type": "object"}]},
     "reset": reset_schema(),
     "sample_point": {"type": "string", "enum": ["before", "after"]},
+    "signal": {"type": "string", "minLength": 1},
     "slice_hint": {"type": "object"},
     "source": {"type": "string"},
     "symbol": {"type": "string"},
@@ -130,8 +133,17 @@ ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "time_unit": {"type": "string", "enum": ["auto", "fs", "ps", "ns", "us", "ms", "s"]},
     "threshold": {"type": "string"},
+    "time": {"type": "string", "minLength": 1},
+    "times": {
+        "type": "array",
+        "minItems": 1,
+        "uniqueItems": True,
+        "items": {"type": "string", "minLength": 1},
+    },
     "top_n": {"type": "integer", "minimum": 1},
     "transport": {"type": "string", "enum": ["uds", "tcp", "file"]},
+    "axi": {"type": "string", "minLength": 1},
+    "stream": {"type": "string", "minLength": 1},
     "verbose": {"type": "boolean"},
     "value_format": {
         "type": "string",
@@ -230,7 +242,11 @@ EXTRA_ARGS_BY_ACTION: dict[str, set[str]] = {
     "trace.x_origin": {"value_format"},
     "trace.driver": {"line_limit", "no_statement_only", "role"},
     "trace.load": {"line_limit", "no_statement_only", "role"},
-    "value.at": {"clock", "edge", "sample_point", "slice_hint", "value_format"},
+    "value.at": {
+        "signal", "list", "apb", "stream", "axi",
+        "time", "times", "clock", "edge", "sample_point",
+        "slice_hint", "value_format",
+    },
     "verify.conditions": {"edge", "sample_point", "signals", "value_format"},
     "window.verify": {"edge", "line_limit", "max_samples", "sample_point", "signals", "time_range"},
 }
@@ -895,6 +911,55 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
         ]
     else:
         args.pop("allOf", None)
+    if action == "value.at":
+        selectors = ("signal", "list", "apb", "stream", "axi")
+        selector_variants = []
+        for selector in selectors:
+            selector_variants.append({
+                "required": [selector],
+                "not": {
+                    "anyOf": [
+                        {"required": [other]}
+                        for other in selectors
+                        if other != selector
+                    ]
+                },
+            })
+        args.pop("oneOf", None)
+        args["allOf"] = [
+            {
+                "description": (
+                    "Select exactly one value source: a direct signal or a "
+                    "loaded list, APB, stream, or AXI configuration."
+                ),
+                "oneOf": selector_variants,
+            },
+            {
+                "description": (
+                    "Select exactly one time form: time for one point or "
+                    "times for one or more ordered unique points."
+                ),
+                "oneOf": [
+                    {"required": ["time"], "not": {"required": ["times"]}},
+                    {"required": ["times"], "not": {"required": ["time"]}},
+                ],
+            },
+            {
+                "if": {"required": ["slice_hint"]},
+                "then": {"required": ["signal"]},
+            },
+        ]
+        args["allOf"].append({
+            "if": {"not": {"required": ["clock"]}},
+            "then": {
+                "not": {
+                    "anyOf": [
+                        {"required": ["edge"]},
+                        {"required": ["sample_point"]},
+                    ]
+                }
+            },
+        })
     if action == "axi.query":
         query_constraints = [
             {
@@ -983,6 +1048,24 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
     return updated
 
 
+def value_at_schema_is_unified(schema: dict[str, Any]) -> bool:
+    args = schema.get("properties", {}).get("args", {})
+    properties = args.get("properties", {})
+    required_properties = {
+        "signal", "list", "apb", "stream", "axi",
+        "time", "times", "clock", "edge", "sample_point",
+        "slice_hint", "value_format",
+    }
+    if not required_properties.issubset(properties):
+        return False
+    if properties["times"].get("uniqueItems") is not True:
+        return False
+    if properties["times"].get("minItems") != 1:
+        return False
+    all_of = args.get("allOf", [])
+    return isinstance(all_of, list) and len(all_of) >= 4
+
+
 def sync(check: bool, selected_actions: set[str] | None = None) -> list[str]:
     specs = [spec for spec in action_specs() if spec.get("status") != "removed"]
     arg_schemas = collect_arg_schemas(specs)
@@ -1000,6 +1083,8 @@ def sync(check: bool, selected_actions: set[str] | None = None) -> list[str]:
             errors.append(f"{spec['name']}: request schema seed is missing")
             continue
         schema = load_json(source_path)
+        if spec["name"] == "value.at" and value_at_schema_is_unified(schema):
+            continue
         try:
             updated = sync_schema(schema, spec, arg_schemas)
         except ValueError as exc:

@@ -1,0 +1,15 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "value.at",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {
+    "list": "ctrl_context",
+    "times": [
+      "100ns",
+      "120ns"
+    ],
+    "value_format": "hex"
+  }
+}

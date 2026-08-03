@@ -16,7 +16,7 @@
   },
   "summary": {
     "source_kind": "signal",
-    "source_name": "top.u.ready",
+    "source_name": "top.u.unknown_bus",
     "sampling_mode": "raw_time",
     "time_count": 1,
     "entry_count": 1
@@ -24,9 +24,9 @@
   "data": {
     "entries": [
       {
-        "key": "top.u.ready",
+        "key": "top.u.unknown_bus",
         "kind": "signal",
-        "path": "top.u.ready"
+        "path": "top.u.unknown_bus"
       }
     ],
     "samples": [
@@ -35,13 +35,15 @@
         "sampling_mode": "raw_time",
         "values": [
           {
-            "key": "top.u.ready",
+            "key": "top.u.unknown_bus",
             "status": "ok",
             "value": {
-              "value": "1'h1",
-              "known": true,
-              "width": 1,
-              "bits": "1"
+              "value": "4'hx",
+              "known": false,
+              "width": 4,
+              "bits": "xxxx",
+              "has_x": true,
+              "has_z": false
             }
           }
         ]

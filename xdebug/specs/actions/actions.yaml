@@ -2790,18 +2790,26 @@
       },
       "examples": {
         "request": [
-          "examples/requests/value.at.basic.json"
+          "examples/requests/value.at.basic.json",
+          "examples/requests/value.at.clock.json",
+          "examples/requests/value.at.unknown.json",
+          "examples/requests/value.at.clock_unknown.json",
+          "examples/requests/value.at.missing_value.json",
+          "examples/requests/value.at.xbit.json",
+          "examples/requests/value.at.list.json"
         ],
         "response": [
-          "examples/responses/value.at.basic.json"
+          "examples/responses/value.at.basic.json",
+          "examples/responses/value.at.clock.json",
+          "examples/responses/value.at.unknown.json",
+          "examples/responses/value.at.clock_unknown.json",
+          "examples/responses/value.at.missing_value.json",
+          "examples/responses/value.at.xbit.json",
+          "examples/responses/value.at.list.json"
         ]
       },
-      "required_args": [
-        "signal",
-        "time"
-      ],
-      "description_en": "Read one signal at an exact waveform time, optionally using clock-sampled context.",
-      "description_zh": "读取单个信号在指定时间的值。",
+      "description_en": "Read a signal or every value maintained by a named list, APB, stream, or AXI configuration at one or more exact waveform times.",
+      "description_zh": "按一个或多个指定时间读取单信号、命名信号列表或接口配置维护的值。",
       "purposes": [
         "query"
       ],

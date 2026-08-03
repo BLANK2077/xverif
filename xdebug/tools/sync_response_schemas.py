@@ -59,7 +59,7 @@ def rename_strings(value: Any, old: str, new: str) -> Any:
 
 def projected_schema(action: str, target: Path) -> dict[str, Any]:
     if target.exists():
-        schema = load(target)
+        return load(target)
     else:
         seed = SEED_ACTION.get(action)
         if seed is None:

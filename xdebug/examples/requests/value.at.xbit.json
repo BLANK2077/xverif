@@ -1,0 +1,16 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "value.at",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {
+    "signal": "top.u.payload",
+    "time": "100ns",
+    "value_format": "hex",
+    "slice_hint": {
+      "chunk_width": 32,
+      "count": 2
+    }
+  }
+}
