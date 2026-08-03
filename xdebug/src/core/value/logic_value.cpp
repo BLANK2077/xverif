@@ -170,6 +170,57 @@ LogicValue invalid_literal(const std::string& raw, const std::string& error) {
     return value;
 }
 
+bool parse_fsdb_binary_aggregate(const std::string& text,
+                                 bool& has_x, bool& has_z) {
+    const std::string literal = trim(text);
+    const size_t tick = literal.find('\'');
+    if (tick == std::string::npos || tick + 3 >= literal.size()) return false;
+    for (size_t i = 0; i < tick; ++i) {
+        if (!std::isdigit(static_cast<unsigned char>(literal[i]))) return false;
+    }
+    const char radix = static_cast<char>(
+        std::tolower(static_cast<unsigned char>(literal[tick + 1])));
+    if (radix != 'b') return false;
+
+    const std::string body = trim(literal.substr(tick + 2));
+    if (body.size() < 3 || body.front() != '{' || body.back() != '}')
+        return false;
+
+    has_x = false;
+    has_z = false;
+    bool member_has_bit = false;
+    for (size_t i = 1; i + 1 < body.size(); ++i) {
+        const char c = static_cast<char>(
+            std::tolower(static_cast<unsigned char>(body[i])));
+        if (c == '0' || c == '1' || c == 'x' || c == 'z') {
+            member_has_bit = true;
+            has_x = has_x || c == 'x';
+            has_z = has_z || c == 'z';
+            continue;
+        }
+        if (c == '_' || std::isspace(static_cast<unsigned char>(c)))
+            continue;
+        if (c == ',') {
+            if (!member_has_bit) return false;
+            member_has_bit = false;
+            continue;
+        }
+        return false;
+    }
+    return member_has_bit;
+}
+
+LogicValue fsdb_binary_aggregate(const std::string& raw,
+                                 bool has_x, bool has_z) {
+    LogicValue value;
+    value.raw = raw;
+    value.display = trim(raw);
+    value.known = !has_x && !has_z;
+    value.has_x = has_x;
+    value.has_z = has_z;
+    return value;
+}
+
 LogicValue from_body(const std::string& raw, char radix, const std::string& body,
                      int width_hint, bool explicit_width) {
     LogicValue value;
@@ -243,6 +294,19 @@ LogicValue logic_value_from_fsdb_raw(const std::string& raw, char radix, int wid
     std::string s = trim(raw);
     if (s.empty()) return invalid_literal(raw, "empty logic value");
 
+    // FSDB can represent a packed struct as an aggregate binary literal such
+    // as 'b{01011010,0011,0010,1010010101011010}.  It is a valid, opaque
+    // value, but the commas and braces are not scalar bits and must not be
+    // flattened or used to invent a width.  Preserve the structure verbatim
+    // and only derive four-state knownness from aggregate member digits.
+    bool aggregate_has_x = false;
+    bool aggregate_has_z = false;
+    if (parse_fsdb_binary_aggregate(
+            s, aggregate_has_x, aggregate_has_z)) {
+        return fsdb_binary_aggregate(
+            raw, aggregate_has_x, aggregate_has_z);
+    }
+
     int explicit_width = 0;
     char r = radix ? radix : 'h';
     std::string body = s;
@@ -302,7 +366,17 @@ LogicValue parse_user_logic_literal(const std::string& text) {
 
 LogicJson logic_value_json(const LogicValue& value, ValueRenderFormat format) {
     LogicJson out;
-    if (format == ValueRenderFormat::Bin) {
+    bool aggregate_has_x = false;
+    bool aggregate_has_z = false;
+    const bool opaque_aggregate = value.valid && value.bits.empty() &&
+        parse_fsdb_binary_aggregate(
+            logic_value_compact_string(value),
+            aggregate_has_x, aggregate_has_z);
+    if (opaque_aggregate) {
+        // An aggregate has no scalar radix conversion.  Hex, binary and
+        // decimal requests all retain the FSDB aggregate spelling.
+        out["value"] = logic_value_compact_string(value);
+    } else if (format == ValueRenderFormat::Bin) {
         out["value"] = sv_literal(value, 'b', value.bits.empty() ? logic_value_compact_string(value) : value.bits);
     } else if (format == ValueRenderFormat::Dec && value.known && !value.bits.empty()) {
         out["value"] = sv_literal(value, 'd', bits_to_decimal(value.bits));
@@ -508,6 +582,12 @@ std::string logic_value_compact_string(const LogicValue& value) {
 
 std::string logic_value_compare_key(const LogicValue& value) {
     if (!value.valid || !value.known) return std::string();
+    bool aggregate_has_x = false;
+    bool aggregate_has_z = false;
+    if (value.bits.empty() && parse_fsdb_binary_aggregate(
+            logic_value_compact_string(value),
+            aggregate_has_x, aggregate_has_z))
+        return std::string();
     std::string key = value.bits.empty() ? logic_value_compact_string(value) : bits_to_hex(value.bits);
     size_t first = key.find_first_not_of('0');
     return first == std::string::npos ? "0" : key.substr(first);
