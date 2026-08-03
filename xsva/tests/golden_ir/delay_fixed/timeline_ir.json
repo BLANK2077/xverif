@@ -29,7 +29,7 @@
       "id": "path_0",
       "description": "Path 0: ack must be true at cycle +2",
       "obligations": [
-        "point"
+        "ob_0_1"
       ]
     }
   ],
@@ -42,6 +42,5 @@
       "expr": "##2 ack",
       "text": "ack must be true at cycle +2."
     }
-  ],
-  "diagnostics": []
+  ]
 }

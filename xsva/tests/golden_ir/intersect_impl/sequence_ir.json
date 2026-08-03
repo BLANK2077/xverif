@@ -1,23 +1,150 @@
 {
+  "schema_version": "xsva.sequence_ir.v1",
   "name": "p_intersect_impl",
-  "nodes": [
+  "implication": "|->",
+  "antecedent": [
     {
       "kind": "expr",
+      "lowering_status": "exact",
+      "raw": "req",
       "expr": "req",
+      "guard_expr": null,
+      "actions": [],
       "delay": null,
-      "children_count": 0
-    },
-    {
-      "kind": "implication",
-      "expr": null,
-      "delay": null,
-      "children_count": 0
-    },
+      "repeat": null,
+      "children": [],
+      "semantic_risk": "",
+      "diagnostics": []
+    }
+  ],
+  "consequent": [
     {
       "kind": "intersect",
+      "lowering_status": "partial",
+      "raw": "",
       "expr": null,
+      "guard_expr": null,
+      "actions": [],
       "delay": null,
-      "children_count": 2
+      "repeat": null,
+      "children": [
+        {
+          "kind": "concat",
+          "lowering_status": "exact",
+          "raw": "a ## 1 b",
+          "expr": null,
+          "guard_expr": null,
+          "actions": [],
+          "delay": null,
+          "repeat": null,
+          "children": [
+            {
+              "kind": "expr",
+              "lowering_status": "exact",
+              "raw": "a",
+              "expr": "a",
+              "guard_expr": null,
+              "actions": [],
+              "delay": null,
+              "repeat": null,
+              "children": [],
+              "semantic_risk": "",
+              "diagnostics": []
+            },
+            {
+              "kind": "delay",
+              "lowering_status": "exact",
+              "raw": "",
+              "expr": null,
+              "guard_expr": null,
+              "actions": [],
+              "delay": {
+                "min": 1,
+                "max": 1,
+                "unbounded": false
+              },
+              "repeat": null,
+              "children": [],
+              "semantic_risk": "",
+              "diagnostics": []
+            },
+            {
+              "kind": "expr",
+              "lowering_status": "exact",
+              "raw": "b",
+              "expr": "b",
+              "guard_expr": null,
+              "actions": [],
+              "delay": null,
+              "repeat": null,
+              "children": [],
+              "semantic_risk": "",
+              "diagnostics": []
+            }
+          ],
+          "semantic_risk": "",
+          "diagnostics": []
+        },
+        {
+          "kind": "concat",
+          "lowering_status": "exact",
+          "raw": "c ## 1 d",
+          "expr": null,
+          "guard_expr": null,
+          "actions": [],
+          "delay": null,
+          "repeat": null,
+          "children": [
+            {
+              "kind": "expr",
+              "lowering_status": "exact",
+              "raw": "c",
+              "expr": "c",
+              "guard_expr": null,
+              "actions": [],
+              "delay": null,
+              "repeat": null,
+              "children": [],
+              "semantic_risk": "",
+              "diagnostics": []
+            },
+            {
+              "kind": "delay",
+              "lowering_status": "exact",
+              "raw": "",
+              "expr": null,
+              "guard_expr": null,
+              "actions": [],
+              "delay": {
+                "min": 1,
+                "max": 1,
+                "unbounded": false
+              },
+              "repeat": null,
+              "children": [],
+              "semantic_risk": "",
+              "diagnostics": []
+            },
+            {
+              "kind": "expr",
+              "lowering_status": "exact",
+              "raw": "d",
+              "expr": "d",
+              "guard_expr": null,
+              "actions": [],
+              "delay": null,
+              "repeat": null,
+              "children": [],
+              "semantic_risk": "",
+              "diagnostics": []
+            }
+          ],
+          "semantic_risk": "",
+          "diagnostics": []
+        }
+      ],
+      "semantic_risk": "",
+      "diagnostics": []
     }
   ]
 }

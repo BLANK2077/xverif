@@ -13,7 +13,7 @@ import re
 from xsva.ir.common import LoweringStatus
 from xsva.ir.diagnostics import DiagnosticBag
 from xsva.ir.expr import ExprIR, SignalRef
-from xsva.ir.sequence import SeqNode, SeqNodeKind
+from xsva.ir.sequence import SeqNode, SeqNodeKind, SequenceIR
 from xsva.ir.timeline import (
     CaptureIR,
     FailureConditionIR,
@@ -42,7 +42,7 @@ def _signal_refs(expr_ir: ExprIR | None) -> list[SignalRef]:
 # ── main lowering ──
 
 def lower_sequence_to_timeline(
-    seq_ir,
+    seq_ir: SequenceIR,
     surface_ir=None,
     max_paths: int = 10,
     diag: DiagnosticBag | None = None,
@@ -50,43 +50,45 @@ def lower_sequence_to_timeline(
     if diag is None:
         diag = DiagnosticBag()
 
-    nodes = _flatten_concat(seq_ir.nodes if hasattr(seq_ir, 'nodes') else seq_ir)
+    trigger_nodes = _flatten_concat(seq_ir.antecedent)
+    obligation_nodes = _flatten_concat(seq_ir.consequent)
+    nodes = trigger_nodes + obligation_nodes
     if not nodes:
-        return TimelineIR(property_name=getattr(seq_ir, 'name', ''),
-                          lowering_status=LoweringStatus.OPAQUE)
+        return TimelineIR(
+            property_name=seq_ir.name,
+            lowering_status=LoweringStatus.OPAQUE,
+            diagnostics=list(diag.diagnostics),
+            path_total_count=0,
+            path_returned_count=0,
+            path_enumeration_complete=True,
+        )
 
-    # 1. 找 implication marker
-    impl_idx = -1
-    for i, node in enumerate(nodes):
-        if node.kind == SeqNodeKind.IMPLICATION:
-            impl_idx = i
-            break
-
-    # 2. 分 ante / cons
-    if impl_idx >= 0:
-        trigger_nodes = nodes[:impl_idx]
-        offset = 0
-        obligation_nodes = nodes[impl_idx + 1:]
-    else:
-        trigger_nodes = nodes
-        obligation_nodes = []
-        offset = 0
+    offset = 1 if seq_ir.implication == "|=>" else 0
 
     # 3. 用户语义摘要 + 路径展开
-    summary_nodes = obligation_nodes if impl_idx >= 0 else nodes
+    summary_nodes = obligation_nodes if seq_ir.implication else trigger_nodes
+    if offset:
+        summary_nodes = [SeqNode.delay_cycles(offset)] + summary_nodes
     semantic_notes = _collect_semantic_notes(summary_nodes)
     has_first_match_summary = any(n.kind == "first_match" for n in semantic_notes)
 
-    from .path_expand import expand_paths, expand_first_match
-    paths = expand_paths(obligation_nodes, max_paths=max_paths)
-    paths = [[]] if has_first_match_summary else expand_first_match(paths)
+    from .path_expand import PathExpansionResult, expand_first_match, expand_paths
+    if has_first_match_summary:
+        expansion = PathExpansionResult(paths=[[]], total_path_count=1)
+    else:
+        expansion = expand_paths(obligation_nodes, max_paths=max_paths)
+        expansion = PathExpansionResult(
+            paths=expand_first_match(expansion.paths),
+            total_path_count=expansion.total_path_count,
+        )
+    paths = expansion.paths
 
     # 4. 提取 trigger
     trigger_expr = ""
     trigger_captures: list[CaptureIR] = []
 
     for node in trigger_nodes:
-        if node.kind in (SeqNodeKind.EXPR, SeqNodeKind.EXPR_MATCH) and node.expr:
+        if node.kind == SeqNodeKind.EXPR and node.expr:
             if trigger_expr:
                 trigger_expr += " && "
             trigger_expr += node.expr.raw
@@ -98,13 +100,6 @@ def lower_sequence_to_timeline(
                 if trigger_expr:
                     trigger_expr += " && "
                 trigger_expr += node.guard_expr.raw
-            if node.capture_var:
-                trigger_captures.append(CaptureIR(
-                    var=node.capture_var,
-                    value_expr=node.capture_expr.raw if node.capture_expr else "",
-                    relative_cycle=0,
-                    meaning=f"capture {node.capture_var} at trigger cycle",
-                ))
             for action in node.actions:
                 trigger_captures.append(CaptureIR(
                     var=action.lhs,
@@ -116,15 +111,29 @@ def lower_sequence_to_timeline(
     trigger = TriggerIR(cycle=0, expr=trigger_expr, captures=trigger_captures)
 
     # 5. 评估 lowering status
-    overall_status = "exact"
+    overall_status = seq_ir.lowering_status.value
     for node in nodes:
-        status_val = node.lowering_status.value if isinstance(node.lowering_status, LoweringStatus) else node.lowering_status
+        status_val = node.lowering_status.value
         overall_status = _worst_status(overall_status, status_val)
         if node.kind in (SeqNodeKind.FIRST_MATCH, SeqNodeKind.INTERSECT,
                          SeqNodeKind.THROUGHOUT, SeqNodeKind.WITHIN):
             overall_status = _worst_status(overall_status, "partial")
             diag.warning("XSVA-W006",
                          f"{node.kind.value} uses advanced sequence semantics; see semantic notes")
+        if node.kind == SeqNodeKind.DELAY and node.unbounded:
+            overall_status = _worst_status(overall_status, "partial")
+            diag.warning(
+                "XSVA-L002",
+                "unbounded delay produces an open-ended obligation; later sequence "
+                "timing cannot be enumerated exactly",
+            )
+    if expansion.truncated:
+        overall_status = _worst_status(overall_status, "partial")
+        diag.warning(
+            "XSVA-L001",
+            "path enumeration limit reached: returned "
+            f"{expansion.returned_path_count} of {expansion.total_path_count} candidate paths",
+        )
 
     # 6. 构建 obligations + paths
     all_obligations: list[ObligationIR] = []
@@ -142,19 +151,35 @@ def lower_sequence_to_timeline(
 
             # Range delay + single expr → windowed eventually
             if (node.kind in (SeqNodeKind.DELAY,)
-                    and node.delay and node.delay.max_cycles is not None
-                    and node.delay.min_cycles != node.delay.max_cycles
+                    and (node.is_finite_range_delay() or node.unbounded)
                     and i + 1 < len(path)
-                    and path[i + 1].kind in (SeqNodeKind.EXPR, SeqNodeKind.EXPR_MATCH)
+                    and path[i + 1].kind == SeqNodeKind.EXPR
                     and path[i + 1].expr
-                    and (i + 2 >= len(path) or path[i + 2].kind in (SeqNodeKind.DELAY, SeqNodeKind.IMPLICATION))):
+                    and (i + 2 >= len(path) or path[i + 2].kind == SeqNodeKind.DELAY)):
                 # Merge into single eventually obligation
                 next_node = path[i + 1]
-                win = WindowIR(start=cycle + node.delay.min_cycles,
-                               end=cycle + node.delay.max_cycles,
-                               unbounded=False)
-                req = f"{next_node.expr.raw} must become true at least once between cycle +{win.start} and +{win.end}"
-                fcond = f"{next_node.expr.raw} is never true from cycle +{win.start} to +{win.end}"
+                win = WindowIR(
+                    start=cycle + node.min_delay,
+                    end=cycle + node.max_delay,
+                    unbounded=node.unbounded,
+                )
+                if win.unbounded:
+                    req = (
+                        f"{next_node.expr.raw} must become true at least once from "
+                        f"cycle +{win.start} onward"
+                    )
+                    fcond = (
+                        f"{next_node.expr.raw} is never true from cycle +{win.start} onward"
+                    )
+                else:
+                    req = (
+                        f"{next_node.expr.raw} must become true at least once between "
+                        f"cycle +{win.start} and +{win.end}"
+                    )
+                    fcond = (
+                        f"{next_node.expr.raw} is never true from cycle +{win.start} "
+                        f"to +{win.end}"
+                    )
                 obl = ObligationIR(
                     id=f"ob_{pi}_{i}", kind=ObligationKind.EVENTUALLY,
                     expr=next_node.expr.raw, expr_ir=next_node.expr,
@@ -165,22 +190,22 @@ def lower_sequence_to_timeline(
                 )
                 path_obligations.append(obl)
                 i += 2
-                cycle += node.delay.max_cycles
+                cycle += node.max_delay
                 continue
 
             # Fixed delay ##N
-            if node.kind in (SeqNodeKind.DELAY,) and node.delay:
-                if node.delay.max_cycles is None or node.delay.min_cycles == node.delay.max_cycles:
-                    cycle += node.delay.min_cycles
+            if node.kind == SeqNodeKind.DELAY:
+                if node.is_fixed_delay():
+                    cycle += node.min_delay
                     i += 1
                     continue
                 # Otherwise: range delay already handled above
-                cycle += node.delay.min_cycles
+                cycle += node.min_delay
                 i += 1
                 continue
 
             # Expression match
-            if node.kind in (SeqNodeKind.EXPR, SeqNodeKind.EXPR_MATCH) and node.expr:
+            if node.kind == SeqNodeKind.EXPR and node.expr:
                 note = _semantic_note_from_raw(node.expr.raw)
                 if note:
                     _append_unique_note(semantic_notes, note)
@@ -190,18 +215,6 @@ def lower_sequence_to_timeline(
                 obl = _expr_to_obligation(node, cycle, pi, i, path_captures)
                 if obl:
                     path_obligations.append(obl)
-                i += 1
-                continue
-
-            # Match item with capture
-            if node.kind in (SeqNodeKind.MATCH_ITEM,) and node.capture_var:
-                cap_ir = CaptureIR(
-                    var=node.capture_var,
-                    value_expr=node.capture_expr.raw if node.capture_expr else "",
-                    relative_cycle=cycle,
-                    meaning=f"capture {node.capture_var} at cycle +{cycle}",
-                )
-                path_captures.append(cap_ir)
                 i += 1
                 continue
 
@@ -281,9 +294,20 @@ def lower_sequence_to_timeline(
     if trigger_expr in ("0", "1'b0"):
         vacuity.append("XSVA-W002: antecedent is constant false")
 
+    disable_obligation = None
+    if disable_expr:
+        disable_obligation = ObligationIR(
+            id="disable", kind=ObligationKind.POINT,
+            description=(
+                f"disable iff ({disable_expr}): if true, the current attempt is "
+                "immediately terminated"
+            ),
+            failure_condition=f"{disable_expr} becomes true during the attempt",
+        )
+
     timeline = TimelineIR(
         schema_version="xsva.timeline_ir.v1",
-        property_name=seq_ir.name if hasattr(seq_ir, 'name') else "",
+        property_name=seq_ir.name,
         kind=surface_ir.kind if surface_ir else "assert",
         clock=clock,
         disable_expr=disable_expr,
@@ -291,17 +315,15 @@ def lower_sequence_to_timeline(
         obligations=all_obligations,
         match_paths=match_paths,
         failure_conditions=failure_conditions,
+        disable_obligation=disable_obligation,
         semantic_notes=semantic_notes,
         vacuity_checks=vacuity,
         lowering_status=LoweringStatus(overall_status),
         diagnostics=list(diag.diagnostics) if diag else [],
+        path_total_count=expansion.total_path_count,
+        path_returned_count=expansion.returned_path_count,
+        path_enumeration_complete=expansion.enumeration_complete,
     )
-    if disable_expr:
-        timeline.add_disable_obligation(ObligationIR(
-            id="disable", kind=ObligationKind.POINT,
-            description=f"disable iff ({disable_expr}): if true, the current attempt is immediately terminated",
-            failure_condition=f"{disable_expr} becomes true during the attempt",
-        ))
     return timeline
 
 
@@ -426,7 +448,7 @@ def _collect_semantic_notes(nodes: list[SeqNode]) -> list[SemanticNoteIR]:
                 kind=f"repeat_{node.repeat_kind}", expr=_node_raw(node),
                 text=_repeat_text(_node_raw(node.children[0]) if node.children else node.raw,
                                   node.repeat_kind, node.repeat_min, node.repeat_max)))
-        elif node.kind in (SeqNodeKind.EXPR, SeqNodeKind.EXPR_MATCH) and node.expr:
+        elif node.kind == SeqNodeKind.EXPR and node.expr:
             note = _semantic_note_from_raw(node.expr.raw)
             if note:
                 _append_unique_note(notes, note)
@@ -501,9 +523,8 @@ def _first_match_text(node: SeqNode, suffix_delay: int | None = None, suffix_exp
 
 def _first_delay_window(node: SeqNode) -> tuple[int, int] | None:
     for child in _walk_nodes(node):
-        if child.kind == SeqNodeKind.DELAY and child.delay and child.delay.max_cycles is not None:
-            if child.delay.min_cycles != child.delay.max_cycles:
-                return (child.delay.min_cycles, child.delay.max_cycles)
+        if child.is_finite_range_delay():
+            return (child.min_delay, child.max_delay)
     return None
 
 
@@ -527,9 +548,8 @@ def _fixed_delay_at(nodes: list[SeqNode], idx: int) -> int | None:
     if idx >= len(nodes):
         return None
     node = nodes[idx]
-    if node.kind == SeqNodeKind.DELAY and node.delay:
-        if node.delay.max_cycles is None or node.delay.min_cycles == node.delay.max_cycles:
-            return node.delay.min_cycles
+    if node.is_fixed_delay():
+        return node.min_delay
     return None
 
 
@@ -577,11 +597,11 @@ def _node_raw(node: SeqNode) -> str:
         return _clean_raw(node.raw)
     if node.expr:
         return _clean_raw(node.expr.raw)
-    if node.kind == SeqNodeKind.DELAY and node.delay:
-        if node.delay.max_cycles is None or node.delay.min_cycles == node.delay.max_cycles:
-            return f"##{node.delay.min_cycles}"
-        end = "$" if node.delay.is_infinite else str(node.delay.max_cycles)
-        return f"##[{node.delay.min_cycles}:{end}]"
+    if node.kind == SeqNodeKind.DELAY:
+        if node.is_fixed_delay():
+            return f"##{node.min_delay}"
+        end = "$" if node.unbounded else str(node.max_delay)
+        return f"##[{node.min_delay}:{end}]"
     if node.kind == SeqNodeKind.FIRST_MATCH and node.children:
         return f"first_match({_node_raw(node.children[0])})"
     if node.children:
@@ -606,7 +626,7 @@ def _summarize_sequence(node_or_nodes, absolute: bool = False) -> str:
                                 node.repeat_kind, node.repeat_min, node.repeat_max)
         if node.kind == SeqNodeKind.FIRST_MATCH:
             return _first_match_text(node)
-        if node.kind in (SeqNodeKind.EXPR, SeqNodeKind.EXPR_MATCH, SeqNodeKind.MATCH_ITEM):
+        if node.kind in (SeqNodeKind.EXPR, SeqNodeKind.MATCH_ITEM):
             expr = _match_expr(node)
             if not expr:
                 return ""
@@ -626,25 +646,33 @@ def _summarize_sequence(node_or_nodes, absolute: bool = False) -> str:
     i = 0
     while i < len(nodes):
         node = nodes[i]
-        if node.kind == SeqNodeKind.DELAY and node.delay and i + 1 < len(nodes):
+        if node.kind == SeqNodeKind.DELAY and i + 1 < len(nodes):
             target = nodes[i + 1]
             expr = _match_expr(target)
             if not expr:
-                cycle += node.delay.min_cycles
+                cycle += node.min_delay
                 i += 1
                 continue
-            min_c = cycle + node.delay.min_cycles
-            max_c = cycle + (node.delay.max_cycles if node.delay.max_cycles is not None else node.delay.min_cycles)
-            fixed_delay = node.delay.min_cycles == (node.delay.max_cycles if node.delay.max_cycles is not None else node.delay.min_cycles)
+            min_c = cycle + node.min_delay
+            max_c = cycle + node.max_delay
+            fixed_delay = node.is_fixed_delay()
             if last_expr and fixed_delay:
-                phrase = f"{expr} must be true {_clk_count(node.delay.min_cycles)} after {last_expr}"
+                phrase = f"{expr} must be true {_clk_count(node.min_delay)} after {last_expr}"
             elif last_expr:
-                phrase = f"{expr} must be true {node.delay.min_cycles} to {max_c - cycle} clk after {last_expr}"
+                end = "$" if node.unbounded else str(max_c - cycle)
+                phrase = f"{expr} must be true {node.min_delay} to {end} clk after {last_expr}"
             elif absolute:
-                phrase = _absolute_delay_phrase(expr, min_c, max_c)
+                phrase = (
+                    f"{expr} must be true at or after cycle +{min_c}"
+                    if node.unbounded
+                    else _absolute_delay_phrase(expr, min_c, max_c)
+                )
             else:
-                phrase = _relative_delay_phrase(expr, node.delay.min_cycles,
-                                                node.delay.max_cycles if node.delay.max_cycles is not None else node.delay.min_cycles)
+                phrase = (
+                    f"{expr} must be true {node.min_delay} or more clk later"
+                    if node.unbounded
+                    else _relative_delay_phrase(expr, node.min_delay, node.max_delay)
+                )
             capture = _capture_phrase(target)
             if capture:
                 phrase += f", {capture}"
@@ -670,13 +698,11 @@ def _summarize_sequence(node_or_nodes, absolute: bool = False) -> str:
 
 
 def _match_expr(node: SeqNode) -> str:
-    if node.kind in (SeqNodeKind.EXPR, SeqNodeKind.EXPR_MATCH) and node.expr:
+    if node.kind == SeqNodeKind.EXPR and node.expr:
         return _clean_raw(node.expr.raw)
     if node.kind == SeqNodeKind.MATCH_ITEM:
         if node.guard_expr and node.guard_expr.raw and node.guard_expr.raw != "1":
             return _clean_raw(node.guard_expr.raw)
-        if node.capture_var:
-            return _clean_raw(node.capture_expr.raw) if node.capture_expr else ""
     return ""
 
 
@@ -684,8 +710,6 @@ def _capture_phrase(node: SeqNode) -> str:
     if node.kind != SeqNodeKind.MATCH_ITEM:
         return ""
     captures = []
-    if node.capture_var and node.capture_expr:
-        captures.append(f"capturing {node.capture_var} = {_clean_raw(node.capture_expr.raw)} at that matching cycle")
     for action in node.actions:
         if action.action_kind == "capture":
             captures.append(f"capturing {action.lhs} = {_clean_raw(action.rhs)} at that matching cycle")

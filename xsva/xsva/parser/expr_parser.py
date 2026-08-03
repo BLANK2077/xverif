@@ -1,6 +1,6 @@
 """表达式解析器 — 浅解析：提取信号引用、sampled function 调用、local var 引用。
 
-Phase 1 不做完整表达式 AST。无法精确解析时标记 kind=OPAQUE，保留 raw 原文。
+当前表达式 IR 不构造完整 AST。无法精确解析时标记 kind=OPAQUE，保留 raw 原文。
 """
 
 from __future__ import annotations

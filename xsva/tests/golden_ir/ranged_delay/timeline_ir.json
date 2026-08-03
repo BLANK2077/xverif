@@ -33,7 +33,7 @@
       "id": "path_0",
       "description": "Path 0: ack must become true at least once between cycle +",
       "obligations": [
-        "eventually"
+        "ob_0_0"
       ]
     }
   ],
@@ -46,6 +46,5 @@
       "expr": "##[1:4] ack",
       "text": "ack must be true at cycle +1 to +4."
     }
-  ],
-  "diagnostics": []
+  ]
 }

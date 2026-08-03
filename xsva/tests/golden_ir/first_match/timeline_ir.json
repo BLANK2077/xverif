@@ -27,19 +27,5 @@
       "expr": "first_match(##[1:4] ack)",
       "text": "ack must be the first match at cycle +1 to +4; done must be true 1 clk after that first ack."
     }
-  ],
-  "diagnostics": [
-    {
-      "code": "XSVA-W006",
-      "severity": "warning",
-      "message": "first_match uses advanced sequence semantics; see semantic notes",
-      "span": {
-        "file": "",
-        "begin_line": 0,
-        "begin_col": 0,
-        "end_line": 0,
-        "end_col": 0
-      }
-    }
   ]
 }

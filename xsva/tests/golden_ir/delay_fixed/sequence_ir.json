@@ -1,33 +1,52 @@
 {
+  "schema_version": "xsva.sequence_ir.v1",
   "name": "p_delay_fixed",
-  "nodes": [
+  "implication": "|->",
+  "antecedent": [
     {
       "kind": "expr",
+      "lowering_status": "exact",
+      "raw": "req",
       "expr": "req",
+      "guard_expr": null,
+      "actions": [],
       "delay": null,
-      "children_count": 0
-    },
-    {
-      "kind": "implication",
-      "expr": null,
-      "delay": null,
-      "children_count": 0
-    },
+      "repeat": null,
+      "children": [],
+      "semantic_risk": "",
+      "diagnostics": []
+    }
+  ],
+  "consequent": [
     {
       "kind": "delay",
+      "lowering_status": "exact",
+      "raw": "",
       "expr": null,
+      "guard_expr": null,
+      "actions": [],
       "delay": {
         "min": 2,
         "max": 2,
         "unbounded": false
       },
-      "children_count": 0
+      "repeat": null,
+      "children": [],
+      "semantic_risk": "",
+      "diagnostics": []
     },
     {
       "kind": "expr",
+      "lowering_status": "exact",
+      "raw": "ack",
       "expr": "ack",
+      "guard_expr": null,
+      "actions": [],
       "delay": null,
-      "children_count": 0
+      "repeat": null,
+      "children": [],
+      "semantic_risk": "",
+      "diagnostics": []
     }
   ]
 }

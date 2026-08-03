@@ -1,33 +1,58 @@
 {
+  "schema_version": "xsva.sequence_ir.v1",
   "name": "p_local_capture",
-  "nodes": [
+  "implication": "|->",
+  "antecedent": [
     {
       "kind": "match_item",
+      "lowering_status": "exact",
+      "raw": "req , v = data",
       "expr": null,
+      "guard_expr": "req",
+      "actions": [
+        {
+          "lhs": "v",
+          "rhs": "data",
+          "action_kind": "capture"
+        }
+      ],
       "delay": null,
-      "children_count": 0
-    },
-    {
-      "kind": "implication",
-      "expr": null,
-      "delay": null,
-      "children_count": 0
-    },
+      "repeat": null,
+      "children": [],
+      "semantic_risk": "",
+      "diagnostics": []
+    }
+  ],
+  "consequent": [
     {
       "kind": "delay",
+      "lowering_status": "exact",
+      "raw": "",
       "expr": null,
+      "guard_expr": null,
+      "actions": [],
       "delay": {
         "min": 1,
         "max": 4,
         "unbounded": false
       },
-      "children_count": 0
+      "repeat": null,
+      "children": [],
+      "semantic_risk": "",
+      "diagnostics": []
     },
     {
       "kind": "expr",
+      "lowering_status": "exact",
+      "raw": "ack & & rsp == v",
       "expr": "ack & & rsp == v",
+      "guard_expr": null,
+      "actions": [],
       "delay": null,
-      "children_count": 0
+      "repeat": null,
+      "children": [],
+      "semantic_risk": "",
+      "diagnostics": []
     }
   ]
 }

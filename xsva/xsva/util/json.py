@@ -18,20 +18,35 @@ def to_jsonable(obj):
     """
     if obj is None:
         return None
+    if isinstance(obj, Enum):
+        return to_jsonable(obj.value)
     if isinstance(obj, (str, int, float, bool)):
         return obj
-    if isinstance(obj, Enum):
-        return obj.value
     if is_dataclass(obj):
         return {k: to_jsonable(v) for k, v in asdict(obj).items()}
     if isinstance(obj, dict):
-        return {str(k): to_jsonable(v) for k, v in obj.items()}
+        result = {}
+        for key, value in obj.items():
+            if not isinstance(key, str):
+                raise TypeError(
+                    "unsupported JSON object key type: "
+                    f"{type(key).__module__}.{type(key).__qualname__}"
+                )
+            result[key] = to_jsonable(value)
+        return result
     if isinstance(obj, (list, tuple)):
         return [to_jsonable(x) for x in obj]
-    # fallback: try str
-    return str(obj)
+    raise TypeError(
+        "unsupported JSON value type: "
+        f"{type(obj).__module__}.{type(obj).__qualname__}"
+    )
 
 
 def dump_json(obj, indent: int = 2) -> str:
     """将对象序列化为 JSON 字符串。"""
-    return _json.dumps(to_jsonable(obj), indent=indent, ensure_ascii=False)
+    return _json.dumps(
+        to_jsonable(obj),
+        indent=indent,
+        ensure_ascii=False,
+        allow_nan=False,
+    )

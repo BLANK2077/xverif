@@ -29,7 +29,7 @@
       "id": "path_0",
       "description": "Path 0: rsp == $past ( data , 2 ) compares with the value ",
       "obligations": [
-        "compare_past"
+        "ob_0_1"
       ]
     }
   ],
@@ -40,6 +40,5 @@
       "expr": "##2 rsp == $past ( data , 2 )",
       "text": "rsp == $past ( data , 2 ) must be true at cycle +2."
     }
-  ],
-  "diagnostics": []
+  ]
 }

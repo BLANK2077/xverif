@@ -36,24 +36,6 @@ class SeqNodeKind(str, enum.Enum):
     WEAK = "weak"  # weak sequence/property wrapper
     OPAQUE = "opaque"  # 能识别但不能安全展开
 
-    # Phase 1 遗留别名（不同 value 以满足 @enum.unique）
-    EXPR_MATCH = "expr_match"  # Phase 1 兼容
-    IMPLICATION = "implication"  # |-> / |=> marker
-    CAPTURE = "capture_p1"  # Phase 1 兼容
-    UPDATE = "update_p1"  # Phase 1 兼容
-    SEQUENCE = "sequence_p1"  # Phase 1 兼容
-    BRANCH = "branch_p1"  # Phase 1 兼容
-    EMPTY = "empty_p1"  # Phase 1 兼容
-
-
-@dataclass(frozen=True)
-class DelayRange:
-    """延迟范围：##N 或 ##[m:n] 或 ##[m:$]"""
-
-    min_cycles: int
-    max_cycles: int | None = None  # None 表示固定延迟 ##N
-    is_infinite: bool = False  # ##[m:$]
-
 
 @dataclass
 class AssignActionIR:
@@ -67,16 +49,6 @@ class AssignActionIR:
     lhs: str
     rhs: str
     action_kind: str = "capture"  # capture / update
-    span: SourceSpan = field(default_factory=SourceSpan)
-
-
-@dataclass
-class CaptureIR:
-    """local variable capture/update 信息（兼容 Phase 1）。"""
-
-    var_name: str
-    expr: ExprIR
-    is_update: bool = False
     span: SourceSpan = field(default_factory=SourceSpan)
 
 
@@ -102,7 +74,6 @@ class SeqNode:
     # DELAY
     min_delay: int = 0
     max_delay: int = 0
-    delay: DelayRange | None = None  # 兼容 Phase 1
     unbounded: bool = False  # ##[m:$] 或 [*0:$]
 
     # REPEAT
@@ -113,10 +84,6 @@ class SeqNode:
 
     # Tree (CONCAT / AND / OR / INTERSECT / WITHIN / FIRST_MATCH / STRONG / WEAK)
     children: list["SeqNode"] = field(default_factory=list)
-
-    # Local variable (Phase 1 compat + spec)
-    capture_var: str | None = None
-    capture_expr: ExprIR | None = None
 
     # 语义风险
     semantic_risk: str = ""
@@ -135,19 +102,25 @@ class SeqNode:
 
     @classmethod
     def delay_cycles(cls, min_c: int, max_c: int | None = None, infinite: bool = False) -> "SeqNode":
+        if min_c < 0:
+            raise ValueError("delay minimum must be non-negative")
+        if max_c is not None and max_c < min_c:
+            raise ValueError("delay maximum must be greater than or equal to the minimum")
+        if infinite and max_c is not None:
+            raise ValueError("an unbounded delay cannot also have a finite maximum")
         return cls(kind=SeqNodeKind.DELAY, min_delay=min_c,
                    max_delay=max_c if max_c is not None else min_c,
-                   unbounded=infinite,
-                   delay=DelayRange(min_c, max_c, infinite))
+                   unbounded=infinite)
+
+    def is_fixed_delay(self) -> bool:
+        return self.kind == SeqNodeKind.DELAY and not self.unbounded and self.min_delay == self.max_delay
+
+    def is_finite_range_delay(self) -> bool:
+        return self.kind == SeqNodeKind.DELAY and not self.unbounded and self.min_delay != self.max_delay
 
     @classmethod
     def concat(cls, children: list["SeqNode"], raw: str = "") -> "SeqNode":
         return cls(kind=SeqNodeKind.CONCAT, children=children, raw=raw)
-
-    @classmethod
-    def sequence(cls, children: list["SeqNode"], raw: str = "") -> "SeqNode":
-        """Phase 1 兼容：用 CONCAT 表示一个复合 sequence。"""
-        return cls.concat(children, raw=raw)
 
     @classmethod
     def repeat(cls, child: "SeqNode", kind: str, min_c: int, max_c: int = 0,
@@ -184,30 +157,18 @@ class SeqNode:
         return cls(kind=SeqNodeKind.OPAQUE, raw=raw, semantic_risk=risk,
                    lowering_status=LoweringStatus.OPAQUE)
 
-    @classmethod
-    def signal_match(cls, expr: ExprIR) -> "SeqNode":
-        """Phase 1 兼容工厂方法。"""
-        return cls(kind=SeqNodeKind.EXPR, expr=expr, raw=expr.raw if expr else "")
-
-    @classmethod
-    def capture(cls, var_name: str, expr: ExprIR) -> "SeqNode":
-        return cls(kind=SeqNodeKind.MATCH_ITEM, capture_var=var_name, capture_expr=expr)
-
-    @classmethod
-    def update(cls, var_name: str, expr: ExprIR) -> "SeqNode":
-        return cls(kind=SeqNodeKind.MATCH_ITEM, capture_var=var_name, capture_expr=expr)
-
-    @classmethod
-    def empty(cls) -> "SeqNode":
-        return cls(kind=SeqNodeKind.EXPR, raw="")
-
-
 @dataclass
 class SequenceIR:
-    """完整的 Sequence Graph IR。"""
+    """完整的 Sequence Graph IR。
 
-    name: str
-    nodes: list[SeqNode] = field(default_factory=list)
-    captures: list[CaptureIR] = field(default_factory=list)
-    lowering_status: str = "exact"
+    implication 是 property 关系，不伪装成 sequence node；antecedent 与
+    consequent 也不再依赖 marker 节点切分。
+    """
+
+    schema_version: str = "xsva.sequence_ir.v1"
+    name: str = ""
+    implication: str = ""
+    antecedent: list[SeqNode] = field(default_factory=list)
+    consequent: list[SeqNode] = field(default_factory=list)
+    lowering_status: LoweringStatus = LoweringStatus.EXACT
     diagnostics: list[DiagnosticIR] = field(default_factory=list)

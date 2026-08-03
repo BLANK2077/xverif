@@ -27,6 +27,5 @@
       "expr": "ack[*3]",
       "text": "ack needs to hold continuously for 3 clk cycles."
     }
-  ],
-  "diagnostics": []
+  ]
 }

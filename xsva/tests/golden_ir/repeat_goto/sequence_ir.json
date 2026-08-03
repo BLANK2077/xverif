@@ -1,23 +1,54 @@
 {
+  "schema_version": "xsva.sequence_ir.v1",
   "name": "p_repeat_goto",
-  "nodes": [
+  "implication": "|->",
+  "antecedent": [
     {
       "kind": "expr",
+      "lowering_status": "exact",
+      "raw": "req",
       "expr": "req",
+      "guard_expr": null,
+      "actions": [],
       "delay": null,
-      "children_count": 0
-    },
-    {
-      "kind": "implication",
-      "expr": null,
-      "delay": null,
-      "children_count": 0
-    },
+      "repeat": null,
+      "children": [],
+      "semantic_risk": "",
+      "diagnostics": []
+    }
+  ],
+  "consequent": [
     {
       "kind": "repeat",
+      "lowering_status": "exact",
+      "raw": "ack[->2]",
       "expr": null,
+      "guard_expr": null,
+      "actions": [],
       "delay": null,
-      "children_count": 1
+      "repeat": {
+        "kind": "goto",
+        "min": 2,
+        "max": 2,
+        "unbounded": false
+      },
+      "children": [
+        {
+          "kind": "expr",
+          "lowering_status": "exact",
+          "raw": "ack",
+          "expr": "ack",
+          "guard_expr": null,
+          "actions": [],
+          "delay": null,
+          "repeat": null,
+          "children": [],
+          "semantic_risk": "",
+          "diagnostics": []
+        }
+      ],
+      "semantic_risk": "",
+      "diagnostics": []
     }
   ]
 }

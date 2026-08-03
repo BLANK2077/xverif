@@ -32,19 +32,5 @@
       "expr": "valid",
       "text": "Relation: valid must hold throughout the entire matched interval of the sequence."
     }
-  ],
-  "diagnostics": [
-    {
-      "code": "XSVA-W006",
-      "severity": "warning",
-      "message": "throughout uses advanced sequence semantics; see semantic notes",
-      "span": {
-        "file": "",
-        "begin_line": 0,
-        "begin_col": 0,
-        "end_line": 0,
-        "end_col": 0
-      }
-    }
   ]
 }

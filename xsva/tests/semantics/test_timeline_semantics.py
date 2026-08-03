@@ -7,13 +7,18 @@ from xsva.parser.property_parser import PropertyParser
 from xsva.parser.scanner import Scanner
 
 
-def _timeline(source: str, name: str):
+def _timeline(source: str, name: str, *, max_paths: int = 10):
     diag = DiagnosticBag()
     parser = PropertyParser(Scanner(source, file="<test>"), diag)
     surfaces = parser.parse_file()
     surface = next(s for s in surfaces if s.name == name)
     seq = lower_surface_to_sequence(surface, diag)
-    timeline = lower_sequence_to_timeline(seq, surface_ir=surface, diag=diag)
+    timeline = lower_sequence_to_timeline(
+        seq,
+        surface_ir=surface,
+        max_paths=max_paths,
+        diag=diag,
+    )
     return timeline
 
 
@@ -78,6 +83,9 @@ endproperty
 """, "p")
     cycles = [[ob.cycle for ob in path.obligations] for path in timeline.match_paths]
     assert cycles == [[1, 2], [2, 3], [3, 4]]
+    assert timeline.path_total_count == 3
+    assert timeline.path_returned_count == 3
+    assert timeline.path_enumeration_complete is True
 
 
 def test_local_capture_in_trigger_and_dependency():
@@ -205,7 +213,26 @@ property p;
 endproperty
 """, "p")
     assert timeline.disable_expr == "! rst_n"
-    assert timeline._compat_disable_obl is not None
+    assert timeline.disable_obligation is not None
+    assert timeline.disable_obligation.id == "disable"
+
+
+def test_path_budget_marks_timeline_partial_with_exact_total():
+    timeline = _timeline("""
+property p;
+  req |-> ##[1:20] x ##[1:10] y ##1 z;
+endproperty
+""", "p", max_paths=5)
+    assert timeline.lowering_status.value == "partial"
+    assert timeline.path_total_count == 200
+    assert timeline.path_returned_count == 5
+    assert timeline.path_enumeration_complete is False
+    assert all(path.is_partial for path in timeline.match_paths)
+    assert any(
+        item.code == "XSVA-L001"
+        and "returned 5 of 200 candidate paths" in item.message
+        for item in timeline.diagnostics
+    )
 
 
 def test_nonoverlap_fixed_delay_still_accumulates():

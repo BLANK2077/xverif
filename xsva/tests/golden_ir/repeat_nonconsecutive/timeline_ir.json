@@ -27,6 +27,5 @@
       "expr": "ack[=2]",
       "text": "ack needs to match 2 times in total, with non-matching clk cycles allowed in between."
     }
-  ],
-  "diagnostics": []
+  ]
 }

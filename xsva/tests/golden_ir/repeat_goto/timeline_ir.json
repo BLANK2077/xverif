@@ -27,6 +27,5 @@
       "expr": "ack[->2]",
       "text": "Wait for the 2nd occurrence of ack; the match ends on that clk."
     }
-  ],
-  "diagnostics": []
+  ]
 }

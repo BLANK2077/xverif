@@ -37,19 +37,5 @@
       "expr": "a ## 1 b c ## [ 1 : 3 ] d",
       "text": "Relation: sequence 1's matched interval must be contained within sequence 2's matched interval."
     }
-  ],
-  "diagnostics": [
-    {
-      "code": "XSVA-W006",
-      "severity": "warning",
-      "message": "within uses advanced sequence semantics; see semantic notes",
-      "span": {
-        "file": "",
-        "begin_line": 0,
-        "begin_col": 0,
-        "end_line": 0,
-        "end_col": 0
-      }
-    }
   ]
 }

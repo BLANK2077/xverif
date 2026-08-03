@@ -14,7 +14,7 @@
   },
   "obligations": [
     {
-      "id": "ob_0_1",
+      "id": "ob_0_0",
       "kind": "stable",
       "expr": "valid & & $stable ( data )",
       "has_window": false,
@@ -29,7 +29,7 @@
       "id": "path_0",
       "description": "Path 0: valid & & $stable ( data ) stays the same as the p",
       "obligations": [
-        "stable"
+        "ob_0_0"
       ]
     }
   ],
@@ -40,6 +40,5 @@
       "expr": "##1 valid & & $stable ( data )",
       "text": "valid & & $stable ( data ) must be true at cycle +1."
     }
-  ],
-  "diagnostics": []
+  ]
 }

@@ -18,6 +18,13 @@ def render_timeline_markdown(timeline: TimelineIR) -> str:
     # Kind
     lines.append(f"**Kind:** {timeline.kind}")
     lines.append("")
+    lines.append(f"**Lowering status:** `{timeline.lowering_status.value}`")
+    lines.append(
+        "**Path enumeration:** "
+        f"`{timeline.path_returned_count}/{timeline.path_total_count}` "
+        f"({'complete' if timeline.path_enumeration_complete else 'partial'})"
+    )
+    lines.append("")
 
     # Clock
     if timeline.clock.signal:
@@ -48,7 +55,7 @@ def render_timeline_markdown(timeline: TimelineIR) -> str:
         _append_diagnostics(lines, timeline)
         return "\n".join(lines)
 
-    # Obligations fallback for timelines without user-facing summaries.
+    # Obligations for timelines without user-facing summaries.
     lines.append("## Obligations")
 
     if len(timeline.match_paths) == 1 and timeline.match_paths[0].obligations:

@@ -27,7 +27,7 @@ def test_golden_surface_ir(run_golden_case):
     surface, seq_ir, timeline, diag, case_dir = run_golden_case
     golden = _load_json(case_dir / "surface_ir.json")
 
-    actual = json.loads(json.dumps(_serialize_surface_ir(surface), ensure_ascii=False, default=str))
+    actual = _serialize_surface_ir(surface)
     assert actual == golden
 
 

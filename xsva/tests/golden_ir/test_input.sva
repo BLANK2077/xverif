@@ -1,4 +1,4 @@
-// xsva test file - Phase 1 MVP test cases
+// xsva canonical IR test cases
 
 property p_req_ack;
   @(posedge clk) disable iff (!rst_n)

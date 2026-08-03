@@ -41,7 +41,7 @@
       "id": "path_0",
       "description": "Path 0: ack & & rsp == v must become true at least once be",
       "obligations": [
-        "eventually"
+        "ob_0_0"
       ]
     }
   ],
@@ -54,6 +54,5 @@
       "expr": "##[1:4] ack & & rsp == v",
       "text": "ack & & rsp == v must be true at cycle +1 to +4."
     }
-  ],
-  "diagnostics": []
+  ]
 }

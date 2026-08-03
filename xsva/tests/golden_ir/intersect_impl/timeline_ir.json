@@ -37,31 +37,5 @@
       "expr": "a ## 1 b c ## 1 d",
       "text": "Relation: sequence 1 and sequence 2 must start on the same clk and end on the same clk."
     }
-  ],
-  "diagnostics": [
-    {
-      "code": "XSVA-W006",
-      "severity": "warning",
-      "message": "intersect uses same-start and same-end sequence semantics",
-      "span": {
-        "file": "",
-        "begin_line": 0,
-        "begin_col": 0,
-        "end_line": 0,
-        "end_col": 0
-      }
-    },
-    {
-      "code": "XSVA-W006",
-      "severity": "warning",
-      "message": "intersect uses advanced sequence semantics; see semantic notes",
-      "span": {
-        "file": "",
-        "begin_line": 0,
-        "begin_col": 0,
-        "end_line": 0,
-        "end_col": 0
-      }
-    }
   ]
 }

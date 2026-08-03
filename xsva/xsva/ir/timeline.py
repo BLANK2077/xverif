@@ -16,9 +16,6 @@ from .diagnostics import DiagnosticIR
 from .expr import ExprIR, SignalRef
 from .surface import ClockIR
 
-# Phase 1 兼容别名
-ClockRefIR = ClockIR
-
 
 # ── 枚举 ──
 
@@ -66,15 +63,6 @@ class WindowIR:
     unbounded: bool = False
     description: str = ""
 
-    # Phase 1 兼容属性
-    @property
-    def min_cycle(self) -> int:
-        return self.start
-
-    @property
-    def max_cycle(self) -> int | None:
-        return self.end if not self.unbounded else None
-
 
 @dataclass(frozen=True)
 class ObligationIR:
@@ -100,7 +88,6 @@ class ObligationIR:
     signals_to_query: list[SignalRef] = field(default_factory=list)
     failure_condition: str | None = None
     description: str = ""
-    cycle_offset: int = 0  # Phase 1 兼容
 
 
 @dataclass(frozen=True)
@@ -112,7 +99,6 @@ class MatchPathIR:
     obligations: tuple[ObligationIR, ...] = ()
     pass_condition: str = ""
     failure_condition: str = ""
-    trigger_condition: str = ""  # Phase 1 兼容
     is_partial: bool = False
     description: str = ""
 
@@ -157,6 +143,7 @@ class TimelineIR:
 
     # failure
     failure_conditions: list[FailureConditionIR] = field(default_factory=list)
+    disable_obligation: ObligationIR | None = None
 
     # 高级 sequence / sampled function 的用户语义摘要
     semantic_notes: list[SemanticNoteIR] = field(default_factory=list)
@@ -167,40 +154,6 @@ class TimelineIR:
     # lowering
     lowering_status: LoweringStatus = LoweringStatus.EXACT
     diagnostics: list[DiagnosticIR] = field(default_factory=list)
-
-    # ── Phase 1 兼容属性 ──
-
-    @property
-    def trigger_expr(self) -> str:
-        return self.trigger.expr
-
-    @trigger_expr.setter
-    def trigger_expr(self, value: str) -> None:
-        self.trigger.expr = value
-
-    @property
-    def trigger_captures(self) -> list:
-        return [{"var": c.var, "expr": c.value_expr, "is_update": False}
-                for c in self.trigger.captures]
-
-    @property
-    def paths(self) -> list[MatchPathIR]:
-        """Phase 1 兼容：paths == match_paths."""
-        return list(self.match_paths)
-
-    @property
-    def disable_obligation(self) -> ObligationIR | None:
-        """Phase 1 兼容：从 vacuity_checks 或 diagnostics 重建。"""
-        return None  # 由 lowering 层显式设置
-
-    def add_disable_obligation(self, obl: ObligationIR) -> None:
-        """添加 disable obligation。"""
-        self._disable_obl = obl
-
-    @property
-    def _compat_disable_obl(self) -> ObligationIR | None:
-        return getattr(self, '_disable_obl', None)
-
-
-# Phase 1 兼容别名
-PathIR = MatchPathIR
+    path_total_count: int = 0
+    path_returned_count: int = 0
+    path_enumeration_complete: bool = True
