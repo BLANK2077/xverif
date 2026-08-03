@@ -5,11 +5,15 @@ import json
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Optional
+from typing import Annotated, Any, Literal, Optional
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import CallToolResult, TextContent
+from pydantic import Field
 
+from xverif_loop.config import resolve_mcp_runtime_config
+from xverif_loop.json_contract import strict_json_dumps
+from xverif_loop.logging import resolve_logger
 from xverif_mcp.import_paths import ensure_tool_import_paths
 
 ensure_tool_import_paths()
@@ -21,26 +25,37 @@ from xverif_mcp.adapters.xentry import entry_decode, entry_explain, entry_valida
 from xverif_mcp.adapters.xloc import loc_resolve, loc_context, loc_stats, loc_annotate
 from xverif_mcp.adapters.xsva import sva_list, sva_scan, sva_parse, sva_explain
 from xverif_mcp.errors import error_payload
-from xverif_loop.logging import log_server_event
-from xverif_mcp.tool_policy import filtered_catalog, policy_summary, tool_enabled
-from xverif_mcp.xdebug_errors import (
+from xverif_mcp.framing import strict_json_loads, validate_xout_text
+from xverif_mcp.tool_policy import filtered_catalog, resolve_tool_policy
+from xverif_loop.xdebug_errors import (
     forbidden_native_session_error,
     is_forbidden_native_session_action,
+)
+from xverif_mcp.xdebug_contracts import (
+    XdebugContractError,
+    query_session_requirement,
 )
 
 # ---------------------------------------------------------------------------
 # FastMCP application
 # ---------------------------------------------------------------------------
 
-INSTRUCTIONS = """xverif exposes deterministic chip-verification tools.
-xdebug and xcov are stateful; xbit, xentry, xloc and xsva are stateless.
-Discover tools with xverif_tools and action contracts with the corresponding
-catalog/schema tools. Stateful work uses session_open -> query -> session_close;
-debug and coverage queries both use session_id/action/args/limits/output_format.
-Use xverif_batch only for strict serial execution and keep action parameters
-inside the query tool's inner args. No automatic retry, reopen, backend,
-transport or data-source fallback is performed. Detailed workflows belong to
-the xverif and xverif-admin skills."""
+INSTRUCTIONS = """Use xverif for deterministic chip verification: design/FSDB debug, coverage, bit math, entry decode, log locations, and SVA semantics. MCP details load via Tool Search. Before xdebug, call xverif_tools once for all action names, status, and purposes, then xverif_debug_get_schema(action); never guess. Resource-backed xdebug: session_open -> query -> session_close; requires:none forbids session_id. xcov query requires session_id. Never auto-retry/reopen/fallback or switch backend, transport, or data source.
+
+| xdebug task | Action families |
+|---|---|
+| Catalog/resources | actions, schema, session.*, scope.* |
+| Values/proof | value.*, signal.*, expr.*, verify.*, window.verify |
+| Static/dynamic cause | signal.resolve/canonicalize, trace.* |
+| APB | apb.config.*, query, statistics, transaction.cursor, transfer_window |
+| AXI | axi.config.*, query/statistics/analysis/export, transaction.cursor, channel_stall, latency_outlier, outstanding_timeline, request_response_pair |
+| Streams | stream.config.*, describe/validate/query/export, protocol.handshake.inspect |
+| Events | event.config.*, find/export, counter.statistics |
+| Collections | list.*, waveform.cursor.*, nwave.rc.generate |
+
+For key signals/interfaces, build schema-valid JSON and load it with list.load, stream.config.load, axi.config.load, or apb.config.load before inspection. After a successful load, follow recommended_actions; value.at is first and accepts exactly one signal/list/apb/stream/axi selector plus time or ordered unique times. Prefer one value.at multi-time query over repeated batch calls; use list.first_change/export for ranges.
+
+Other families: xcov=coverage; xbit=bit math; xentry=structured decode; xloc=location resolve/annotate; xsva=temporal semantics. xverif_batch is strict serial; put query parameters in inner args. Coverage limits/export output stay in action args. Check experimental status and completeness before conclusions. Detailed workflows: xverif and xverif-admin skills."""
 
 
 def _cleanup_stateful_sessions() -> None:
@@ -48,12 +63,11 @@ def _cleanup_stateful_sessions() -> None:
         try:
             adapter.close_all()
         except Exception as exc:
-            log_server_event(
+            MCP_LOGGER.try_server(
                 "mcp.shutdown.cleanup_failed",
                 False,
                 backend=getattr(adapter, "mode", adapter.__class__.__name__),
                 error_type=type(exc).__name__,
-                error=str(exc),
             )
 
 
@@ -71,8 +85,11 @@ mcp = FastMCP(
     lifespan=_mcp_lifespan,
 )
 
-debug = XverifDebugAdapter()
-cov = XverifCoverageAdapter()
+MCP_RUNTIME = resolve_mcp_runtime_config()
+MCP_LOGGER = resolve_logger(MCP_RUNTIME)
+MCP_TOOL_POLICY = resolve_tool_policy()
+debug = XverifDebugAdapter(runtime=MCP_RUNTIME, logger=MCP_LOGGER)
+cov = XverifCoverageAdapter(runtime=MCP_RUNTIME, logger=MCP_LOGGER)
 
 
 def _tool_error(code: str, message: str, **extra: Any) -> dict:
@@ -81,11 +98,12 @@ def _tool_error(code: str, message: str, **extra: Any) -> dict:
 
 def _write_output(result: Any, path: str, append: bool) -> None:
     mode = "a" if append else "w"
+    if isinstance(result, str):
+        encoded = result
+    else:
+        encoded = strict_json_dumps(result, ensure_ascii=False, sort_keys=True)
     with open(path, mode, encoding="utf-8") as f:
-        if isinstance(result, str):
-            f.write(result)
-        else:
-            f.write(str(result))
+        f.write(encoded)
 
 
 def _output_write_failed(result: Any, path: str, exc: OSError) -> CallToolResult:
@@ -95,13 +113,21 @@ def _output_write_failed(result: Any, path: str, exc: OSError) -> CallToolResult
         output_path=path,
         error_type=type(exc).__name__,
     )
-    payload["data"] = {"result": result}
     return CallToolResult(
-        content=[TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))],
-        # FastMCP validates structuredContent against the wrapped tool's original
-        # return annotation.  Keep that successful result shape while signalling
-        # the output-side failure in MCP error content.
-        structuredContent={"result": result},
+        content=[TextContent(type="text", text=strict_json_dumps(payload, ensure_ascii=False))],
+        isError=True,
+    )
+
+
+def _output_serialization_failed(path: str, exc: Exception) -> CallToolResult:
+    payload = _tool_error(
+        "OUTPUT_SERIALIZATION_FAILED",
+        f"MCP tool result cannot be encoded as strict JSON for {path}",
+        output_path=path,
+        error_type=type(exc).__name__,
+    )
+    return CallToolResult(
+        content=[TextContent(type="text", text=strict_json_dumps(payload, ensure_ascii=False))],
         isError=True,
     )
 
@@ -113,11 +139,11 @@ def _wrap_with_output(fn):
     sig = inspect.signature(fn)
     new_params = list(sig.parameters.values()) + [
         inspect.Parameter("xverif_output_path", inspect.Parameter.KEYWORD_ONLY,
-                          default=None),
+                          default=None, annotation=Optional[str]),
         inspect.Parameter("xverif_output_append", inspect.Parameter.KEYWORD_ONLY,
-                          default=False),
+                          default=False, annotation=bool),
     ]
-    new_sig = sig.replace(parameters=new_params)
+    new_sig = sig.replace(parameters=new_params, return_annotation=Any)
 
     if inspect.iscoroutinefunction(fn):
         async def wrapper(*args, **kwargs):
@@ -129,6 +155,8 @@ def _wrap_with_output(fn):
                     _write_output(result, output_path, output_append)
                 except OSError as exc:
                     return _output_write_failed(result, output_path, exc)
+                except (TypeError, ValueError) as exc:
+                    return _output_serialization_failed(output_path, exc)
             return result
     else:
         def wrapper(*args, **kwargs):
@@ -140,6 +168,8 @@ def _wrap_with_output(fn):
                     _write_output(result, output_path, output_append)
                 except OSError as exc:
                     return _output_write_failed(result, output_path, exc)
+                except (TypeError, ValueError) as exc:
+                    return _output_serialization_failed(output_path, exc)
             return result
 
     wrapper.__signature__ = new_sig
@@ -153,8 +183,17 @@ def xverif_tool(group: str, write: bool = False):
     """Conditionally register a FastMCP tool according to env policy."""
     def decorator(fn):
         fn = _wrap_with_output(fn)
-        if tool_enabled(group, write=write):
-            return mcp.tool()(fn)
+        if MCP_TOOL_POLICY.tool_enabled(group, write=write):
+            registered = mcp.tool()(fn)
+            tool = mcp._tool_manager.get_tool(fn.__name__)
+            if tool is None:  # pragma: no cover
+                raise RuntimeError(f"registered MCP tool not found: {fn.__name__}")
+            arg_model = tool.fn_metadata.arg_model
+            arg_model.model_config["extra"] = "forbid"
+            arg_model.model_config["strict"] = True
+            arg_model.model_rebuild(force=True)
+            tool.parameters = arg_model.model_json_schema(by_alias=True)
+            return registered
         return fn
     return decorator
 
@@ -165,14 +204,21 @@ def xverif_tool(group: str, write: bool = False):
 
 
 @xverif_tool("common")
-def xverif_ping() -> str:
+def xverif_ping() -> dict:
     """Ping the xverif MCP server. Use this to check whether the server is alive."""
-    return debug.ping()
+    return {"ok": True, "result": debug.ping()}
+
+
+def _batch_error(code: str, message: str, **details: Any) -> dict[str, Any]:
+    error: dict[str, Any] = {"code": code, "message": message}
+    error.update(details)
+    return error
 
 
 def _append_result(output_file: str, tool: str | None, ok: bool,
-                   error: str | None, elapsed_ms: int,
-                   response: str | None = None, line_number: int | None = None) -> None:
+                   error: dict[str, Any] | None, elapsed_ms: int,
+                   response: str | None = None,
+                   line_number: int | None = None) -> None:
     entry: dict = {
         "tool": tool,
         "ok": ok,
@@ -184,25 +230,145 @@ def _append_result(output_file: str, tool: str | None, ok: bool,
     if line_number is not None:
         entry["line_number"] = line_number
     with open(output_file, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
+        f.write(strict_json_dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
 
 
-async def _execute_one(name: str, args: dict) -> tuple[bool, str | None, int, str | None]:
+async def _execute_one(
+    name: str,
+    args: dict,
+) -> tuple[bool, dict[str, Any] | None, int, str | None]:
     t0 = time.monotonic()
     try:
         result = await mcp.call_tool(name, args)
-        content = result[0] if isinstance(result, tuple) else result
-        text = content[0].text if content else ""
+    except Exception as exc:
+        return (
+            False,
+            _batch_error("MCP_CALL_ERROR", "MCP tool call failed", error_type=type(exc).__name__),
+            int((time.monotonic() - t0) * 1000),
+            None,
+        )
+
+    try:
+        is_error = False
+        structured: dict[str, Any] | None = None
+        if isinstance(result, CallToolResult):
+            is_error = result.isError
+            content = result.content
+            structured = result.structuredContent
+        elif isinstance(result, tuple):
+            content, structured = result
+        elif isinstance(result, dict):
+            content = []
+            structured = result
+        else:
+            content = result
+
+        if structured is not None:
+            if type(structured) is not dict:
+                raise ValueError("structured MCP result must be an object")
+            structured_ok = structured.get("ok")
+            if structured_ok is not None and type(structured_ok) is not bool:
+                raise ValueError("structured MCP result ok must be boolean")
+            ok = not is_error if structured_ok is None else structured_ok and not is_error
+            response = strict_json_dumps(structured, ensure_ascii=False, sort_keys=True)
+            return (
+                ok,
+                None if ok else _batch_error(
+                    "TOOL_RESULT_ERROR",
+                    "MCP tool returned a structured failure result",
+                ),
+                int((time.monotonic() - t0) * 1000),
+                response,
+            )
+
+        if not isinstance(content, list) or len(content) != 1:
+            raise ValueError("unstructured MCP result must contain exactly one content block")
+        block = content[0]
+        if not isinstance(block, TextContent):
+            raise ValueError("batch supports only text MCP results")
+        text = block.text
+        if is_error:
+            return (
+                False,
+                _batch_error("MCP_CALL_ERROR", "MCP tool call returned isError=true"),
+                int((time.monotonic() - t0) * 1000),
+                None,
+            )
         try:
-            j = json.loads(text)
-            return j.get("ok", False), None, int((time.monotonic() - t0) * 1000), text
-        except (json.JSONDecodeError, AttributeError):
-            ok = ("pong" in str(text).lower()
-                  or "XOUT_BEGIN" in text
-                  or (text.startswith("@") and ".error." not in text))
-            return ok, None, int((time.monotonic() - t0) * 1000), text
-    except Exception as e:
-        return False, str(e), int((time.monotonic() - t0) * 1000), None
+            payload = strict_json_loads(text)
+            if type(payload) is not dict:
+                raise ValueError("JSON MCP result must be an object")
+            ok = payload.get("ok")
+            if type(ok) is not bool:
+                raise ValueError("JSON MCP result requires boolean ok")
+        except (json.JSONDecodeError, ValueError):
+            validate_xout_text(text)
+            ok = True
+        return (
+            ok,
+            None if ok else _batch_error("TOOL_RESULT_ERROR", "MCP tool returned ok=false"),
+            int((time.monotonic() - t0) * 1000),
+            text,
+        )
+    except Exception as exc:
+        return (
+            False,
+            _batch_error(
+                "BATCH_RESULT_INVALID",
+                "MCP tool result violates the batch result contract",
+                error_type=type(exc).__name__,
+            ),
+            int((time.monotonic() - t0) * 1000),
+            None,
+        )
+
+
+class _BatchRequestError(ValueError):
+    def __init__(self, code: str, message: str, **details: Any) -> None:
+        super().__init__(message)
+        self.error = _batch_error(code, message, **details)
+
+
+def _validate_batch_request(value: Any) -> tuple[str, dict[str, Any]]:
+    if type(value) is not dict:
+        raise _BatchRequestError(
+            "INVALID_BATCH_REQUEST",
+            "batch line must be a JSON object",
+            actual_type=type(value).__name__,
+        )
+    required = {"tool", "args"}
+    unexpected = sorted(set(value) - required)
+    if unexpected:
+        raise _BatchRequestError(
+            "INVALID_BATCH_REQUEST",
+            "unexpected batch request fields: " + ", ".join(unexpected),
+            unexpected_fields=unexpected,
+        )
+    missing = sorted(required - set(value))
+    if missing:
+        raise _BatchRequestError(
+            "INVALID_BATCH_REQUEST",
+            "missing required batch request fields: " + ", ".join(missing),
+            missing_fields=missing,
+        )
+    tool_name = value["tool"]
+    if type(tool_name) is not str or not tool_name:
+        raise _BatchRequestError(
+            "INVALID_BATCH_REQUEST",
+            "batch request tool must be a non-empty string",
+            invalid_arg="tool",
+            expected="non-empty string",
+        )
+    tool_args = value["args"]
+    if type(tool_args) is not dict:
+        raise _BatchRequestError(
+            "INVALID_BATCH_ARGUMENTS",
+            "batch request args must be an object",
+            invalid_arg="args",
+            expected="object",
+            actual_type=type(tool_args).__name__,
+        )
+    return tool_name, tool_args
 
 
 @xverif_tool("common")
@@ -232,27 +398,32 @@ async def xverif_batch(batch_file: str, output_file: str) -> dict:
                     continue
 
                 try:
-                    req = json.loads(line)
-                except json.JSONDecodeError as e:
-                    _append_result(output_file, None, False,
-                                   f"INVALID_JSON: {e}", 0, line_number=line_number)
+                    req = strict_json_loads(line)
+                except (json.JSONDecodeError, ValueError) as e:
+                    _append_result(
+                        output_file, None, False,
+                        _batch_error(
+                            "INVALID_JSON", "batch line is not strict JSON",
+                            error_type=type(e).__name__,
+                        ),
+                        0, line_number=line_number,
+                    )
                     stats["failed"] += 1
                     stats["total"] += 1
                     continue
 
-                tool_name = req.get("tool")
-                if not tool_name:
-                    _append_result(output_file, None, False,
-                                   "MISSING_TOOL_FIELD", 0, line_number=line_number)
-                    stats["failed"] += 1
-                    stats["total"] += 1
-                    continue
-
-                tool_args = req.get("args", {})
-                if not isinstance(tool_args, dict):
-                    _append_result(output_file, tool_name, False,
-                                   "INVALID_BATCH_ARGUMENTS: args must be an object", 0,
-                                   line_number=line_number)
+                tool_hint = (
+                    req.get("tool")
+                    if type(req) is dict and type(req.get("tool")) is str and req.get("tool")
+                    else None
+                )
+                try:
+                    tool_name, tool_args = _validate_batch_request(req)
+                except _BatchRequestError as exc:
+                    _append_result(
+                        output_file, tool_hint, False, exc.error, 0,
+                        line_number=line_number,
+                    )
                     stats["failed"] += 1
                     stats["total"] += 1
                     continue
@@ -270,9 +441,6 @@ async def xverif_batch(batch_file: str, output_file: str) -> dict:
                            f"cannot write batch results to {output_file}: {exc}",
                            output_file=output_file,
                            error_type=type(exc).__name__)
-    except Exception as e:
-        return _tool_error("BATCH_FAILED", str(e))
-
     return {
         "ok": True,
         "total": stats["total"],
@@ -308,12 +476,20 @@ def xverif_debug_list_actions(
 
 
 @xverif_tool("debug")
-def xverif_debug_get_schema(action: str, kind: str = "request", view: str = "mcp",
-                            include_examples: bool = True) -> dict:
+def xverif_debug_get_schema(
+    action: str,
+    kind: Literal["request", "response"] = "request",
+    view: Literal["mcp", "response"] = "mcp",
+    include_examples: bool = True,
+) -> dict:
     """Return a self-explanatory action-specific xdebug schema.
 
+    Request projections include skill_guidance. Read the referenced $xverif
+    workflow before constructing a call, especially for APB/AXI/stream query
+    routing.
+
     Args:
-        action: The xdebug action name (e.g. "value.at", "trace.drivers").
+        action: The xdebug action name (e.g. "value.at", "trace.driver").
         kind: "request" for input schema, "response" for output schema.
         view: "mcp" (default) or "response".
         include_examples: Include invalid MCP call examples.
@@ -356,39 +532,29 @@ def xverif_debug_session_list(
 
 @xverif_tool("debug")
 def xverif_debug_session_doctor(
-    name: Optional[str] = None,
-    session_id: Optional[str] = None,
+    session_id: str,
     verbose: bool = False,
 ) -> dict:
     """Read-only health diagnosis for one managed xdebug session."""
-    key = session_id or name
-    if not key:
-        return _tool_error("INVALID_ARGUMENT", "provide name or session_id")
-    return debug.session_doctor(key, verbose=verbose)
+    return debug.session_doctor(session_id, verbose=verbose)
 
 
 @xverif_tool("debug")
 def xverif_debug_session_close(
-    name: Optional[str] = None,
-    session_id: Optional[str] = None,
+    session_id: str,
 ) -> dict:
     """Close and cleanup an xdebug session."""
-    key = session_id or name
-    if not key:
-        return _tool_error("INVALID_ARGUMENT", "provide name or session_id")
-    return debug.session_close(key)
+    return debug.session_close(session_id)
 
 
 @xverif_tool("debug")
 def xverif_debug_session_kill(
-    name: Optional[str] = None,
-    session_id: Optional[str] = None,
+    session_id: str,
 ) -> dict:
     """Force cleanup of exactly one managed xdebug session."""
-    key = session_id or name
-    if not key or key == "all":
-        return _tool_error("INVALID_ARGUMENT", "provide one exact name or session_id; all is not supported")
-    return debug.session_kill(key)
+    if session_id == "all":
+        return _tool_error("INVALID_ARGUMENT", "provide one exact session_id; all is not supported")
+    return debug.session_kill(session_id)
 
 
 @xverif_tool("debug")
@@ -399,25 +565,38 @@ def xverif_debug_session_gc(verbose: bool = False) -> dict:
 
 @xverif_tool("debug")
 def xverif_debug_query(
-    session_id: str,
     action: str,
+    session_id: Annotated[
+        Optional[str],
+        Field(description=(
+            "Managed session for resource-backed action variants. "
+            "Omit for requires:none variants; requires:none forbids session_id."
+        )),
+    ] = None,
     args: Optional[dict] = None,
     limits: Optional[dict] = None,
-    output_format: str = "xout",
+    output_format: Literal["xout", "json", "envelope"] = "xout",
 ) -> Any:
     """Run an xdebug action through a loop session.
 
     Recommended workflow:
     1. Call xverif_debug_list_actions if you don't know available actions.
     2. Call xverif_debug_get_schema(action) if you need the exact request shape.
-    3. Call xverif_debug_session_open first for FSDB/daidir queries.
+    3. Call xverif_debug_session_open first for resource-backed variants.
     4. Call xverif_debug_query with action + args.
 
     Args:
-        action: The xdebug action name (e.g. "value.at", "trace.drivers").
-        session_id: Explicit session alias or session_id returned by session_open.
+        action: The xdebug action name (e.g. "value.at", "trace.driver").
+        session_id:
+            Exact session identifier for a resource-backed variant.
+            Omit it for a requires:none variant; requires:none forbids
+            session_id.
         args: Action-specific arguments dict.
-        limits: Query limits dict (max_rows, timeout, etc.).
+        limits:
+            Action-specific limits dict. Query the action schema before
+            supplying fields; `timeout_ms` is the common deadline field, while
+            bounds such as `max_results`, `max_depth`, or `max_rows` exist only
+            on the actions that explicitly declare them.
         output_format:
             "xout" (default) — AI-readable structured text.
             "json" — raw xdebug JSON dict.
@@ -428,10 +607,80 @@ def xverif_debug_query(
                            "output_format must be 'xout', 'json', or 'envelope'")
     if is_forbidden_native_session_action(action):
         return forbidden_native_session_error(action)
+    if args is not None and not isinstance(args, dict):
+        return _tool_error(
+            "INVALID_ARGUMENT", "args must be an object",
+            recoverable=True, error_layer="wrapper",
+        )
+    if limits is not None and not isinstance(limits, dict):
+        return _tool_error(
+            "INVALID_ARGUMENT", "limits must be an object",
+            recoverable=True, error_layer="wrapper",
+        )
+    action_args = args or {}
+    try:
+        contract, variant = query_session_requirement(action, action_args)
+    except XdebugContractError as exc:
+        return _tool_error(
+            "CONTRACT_UNAVAILABLE", str(exc),
+            recoverable=False, error_layer="wrapper",
+        )
+    if contract is None:
+        return _tool_error(
+            "UNKNOWN_ACTION", f"unknown xdebug action: {action}",
+            recoverable=True, error_layer="wrapper",
+        )
+    if contract["mode"] == "conditional":
+        if variant is None:
+            return _tool_error(
+                "INVALID_RESOURCE_VARIANT",
+                f"{action} arguments do not match exactly one canonical resource variant",
+                recoverable=True,
+                error_layer="wrapper",
+                variants=contract["variants"],
+            )
+        session_state = variant["session_id"]
+        requires = variant["requires"]
+        variant_name = variant["name"]
+    else:
+        session_state = contract["session_id"]
+        requires = contract["requires"]
+        variant_name = None
+    if session_state == "required" and (
+        not isinstance(session_id, str) or not session_id.strip()
+    ):
+        return _tool_error(
+            "SESSION_REQUIRED",
+            f"{action}" + (f" variant {variant_name}" if variant_name else "")
+            + f" requires a managed {requires} session",
+            recoverable=True,
+            error_layer="wrapper",
+            action=action,
+            variant=variant_name,
+            requires=requires,
+        )
+    if session_state == "forbidden" and session_id is not None:
+        return _tool_error(
+            "SESSION_FORBIDDEN",
+            f"{action}" + (f" variant {variant_name}" if variant_name else "")
+            + " is resource-free and forbids session_id",
+            recoverable=True,
+            error_layer="wrapper",
+            action=action,
+            variant=variant_name,
+            requires=requires,
+        )
+    if session_state == "forbidden":
+        return debug.query_one_shot(
+            action=action,
+            args=action_args,
+            limits=limits,
+            output_format=output_format,
+        )
     return debug.query(
         action=action,
-        args=args or {},
-        session=session_id,
+        args=action_args,
+        session_id=session_id,
         limits=limits,
         output_format=output_format,
     )
@@ -449,7 +698,10 @@ def xverif_cov_list_actions() -> dict:
 
 
 @xverif_tool("cov")
-def xverif_cov_get_schema(action: str, kind: str = "request") -> dict:
+def xverif_cov_get_schema(
+    action: str,
+    kind: Literal["request", "response"] = "request",
+) -> dict:
     """Return an xcov action schema."""
     if kind not in ("request", "response"):
         return _tool_error("INVALID_ARGUMENT", "kind must be 'request' or 'response'")
@@ -517,11 +769,14 @@ def xverif_cov_query(
     session_id: str,
     action: str,
     args: Optional[dict] = None,
-    limits: Optional[dict] = None,
-    output: Optional[dict] = None,
-    output_format: str = "xout",
+    output_format: Literal["xout", "json", "envelope"] = "xout",
 ) -> Any:
-    """Run an xcov action through a coverage session."""
+    """Run an xcov action through a coverage session.
+
+    Action-specific limits and artifact output belong inside ``args`` exactly
+    where the xcov action schema declares them. ``output_format`` controls only
+    the MCP result representation.
+    """
     if output_format not in ("xout", "json", "envelope"):
         return _tool_error("INVALID_ARGUMENT",
                            "output_format must be 'xout', 'json', or 'envelope'")
@@ -530,9 +785,7 @@ def xverif_cov_query(
     return cov.query(
         action=action,
         args=args or {},
-        session=session_id,
-        limits=limits,
-        output=output,
+        session_id=session_id,
         output_format=output_format,
     )
 
@@ -543,9 +796,14 @@ def xverif_cov_query(
 
 
 @xverif_tool("bit")
-def xverif_bit_convert(value: str, width: int = 0, signed: bool = False,
-                     unsigned: bool = False, state: str = "2",
-                     output_format: str = "xout") -> Any:
+def xverif_bit_convert(
+    value: str,
+    width: int = 0,
+    signed: bool = False,
+    unsigned: bool = False,
+    state: Literal["2", "4"] = "2",
+    output_format: Literal["xout", "json"] = "xout",
+) -> Any:
     """Convert a value between radices and SV literal formats.
 
     Args:
@@ -563,7 +821,8 @@ def xverif_bit_convert(value: str, width: int = 0, signed: bool = False,
 @xverif_tool("bit")
 def xverif_bit_eval(expr: str, vars: Optional[dict] = None, width: int = 0,
                      signed: bool = False, unsigned: bool = False,
-                     state: str = "2", output_format: str = "xout") -> Any:
+                     state: Literal["2", "4"] = "2",
+                     output_format: Literal["xout", "json"] = "xout") -> Any:
     """Evaluate a deterministic bit/expression calculation.
 
     Args:
@@ -580,8 +839,9 @@ def xverif_bit_eval(expr: str, vars: Optional[dict] = None, width: int = 0,
 
 
 @xverif_tool("bit")
-def xverif_bit_slice(value: str, msb: int, lsb: int, state: str = "2",
-                      output_format: str = "xout") -> Any:
+def xverif_bit_slice(value: str, msb: int, lsb: int,
+                     state: Literal["2", "4"] = "2",
+                     output_format: Literal["xout", "json"] = "xout") -> Any:
     """Extract a bit slice from a value.
 
     Args:
@@ -596,8 +856,9 @@ def xverif_bit_slice(value: str, msb: int, lsb: int, state: str = "2",
 
 @xverif_tool("bit")
 def xverif_bit_check(expr: str, vars: Optional[dict] = None,
-                      values: Optional[str] = None, state: str = "2",
-                      output_format: str = "xout") -> Any:
+                      values: Optional[str] = None,
+                      state: Literal["2", "4"] = "2",
+                      output_format: Literal["xout", "json"] = "xout") -> Any:
     """Check a bit expression against expected values.
 
     Args:
@@ -621,7 +882,7 @@ def xverif_entry_decode(config_path: Optional[str] = None,
                          input_path: Optional[str] = None,
                          config: Optional[dict] = None,
                          fragments: Optional[list] = None,
-                         output_format: str = "xout") -> Any:
+                         output_format: Literal["xout", "json"] = "xout") -> Any:
     """Decode multi-beat byte fragments into raw field slices per config.
 
     Provide either (config_path + input_path) or (config + fragments).
@@ -643,7 +904,10 @@ def xverif_entry_decode(config_path: Optional[str] = None,
 
 
 @xverif_tool("entry")
-def xverif_entry_explain(config_path: str, output_format: str = "xout") -> Any:
+def xverif_entry_explain(
+    config_path: str,
+    output_format: Literal["xout", "json"] = "xout",
+) -> Any:
     """Explain the field layout defined by an entry config.
 
     Args:
@@ -658,7 +922,7 @@ def xverif_entry_validate(config_path: Optional[str] = None,
                            input_path: Optional[str] = None,
                            config: Optional[dict] = None,
                            fragments: Optional[list] = None,
-                           output_format: str = "xout") -> Any:
+                           output_format: Literal["xout", "json"] = "xout") -> Any:
     """Validate an entry config (and optionally an input) without decoding.
 
     Provide either (config_path + input_path) or (config + fragments).
@@ -685,8 +949,11 @@ def xverif_entry_validate(config_path: Optional[str] = None,
 
 
 @xverif_tool("loc")
-def xverif_loc_resolve(loc_id: str, map_path: str,
-                        output_format: str = "xout") -> Any:
+def xverif_loc_resolve(
+    loc_id: Annotated[str, Field(pattern=r"^L_[0-9A-F]{8}$")],
+    map_path: str,
+    output_format: Literal["xout", "json"] = "xout",
+) -> Any:
     """Resolve a compressed loc_id (L_XXXXXXXX) to a source file.
 
     Args:
@@ -698,8 +965,14 @@ def xverif_loc_resolve(loc_id: str, map_path: str,
 
 
 @xverif_tool("loc")
-def xverif_loc_context(loc_id: str, map_path: str, line: int, before: int = 20,
-                        after: int = 20, output_format: str = "xout") -> Any:
+def xverif_loc_context(
+    loc_id: Annotated[str, Field(pattern=r"^L_[0-9A-F]{8}$")],
+    map_path: str,
+    line: Annotated[int, Field(ge=1)],
+    before: Annotated[int, Field(ge=0)] = 20,
+    after: Annotated[int, Field(ge=0)] = 20,
+    output_format: Literal["xout", "json"] = "xout",
+) -> Any:
     """Resolve a loc_id and show source context at an explicit line.
 
     Args:
@@ -715,8 +988,12 @@ def xverif_loc_context(loc_id: str, map_path: str, line: int, before: int = 20,
 
 
 @xverif_tool("loc")
-def xverif_loc_stats(log_path: str, map_path: Optional[str] = None,
-                      top: int = 20, output_format: str = "xout") -> Any:
+def xverif_loc_stats(
+    log_path: str,
+    map_path: Optional[str] = None,
+    top: Annotated[int, Field(ge=1)] = 20,
+    output_format: Literal["xout", "json"] = "xout",
+) -> Any:
     """Count loc_id frequency in a simulation log (hotspot analysis).
 
     Args:
@@ -730,8 +1007,11 @@ def xverif_loc_stats(log_path: str, map_path: Optional[str] = None,
 
 
 @xverif_tool("loc")
-def xverif_loc_annotate(log_path: str, map_path: Optional[str] = None,
-                         output_format: str = "xout") -> Any:
+def xverif_loc_annotate(
+    log_path: str,
+    map_path: Optional[str] = None,
+    output_format: Literal["xout", "json"] = "xout",
+) -> Any:
     """Insert source location hints into a simulation log.
 
     Args:
@@ -749,7 +1029,10 @@ def xverif_loc_annotate(log_path: str, map_path: Optional[str] = None,
 
 
 @xverif_tool("sva")
-def xverif_sva_list_properties(file: str, output_format: str = "xout") -> Any:
+def xverif_sva_list_properties(
+    file: str,
+    output_format: Literal["xout", "json"] = "xout",
+) -> Any:
     """List all property/assertion names in a SVA source file.
 
     Args:
@@ -759,7 +1042,10 @@ def xverif_sva_list_properties(file: str, output_format: str = "xout") -> Any:
 
 
 @xverif_tool("sva")
-def xverif_sva_scan_constructs(file: str, output_format: str = "xout") -> Any:
+def xverif_sva_scan_constructs(
+    file: str,
+    output_format: Literal["xout", "json"] = "xout",
+) -> Any:
     """Scan syntax constructs used in a SVA source file.
 
     Args:
@@ -769,8 +1055,12 @@ def xverif_sva_scan_constructs(file: str, output_format: str = "xout") -> Any:
 
 
 @xverif_tool("sva")
-def xverif_sva_parse_property(file: str, property: str, emit: str = "timeline-ir",
-                      output_format: str = "xout") -> Any:
+def xverif_sva_parse_property(
+    file: str,
+    property: str,
+    emit: Literal["surface-ir", "sequence-ir", "timeline-ir"] = "timeline-ir",
+    output_format: Literal["xout", "json"] = "xout",
+) -> Any:
     """Parse a SVA property into IR.
 
     Args:
@@ -783,7 +1073,9 @@ def xverif_sva_parse_property(file: str, property: str, emit: str = "timeline-ir
 
 @xverif_tool("sva")
 def xverif_sva_explain_property(file: str, property: str, strict: bool = False,
-                        output_format: str = "xout") -> Any:
+                        output_format: Literal[
+                            "xout", "json", "markdown"
+                        ] = "xout") -> Any:
     """Generate a human-readable explanation of a SVA property.
 
     Args:
@@ -805,7 +1097,7 @@ TOOL_CATALOG = [
      "description": "Ping the xverif MCP server."},
     {"name": "xverif_tools", "category": "common", "backend": "builtin",
      "stateful": False, "requires_session": False,
-     "description": "List all available xverif tools."},
+     "description": "Return the complete xdebug action guide with every action's status, purpose, and use cases."},
     {"name": "xverif_tool_help", "category": "common", "backend": "builtin",
      "stateful": False, "requires_session": False,
      "description": "Get help for a specific tool."},
@@ -843,8 +1135,9 @@ TOOL_CATALOG = [
      "stateful": True, "requires_session": False,
      "description": "Remove confirmed terminal xdebug tombstones."},
     {"name": "xverif_debug_query", "category": "debug", "backend": "xdebug",
-     "stateful": True, "requires_session": True,
-     "description": "Run an xdebug action through a loop session."},
+     "stateful": True, "session_requirement": "conditional",
+     "description": "Run an xdebug action using its canonical resource variant; "
+                    "resource variants require session_id and requires:none variants forbid it."},
     # coverage
     {"name": "xverif_cov_list_actions", "category": "cov", "backend": "xcov",
      "stateful": False, "requires_session": False,
@@ -872,7 +1165,8 @@ TOOL_CATALOG = [
      "description": "Remove confirmed terminal xcov tombstones."},
     {"name": "xverif_cov_query", "category": "cov", "backend": "xcov",
      "stateful": True, "requires_session": True,
-     "description": "Run an xcov action through a coverage session."},
+     "description": "Run an xcov action through a coverage session; limits and "
+                    "artifact output belong inside action-specific args."},
     # bit
     {"name": "xverif_bit_convert", "category": "bit", "backend": "xbit",
      "stateful": False, "requires_session": False,
@@ -929,20 +1223,62 @@ for _tool in TOOL_CATALOG:
     _tool.setdefault("write", False)
 
 
-@xverif_tool("common")
-def xverif_tools(category: Optional[str] = None,
-                  include_write: bool = True) -> dict:
-    """List all available xverif tools, optionally filtered by category.
+def _xdebug_action_guide(payload: Any) -> str:
+    if not isinstance(payload, dict) or payload.get("ok") is not True:
+        raise RuntimeError(
+            "xverif_tools could not load the canonical xdebug action catalog"
+        )
+    data = payload.get("data")
+    actions = data.get("actions") if isinstance(data, dict) else None
+    if not isinstance(actions, list) or not actions:
+        raise RuntimeError(
+            "xverif_tools received a malformed xdebug action catalog"
+        )
+    lines = [
+        (
+            f"xdebug actions ({len(actions)} total). "
+            "Read this complete list before selecting an action, then call "
+            "xverif_debug_get_schema(action) for the exact request contract."
+        )
+    ]
+    names: set[str] = set()
+    for index, entry in enumerate(actions):
+        if not isinstance(entry, dict):
+            raise RuntimeError(f"xverif_tools action entry {index} is not an object")
+        name = entry.get("name")
+        status = entry.get("status")
+        description = entry.get("description_en")
+        use_when = entry.get("use_when")
+        if (
+            not isinstance(name, str)
+            or not name
+            or name in names
+            or status not in {"stable", "experimental"}
+            or not isinstance(description, str)
+            or not description
+            or not isinstance(use_when, list)
+            or not use_when
+            or not all(isinstance(item, str) and item for item in use_when)
+        ):
+            raise RuntimeError(
+                f"xverif_tools action entry {index} violates the guide contract"
+            )
+        names.add(name)
+        lines.append(
+            f"{name} [{status}] — {description} Use when: {'; '.join(use_when)}"
+        )
+    return "\n".join(lines)
 
-    Args:
-        category: Filter by category ("debug", "bit", "entry", "loc", "context", "sva").
-        include_write: If False, hide write-protected tools from this catalog view.
+
+@xverif_tool("common")
+def xverif_tools() -> str:
+    """Return the complete xdebug action guide.
+
+    Call this once before choosing any xdebug action. The result contains every
+    runtime action name, stable/experimental status, purpose, and all declared
+    use cases. Then call xverif_debug_get_schema(action) for exact arguments.
     """
-    return {
-        "ok": True,
-        "tools": filtered_catalog(TOOL_CATALOG, category=category, include_write=include_write),
-        "policy": policy_summary(),
-    }
+    return _xdebug_action_guide(debug.actions(verbose=True))
 
 
 @xverif_tool("common")
@@ -952,9 +1288,9 @@ def xverif_tool_help(name: str) -> dict:
     Args:
         name: Exact tool name (e.g. "xverif_debug_query").
     """
-    for t in filtered_catalog(TOOL_CATALOG, include_write=True):
+    for t in filtered_catalog(MCP_TOOL_POLICY, TOOL_CATALOG, include_write=True):
         if t["name"] == name:
-            return {"ok": True, "tool": t, "policy": policy_summary()}
+            return {"ok": True, "tool": t, "policy": MCP_TOOL_POLICY.summary()}
     for t in TOOL_CATALOG:
         if t["name"] == name:
             return _tool_error("TOOL_NOT_ENABLED", f"tool is disabled by MCP policy: {name}")

@@ -7,6 +7,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import anyio
 import pytest
@@ -65,6 +66,86 @@ def _call_tool(monkeypatch: pytest.MonkeyPatch, name: str, args: dict | None = N
     return anyio.run(_run)
 
 
+def _call_server_tool(server, name: str, args: dict | None = None):
+    async def _run():
+        result = await server.mcp.call_tool(name, args or {})
+        return result if isinstance(result, tuple) else (result, None)
+
+    return anyio.run(_run)
+
+
+class _InjectedFakeCoverageLoopManager:
+    """Explicit test-only coverage manager; no public VDB value selects it."""
+
+    def __init__(self) -> None:
+        from xcov.actions import Dispatcher
+        from xcov.backend import FakeCoverageBackend
+        from xcov.session import SessionManager
+
+        self._dispatcher = Dispatcher(
+            SessionManager(backend_factory=lambda vdb: FakeCoverageBackend(vdb))
+        )
+        self._request_seq = 0
+
+    def _dispatch(self, action: str, *, target: dict | None = None, args: dict | None = None) -> dict:
+        self._request_seq += 1
+        request = {
+            "api_version": "xcov.v1",
+            "request_id": f"mcp-fake-{self._request_seq}",
+            "action": action,
+        }
+        if target:
+            request["target"] = target
+        if args:
+            request["args"] = args
+        return self._dispatcher.dispatch(request)
+
+    def open_session(self, name: str, fsdb: str, run_manifest: str | None = None, **kwargs) -> dict:
+        assert not any(value is not None for value in kwargs.values())
+        target = {"vdb": fsdb}
+        if run_manifest is not None:
+            target["run_manifest"] = run_manifest
+        return self._dispatch("session.open", target=target, args={"name": name})
+
+    def query(self, session_id: str, action: str, args: dict, output_format: str, **kwargs):
+        assert kwargs == {}
+        payload = self._dispatch(action, target={"session_id": session_id}, args=args)
+        if output_format == "json":
+            return payload
+        if output_format == "xout":
+            from xcov.protocol import render_xout
+            return render_xout(payload)
+        return {"ok": True, "payload_format": "json", "json": payload}
+
+    def close_session(self, session: str) -> dict:
+        return self._dispatch("session.close", target={"session_id": session})
+
+    def list_sessions(self, **kwargs) -> dict:
+        del kwargs
+        rows = [item.public_json() for item in self._dispatcher.sessions.sessions.values()]
+        return {"ok": True, "sessions": rows, "tombstones": []}
+
+    def doctor_session(self, session: str, verbose: bool = False) -> dict:
+        del verbose
+        return self._dispatch("session.status", target={"session_id": session})
+
+    def kill_session(self, session: str) -> dict:
+        return self.close_session(session)
+
+    def gc_sessions(self, verbose: bool = False) -> dict:
+        del verbose
+        return {"ok": True, "data": {"removed": [], "unresolved": []}}
+
+    def close_all(self) -> dict:
+        responses = [self.close_session(session) for session in list(self._dispatcher.sessions.sessions)]
+        return {"ok": all(response["ok"] for response in responses)}
+
+
+def _inject_fake_coverage(server) -> None:
+    from xverif_mcp.adapters.xcov import XverifCoverageAdapter
+    server.cov = XverifCoverageAdapter(mode="direct", session_manager=_InjectedFakeCoverageLoopManager())
+
+
 def test_mcp_server_initialize(monkeypatch: pytest.MonkeyPatch):
     server = _server(monkeypatch)
     assert server.mcp.name == "xverif"
@@ -107,8 +188,11 @@ def test_stateful_cleanup_logs_and_continues_after_failure(monkeypatch: pytest.M
 
     monkeypatch.setattr(server, "debug", FailingAdapter())
     monkeypatch.setattr(server, "cov", HealthyAdapter())
-    monkeypatch.setattr(server, "log_server_event",
-                        lambda phase, ok, **fields: events.append({"phase": phase, "ok": ok, **fields}))
+    class CaptureLogger:
+        def try_server(self, phase, ok, **fields):
+            events.append({"phase": phase, "ok": ok, **fields})
+
+    monkeypatch.setattr(server, "MCP_LOGGER", CaptureLogger())
 
     server._cleanup_stateful_sessions()
 
@@ -118,7 +202,6 @@ def test_stateful_cleanup_logs_and_continues_after_failure(monkeypatch: pytest.M
         "ok": False,
         "backend": "direct",
         "error_type": "RuntimeError",
-        "error": "close failed",
     }]
 
 
@@ -200,6 +283,162 @@ def test_cov_tools_use_session_id_contract(monkeypatch: pytest.MonkeyPatch):
         assert "session_id" in properties
         assert "session" not in properties
         assert "name" not in properties
+    query_properties = schemas["xverif_cov_query"]["properties"]
+    assert "limits" not in query_properties
+    assert "output" not in query_properties
+
+
+def test_debug_lifecycle_uses_only_required_session_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = _server(monkeypatch)
+
+    async def _schemas():
+        return {tool.name: tool.inputSchema for tool in await server.mcp.list_tools()}
+
+    schemas = anyio.run(_schemas)
+    for name in (
+        "xverif_debug_session_doctor",
+        "xverif_debug_session_close",
+        "xverif_debug_session_kill",
+    ):
+        schema = schemas[name]
+        assert schema["additionalProperties"] is False
+        assert "session_id" in schema["required"]
+        assert "name" not in schema["properties"]
+
+
+def test_public_finite_parameters_publish_enum_contracts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = _server(monkeypatch)
+
+    async def _schemas():
+        return {tool.name: tool.inputSchema for tool in await server.mcp.list_tools()}
+
+    schemas = anyio.run(_schemas)
+    expected = {
+        ("xverif_debug_get_schema", "kind"): ["request", "response"],
+        ("xverif_debug_get_schema", "view"): ["mcp", "response"],
+        ("xverif_debug_query", "output_format"): ["xout", "json", "envelope"],
+        ("xverif_cov_get_schema", "kind"): ["request", "response"],
+        ("xverif_cov_query", "output_format"): ["xout", "json", "envelope"],
+        ("xverif_bit_convert", "state"): ["2", "4"],
+        ("xverif_bit_convert", "output_format"): ["xout", "json"],
+        ("xverif_bit_eval", "state"): ["2", "4"],
+        ("xverif_bit_slice", "state"): ["2", "4"],
+        ("xverif_bit_check", "state"): ["2", "4"],
+        ("xverif_entry_decode", "output_format"): ["xout", "json"],
+        ("xverif_sva_parse_property", "emit"): [
+            "surface-ir", "sequence-ir", "timeline-ir",
+        ],
+        ("xverif_sva_explain_property", "output_format"): [
+            "xout", "json", "markdown",
+        ],
+    }
+    for (tool_name, parameter), values in expected.items():
+        assert schemas[tool_name]["properties"][parameter]["enum"] == values
+
+
+def test_public_tool_argument_models_reject_type_coercion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mcp.server.fastmcp.exceptions import ToolError
+
+    server = _server(monkeypatch)
+    tool = server.mcp._tool_manager.get_tool("xverif_bit_slice")
+    assert tool.fn_metadata.arg_model.model_config["extra"] == "forbid"
+    assert tool.fn_metadata.arg_model.model_config["strict"] is True
+
+    async def _run() -> None:
+        with pytest.raises(ToolError, match="valid integer"):
+            await server.mcp.call_tool(
+                "xverif_bit_slice",
+                {"value": "8'hff", "msb": "7", "lsb": 0},
+            )
+
+    anyio.run(_run)
+
+
+def test_debug_query_exposes_conditional_session_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = _server(monkeypatch)
+
+    async def _schema():
+        tools = await server.mcp.list_tools()
+        return next(tool.inputSchema for tool in tools if tool.name == "xverif_debug_query")
+
+    schema = anyio.run(_schema)
+    assert "session_id" not in schema["required"]
+    assert "action" in schema["required"]
+    assert "requires:none" in schema["properties"]["session_id"]["description"]
+
+
+def test_xverif_tools_returns_complete_runtime_action_guide(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = _server(monkeypatch)
+    server.debug.actions = lambda verbose=False: {
+        "ok": True,
+        "data": {"actions": [
+            {
+                "name": "list.load",
+                "status": "stable",
+                "description_en": "Load named waveform lists.",
+                "use_when": ["Need a reusable set of key waveform signals."],
+            },
+            {
+                "name": "trace.x_origin",
+                "status": "experimental",
+                "description_en": "Trace dynamic X origins.",
+                "use_when": ["Need evidence for the first unknown source."],
+            },
+        ]},
+    }
+    content, _ = _call_server_tool(server, "xverif_tools")
+    guide = content[0].text
+    assert guide.startswith("xdebug actions (2 total).")
+    assert "list.load [stable]" in guide
+    assert "trace.x_origin [experimental]" in guide
+
+    async def _schema():
+        tools = await server.mcp.list_tools()
+        return next(tool.inputSchema for tool in tools if tool.name == "xverif_tools")
+
+    schema = anyio.run(_schema)
+    assert set(schema["properties"]) == {
+        "xverif_output_path", "xverif_output_append",
+    }
+
+
+def test_mcp_instructions_are_bounded_and_route_xdebug_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = _server(monkeypatch)
+    assert len(server.INSTRUCTIONS.encode("utf-8")) <= 2048
+    assert len(server.INSTRUCTIONS.split("\n\n", 1)[0]) <= 512
+    assert "call xverif_tools once" in server.INSTRUCTIONS
+    assert "signal/list/apb/stream/axi selector" in server.INSTRUCTIONS
+    assert "recommended_actions" in server.INSTRUCTIONS
+    assert "Never auto-retry/reopen/fallback" in server.INSTRUCTIONS
+
+
+def test_action_guide_fails_closed_on_malformed_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = _server(monkeypatch)
+    with pytest.raises(RuntimeError, match="malformed"):
+        server._xdebug_action_guide({"ok": True, "data": {"actions": []}})
+    with pytest.raises(RuntimeError, match="violates"):
+        server._xdebug_action_guide({
+            "ok": True,
+            "data": {"actions": [{
+                "name": "actions",
+                "status": "stable",
+                "description_en": "List actions.",
+            }]},
+        })
 
 
 def test_loc_context_requires_explicit_log_line(monkeypatch: pytest.MonkeyPatch):
@@ -249,10 +488,10 @@ def test_session_open_tools_expose_run_manifest_and_forward_it(monkeypatch: pyte
 
 
 def test_mcp_ping_call(monkeypatch: pytest.MonkeyPatch):
-    """Calling xverif_ping should return a string containing 'pong'."""
+    """Calling xverif_ping returns one strict JSON object containing pong."""
     content, structured = _call_tool(monkeypatch, "xverif_ping")
-    assert "pong" in content[0].text.lower()
-    assert structured["result"] == "pong"
+    assert json.loads(content[0].text) == {"ok": True, "result": "pong"}
+    assert structured is None
 
 
 def test_debug_list_actions_verbose_maps_to_native_catalog_projection(
@@ -299,10 +538,18 @@ def test_tool_group_disable_sva(monkeypatch: pytest.MonkeyPatch):
     assert "xverif_sva_explain_property" not in names
     assert "xverif_debug_query" in names
 
-    content, _ = _call_tool(monkeypatch, "xverif_tools", {}, env)
-    payload = json.loads(content[0].text)
-    catalog = {tool["name"] for tool in payload["tools"]}
-    assert "xverif_sva_explain_property" not in catalog
+    server = _server(monkeypatch, env)
+    server.debug.actions = lambda verbose=False: {
+        "ok": True,
+        "data": {"actions": [{
+            "name": "actions",
+            "status": "stable",
+            "description_en": "List the public xdebug action catalog.",
+            "use_when": ["Need runtime action discovery."],
+        }]},
+    }
+    content, _ = _call_server_tool(server, "xverif_tools")
+    assert "actions [stable]" in content[0].text
 
 
 def test_tool_group_disable_debug(monkeypatch: pytest.MonkeyPatch):
@@ -328,17 +575,17 @@ def test_cov_session_fake_lifecycle(monkeypatch: pytest.MonkeyPatch):
         "XVERIF_MCP_BACKEND": "direct",
     }
     server = _server(monkeypatch, overrides)
+    _inject_fake_coverage(server)
 
     async def _run():
         opened = await server.mcp.call_tool(
             "xverif_cov_session_open",
-            {"name": "cov_fake", "vdb": "fake"},
+            {"name": "cov_fake", "vdb": "unit-test.vdb"},
         )
         queried_json = await server.mcp.call_tool(
             "xverif_cov_query",
             {"session_id": "cov_fake", "action": "code_coverage.holes",
-             "args": {"metrics": ["toggle", "branch"]},
-             "limits": {"max_items": 1},
+             "args": {"metrics": ["toggle", "branch"], "limits": {"max_items": 1}},
              "output_format": "json"},
         )
         queried_xout = await server.mcp.call_tool(
@@ -358,9 +605,10 @@ def test_cov_session_fake_lifecycle(monkeypatch: pytest.MonkeyPatch):
     queried_payload = json.loads(queried_json[0].text)
     queried_xout_text = queried_xout[0].text
     assert opened_payload["ok"] is True
-    assert queried_payload["summary"]["matched_count"] == 1
-    assert queried_payload["summary"]["returned"] == 1
-    assert queried_xout_text.startswith("@xcov.v1 ok action=code_coverage.summary")
+    assert queried_payload["summary"]["total_count"] == 1
+    assert queried_payload["summary"]["returned_count"] == 1
+    assert queried_xout_text.startswith("@xcov.v1")
+    assert "action=code_coverage.summary" in queried_xout_text.splitlines()[0]
     assert "XOUT_BEGIN" not in queried_xout_text
     assert "XOUT_END" not in queried_xout_text
 
@@ -392,17 +640,13 @@ def test_tool_group_disable_common(monkeypatch: pytest.MonkeyPatch):
     assert "xverif_debug_query" in names
 
 
-def test_invalid_bool_policy_warning(monkeypatch: pytest.MonkeyPatch):
-    content, _ = _call_tool(
-        monkeypatch,
-        "xverif_tools",
-        {},
-        {"XVERIF_MCP_ENABLE_SVA": "maybe"},
-    )
-    payload = json.loads(content[0].text)
-    assert "xverif_sva_explain_property" in {tool["name"] for tool in payload["tools"]}
-    assert payload["policy"]["warnings"]
-    assert "XVERIF_MCP_ENABLE_SVA" in payload["policy"]["warnings"][0]
+def test_invalid_bool_policy_fails_closed_with_typed_config_error(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from xverif_loop.config import ConfigError
+
+    with pytest.raises(ConfigError, match="XVERIF_MCP_ENABLE_SVA"):
+        _server(monkeypatch, {"XVERIF_MCP_ENABLE_SVA": "maybe"})
 
 
 def test_tool_help_disabled_tool_is_hidden(monkeypatch: pytest.MonkeyPatch):
@@ -474,7 +718,8 @@ def test_output_path_invalid_dir_returns_structured_failure(monkeypatch: pytest.
     assert payload["ok"] is False
     assert payload["error"]["code"] == "OUTPUT_WRITE_FAILED"
     assert payload["error"]["output_path"] == "/nonexistent/dir/rsp.txt"
-    assert payload["data"]["result"] == "pong"
+    assert "data" not in payload
+    assert content.structuredContent is None
 
 
 def test_batch_fake_lifecycle(tmp_path, monkeypatch: pytest.MonkeyPatch):
@@ -486,10 +731,12 @@ def test_batch_fake_lifecycle(tmp_path, monkeypatch: pytest.MonkeyPatch):
         "XVERIF_HOME": str(Path(__file__).resolve().parents[2]),
         "XVERIF_MCP_BACKEND": "direct",
     }
+    server = _server(monkeypatch, overrides)
+    _inject_fake_coverage(server)
 
     batch_file.write_text("\n".join([
         json.dumps({"tool": "xverif_cov_session_open",
-                     "args": {"name": "cov_fake", "vdb": "fake"}}),
+                     "args": {"name": "cov_fake", "vdb": "unit-test.vdb"}}),
         json.dumps({"tool": "xverif_cov_query",
                      "args": {"session_id": "cov_fake", "action": "code_coverage.holes",
                               "args": {"metrics": ["line"], "limits": {"max_items": 2}},
@@ -501,11 +748,10 @@ def test_batch_fake_lifecycle(tmp_path, monkeypatch: pytest.MonkeyPatch):
                      "args": {"expr": "2 + 3"}}),
     ]) + "\n")
 
-    content, _ = _call_tool(
-        monkeypatch,
+    content, _ = _call_server_tool(
+        server,
         "xverif_batch",
         {"batch_file": str(batch_file), "output_file": str(output_file)},
-        overrides,
     )
     payload = json.loads(content[0].text)
     assert payload["ok"] is True
@@ -552,15 +798,15 @@ def test_batch_format_errors(tmp_path, monkeypatch: pytest.MonkeyPatch):
     assert len(lines) == 5
     assert lines[0]["tool"] is None
     assert lines[0]["ok"] is False
-    assert "INVALID_JSON" in lines[0]["error"]
+    assert lines[0]["error"]["code"] == "INVALID_JSON"
     assert lines[0]["line_number"] == 1
     assert lines[1]["tool"] is None
     assert lines[1]["ok"] is False
-    assert "MISSING_TOOL_FIELD" in lines[1]["error"]
+    assert lines[1]["error"]["code"] == "INVALID_BATCH_REQUEST"
     assert lines[1]["line_number"] == 2
     assert lines[2]["tool"] == "xverif_bit_eval"
     assert lines[2]["ok"] is False
-    assert "INVALID_BATCH_ARGUMENTS" in lines[2]["error"]
+    assert lines[2]["error"]["code"] == "INVALID_BATCH_ARGUMENTS"
     assert lines[2]["line_number"] == 3
     assert lines[3]["tool"] == "xverif_no_such_tool"
     assert lines[3]["ok"] is False
@@ -568,6 +814,32 @@ def test_batch_format_errors(tmp_path, monkeypatch: pytest.MonkeyPatch):
     assert lines[4]["tool"] == "xverif_ping"
     assert lines[4]["ok"] is True
     assert lines[4]["line_number"] == 5
+
+
+def test_batch_accepts_nonempty_compact_text_without_parsing_xout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = _server(monkeypatch)
+
+    def plain_pong() -> Any:
+        return "pong"
+
+    def at_prefixed_text() -> Any:
+        return "@looks.structured.v1\nbut is intentionally compact text\n"
+
+    server.mcp.add_tool(plain_pong, name="test_plain_pong")
+    server.mcp.add_tool(at_prefixed_text, name="test_at_prefixed_text")
+
+    async def _run():
+        return (
+            await server._execute_one("test_plain_pong", {}),
+            await server._execute_one("test_at_prefixed_text", {}),
+        )
+
+    pong, at_text = anyio.run(_run)
+    assert pong[0] is True and pong[1] is None and pong[3] == "pong"
+    assert at_text[0] is True and at_text[1] is None
+    assert at_text[3].startswith("@looks.structured.v1")
 
 
 def test_batch_file_not_found(tmp_path, monkeypatch: pytest.MonkeyPatch):
