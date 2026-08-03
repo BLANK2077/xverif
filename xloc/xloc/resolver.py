@@ -1,88 +1,137 @@
-import os
-import sys
+"""Resolve xloc IDs and retrieve strict source context."""
 
-from .mapfile import load_map, resolve_loc
-from .xout import TextResponseBuilder
+from __future__ import annotations
+
+from typing import Any
+
+from .contracts import error_response, success_base, validate_response
+from .errors import XlocError
+from .mapfile import LOC_ID_RE, load_map, resolve_loc
+from .xout import to_xout
 
 
-def resolve_payload(loc_id: str, map_path: str) -> dict:
+def _require_loc_id(loc_id: str) -> None:
+    if not isinstance(loc_id, str) or LOC_ID_RE.fullmatch(loc_id) is None:
+        raise XlocError(
+            "INVALID_LOC_ID",
+            "loc_id must match L_[0-9A-F]{8}",
+            loc_id=loc_id if isinstance(loc_id, str) and loc_id else None,
+        )
+
+
+def _require_non_negative(value: Any, name: str) -> None:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise XlocError("INVALID_ARGUMENT", f"{name} must be a non-negative integer")
+
+
+def _resolve_entry(loc_id: str, map_path: str) -> dict[str, str]:
+    _require_loc_id(loc_id)
     entries = load_map(map_path)
     entry = resolve_loc(entries, loc_id)
     if entry is None:
-        return {"ok": False, "action": "resolve", "error": {"code": "LOC_ID_NOT_FOUND", "message": f"{loc_id}: not found in {map_path}"}, "loc_id": loc_id}
-    payload = {"ok": True, "action": "resolve", "loc_id": loc_id}
-    payload.update(entry)
-    return payload
+        raise XlocError(
+            "LOC_ID_NOT_FOUND",
+            f"{loc_id} not found in map {map_path}",
+            path=map_path,
+            loc_id=loc_id,
+        )
+    return entry
 
 
-def context_payload(loc_id: str, map_path: str, line: int,
-                    before: int = 20, after: int = 20) -> dict:
+def resolve_payload(loc_id: str, map_path: str) -> dict[str, Any]:
+    try:
+        entry = _resolve_entry(loc_id, map_path)
+    except XlocError as exc:
+        return error_response("resolve", exc)
+    payload = success_base(
+        "resolve", analysis_complete=True, response_truncated=False,
+        total_count=1, returned_count=1, truncation_scopes=[], diagnostics=[],
+    )
+    payload.update({"map": map_path, "loc_id": entry["loc_id"], "file": entry["file"]})
+    return validate_response(payload)
+
+
+def _strip_line_ending(text: str) -> str:
+    if text.endswith("\r\n"):
+        return text[:-2]
+    if text.endswith("\n") or text.endswith("\r"):
+        return text[:-1]
+    return text
+
+
+def context_payload(
+    loc_id: str,
+    map_path: str,
+    line: int,
+    before: int = 20,
+    after: int = 20,
+) -> dict[str, Any]:
+    try:
+        if not isinstance(line, int) or isinstance(line, bool) or line <= 0:
+            raise XlocError("INVALID_LINE", "line must be a positive integer")
+        _require_non_negative(before, "before")
+        _require_non_negative(after, "after")
+        entry = _resolve_entry(loc_id, map_path)
+        filepath = entry["file"]
+        try:
+            with open(filepath, "r", encoding="utf-8", newline="") as stream:
+                source_lines = stream.readlines()
+        except FileNotFoundError as exc:
+            raise XlocError(
+                "SOURCE_FILE_NOT_FOUND", f"source file not found: {filepath}",
+                path=filepath, loc_id=loc_id,
+            ) from exc
+        except UnicodeDecodeError as exc:
+            raise XlocError(
+                "SOURCE_INVALID_UTF8",
+                f"source is not valid UTF-8 at byte {exc.start}: {filepath}",
+                path=filepath, loc_id=loc_id,
+            ) from exc
+        except OSError as exc:
+            raise XlocError(
+                "SOURCE_READ_ERROR", f"cannot read source file {filepath}: {exc}",
+                path=filepath, loc_id=loc_id,
+            ) from exc
+        if line > len(source_lines):
+            raise XlocError(
+                "SOURCE_LINE_OUT_OF_RANGE",
+                f"source line {line} is outside {filepath} (line_count={len(source_lines)})",
+                path=filepath, line=line, loc_id=loc_id, count=len(source_lines),
+            )
+    except XlocError as exc:
+        return error_response("context", exc)
+
+    start = max(0, line - before - 1)
+    end = min(len(source_lines), line + after)
+    context = [
+        {"line": index + 1, "hit": index == line - 1, "text": _strip_line_ending(source_lines[index])}
+        for index in range(start, end)
+    ]
+    payload = success_base(
+        "context", analysis_complete=True, response_truncated=False,
+        total_count=len(context), returned_count=len(context),
+        truncation_scopes=[], diagnostics=[],
+    )
+    payload.update({
+        "map": map_path, "loc_id": entry["loc_id"], "file": entry["file"],
+        "line": line, "before": before, "after": after, "context": context,
+    })
+    return validate_response(payload)
+
+
+def render_payload(payload: dict[str, Any]) -> str:
+    return to_xout(payload)
+
+
+def cmd_resolve(loc_id: str, map_path: str) -> int:
     payload = resolve_payload(loc_id, map_path)
-    payload["action"] = "context"
-    if not payload.get("ok"):
-        return payload
-    if line <= 0:
-        payload["ok"] = False
-        payload["error"] = {
-            "code": "INVALID_LINE",
-            "message": "line must be a positive integer",
-        }
-        return payload
-    filepath = payload.get('file', '')
-    line_num = line
-    payload["line"] = line_num
-    payload["context"] = []
-    if not filepath or not os.path.exists(filepath):
-        payload["warning"] = f"source file not found: {filepath}"
-        return payload
-    with open(filepath, 'r') as f:
-        lines = f.readlines()
-    start = max(0, line_num - before - 1)
-    end = min(len(lines), line_num + after)
-    for i in range(start, end):
-        payload["context"].append({"line": i + 1, "hit": i == line_num - 1, "text": lines[i].rstrip()})
-    return payload
-
-
-def render_payload(payload: dict) -> str:
-    out = TextResponseBuilder("xloc")
-    out.emit_header(payload.get("action", "resolve"))
-    if not payload.get("ok"):
-        out.emit_error(payload.get("error", {}))
-        return out.render()
-    out.emit_section("target")
-    out.emit_kv("loc_id", payload.get("loc_id"))
-    out.emit_section("summary")
-    out.emit_kv("file", payload.get("file"))
-    if payload.get("action") == "context":
-        out.emit_kv("line", payload.get("line"))
-    out.emit_section("evidence")
-    if payload.get("file") and payload.get("line"):
-        out.emit_row(f"{payload.get('file')}:{payload.get('line')}")
-    if payload.get("context"):
-        out.emit_section("data")
-        for row in payload["context"]:
-            marker = ">>>" if row.get("hit") else "..."
-            out.emit_row(marker, row.get("line"), row.get("text"))
-    if payload.get("warning"):
-        out.emit_warning("SOURCE_NOT_FOUND", payload["warning"])
-    return out.render()
-
-
-def cmd_resolve(loc_id: str, map_path: str) -> None:
-    """resolve <loc_id> — print the source file for a loc_id."""
-    payload = resolve_payload(loc_id, map_path)
-    if not payload.get("ok"):
-        print(payload["error"]["message"], file=sys.stderr)
-        sys.exit(1)
     print(render_payload(payload), end="")
+    return 0 if payload["ok"] else 1
 
 
-def cmd_context(loc_id: str, map_path: str, line: int,
-                before: int = 20, after: int = 20) -> None:
-    """context <loc_id> --line <line> — print surrounding source lines."""
+def cmd_context(
+    loc_id: str, map_path: str, line: int, before: int = 20, after: int = 20,
+) -> int:
     payload = context_payload(loc_id, map_path, line, before, after)
-    if not payload.get("ok"):
-        print(payload["error"]["message"], file=sys.stderr)
-        sys.exit(1)
     print(render_payload(payload), end="")
+    return 0 if payload["ok"] else 1

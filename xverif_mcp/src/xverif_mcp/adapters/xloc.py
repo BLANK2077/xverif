@@ -1,82 +1,78 @@
-"""Stateless xloc adapter - UVM log location resolver."""
+"""Stateless xloc adapter using the strict in-process xloc contract."""
+
 from __future__ import annotations
 
-from typing import Any, Optional, Set
+from typing import Any, Literal, Optional
 
-from xverif_mcp.errors import error_payload
 from xverif_mcp.import_paths import ensure_tool_import_paths
 
 ensure_tool_import_paths()
 
-from xloc.mapfile import find_map_file, iter_loc_ids, load_map
+from xloc.annotate import annotate_payload
+from xloc.contracts import error_response
+from xloc.errors import XlocError
 from xloc.resolver import context_payload, render_payload, resolve_payload
 from xloc.stats import render_stats, stats_payload
+from xloc.xout import to_xout
+
+OutputFormat = Literal["xout", "json"]
 
 
-def _error(action: str, exc: Exception) -> dict:
-    return error_payload("XLOC_ERROR", str(exc), action=action)
-
-
-def _annotate_text(log_path: str, map_path: Optional[str] = None) -> str:
-    if map_path is None:
-        map_path = find_map_file(log_path)
-    entries = load_map(map_path) if map_path else {}
-    seen: Set[str] = set()
-    lines: list[str] = []
-    with open(log_path, "r", encoding="utf-8", errors="replace") as stream:
-        for line in stream:
-            for loc_id in iter_loc_ids(line):
-                if loc_id in seen:
-                    continue
-                seen.add(loc_id)
-                entry = entries.get(loc_id, {})
-                filepath = entry.get("file", "?")
-                lines.append(f"[loc] {loc_id} -> {filepath}\n")
-            lines.append(line)
-    return "".join(lines)
-
-
-def loc_resolve(loc_id: str, map_path: str,
-                output_format: str = "json") -> Any:
-    """Resolve a loc_id (L_XXXXXXXX) to a source file."""
-    try:
-        payload = resolve_payload(loc_id, map_path)
-    except Exception as exc:
-        payload = _error("resolve", exc)
+def _emit(action: str, payload: dict[str, Any], output_format: str) -> Any:
     if output_format == "json":
         return payload
-    return render_payload(payload)
+    if output_format == "xout":
+        if action == "stats":
+            return render_stats(payload)
+        if action in {"resolve", "context"}:
+            return render_payload(payload)
+        return to_xout(payload)
+    return error_response(
+        action,
+        XlocError(
+            "INVALID_OUTPUT_FORMAT",
+            "output_format must be one of: json, xout",
+        ),
+    )
 
 
-def loc_context(loc_id: str, map_path: str, line: int, before: int = 20,
-                after: int = 20, output_format: str = "xout") -> Any:
+def loc_resolve(
+    loc_id: str, map_path: str, output_format: OutputFormat = "xout",
+) -> Any:
+    """Resolve a strict loc_id (L_XXXXXXXX) to a source file."""
+    return _emit("resolve", resolve_payload(loc_id, map_path), output_format)
+
+
+def loc_context(
+    loc_id: str,
+    map_path: str,
+    line: int,
+    before: int = 20,
+    after: int = 20,
+    output_format: OutputFormat = "xout",
+) -> Any:
     """Resolve a loc_id and show source context at an explicit line."""
-    try:
-        payload = context_payload(loc_id, map_path, line, before, after)
-    except Exception as exc:
-        payload = _error("context", exc)
-    if output_format == "json":
-        return payload
-    return render_payload(payload)
+    return _emit(
+        "context",
+        context_payload(loc_id, map_path, line, before, after),
+        output_format,
+    )
 
 
-def loc_stats(log_path: str, map_path: Optional[str] = None,
-              top: int = 20, output_format: str = "json") -> Any:
+def loc_stats(
+    log_path: str,
+    map_path: Optional[str] = None,
+    top: int = 20,
+    output_format: OutputFormat = "xout",
+) -> Any:
     """Count loc_id frequency in a simulation log."""
-    try:
-        payload = stats_payload(log_path, map_path, top)
-    except Exception as exc:
-        payload = _error("stats", exc)
-    if output_format == "json":
-        return payload
-    return render_stats(payload)
+    return _emit("stats", stats_payload(log_path, map_path, top), output_format)
 
 
-def loc_annotate(log_path: str, map_path: Optional[str] = None,
-                 output_format: str = "xout") -> Any:
-    """Insert location hints into a simulation log."""
-    del output_format
-    try:
-        return _annotate_text(log_path, map_path)
-    except Exception as exc:
-        return _error("annotate", exc)
+def loc_annotate(
+    log_path: str,
+    map_path: Optional[str] = None,
+    output_format: OutputFormat = "xout",
+) -> Any:
+    """Return a strict annotated-log response without a raw-text fallback."""
+    return _emit("annotate", annotate_payload(log_path, map_path), output_format)
