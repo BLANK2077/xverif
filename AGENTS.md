@@ -247,3 +247,9 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 - 错误现象：临时重建仓库尚未完成统一构建时先运行 `xdebug.counter_statistics` 正式 runtime suite，wrapper 因本仓库 `xdebug/xdebug` 不存在以 127 退出，未进入产品逻辑。
 - 误判原因：把 Python 合同和源码 syntax closure 当成 runtime suite 已具备可执行产物，没有先核对正式 wrapper 解析到的目标 binary。
 - 以后规则：临时重建仓库的 runtime、FSDB、NPI 或 native XOUT suite 必须在源码冻结并完成本仓库统一 clean build 后运行；启动前先核对 wrapper 与 binary 的实际路径，禁止改用其它工作树 binary fallback。
+
+### 2026-08-04 环境错误复盘
+
+- 错误现象：在双引号包裹的 `rg` 搜索模式中写入 Markdown 反引号，shell 再次把 action 标题片段当作命令替换执行。
+- 误判原因：组合多个报告标题模式时没有继续遵守仓库既有的反引号搜索规则。
+- 以后规则：任何包含 Markdown 反引号的 shell 搜索模式一律使用单引号；需要组合变量时拆成多个不含反引号的模式，不在双引号中嵌入反引号。
