@@ -31,9 +31,7 @@ int int_or(const Json& obj, const char* key, int def);
 bool bool_or(const Json& obj, const char* key, bool def);
 
 bool parse_apb_config(const Json& j, ApbConfig& c, std::string& err);
-Json apb_config_json(const ApbConfig& c);
 bool parse_axi_config(const Json& j, AxiConfig& c, std::string& err);
-Json axi_config_json(const AxiConfig& c);
 bool parse_event_config(const Json& j, EventConfig& c, std::string& err);
 Json event_config_json(const EventConfig& c);
 bool load_config_json_arg(const Json& args, Json& config, std::string& err);
