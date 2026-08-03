@@ -224,6 +224,8 @@ def _success(
         if emit is _MISSING:
             raise ValueError("parse response requires emit")
         payload["emit"] = emit
+    elif emit is not _MISSING:
+        raise ValueError(f"{action} response does not declare emit")
     normalized = to_jsonable(payload)
     validate_response(normalized, expected_action=action)
     return normalized

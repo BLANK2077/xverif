@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from xsva.contracts import ResponseContractError, validate_response
+from xsva.cli import _success
 from xsva.xout import to_xout
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -168,3 +169,86 @@ def test_xout_rejects_non_string_object_keys(tmp_path):
     payload[1] = "coercion-is-not-allowed"
     with pytest.raises(TypeError, match="object key type"):
         to_xout(payload)
+
+
+def test_parse_nested_results_are_closed_for_every_emit(tmp_path):
+    mutations = []
+    for emit in ("surface-ir", "sequence-ir", "timeline-ir"):
+        result = _run(
+            tmp_path,
+            SOURCE,
+            "parse",
+            "--property",
+            "p_req_ack",
+            "--emit",
+            emit,
+            "--json",
+        )
+        assert result.returncode == 0, result.stderr
+        payload = json.loads(result.stdout)
+        validate_response(payload, expected_action="parse")
+        mutated = deepcopy(payload)
+        if emit == "surface-ir":
+            mutated["result"]["clock"]["fallback"] = True
+        elif emit == "sequence-ir":
+            mutated["result"]["antecedent"][0]["fallback"] = True
+        else:
+            mutated["result"]["trigger"]["fallback"] = True
+        mutations.append(mutated)
+
+    for payload in mutations:
+        with pytest.raises(ResponseContractError, match="unknown fields"):
+            validate_response(payload, expected_action="parse")
+
+
+def test_diagnostics_and_lint_facts_are_closed_and_correlated(tmp_path):
+    result = _run(
+        tmp_path,
+        "a_missing: assert property (p_missing);",
+        "lint",
+        "--json",
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["lowering_status"] == "unsupported"
+    assert payload["result"]["issue_count"] == len(payload["diagnostics"]) == 1
+    assert payload["diagnostics"][0]["code"] == "XSVA-E002"
+
+    wrong_count = deepcopy(payload)
+    wrong_count["result"]["issue_count"] += 1
+    with pytest.raises(ResponseContractError, match="issue_count"):
+        validate_response(wrong_count, expected_action="lint")
+
+    unknown_span = deepcopy(payload)
+    unknown_span["diagnostics"][0]["span"]["fallback"] = 0
+    with pytest.raises(ResponseContractError, match="unknown fields"):
+        validate_response(unknown_span, expected_action="lint")
+
+
+def test_timeline_failure_conditions_are_bound_to_obligations(tmp_path):
+    payload = json.loads(
+        _run(
+            tmp_path,
+            SOURCE,
+            "parse",
+            "--property",
+            "p_req_ack",
+            "--emit",
+            "timeline-ir",
+            "--json",
+        ).stdout
+    )
+    assert payload["result"]["failure_conditions"]
+    payload["result"]["failure_conditions"][0] = "compatibility fallback"
+    with pytest.raises(ResponseContractError, match="canonical"):
+        validate_response(payload, expected_action="parse")
+
+
+def test_non_parse_success_cannot_publish_emit():
+    with pytest.raises(ValueError, match="does not declare emit"):
+        _success(
+            "list",
+            file="input.sva",
+            result={"properties": [], "assertions": []},
+            emit="timeline-ir",
+        )
