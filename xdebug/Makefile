@@ -75,6 +75,7 @@ ENGINE_SRCS = src/engine/main.cpp \
               src/engine/session/session_registry.cpp \
               src/engine/session/session_manager.cpp \
               src/engine/session/session_transport.cpp \
+              src/engine/session/json_line_reader.cpp \
               src/engine/session/client.cpp \
               src/engine/service/engine_action_registry.cpp \
               src/engine/service/engine_action_handler.cpp \
@@ -285,6 +286,7 @@ $(eval $(call CPP_UNIT_BINARY,test_file_exchange,$(CORE_OBJS),$(LDFLAGS)))
 $(eval $(call CPP_UNIT_BINARY,test_process_runner,$(CORE_OBJS),$(LDFLAGS)))
 $(eval $(call CPP_UNIT_BINARY,test_session_catalog,$(BUILD)/src/session/session_catalog.o $(BUILD)/src/core/session/session_registry_contract.o $(BUILD)/src/core/session/session_types.o $(BUILD)/src/core/common/path_utils.o $(BUILD)/src/core/common/env_config.o,))
 $(eval $(call CPP_UNIT_BINARY,test_session_registry,$(BUILD)/src/engine/session/session_registry.o $(BUILD)/src/design/common/xdebug_design_paths.o $(BUILD)/src/core/session/session_registry_contract.o $(BUILD)/src/core/session/session_types.o $(BUILD)/src/core/common/path_utils.o $(BUILD)/src/core/common/env_config.o $(BUILD)/src/core/common/tool_config.o,$(LDFLAGS)))
+$(eval $(call CPP_UNIT_BINARY,test_session_json_line_reader,$(BUILD)/src/engine/session/json_line_reader.o,))
 $(eval $(call CPP_UNIT_BINARY,test_action_registry,$(CORE_OBJS) $(API_SUPPORT_OBJS) $(BUILD)/src/api/response.o,$(LDFLAGS)))
 $(eval $(call CPP_UNIT_BINARY,test_request_contract,$(CORE_OBJS) $(API_SUPPORT_OBJS) $(BUILD)/src/api/response.o,$(LDFLAGS)))
 $(eval $(call CPP_UNIT_BINARY,test_text_response_builder,$(BUILD)/src/api/text_response_builder.o $(BUILD)/src/api/xout_renderer.o $(BUILD)/src/core/value/logic_value.o,))

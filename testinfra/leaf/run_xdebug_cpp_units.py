@@ -15,6 +15,7 @@ BINARIES = (
     "test_process_runner",
     "test_session_catalog",
     "test_session_registry",
+    "test_session_json_line_reader",
     "test_action_registry",
     "test_request_contract",
     "test_text_response_builder",

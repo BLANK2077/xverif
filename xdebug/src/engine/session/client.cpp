@@ -2,6 +2,7 @@
 
 #include "../../design/protocol/protocol.h"
 #include "core/schema/internal_request_contract.h"
+#include "json_line_reader.h"
 #include "session_lifecycle_lease.h"
 #include "session_manager.h"
 #include "session_transport.h"
@@ -46,25 +47,6 @@ static Json transport_timeout_log_context(
         }
     }
     return context;
-}
-
-static bool read_json_line(int fd, Json& response) {
-    std::string line;
-    char c = 0;
-    while (line.size() <= 1024 * 1024) {
-        ssize_t n = read(fd, &c, 1);
-        if (n <= 0) return false;
-        if (c == '\n') {
-            try {
-                response = Json::parse(line);
-                return true;
-            } catch (...) {
-                return false;
-            }
-        }
-        line.push_back(c);
-    }
-    return false;
 }
 
 bool send_request_capture(const std::string& session_id,
@@ -193,7 +175,8 @@ bool send_request_capture(const std::string& session_id,
             session.auth_token);
     }
     Json response;
-    bool received = write_json_line(fd, rpc) && read_json_line(fd, response);
+    bool received =
+        write_json_line(fd, rpc) && read_bounded_json_line(fd, response);
     close(fd);
     if (!received) {
         status = "transport_failed";
