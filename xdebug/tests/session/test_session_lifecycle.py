@@ -194,14 +194,14 @@ def resource_targets(xverif_fixture):
     combined = xverif_fixture("xdebug.active_driver")
     return {
         "design": {
-            "daidir": str(uart / "simv.daidir")
+            "daidir": str((uart / "simv.daidir").resolve())
         },
         "waveform": {
-            "fsdb": str(wave / "out/waves.fsdb")
+            "fsdb": str((wave / "out/waves.fsdb").resolve())
         },
         "combined": {
-            "daidir": str(combined / "out/simv.daidir"),
-            "fsdb": str(combined / "out/waves.fsdb"),
+            "daidir": str((combined / "out/simv.daidir").resolve()),
+            "fsdb": str((combined / "out/waves.fsdb").resolve()),
         },
     }
 
