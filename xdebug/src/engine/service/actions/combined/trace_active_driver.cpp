@@ -55,8 +55,7 @@ public:
             domain_request,
             g_daidir_path,
             g_fsdb_path,
-            g_fsdb_file,
-            true);
+            g_fsdb_file);
         if (raw.contains("error")) return raw;
         Json out = simplify_active_driver_payload(raw,
                                                   signal,
@@ -67,7 +66,8 @@ public:
     }
 
     std::string render_xout(const Json& response) const override {
-        return render_source_path_xout(action_name(), response);
+        return append_common_blocks_xout(
+            render_source_path_xout(action_name(), response), response);
     }
 
 };

@@ -55,6 +55,9 @@ StatisticsMatch match_statistics_transaction(
     const StatisticsTransactionView& transaction);
 Json statistics_filter_json(const StatisticsFilter& filter, bool include_ids,
                             int address_width, int id_width = 0);
+std::string statistics_ids_xout(const Json& ids);
 const char* statistics_unresolved_note();
+std::string render_statistics_xout(const std::string& action,
+                                   const Json& response);
 
 }  // namespace xdebug_design

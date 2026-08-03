@@ -4,6 +4,7 @@
 #include "protocol_action_helpers.h"
 #include "protocol_query_filter.h"
 
+#include "api/text_response_builder.h"
 #include "core/npi/time_contract.h"
 #include "core/output/completeness.h"
 #include "waveform/axi/axi_analyzer.h"
@@ -11,6 +12,7 @@
 #include "waveform/axi/axi_transaction_json.h"
 
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -18,6 +20,117 @@ namespace xdebug_design {
 namespace {
 
 enum class AxiDataProjection { None, Default, All };
+
+std::string xout_scalar(const Json& object, const char* key) {
+    if (!object.is_object() || !object.contains(key) ||
+        !xdebug::is_xout_scalar_json(object[key])) {
+        return std::string();
+    }
+    return xdebug::json_to_xout_value(object[key]);
+}
+
+void emit_axi_scalar_section(
+    xdebug::TextResponseBuilder& out,
+    const std::string& name,
+    const Json& object,
+    std::initializer_list<const char*> preferred) {
+    if (!object.is_object() || object.empty()) return;
+    out.emit_section(name);
+    std::set<std::string> emitted;
+    for (const char* key : preferred) {
+        if (!object.contains(key) || !xdebug::is_xout_scalar_json(object[key])) continue;
+        out.emit_kv(key, object[key]);
+        emitted.insert(key);
+    }
+    for (auto it = object.begin(); it != object.end(); ++it) {
+        if (emitted.count(it.key()) || !xdebug::is_xout_scalar_json(it.value())) continue;
+        out.emit_kv(it.key(), it.value());
+    }
+}
+
+void emit_axi_transaction_domains(
+    xdebug::TextResponseBuilder& out,
+    const Json& transaction,
+    const std::string& prefix) {
+    emit_axi_scalar_section(
+        out, prefix + "_address", transaction.value("address", Json::object()),
+        {"channel", "valid_begin_time", "handshake_time", "addr", "id",
+         "len", "size", "burst"});
+
+    const Json data = transaction.value("data", Json::object());
+    emit_axi_scalar_section(
+        out, prefix + "_data", data,
+        {"channel", "valid_begin_time", "first_handshake_time",
+         "last_handshake_time", "beat_count", "expected_beat_count"});
+    Json beats = data.value("beats", Json::array());
+    if ((!beats.is_array() || beats.empty()) &&
+        data.contains("first_beat") && data["first_beat"].is_object()) {
+        beats = Json::array({data["first_beat"]});
+    }
+    if (beats.is_array() && !beats.empty()) {
+        std::vector<std::vector<std::string>> rows;
+        for (const auto& beat : beats) {
+            rows.push_back({
+                xout_scalar(beat, "index"), xout_scalar(beat, "handshake_time"),
+                xout_scalar(beat, "data"), xout_scalar(beat, "wstrb"),
+                xout_scalar(beat, "resp"), xout_scalar(beat, "last")});
+        }
+        out.emit_section(prefix + "_beats");
+        out.emit_table(
+            {"index", "handshake_time", "data", "wstrb", "resp", "last"},
+            rows);
+    }
+
+    emit_axi_scalar_section(
+        out, prefix + "_response", transaction.value("response", Json::object()),
+        {"channel", "handshake_time", "resp"});
+}
+
+std::string render_axi_query_xout(const Json& response) {
+    Json metadata = response;
+    if (metadata.contains("data") && metadata["data"].is_object()) {
+        metadata["data"].erase("transaction");
+        metadata["data"].erase("transactions");
+    }
+    std::string text = render_tabular_xout("axi.query", metadata);
+    const Json data = response.value("data", Json::object());
+
+    xdebug::TextResponseBuilder out("xdebug");
+    const Json transaction = data.value("transaction", Json());
+    if (transaction.is_object() && !transaction.empty()) {
+        emit_axi_scalar_section(
+            out, "transaction", transaction,
+            {"direction", "phase_order", "latency",
+             "response_dependency_violation", "match_time"});
+        emit_axi_transaction_domains(out, transaction, "transaction");
+    }
+
+    const Json transactions = data.value("transactions", Json::array());
+    if (transactions.is_array() && !transactions.empty()) {
+        std::vector<std::vector<std::string>> rows;
+        for (size_t i = 0; i < transactions.size(); ++i) {
+            const Json& item = transactions[i];
+            rows.push_back({
+                std::to_string(i + 1), xout_scalar(item, "direction"),
+                xout_scalar(item, "phase_order"), xout_scalar(item, "latency"),
+                xout_scalar(item, "response_dependency_violation"),
+                xout_scalar(item, "match_time")});
+        }
+        out.emit_section("transactions");
+        out.emit_table(
+            {"index", "direction", "phase_order", "latency",
+             "response_dependency_violation", "match_time"}, rows);
+        for (size_t i = 0; i < transactions.size(); ++i) {
+            emit_axi_transaction_domains(
+                out, transactions[i], "transaction_" + std::to_string(i + 1));
+        }
+    }
+
+    std::string details = out.str();
+    if (details == "\n") return text;
+    while (!text.empty() && text.back() == '\n') text.pop_back();
+    return text + "\n\n" + details;
+}
 
 const char* data_scope(AxiDataProjection projection) {
     if (projection == AxiDataProjection::All)
@@ -140,16 +253,18 @@ public:
         }
 
         AxiConfig config;
-        std::string analysis_error;
-        if (!ensure_axi_analyzed(name, config, analysis_error)) {
-            if (analysis_error.rfind("AXI config not found:", 0) == 0)
+        ProtocolEnsureResult ensured = ensure_axi_analyzed(name, config);
+        if (!ensured.ok()) {
+            if (ensured.status == ProtocolEnsureStatus::ConfigNotFound)
                 return protocol_config_not_found_error(
                     action_name(), "axi", name);
+            if (ensured.status == ProtocolEnsureStatus::StoreError)
+                return make_config_store_error(ensured.store);
             if (!g_axi_analyzer.last_cache_error().empty())
                 return make_analysis_cache_error(
                     g_axi_analyzer.last_cache_error());
             return protocol_analyze_error(
-                action_name(), "axi", name, analysis_error);
+                action_name(), "axi", name, ensured.message);
         }
 
         const AxiResult* result = g_axi_analyzer.get_result(name);
@@ -362,7 +477,7 @@ public:
     }
 
     std::string render_xout(const Json& response) const override {
-        return render_tabular_xout(action_name(), response);
+        return render_axi_query_xout(response);
     }
 };
 

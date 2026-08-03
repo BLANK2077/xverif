@@ -1,5 +1,6 @@
 #include "protocol_statistics_filter.h"
 
+#include "api/text_response_builder.h"
 #include "core/value/logic_value.h"
 
 namespace xdebug_design {
@@ -169,8 +170,53 @@ Json statistics_filter_json(const StatisticsFilter& filter, bool include_ids,
     return out;
 }
 
+std::string statistics_ids_xout(const Json& ids) {
+    std::string out = "[";
+    for (size_t index = 0; index < ids.size(); ++index) {
+        if (index) out += ", ";
+        out += ids[index].get<std::string>();
+    }
+    out += "]";
+    return out;
+}
+
 const char* statistics_unresolved_note() {
     return "因被引用的 address/ID 含 X/Z 或不可解析，导致无法判断是否匹配过滤条件的已完成事务数。";
+}
+
+std::string render_statistics_xout(const std::string& action,
+                                   const Json& response) {
+    xdebug::TextResponseBuilder out("xdebug");
+    out.emit_header(action);
+    const Json summary = response.value("summary", Json::object());
+    out.emit_section("summary");
+    for (Json::const_iterator it = summary.begin(); it != summary.end(); ++it)
+        out.emit_kv(it.key(), it.value());
+
+    const Json data = response.value("data", Json::object());
+    const Json filter = data.value("filter", Json::object());
+    out.emit_section("filter");
+    out.emit_kv("direction", filter.value("direction", std::string("all")));
+    if (filter.contains("ids"))
+        out.emit_kv("ids", statistics_ids_xout(filter["ids"]));
+    if (filter.contains("address")) {
+        const Json& address = filter["address"];
+        const std::string mode = address.value("mode", std::string());
+        out.emit_kv("address_mode", mode);
+        if (mode == "exact") {
+            out.emit_kv("address_values", statistics_ids_xout(address["values"]));
+        } else if (mode == "range") {
+            out.emit_kv("address_begin", address.value("begin", std::string()));
+            out.emit_kv("address_end", address.value("end", std::string()));
+        } else if (mode == "mask") {
+            out.emit_kv("address_value", address.value("value", std::string()));
+            out.emit_kv("address_mask", address.value("mask", std::string()));
+        }
+    }
+
+    out.emit_section("notes");
+    out.emit_kv("unresolved_transaction_count", statistics_unresolved_note());
+    return out.str();
 }
 
 }  // namespace xdebug_design

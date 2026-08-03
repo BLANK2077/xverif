@@ -61,7 +61,8 @@ public:
     }
 
     std::string render_xout(const Json& response) const override {
-        return render_source_path_xout(action_name(), response);
+        return append_common_blocks_xout(
+            render_source_path_xout(action_name(), response), response);
     }
 
 };
