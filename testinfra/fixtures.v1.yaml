@@ -121,6 +121,39 @@ fixtures:
       - argv: [python3, "{repo}/testinfra/leaf/probe_fixture.py", --resources, "{resources}", --xdebug, "{repo}/tools/xdebug", --fsdb-glob, out/waves.fsdb, --daidir-glob, out/simv.daidir, --json-glob, out/stream_expected.json]
     tool_env: [VERDI_HOME]
 
+  - id: xdebug.npi_fsdb_sva
+    build_capabilities: [make, gxx, vcs, npi]
+    source_dir: xdebug/testdata/waveform/sva_fsdb_npi
+    inputs: [Makefile, "*.sv", "*.cpp", "*.tcl"]
+    builder:
+      argv: [make, fixture, "RUN_DIR={resources}/out"]
+      cwd: "{source}"
+      timeout_sec: 600
+    outputs:
+      - {name: fsdb, path: out/positive/waves.fsdb, kind: file, min_bytes: 1024}
+      - {name: success_only_fsdb, path: out/success_only/waves.fsdb, kind: file, min_bytes: 1024}
+      - {name: control_fsdb, path: out/control/waves.fsdb, kind: file, min_bytes: 1024}
+      - {name: positive_probe, path: out/positive/probe.json, kind: file, min_bytes: 1}
+      - {name: success_only_probe, path: out/success_only/probe.json, kind: file, min_bytes: 1}
+      - {name: control_probe, path: out/control/probe.json, kind: file, min_bytes: 1}
+      - {name: positive_log, path: out/positive/sim.log, kind: file, min_bytes: 1}
+      - {name: success_only_log, path: out/success_only/sim.log, kind: file, min_bytes: 1}
+      - {name: control_log, path: out/control/sim.log, kind: file, min_bytes: 1}
+      - {name: restrict_log, path: out/restrict/compile.log, kind: file, min_bytes: 1}
+      - {name: probe, path: out/bin/npi_fsdb_sva_probe, kind: file, min_bytes: 1024}
+      - {name: join_fsdb, path: out/join/waves.fsdb, kind: file, min_bytes: 1024}
+      - {name: join_daidir, path: out/join/build/simv.daidir, kind: dir}
+      - {name: join_probe_result, path: out/join/probe.json, kind: file, min_bytes: 1}
+      - {name: join_design_probe_result, path: out/join/design_probe.json, kind: file, min_bytes: 1}
+      - {name: positive_combined_probe_result, path: out/positive/combined_probe.json, kind: file, min_bytes: 1}
+      - {name: join_probe, path: out/bin/npi_daidir_fsdb_sva_probe, kind: file, min_bytes: 1024}
+    probes:
+      - argv: [python3, "{repo}/testinfra/leaf/probe_fixture.py", --resources, "{resources}", --json-glob, "out/*/probe.json", --text-glob, "out/*/sim.log", --min-count, "3"]
+      - argv: [python3, "{repo}/testinfra/leaf/probe_fixture.py", --resources, "{resources}", --executable-glob, "out/bin/npi_fsdb_sva_probe"]
+      - argv: [python3, "{repo}/testinfra/leaf/probe_fixture.py", --resources, "{resources}", --xdebug, "{repo}/tools/xdebug", --fsdb-glob, out/join/waves.fsdb, --daidir-glob, out/join/build/simv.daidir]
+      - argv: [python3, "{repo}/testinfra/leaf/probe_fixture.py", --resources, "{resources}", --executable-glob, "out/bin/npi_daidir_fsdb_sva_probe"]
+    tool_env: [VERDI_HOME]
+
   - id: xdebug.apb_vip
     build_capabilities: [make, vcs, npi, vip_apb]
     source_dir: xdebug/testdata/waveform/apb_vip_real

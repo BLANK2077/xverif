@@ -199,3 +199,21 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 - 错误现象：在临时仓库重建时，通过 functions.exec 嵌套调用 apply_patch，误以为 apply_patch 会继承 exec_command 的 workdir，短暂作用到原始参考仓库；已立即原样恢复并确认参考仓库相关文件干净。
 - 误判原因：混淆了 exec_command 子调用工作目录与 apply_patch 工具基于会话 cwd 解析相对路径的规则。
 - 以后规则：对工作区外临时仓库使用 apply_patch 时，patch 文件路径必须从会话 cwd 写成经核对的显式相对路径；每次首次修改后立即分别检查参考仓库与临时仓库 status。
+
+### 2026-08-03 环境错误复盘
+
+- 错误现象：在临时仓库运行正式 pytest suite 时，首次使用了该临时仓库中不存在的 `.conda-xverif/bin/pytest`，命令未启动。
+- 误判原因：把原始仓库的本地 Python 环境布局误认为会随临时 Git 仓库一同存在，没有先核对解释器路径。
+- 以后规则：工作仓库外的临时仓库运行正式测试前，先确认测试解释器的绝对路径；临时仓库未包含环境时，使用已核实的原始仓库绝对 conda pytest 路径，不猜测相对路径。
+
+### 2026-08-03 环境错误复盘
+
+- 错误现象：等待缺失 fixture 由其它 agent 恢复时，在主 agent 的 owner 指派消息到达前又启动了一个处理同一路径的子 agent，形成短暂的重叠写入风险。
+- 误判原因：已知该路径需要跨边界协调，却没有等主 agent 明确回复 owner 状态就自行扩展任务范围。
+- 以后规则：共享工作树中遇到跨 owner 的缺失依赖时，必须先取得主 agent 的明确分工回复；等待期间保持原边界冻结，不以推进速度为由另行启动重叠 agent。
+
+### 2026-08-03 环境错误复盘
+
+- 错误现象：临时仓库使用原始仓库 conda pytest 运行 `testinfra.unit` 时，editable plugin 提前缓存了原始仓库的 `testinfra` 包，导致用例读取了错误工作树的 runner 清单。
+- 误判原因：只固定了 pytest 解释器，没有核对 editable plugin 在 pytest 调整 rootdir 前的模块解析来源。
+- 以后规则：用另一个工作树的 conda pytest 验证临时仓库时，显式将临时仓库置于 `PYTHONPATH` 首位，并用失败差异与模块来源确认测试读取的是目标工作树。

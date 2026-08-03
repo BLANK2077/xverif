@@ -476,6 +476,20 @@ suites:
     deterministic: true
     cost: {class: medium, estimate_sec: 20}
 
+  - id: xdebug.npi_fsdb_sva
+    owner: xdebug
+    level: integration
+    intent: [contract, semantics]
+    domains: [combined, waveform, sva, npi]
+    runner: {kind: pytest, path: xdebug/tests/synthetic/test_npi_fsdb_sva.py}
+    fixtures: [xdebug.npi_fsdb_sva]
+    capabilities: [npi, fsdb, daidir]
+    hermetic: false
+    deterministic: true
+    cost: {class: medium, estimate_sec: 10}
+    resources: {cpu: 1, memory_mb: 1024, tokens: [verdi_npi]}
+    timeouts: {execute_sec: 60, cleanup_sec: 10}
+
   - id: xdebug.xif_event
     owner: xdebug
     level: system

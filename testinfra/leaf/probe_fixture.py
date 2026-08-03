@@ -76,8 +76,8 @@ def _probe_database(root: Path, xdebug: Path, fsdb_glob: str | None, daidir_glob
                     "args": {"name": name},
                 },
             )
-            session = opened.get("session") or opened["data"]["session"]
-            session_id = session["id"]
+            session = opened["session"]
+            session_id = session["session_id"]
             try:
                 roots = _query(
                     xdebug,

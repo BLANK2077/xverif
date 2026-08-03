@@ -17,6 +17,8 @@ BINARIES = (
     "test_action_registry",
     "test_request_contract",
     "test_text_response_builder",
+    "test_value_collection",
+    "test_protocol_query_filter",
     "test_protocol_statistics_filter",
     "test_trace_source_path_formatter",
     "test_trace_x_chain_identity",
