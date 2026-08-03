@@ -11,12 +11,19 @@ import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
 
 import jsonschema
 
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 REPO_ROOT = os.path.abspath(os.path.join(ROOT, ".."))
+TESTS_ROOT = os.path.join(ROOT, "tests")
+if TESTS_ROOT not in sys.path:
+    sys.path.insert(0, TESTS_ROOT)
+
+from runner import StdioLoopRunner
+
 NONAXI_DIR = os.path.join(ROOT, "testdata", "waveform", "ai_complex_wave")
 NONAXI_FSDB = os.path.join(NONAXI_DIR, "out", "waves.fsdb")
 AXI_DIR = os.environ.get(
@@ -697,13 +704,27 @@ class AiRunner(object):
         self.sid = None
         self.rows = []
         self.duplicate_contract_violations = []
+        self.loop = StdioLoopRunner(
+            Path(self.xdebug),
+            cwd=Path(REPO_ROOT),
+            env=self.env,
+            default_json=True,
+            wait_for_stderr_idle=False,
+        )
+        self.loop.start()
 
     def cleanup(self):
-        if self.sid:
-            self.query("session.kill", target={"session_id": self.sid}, expect_ok=True, allow_no_sid=True)
-        shutil.rmtree(self.home, ignore_errors=True)
-        require(not self.duplicate_contract_violations,
-                "summary/data duplicate facts remain: {}".format(self.duplicate_contract_violations))
+        try:
+            if self.sid:
+                self.query("session.kill", target={"session_id": self.sid}, expect_ok=True, allow_no_sid=True)
+            require(not self.duplicate_contract_violations,
+                    "summary/data duplicate facts remain: {}".format(self.duplicate_contract_violations))
+        finally:
+            try:
+                self.loop.quit()
+            finally:
+                self.loop.terminate()
+                shutil.rmtree(self.home, ignore_errors=True)
 
     def query(self, action, args=None, target=None, limits=None, expect_ok=True, allow_no_sid=False, timeout=60):
         req = {
@@ -713,19 +734,30 @@ class AiRunner(object):
         }
         if target is not None:
             req["target"] = target
-        elif self.sid is not None:
+        elif self.sid is not None and not allow_no_sid:
             req["target"] = {"session_id": self.sid}
         elif not allow_no_sid:
             raise AssertionError("session must be opened before stateful query")
         request_limits = dict(limits or {})
-        request_limits.setdefault("timeout_ms", DEFAULT_QUERY_TIMEOUT_MS)
-        req["limits"] = request_limits
+        if request_limits:
+            req["limits"] = request_limits
 
         start = time.time()
-        log_progress("{}: query {} start timeout_ms={}".format(self.name, action, request_limits["timeout_ms"]))
-        process_timeout = max(timeout, int(request_limits["timeout_ms"] / 1000) + 30)
-        rc, out, err, _ = run_cmd([self.xdebug, "--json", "-"], cwd=REPO_ROOT, env=self.env,
-                                  timeout=process_timeout, input_text=json.dumps(req) + "\n")
+        process_timeout = max(
+            timeout,
+            int(DEFAULT_QUERY_TIMEOUT_MS / 1000) + 30,
+        )
+        log_progress(
+            "{}: query {} start process_timeout_sec={}".format(
+                self.name,
+                action,
+                process_timeout,
+            )
+        )
+        result = self.loop.request(req, timeout_sec=process_timeout)
+        rc = result.returncode
+        out = json.dumps(result.response)
+        err = result.stderr_raw
         elapsed_ms = int((time.time() - start) * 1000)
         try:
             data = json.loads(out)
