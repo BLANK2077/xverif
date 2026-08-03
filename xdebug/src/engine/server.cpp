@@ -707,7 +707,12 @@ static bool handle_client(int client_fd, bool& should_quit) {
     }
 
     xdebug_core::TimeRenderOptions time_render_options;
-    Json args = request.value("args", Json::object());
+    Json raw_args = request.value("args", Json::object());
+    xdebug_design::ContractBoundRequest bound_request(request, action, true);
+    auto args = bound_request.args();
+    auto limits = bound_request.limits();
+    if (limits.contains("timeout_ms"))
+        limits["timeout_ms"].consume("engine_transport_timeout");
     if (args.contains("time_unit")) {
         if (!args["time_unit"].is_string())
             return send_response(client_fd, error_response("TIME_UNIT_INVALID",
@@ -730,7 +735,7 @@ static bool handle_client(int client_fd, bool& should_quit) {
     xdebug_waveform::ScopedValueRenderFormat value_render_scope(render_format);
     Json data;
     try {
-        data = h->run(request, ctx);
+        data = h->run(bound_request, ctx);
     } catch (const std::exception& e) {
         return send_response(client_fd, error_response(
             "INTERNAL_ENGINE_EXCEPTION",
@@ -742,7 +747,18 @@ static bool handle_client(int client_fd, bool& should_quit) {
     }
     if (data.contains("error"))
         return send_response(client_fd, action_error_response(request, data));
-    append_sampling_contract(args, data);
+    const std::vector<std::string> unconsumed_paths =
+        bound_request.unconsumed_paths();
+    if (!unconsumed_paths.empty()) {
+        Json error = xdebug_core::DiagnosticErrorBuilder::handler(
+            "REQUEST_CONTRACT_VIOLATION",
+            "request contains arguments not consumed by the action").to_json();
+        error["invalid_arg"] = unconsumed_paths.front();
+        error["expected"] = "argument consumed by the selected action";
+        error["unconsumed_paths"] = unconsumed_paths;
+        return send_response(client_fd, error_response(error));
+    }
+    append_sampling_contract(raw_args, data);
     xdebug_waveform::apply_value_render_format(data, render_format);
     xdebug_waveform::apply_value_width_summary(data);
     Json resp = ok_response(data);

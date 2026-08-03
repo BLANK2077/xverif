@@ -73,6 +73,7 @@ ENGINE_SRCS = src/engine/main.cpp \
               src/engine/session/client.cpp \
               src/engine/service/engine_action_registry.cpp \
               src/engine/service/engine_action_handler.cpp \
+              src/engine/service/contract_bound_request.cpp \
               src/engine/service/trace_source_path_formatter.cpp \
               src/engine/service/actions/combined/register_combined_handlers.cpp \
               src/engine/service/actions/combined/trace_active_driver.cpp \

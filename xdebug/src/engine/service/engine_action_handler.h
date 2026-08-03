@@ -1,6 +1,7 @@
 #pragma once
 
 #include "action_resource_scope.h"
+#include "contract_bound_request.h"
 
 #include "json.hpp"
 
@@ -21,7 +22,14 @@ public:
     virtual const char* action_name() const = 0;
     virtual bool needs_design() const = 0;
     virtual bool needs_waveform() const = 0;
-    virtual Json run(const Json& request, EngineActionContext& ctx) const = 0;
+    // New handlers consume fields through ContractBoundRequest.  The raw-JSON
+    // overload remains temporarily as a migration bridge for the 53a handlers;
+    // its default bound implementation explicitly assigns the complete args
+    // subtree to that legacy parser, so request ownership is still auditable.
+    virtual Json run(ContractBoundRequest& request,
+                     EngineActionContext& ctx) const;
+    virtual Json run(const Json& request,
+                     EngineActionContext& ctx) const;
 
     // XOUT text rendering.  Default recursively renders summary + data tree.
     // Subclasses may override additively:
