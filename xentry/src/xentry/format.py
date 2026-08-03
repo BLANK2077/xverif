@@ -30,8 +30,6 @@ def _sanitize_value(value: Any) -> str:
     else:
         text = str(value)
     text = text.replace("\n", "\\n").replace("\r", "\\r").replace("\t", " ")
-    if len(text) > 4096:
-        text = text[:4096] + "..."
     return text
 
 

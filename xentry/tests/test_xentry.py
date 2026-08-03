@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import os
 import subprocess
@@ -13,8 +14,10 @@ SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
 from xentry.config import load_config_text, normalize_config
+from xentry.contracts import ResponseContractError, validate_response
 from xentry.decode import decode_entry
 from xentry.errors import ConfigError, FragmentError, UnsupportedConfigField
+from xentry.format import error_response, to_xout
 from xentry.fragments import bytes_to_bits, parse_hex_bytes
 
 
@@ -83,6 +86,24 @@ class FragmentTests(unittest.TestCase):
         self.assertEqual(bytes_to_bits(bytes.fromhex("1234"), "msb_first", "byte_lsb0")[0], 0x34 & 1)
         self.assertEqual(bytes_to_bits(bytes.fromhex("1234"), "lsb_first", "byte_lsb0")[0], 0x12 & 1)
 
+    def test_fragment_metadata_types_are_strict(self):
+        base = {"seq": 0, "data": "0x12", "valid_lsb": 0, "valid_width": 8}
+        config = {
+            **CONFIG,
+            "total_bits": 8,
+            "fields": [{"name": "byte", "bits": "[7:0]"}],
+        }
+        for mutation in (
+            {"entry_id": True},
+            {"time": ""},
+            {"source": 4},
+            {"line": 0},
+            {"tag": ""},
+        ):
+            with self.subTest(mutation=mutation):
+                with self.assertRaises(FragmentError):
+                    decode_entry(config, [{**base, **mutation}])
+
 
 class DecodeTests(unittest.TestCase):
     def test_decode_cross_fragment(self):
@@ -109,21 +130,118 @@ class DecodeTests(unittest.TestCase):
             decode_entry(CONFIG, [{"seq": 0, "data": "0x12", "valid_lsb": 4, "valid_width": 9}])
 
 
+class ContractTests(unittest.TestCase):
+    def payload(self):
+        return decode_entry(
+            {
+                **CONFIG,
+                "total_bits": 8,
+                "fields": [{"name": "byte", "bits": "[7:0]"}],
+            },
+            [{"seq": 0, "data": "0xaa", "valid_lsb": 0, "valid_width": 8}],
+        )
+
+    def test_nested_objects_are_closed(self):
+        payload = self.payload()
+        mutations = []
+        for target, key, value in (
+            ("envelope", "errors", []),
+            ("field", "decoded", 0xAA),
+            ("source", "fallback", True),
+            ("schema", "revision", 1),
+        ):
+            mutated = deepcopy(payload)
+            if target == "envelope":
+                mutated[key] = value
+            elif target == "field":
+                mutated["fields"]["byte"][key] = value
+            elif target == "source":
+                mutated["fields"]["byte"]["source"][0][key] = value
+            else:
+                mutated["schema"][key] = value
+            mutations.append(mutated)
+        for mutated in mutations:
+            with self.subTest(mutated=mutated):
+                with self.assertRaises(ResponseContractError):
+                    validate_response(mutated)
+                with self.assertRaises(ResponseContractError):
+                    to_xout(mutated)
+
+    def test_cross_field_facts_are_bound(self):
+        payload = self.payload()
+        mutations = []
+        changes = (
+            ("bits", "[6:0]"),
+            ("raw_bin", "10101011"),
+            ("raw_hex", "0xab"),
+        )
+        for key, value in changes:
+            mutated = deepcopy(payload)
+            mutated["fields"]["byte"][key] = value
+            mutations.append(mutated)
+        mutated = deepcopy(payload)
+        mutated["entry_raw"] = "0xab"
+        mutations.append(mutated)
+        mutated = deepcopy(payload)
+        mutated["total_bits"] = 7
+        mutations.append(mutated)
+        mutated = deepcopy(payload)
+        source = mutated["fields"]["byte"]["source"][0]
+        source["entry_bits"] = "[6:0]"
+        source["fragment_bits"] = "[6:0]"
+        mutations.append(mutated)
+        for mutated in mutations:
+            with self.subTest(mutated=mutated):
+                with self.assertRaises(ResponseContractError):
+                    validate_response(mutated, expected_action="decode")
+
+    def test_warning_error_and_expected_action_contracts(self):
+        error = error_response(
+            FragmentError("valid_width must be positive", seq=0, valid_width=0),
+            action="decode",
+        )
+        validate_response(error, expected_action="decode")
+        error["error"]["details"]["fallback"] = 1
+        with self.assertRaises(ResponseContractError):
+            validate_response(error, expected_action="decode")
+        with self.assertRaises(ResponseContractError):
+            validate_response(self.payload(), expected_action="explain")
+
+    def test_xout_does_not_hide_long_values(self):
+        config = deepcopy(CONFIG)
+        config["total_bits"] = 8
+        config["fields"] = [
+            {"name": "a", "bits": "[3:0]"},
+            {"name": "b", "bits": "[2:1]"},
+        ]
+        payload = decode_entry(
+            config,
+            [{"seq": 0, "data": "0xaa", "valid_lsb": 0, "valid_width": 8}],
+        )
+        message = "m" * 5000
+        payload["warnings"][0]["message"] = message
+        output = to_xout(payload)
+        self.assertIn(message, output)
+        self.assertNotIn("...", output)
+
+
 class CliTests(unittest.TestCase):
-    def run_cli(self, *args, input_text=None):
+    def run_cli_proc(self, *args, input_text=None, check=False):
         env = os.environ.copy()
         env["PYTHONPATH"] = str(SRC)
-        proc = subprocess.run(
+        return subprocess.run(
             [sys.executable, "-m", "xentry.cli", *args],
             cwd=str(ROOT),
             env=env,
             input=input_text,
-            check=True,
+            check=check,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        return json.loads(proc.stdout)
+
+    def run_cli(self, *args, input_text=None):
+        return json.loads(self.run_cli_proc(*args, input_text=input_text, check=True).stdout)
 
     def test_json_stdin(self):
         request = {"api_version": "xentry.v1", "action": "decode", "config": CONFIG, "fragments": [
@@ -165,19 +283,31 @@ class CliTests(unittest.TestCase):
         )
         self.assertTrue(proc.stdout.startswith("@xentry.explain.v1"))
 
-    def test_compat_decode(self):
-        payload = self.run_cli("decode", "--config", "examples/entry.yaml", "--input", "examples/fragments.jsonl", "--json")
-        self.assertTrue(payload["ok"])
+    def test_request_output_is_rejected(self):
+        request = {
+            "api_version": "xentry.v1",
+            "action": "explain",
+            "config": CONFIG,
+            "output": {"format": "json"},
+        }
+        proc = self.run_cli_proc("--json", json.dumps(request))
+        self.assertEqual(proc.returncode, 1)
+        self.assertEqual(json.loads(proc.stdout)["error"]["code"], "INVALID_REQUEST")
 
-    def test_compat_explain(self):
-        payload = self.run_cli("explain", "--config", "examples/entry.yaml", "--json")
-        self.assertTrue(payload["ok"])
-        self.assertEqual(payload["action"], "explain")
+    def test_retired_subcommands_and_aliases_are_rejected(self):
+        request = json.dumps({"api_version": "xentry.v1", "action": "explain", "config": CONFIG})
+        for invocation in (
+            ("decode", "--config", "examples/entry.yaml"),
+            ("--text", request),
+            ("--xout", request),
+            ("-help",),
+        ):
+            with self.subTest(invocation=invocation):
+                self.assertEqual(self.run_cli_proc(*invocation).returncode, 2)
 
-    def test_compat_validate(self):
-        payload = self.run_cli("validate", "--config", "examples/entry.yaml", "--input", "examples/fragments.jsonl", "--json")
-        self.assertTrue(payload["ok"])
-        self.assertEqual(payload["action"], "validate")
+    def test_pretty_requires_json(self):
+        request = json.dumps({"api_version": "xentry.v1", "action": "explain", "config": CONFIG})
+        self.assertEqual(self.run_cli_proc("--pretty", request).returncode, 2)
 
 
 if __name__ == "__main__":

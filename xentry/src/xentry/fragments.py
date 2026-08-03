@@ -82,7 +82,11 @@ def normalize_fragments(raw_fragments: list[dict], config: EntryConfig) -> list[
                 valid_width=valid_width,
                 fragment_width=len(bits),
             )
-        metadata = {key: raw[key] for key in META_KEYS if key in raw}
+        metadata = {
+            key: _validate_metadata(key, raw[key])
+            for key in META_KEYS
+            if key in raw
+        }
         fragments.append(Fragment(seq, data, bytes_value, bits, valid_lsb, valid_width, metadata))
     return sorted(fragments, key=lambda item: item.seq)
 
@@ -115,4 +119,25 @@ def bytes_to_bits(data: bytes, byte_order: str, bit_numbering: str) -> list[int]
 def _int(value: Any, field: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool):
         raise FragmentError(f"{field} must be an integer")
+    return value
+
+
+def _validate_metadata(key: str, value: Any) -> Any:
+    if key in {"entry_id", "time"}:
+        if (
+            not isinstance(value, (str, int))
+            or isinstance(value, bool)
+            or (isinstance(value, str) and not value)
+        ):
+            raise FragmentError(
+                f"{key} must be a non-empty string or integer",
+                field=key,
+            )
+        return value
+    if key == "line":
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            raise FragmentError("line must be a positive integer", field=key)
+        return value
+    if not isinstance(value, str) or not value:
+        raise FragmentError(f"{key} must be a non-empty string", field=key)
     return value
