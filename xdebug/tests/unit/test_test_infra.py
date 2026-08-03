@@ -12,6 +12,7 @@ from runner import (
     ArtifactWriter,
     CliRunner,
     CommandRunner,
+    HybridCliRunner,
     InvariantError,
     NormalizeOptions,
     StdioLoopRunner,
@@ -189,6 +190,41 @@ def test_stdio_loop_reports_child_exit(tmp_path: Path) -> None:
     )
     assert not result.ok
     assert "stdio-loop exited: rc=17" in result.stderr_raw
+
+
+@pytest.mark.unit
+def test_hybrid_runner_timeout_terminates_persistent_frontend(
+    tmp_path: Path,
+) -> None:
+    runner = HybridCliRunner(_fake_xdebug(tmp_path), cwd=tmp_path)
+    result = runner.run(
+        {
+            "api_version": "xdebug.v1",
+            "action": "actions",
+            "args": {"sleep": 30},
+        },
+        timeout_sec=0.1,
+    )
+    assert result.timed_out
+    assert runner._loop is not None
+    assert runner._loop.proc is not None
+    assert runner._loop.proc.poll() is not None
+    runner.close()
+
+
+@pytest.mark.unit
+def test_hybrid_runner_explicit_restart_applies_environment_changes(
+    tmp_path: Path,
+) -> None:
+    runner = HybridCliRunner(_fake_xdebug(tmp_path), cwd=tmp_path)
+    try:
+        first = runner.run({"api_version": "xdebug.v1", "action": "actions"})
+        runner.base_env["HYBRID_PHASE"] = "second"
+        runner.restart()
+        second = runner.run({"api_version": "xdebug.v1", "action": "actions"})
+        assert first.response["summary"]["pid"] != second.response["summary"]["pid"]
+    finally:
+        runner.close()
 
 
 @pytest.mark.unit

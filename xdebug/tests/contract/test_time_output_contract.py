@@ -5,7 +5,10 @@ import re
 from pathlib import Path
 from typing import Any, Iterable
 
+import jsonschema
 import pytest
+
+from runner import CliRunner
 
 
 DOC_PATH = Path("docs/XDEBUG_TIME_HANDLING_REVIEW_AND_TEST_MATRIX.md")
@@ -50,7 +53,7 @@ def test_time_handling_review_doc_exists_and_names_output_contract(
         "JSON 与 xout",
         "默认无单位时间范围按 ns",
         "默认输出渲染单位按 ns",
-        "args.time_unit",
+        "args.render_time_unit",
         "本阶段已进入实现",
     ]
     for phrase in required_phrases:
@@ -116,7 +119,7 @@ def test_time_formatting_and_default_units_are_centralized(xdebug_root: Path) ->
 
 
 @pytest.mark.contract
-def test_time_unit_is_render_only_and_defaults_to_ns(xdebug_root: Path) -> None:
+def test_render_time_unit_is_render_only_and_defaults_to_ns(xdebug_root: Path) -> None:
     header = (xdebug_root / "src/core/npi/time_contract.h").read_text(encoding="utf-8")
     assert "TimeRenderUnit::Ns" in header
     assert 'std::string default_unit = "ns"' in header
@@ -137,8 +140,137 @@ def test_time_unit_is_render_only_and_defaults_to_ns(xdebug_root: Path) -> None:
         matches = [
             f"{index}: {line.strip()}"
             for index, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
-            if '"time_unit"' in line or "args.time_unit" in line
+            if '"render_time_unit"' in line or "args.render_time_unit" in line
         ]
         if matches:
             offenders[str(rel)] = matches
     assert not offenders
+
+
+@pytest.mark.contract
+def test_render_time_unit_schema_has_exact_public_enum(
+    xdebug_root: Path,
+) -> None:
+    schema = _load_json(
+        xdebug_root
+        / "schemas"
+        / "v1"
+        / "actions"
+        / "value.at.request.schema.json"
+    )
+    validator = jsonschema.Draft202012Validator(schema)
+    base = {
+        "api_version": "xdebug.v1",
+        "action": "value.at",
+        "target": {"session_id": "render-time-unit-contract"},
+        "args": {
+            "signal": "ai_complex_top.sig_a",
+            "time": "10ns",
+        },
+    }
+    for unit in ("auto", "ps", "ns", "us"):
+        request = {
+            **base,
+            "args": {**base["args"], "render_time_unit": unit},
+        }
+        validator.validate(request)
+
+    for invalid in ("", "n", "NS", "fs", "ms", "s"):
+        request = {
+            **base,
+            "args": {**base["args"], "render_time_unit": invalid},
+        }
+        with pytest.raises(jsonschema.ValidationError) as caught:
+            validator.validate(request)
+        assert list(caught.value.absolute_path) == [
+            "args",
+            "render_time_unit",
+        ]
+
+    retired = {
+        **base,
+        "args": {**base["args"], "time_unit": "ns"},
+    }
+    with pytest.raises(jsonschema.ValidationError) as caught:
+        validator.validate(retired)
+    assert list(caught.value.absolute_path) == ["args"]
+    assert caught.value.validator == "additionalProperties"
+
+
+@pytest.mark.contract
+def test_render_time_unit_runtime_matches_schema_exactly(
+    cli_runner: CliRunner,
+    complex_wave_fsdb: Path,
+) -> None:
+    opened = cli_runner.run(
+        {
+            "api_version": "xdebug.v1",
+            "action": "session.open",
+            "target": {"fsdb": str(complex_wave_fsdb)},
+            "args": {"name": "render_time_unit_contract"},
+        },
+        output_format="json",
+        timeout_sec=120,
+    )
+    assert opened.ok, opened.stdout_raw + opened.stderr_raw
+    session = opened.response["session"]
+    target = {"session_id": session["session_id"]}
+    expected_time = {
+        "auto": "10ns",
+        "ps": "10000ps",
+        "ns": "10ns",
+        "us": "0.01us",
+    }
+    try:
+        for unit, expected in expected_time.items():
+            result = cli_runner.run(
+                {
+                    "api_version": "xdebug.v1",
+                    "action": "value.at",
+                    "target": target,
+                    "args": {
+                        "signal": "ai_complex_top.sig_a",
+                        "time": "10ns",
+                        "render_time_unit": unit,
+                    },
+                },
+                output_format="json",
+                timeout_sec=120,
+            )
+            assert result.ok, result.stdout_raw + result.stderr_raw
+            assert result.response["data"]["samples"][0]["time"] == expected
+
+        invalid_requests = [
+            {"render_time_unit": unit}
+            for unit in ("", "n", "NS", "fs", "ms", "s")
+        ]
+        invalid_requests.append({"time_unit": "ns"})
+        for invalid_fields in invalid_requests:
+            result = cli_runner.run(
+                {
+                    "api_version": "xdebug.v1",
+                    "action": "value.at",
+                    "target": target,
+                    "args": {
+                        "signal": "ai_complex_top.sig_a",
+                        "time": "10ns",
+                        **invalid_fields,
+                    },
+                },
+                output_format="json",
+                timeout_sec=120,
+            )
+            assert not result.ok, invalid_fields
+            assert result.response["error"]["code"] == "INVALID_REQUEST"
+            assert result.response["error"]["error_layer"] == "schema"
+    finally:
+        closed = cli_runner.run(
+            {
+                "api_version": "xdebug.v1",
+                "action": "session.close",
+                "target": target,
+            },
+            output_format="json",
+            timeout_sec=120,
+        )
+        assert closed.ok, closed.stdout_raw + closed.stderr_raw

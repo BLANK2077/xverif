@@ -49,7 +49,98 @@ def _kill_all(cli_runner: CliRunner) -> None:
 def _write_registry_session(isolated_home: Path, record: dict) -> None:
     path = isolated_home / ".xdebug" / "engine" / "registry.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"sessions": [record]}, indent=2), encoding="utf-8")
+    canonical = {
+        "session_id": "",
+        "generation": "1" * 64,
+        "lifecycle_state": "active",
+        "transport": "uds",
+        "socket_path": "",
+        "file_dir": "",
+        "host": "",
+        "bind_host": "",
+        "port": 0,
+        "server_host": "localhost",
+        "auth_token": "",
+        "ownership_token_hash": "",
+        "dbdir_path": "",
+        "fsdb_file": "",
+        "server_pid": 0,
+        "created_at": int(time.time()),
+        "last_active": int(time.time()),
+        "dbdir_mtime": 0,
+        "dbdir_size": 0,
+        "dbdir_dev": 0,
+        "dbdir_inode": 0,
+        "fsdb_mtime": 0,
+        "fsdb_size": 0,
+        "fsdb_dev": 0,
+        "fsdb_inode": 0,
+    }
+    canonical.update(record)
+    path.write_text(
+        json.dumps({"version": 2, "sessions": [canonical]}, indent=2),
+        encoding="utf-8",
+    )
+    session_id = canonical["session_id"]
+    path_hash = 1469598103934665603
+    for byte in session_id.encode("utf-8"):
+        path_hash ^= byte
+        path_hash = (path_hash * 1099511628211) & ((1 << 64) - 1)
+    session_dir = (
+        isolated_home
+        / ".xdebug"
+        / "engine"
+        / "sessions"
+        / f"{session_id[:16]}_{path_hash:016x}"
+    )
+    session_dir.mkdir(parents=True, exist_ok=True)
+    (session_dir / "generation").write_text(
+        canonical["generation"] + "\n",
+        encoding="utf-8",
+    )
+
+
+def _direct_engine_directories(isolated_home: Path) -> list[Path]:
+    return sorted(
+        (isolated_home / ".xdebug" / "engine" / "sessions").glob(
+            "direct_*"
+        )
+    )
+
+
+def _assert_no_active_direct_resource_artifacts(
+    isolated_home: Path,
+) -> None:
+    registry = _registry(isolated_home)
+    assert not [
+        item
+        for item in registry.get("sessions", [])
+        if item["session_id"].startswith("direct_")
+    ]
+    for directory in _direct_engine_directories(isolated_home):
+        for name in ("session.json", "socket", "endpoint.json"):
+            assert not (directory / name).exists(), directory / name
+
+
+def _direct_spawned_pids(isolated_home: Path) -> list[int]:
+    pids: list[int] = []
+    for directory in _direct_engine_directories(isolated_home):
+        lifecycle = directory / "logs" / "lifecycle.ndjson"
+        if not lifecycle.exists():
+            continue
+        for event in _read_ndjson(lifecycle):
+            if event.get("phase") != "ensure_session.spawned_server":
+                continue
+            pid = event.get("context", {}).get("pid")
+            if isinstance(pid, int) and pid > 0:
+                pids.append(pid)
+    return pids
+
+
+def _assert_processes_gone(pids: list[int]) -> None:
+    for pid in pids:
+        with pytest.raises(ProcessLookupError):
+            os.kill(pid, 0)
 
 
 def _read_ndjson(path: Path) -> list[dict]:
@@ -133,9 +224,12 @@ def test_session_open_list_doctor_close_for_each_resource_mode(
             )
         )
         assert opened.ok
-        assert opened.response["summary"]["mode"] == mode
+        assert opened.response["summary"] == {"status": "opened"}
+        assert opened.response["session"]["mode"] == mode
+        assert opened.response["data"] == {"run_manifest": None}
 
         listed = cli_runner.run(_request("session.list"))
+        assert listed.ok, listed.response
         records = listed.response["data"]["sessions"]
         assert any(item["session_id"] == name and item["mode"] == mode for item in records)
 
@@ -144,6 +238,44 @@ def test_session_open_list_doctor_close_for_each_resource_mode(
         )
         assert doctor.ok
         assert doctor.response["summary"]["healthy"] is True
+        assert doctor.response["session"]["mode"] == mode
+        assert doctor.response["data"]["message"]
+
+        roots = cli_runner.run(
+            _request("scope.roots", target={"session_id": name})
+        )
+        assert roots.ok, roots.response
+        assert roots.response["summary"]["source"] == "auto"
+        if mode == "combined":
+            assert roots.response["summary"]["analysis_complete"] is True
+            assert "limitations" not in roots.response["data"]
+            assert all(
+                root["status"] == "matched"
+                for root in roots.response["data"]["roots"]
+            )
+        elif mode == "design":
+            assert roots.response["summary"]["analysis_complete"] is False
+            assert (
+                "wave roots unavailable: waveform not loaded"
+                in roots.response["data"]["limitations"]
+            )
+            assert all(
+                root["status"] == "design_only"
+                and root["wave"] is None
+                and root["design"]["discovery"]
+                in {"npi_top", "verified_wave_root"}
+                for root in roots.response["data"]["roots"]
+            )
+        else:
+            assert roots.response["summary"]["analysis_complete"] is False
+            assert (
+                "design roots unavailable: design not loaded"
+                in roots.response["data"]["limitations"]
+            )
+            assert all(
+                root["status"] == "wave_only" and root["design"] is None
+                for root in roots.response["data"]["roots"]
+            )
 
         native = _registry_session(isolated_home, name)
         assert native["session_id"] == name
@@ -184,8 +316,11 @@ def test_session_close_accepts_target_session_id(
 
         closed = cli_runner.run(_request("session.close", target={"session_id": name}))
         assert closed.ok
-        assert closed.response["summary"]["session_id"] == name
         assert closed.response["summary"]["removed"] is True
+        assert (
+            closed.response["data"]["removed_session"]["session_id"]
+            == name
+        )
         assert not any(
             item["session_id"] == name
             for item in _registry(isolated_home).get("sessions", [])
@@ -262,6 +397,11 @@ def test_session_duplicate_stale_and_advisory_contract(
         )
         assert not duplicate.ok
         assert duplicate.response["error"]["code"] == "SESSION_ID_EXISTS"
+        assert duplicate.response["summary"] == {
+            "status": "error",
+            "error_code": "SESSION_ID_EXISTS",
+        }
+        assert duplicate.response["error"]["health_status"] == "healthy"
 
         old_reuse = cli_runner.run(
             _request(
@@ -305,6 +445,11 @@ def test_session_duplicate_stale_and_advisory_contract(
         )
         assert not stale.ok
         assert stale.response["error"]["code"] == "SESSION_STALE"
+        assert stale.response["summary"] == {
+            "status": "error",
+            "error_code": "SESSION_STALE",
+        }
+        assert stale.response["error"]["health_status"] != "error"
     finally:
         _kill_all(cli_runner)
 
@@ -320,7 +465,10 @@ def test_session_open_rejects_invalid_name(
         _request("session.open", target=resource_targets["design"], args={"name": name})
     )
     assert not result.ok
-    assert result.response["error"]["code"] in ("MISSING_FIELD", "INVALID_SESSION_NAME")
+    error = result.response["error"]
+    assert error["code"] == "INVALID_REQUEST"
+    assert error["error_layer"] == "schema"
+    assert error["invalid_arg"] == "args.name"
 
 
 @pytest.mark.session
@@ -353,7 +501,13 @@ def test_session_gc_removes_crashed_engine(
         gc = cli_runner.run(_request("session.gc"))
         assert gc.ok
         assert gc.response["summary"]["removed_count"] == 1
-        assert gc.response["data"]["removed"][0]["session_id"] == name
+        assert (
+            gc.response["data"]["removed"][0]["removed_session"][
+                "session_id"
+            ]
+            == name
+        )
+        assert gc.response["data"]["removed"][0]["reason"] == "unhealthy"
         assert not Path(native["socket_path"]).exists()
     finally:
         _kill_all(cli_runner)
@@ -383,7 +537,11 @@ def test_session_doctor_reports_resource_changed_for_stale_fsdb(
         doctor = cli_runner.run(_request("session.doctor", target={"session_id": name}))
         assert not doctor.ok
         assert doctor.response["error"]["code"] == "RESOURCE_CHANGED"
-        assert doctor.response["summary"]["status"] == "resource_changed"
+        assert doctor.response["summary"] == {
+            "status": "error",
+            "error_code": "RESOURCE_CHANGED",
+        }
+        assert doctor.response["error"]["health_status"] == "resource_changed"
     finally:
         _kill_all(cli_runner)
 
@@ -431,7 +589,13 @@ def test_session_file_transport_open_query_doctor_and_close(
         )
         assert queried.ok
         assert queried.response["session"]["transport"] == "file"
-        assert queried.response["data"]["value"]["known"] is True
+        assert queried.response["data"]["entries"][0]["key"] == (
+            _wave_value_at_args()["signal"]
+        )
+        assert (
+            queried.response["data"]["samples"][0]["values"][0]["value"]["known"]
+            is True
+        )
 
         doctor = cli_runner.run(
             _request("session.doctor", target={"session_id": name})
@@ -456,7 +620,128 @@ def test_session_file_transport_open_query_doctor_and_close(
 
 @pytest.mark.session
 @pytest.mark.waveform
-def test_session_uds_direct_query_times_out_without_spawn_fallback(
+def test_direct_resource_query_closes_ephemeral_engine(
+    resource_targets: dict,
+    cli_runner: CliRunner,
+    isolated_home: Path,
+) -> None:
+    result = cli_runner.run(
+        _request(
+            "value.at",
+            target=resource_targets["waveform"],
+            args=_wave_value_at_args(),
+        ),
+        timeout_sec=120,
+    )
+
+    assert result.ok, result.stdout_raw + result.stderr_raw
+    assert result.response["session"] is None
+    _assert_no_active_direct_resource_artifacts(isolated_home)
+    spawned = _direct_spawned_pids(isolated_home)
+    assert spawned
+    _assert_processes_gone(spawned)
+
+
+@pytest.mark.session
+@pytest.mark.waveform
+def test_direct_resource_timeout_cleans_process_and_registry(
+    resource_targets: dict,
+    cli_runner: CliRunner,
+    isolated_home: Path,
+) -> None:
+    started_at = time.monotonic()
+    result = cli_runner.run(
+        {
+            **_request(
+                "value.at",
+                target=resource_targets["waveform"],
+                args=_wave_value_at_args(),
+            ),
+            "limits": {"timeout_ms": 10_000},
+        },
+        env={"XDEBUG_ENGINE_TEST_DIRECT_RESOURCE_PAUSE_MS": "60000"},
+        timeout_sec=20,
+    )
+    elapsed = time.monotonic() - started_at
+
+    assert not result.timed_out
+    assert result.returncode != 0
+    assert result.response["ok"] is False
+    assert result.response["error"]["code"] == "ENGINE_TIMEOUT"
+    assert result.response["error"]["timeout_ms"] == 10_000
+    assert result.response["summary"] == {
+        "status": "error",
+        "error_code": "ENGINE_TIMEOUT",
+    }
+    assert result.response["data"] is None
+    assert elapsed < 18
+
+    phases = []
+    for directory in _direct_engine_directories(isolated_home):
+        lifecycle = directory / "logs" / "lifecycle.ndjson"
+        if lifecycle.exists():
+            phases.extend(
+                event["phase"]
+                for event in _read_ndjson(lifecycle)
+            )
+    assert "direct_resource.open.end" in phases
+    assert "direct_resource.test_pause.begin" in phases
+    assert "direct_resource.close.end" in phases
+    _assert_no_active_direct_resource_artifacts(isolated_home)
+    spawned = _direct_spawned_pids(isolated_home)
+    assert spawned
+    _assert_processes_gone(spawned)
+
+
+@pytest.mark.session
+@pytest.mark.parametrize(
+    "registry_text",
+    [
+        "{not-json",
+        json.dumps({"version": 1, "sessions": []}),
+        json.dumps(
+            {
+                "version": 2,
+                "sessions": [
+                    {
+                        "session_id": "partial",
+                        "transport": "uds",
+                    }
+                ],
+            }
+        ),
+    ],
+)
+def test_registry_invalid_fails_closed_for_list_and_lookup(
+    registry_text: str,
+    cli_runner: CliRunner,
+    isolated_home: Path,
+) -> None:
+    path = isolated_home / ".xdebug" / "engine" / "registry.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(registry_text, encoding="utf-8")
+
+    for request in (
+        _request("session.list"),
+        _request(
+            "value.at",
+            target={"session_id": "missing"},
+            args=_wave_value_at_args(),
+        ),
+    ):
+        result = cli_runner.run(request, timeout_sec=5)
+        assert not result.ok
+        assert result.response["error"]["code"] == "REGISTRY_INVALID"
+        assert result.response["summary"] == {
+            "status": "error",
+            "error_code": "REGISTRY_INVALID",
+        }
+        assert result.response["data"] is None
+
+
+@pytest.mark.session
+@pytest.mark.waveform
+def test_session_uds_query_timeout_uses_single_engine_invocation(
     resource_targets: dict,
     cli_runner: CliRunner,
     isolated_home: Path,
@@ -513,7 +798,7 @@ def test_session_uds_direct_query_times_out_without_spawn_fallback(
                     target={"session_id": "hung_uds"},
                     args=_wave_value_at_args(),
                 ),
-                "limits": {"timeout_ms": 100},
+                "limits": {"timeout_ms": 1000},
             },
             timeout_sec=5.0,
         )
@@ -524,22 +809,30 @@ def test_session_uds_direct_query_times_out_without_spawn_fallback(
         assert result.returncode != 0
         assert isinstance(result.response, dict)
         assert result.response["ok"] is False
-        assert result.response["error"]["code"] == "SESSION_TRANSPORT_FAILED"
-        assert "direct session socket timed out" in result.response["error"]["message"]
-        assert result.response["summary"]["transport"] == "uds"
-        assert result.response["summary"]["timeout_ms"] == 100
+        assert result.response["error"]["code"] == "ENGINE_TIMEOUT"
+        assert result.response["error"]["timeout_ms"] == 1000
+        assert result.response["summary"] == {
+            "status": "error",
+            "error_code": "ENGINE_TIMEOUT",
+        }
+        assert result.response["data"] is None
         assert elapsed < 2.0
 
         events = _engine_transport_events(isolated_home, "hung_uds")
         phases = [event["phase"] for event in events]
-        assert "socket.connect.begin" in phases
-        assert "socket.connect.ok" in phases
-        assert "socket.read.timeout" in phases
-        timeout_event = next(event for event in events if event["phase"] == "socket.read.timeout")
+        exchange_failures = [
+            event
+            for event in events
+            if event["phase"] == "send_request.exchange_failed"
+        ]
+        assert len(exchange_failures) == 1
+        assert phases.count("send_request.connect_failed") == 0
+        timeout_event = exchange_failures[0]
         assert timeout_event["session_id"] == "hung_uds"
         assert timeout_event["action"] == "value.at"
-        assert timeout_event["context"]["socket_path"] == str(socket_path)
-        assert timeout_event["context"]["timeout_ms"] == 100
+        assert timeout_event["context"]["socket_path"].startswith("<path:sha256:")
+        assert str(socket_path) not in json.dumps(timeout_event)
+        assert 0 < timeout_event["context"]["timeout_ms"] <= 1000
     finally:
         stop.set()
         thread.join(timeout=2.0)
@@ -571,20 +864,30 @@ def test_session_uds_connect_failure_is_logged(
                 target={"session_id": "dead_uds"},
                 args=_wave_value_at_args(),
             ),
-            "limits": {"timeout_ms": 100},
+            "limits": {"timeout_ms": 2000},
         },
         timeout_sec=5.0,
     )
 
     assert not result.ok
-    assert result.response["error"]["code"] == "SESSION_TRANSPORT_FAILED"
+    assert result.response["error"]["code"] == "SESSION_UNHEALTHY"
     events = _engine_transport_events(isolated_home, "dead_uds")
-    failed = next(event for event in events if event["phase"] == "socket.connect.failed")
+    failures = [
+        event
+        for event in events
+        if event["phase"] == "send_request.connect_failed"
+    ]
+    assert len(failures) == 1
+    assert not any(
+        event["phase"] == "send_request.exchange_failed"
+        for event in events
+    )
+    failed = failures[0]
     assert failed["session_id"] == "dead_uds"
     assert failed["action"] == "value.at"
-    assert failed["context"]["socket_path"] == str(socket_path)
-    assert failed["context"]["timeout_ms"] == 100
-    assert failed["context"]["errno"] != 0
+    assert failed["context"]["socket_path"].startswith("<path:sha256:")
+    assert str(socket_path) not in json.dumps(failed)
+    assert 0 < failed["context"]["timeout_ms"] <= 2000
 
 
 def test_session_uds_invalid_json_response_is_logged(
@@ -636,21 +939,28 @@ def test_session_uds_invalid_json_response_is_logged(
                     target={"session_id": "bad_json"},
                     args=_wave_value_at_args(),
                 ),
-                "limits": {"timeout_ms": 100},
+                "limits": {"timeout_ms": 2000},
             },
             timeout_sec=5.0,
         )
 
         assert not result.ok
-        assert result.response["error"]["code"] == "SESSION_TRANSPORT_FAILED"
+        assert result.response["error"]["code"] == "SESSION_UNHEALTHY"
         events = _engine_transport_events(isolated_home, "bad_json")
         phases = [event["phase"] for event in events]
-        assert "socket.connect.ok" in phases
-        parsed = next(event for event in events if event["phase"] == "socket.response_parse_failed")
+        exchange_failures = [
+            event
+            for event in events
+            if event["phase"] == "send_request.exchange_failed"
+        ]
+        assert len(exchange_failures) == 1
+        assert phases.count("send_request.connect_failed") == 0
+        parsed = exchange_failures[0]
         assert parsed["session_id"] == "bad_json"
         assert parsed["action"] == "value.at"
-        assert parsed["context"]["socket_path"] == str(socket_path)
-        assert parsed["context"]["response_bytes"] > 0
+        assert parsed["context"]["socket_path"].startswith("<path:sha256:")
+        assert str(socket_path) not in json.dumps(parsed)
+        assert 0 < parsed["context"]["timeout_ms"] <= 2000
     finally:
         thread.join(timeout=2.0)
         _kill_all(cli_runner)
@@ -707,9 +1017,12 @@ def test_engine_crash_marker_is_written_by_signal_handler(
     snapshot = next(event for event in lifecycle if event["phase"] == "env.snapshot")
     context = snapshot["context"]
     assert context["argv_count"] == 2
-    assert context["cwd_path"] == str(repo_root)
-    assert context["eda"]["verdi_home_path"] == str(fake_verdi)
-    assert context["eda"]["vcs_home_path"] == str(fake_vcs)
+    assert context["cwd_path"].startswith("<path:sha256:")
+    assert context["eda"]["verdi_home_path"].startswith("<path:sha256:")
+    assert context["eda"]["vcs_home_path"].startswith("<path:sha256:")
+    assert str(repo_root) not in json.dumps(context)
+    assert str(fake_verdi) not in json.dumps(context)
+    assert str(fake_vcs) not in json.dumps(context)
     assert context["lsf"] == {"job_id": "987654", "queue": "normal"}
     assert context["paths"]["ld_library_path_hash"]
     assert str(fake_eda / "lib") not in json.dumps(context)
