@@ -12,6 +12,7 @@ NPI_LIB ?=
 
 BUILD_INFO = $(BUILD)/build_info.h
 ACTION_METADATA = src/api/generated_action_metadata.inc
+GENERATED_HELP_TEXT = src/api/generated_help_text.inc
 CXXFLAGS = $(COMMON_CXXFLAGS) $(NPI_CXXFLAGS) -pthread -I$(BUILD) -Isrc -Isrc/core -Isrc/engine -Isrc/design -Isrc/waveform -isystem third_party -isystem third_party/json-schema-validator/src
 LDFLAGS  = $(NPI_LDFLAGS) -pthread $(if $(NPI_LIB),-Xlinker -rpath -Xlinker $(NPI_LIB),)
 DEPFLAGS = -MMD -MP
@@ -31,7 +32,10 @@ CORE_SRCS = src/core/common/tool_config.cpp \
             src/core/transport/file_exchange.cpp \
             src/core/logging/action_log.cpp \
             src/core/session/session_types.cpp \
+            src/core/session/session_endpoint_contract.cpp \
+            src/core/session/session_registry_contract.cpp \
             src/core/process/process_runner.cpp \
+            src/engine/service/contract_bound_request.cpp \
             src/core/schema/internal_request_contract.cpp \
             src/core/schema/runtime_schema_validator.cpp \
             src/core/ai/common_blocks.cpp \
@@ -74,7 +78,6 @@ ENGINE_SRCS = src/engine/main.cpp \
               src/engine/session/client.cpp \
               src/engine/service/engine_action_registry.cpp \
               src/engine/service/engine_action_handler.cpp \
-              src/engine/service/contract_bound_request.cpp \
               src/engine/service/trace_source_path_formatter.cpp \
               src/engine/service/actions/combined/register_combined_handlers.cpp \
               src/engine/service/actions/combined/trace_active_driver.cpp \
@@ -88,13 +91,13 @@ ENGINE_SRCS = src/engine/main.cpp \
               src/engine/service/actions/design/trace_load.cpp \
               src/engine/service/actions/protocol/apb_config_list.cpp \
               src/engine/service/actions/protocol/apb_config_load.cpp \
-              src/engine/service/actions/protocol/apb_cursor.cpp \
+              src/engine/service/actions/protocol/apb_transaction_cursor.cpp \
               src/engine/service/actions/protocol/apb_query.cpp \
               src/engine/service/actions/protocol/apb_statistics.cpp \
               src/engine/service/actions/protocol/axi_analysis.cpp \
               src/engine/service/actions/protocol/axi_config_list.cpp \
               src/engine/service/actions/protocol/axi_config_load.cpp \
-              src/engine/service/actions/protocol/axi_cursor.cpp \
+              src/engine/service/actions/protocol/axi_transaction_cursor.cpp \
               src/engine/service/actions/protocol/axi_export.cpp \
               src/engine/service/actions/protocol/axi_query.cpp \
               src/engine/service/actions/protocol/axi_statistics.cpp \
@@ -107,7 +110,7 @@ ENGINE_SRCS = src/engine/main.cpp \
               src/engine/service/actions/stream/stream_config_load.cpp \
               src/engine/service/actions/stream/stream_export.cpp \
               src/engine/service/actions/stream/stream_query.cpp \
-              src/engine/service/actions/stream/stream_show.cpp \
+              src/engine/service/actions/stream/stream_describe.cpp \
               src/engine/service/actions/stream/stream_validate.cpp \
               src/engine/service/actions/waveform/apb_transfer_window.cpp \
               src/engine/service/actions/waveform/axi_channel_stall.cpp \
@@ -116,29 +119,29 @@ ENGINE_SRCS = src/engine/main.cpp \
               src/engine/service/actions/waveform/axi_request_response_pair.cpp \
               src/engine/service/actions/waveform/clock_point_query.cpp \
               src/engine/service/actions/waveform/counter_statistics.cpp \
-              src/engine/service/actions/waveform/cursor_delete.cpp \
-              src/engine/service/actions/waveform/cursor_get.cpp \
-              src/engine/service/actions/waveform/cursor_list.cpp \
-              src/engine/service/actions/waveform/cursor_set.cpp \
-              src/engine/service/actions/waveform/cursor_use.cpp \
-              src/engine/service/actions/waveform/detect_abnormal.cpp \
+              src/engine/service/actions/waveform/waveform_cursor_delete.cpp \
+              src/engine/service/actions/waveform/waveform_cursor_get.cpp \
+              src/engine/service/actions/waveform/waveform_cursor_list.cpp \
+              src/engine/service/actions/waveform/waveform_cursor_set.cpp \
+              src/engine/service/actions/waveform/waveform_cursor_use.cpp \
+              src/engine/service/actions/waveform/signal_anomaly_inspect.cpp \
               src/engine/service/actions/waveform/event_config_list.cpp \
               src/engine/service/actions/waveform/event_config_load.cpp \
               src/engine/service/actions/waveform/event_export.cpp \
               src/engine/service/actions/waveform/event_find.cpp \
               src/engine/service/actions/waveform/expr_eval_at.cpp \
-              src/engine/service/actions/waveform/handshake_inspect.cpp \
+              src/engine/service/actions/waveform/protocol_handshake_inspect.cpp \
               src/engine/service/actions/waveform/list_add.cpp \
               src/engine/service/actions/waveform/list_create.cpp \
               src/engine/service/actions/waveform/list_load.cpp \
               src/engine/service/actions/waveform/list_delete.cpp \
-              src/engine/service/actions/waveform/list_diff.cpp \
+              src/engine/service/actions/waveform/list_first_change.cpp \
               src/engine/service/actions/waveform/list_export.cpp \
               src/engine/service/actions/waveform/list_show.cpp \
               src/engine/service/actions/waveform/list_validate.cpp \
-              src/engine/service/actions/waveform/rc_generate.cpp \
+              src/engine/service/actions/waveform/nwave_rc_generate.cpp \
               src/engine/service/actions/waveform/register_waveform_handlers.cpp \
-              src/engine/service/actions/waveform/sampled_pulse_inspect.cpp \
+              src/engine/service/actions/waveform/signal_sampled_pulse_inspect.cpp \
               src/engine/service/actions/waveform/scope_list.cpp \
               src/engine/service/actions/waveform/scope_roots.cpp \
               src/engine/service/actions/waveform/signal_changes.cpp \
@@ -183,8 +186,10 @@ WAVEFORM_SRCS = src/waveform/service/action_support.cpp \
                 src/waveform/list/list_manager.cpp \
                 src/waveform/cursor/cursor_manager.cpp \
                 src/waveform/common/xdebug_waveform_paths.cpp \
+                src/waveform/common/versioned_json_store.cpp \
                 src/waveform/common/time_spec.cpp \
                 src/waveform/common/clock_sampling.cpp \
+                src/waveform/common/clock_sampling_response.cpp \
                 src/waveform/common/reset_config.cpp \
                 src/waveform/common/expression.cpp \
                 src/waveform/cache/analysis_probe.cpp \
@@ -230,6 +235,11 @@ $(ACTION_METADATA): specs/actions/actions.yaml tools/sync_action_metadata.py
 
 $(BUILD)/src/api/action_registry_init.o: $(ACTION_METADATA)
 
+$(GENERATED_HELP_TEXT): help.txt tools/sync_help_text.py
+	$(PYTHON) tools/sync_help_text.py
+
+$(BUILD)/src/api/help_text.o: $(GENERATED_HELP_TEXT)
+
 $(BUILD_INFO): FORCE specs/actions/actions.yaml
 	@mkdir -p $(dir $@)
 	@rev=$$(git -C $(TOP) rev-parse --short=12 HEAD 2>/dev/null || echo unknown); \
@@ -273,7 +283,8 @@ $(eval $(call CPP_UNIT_BINARY,test_unique_resource,,))
 $(eval $(call CPP_UNIT_BINARY,test_action_log,$(CORE_OBJS),$(LDFLAGS)))
 $(eval $(call CPP_UNIT_BINARY,test_file_exchange,$(CORE_OBJS),$(LDFLAGS)))
 $(eval $(call CPP_UNIT_BINARY,test_process_runner,$(CORE_OBJS),$(LDFLAGS)))
-$(eval $(call CPP_UNIT_BINARY,test_session_catalog,$(BUILD)/src/session/session_catalog.o $(BUILD)/src/core/common/path_utils.o $(BUILD)/src/core/common/env_config.o,))
+$(eval $(call CPP_UNIT_BINARY,test_session_catalog,$(BUILD)/src/session/session_catalog.o $(BUILD)/src/core/session/session_registry_contract.o $(BUILD)/src/core/session/session_types.o $(BUILD)/src/core/common/path_utils.o $(BUILD)/src/core/common/env_config.o,))
+$(eval $(call CPP_UNIT_BINARY,test_session_registry,$(BUILD)/src/engine/session/session_registry.o $(BUILD)/src/design/common/xdebug_design_paths.o $(BUILD)/src/core/session/session_registry_contract.o $(BUILD)/src/core/session/session_types.o $(BUILD)/src/core/common/path_utils.o $(BUILD)/src/core/common/env_config.o $(BUILD)/src/core/common/tool_config.o,$(LDFLAGS)))
 $(eval $(call CPP_UNIT_BINARY,test_action_registry,$(CORE_OBJS) $(API_SUPPORT_OBJS) $(BUILD)/src/api/response.o,$(LDFLAGS)))
 $(eval $(call CPP_UNIT_BINARY,test_request_contract,$(CORE_OBJS) $(API_SUPPORT_OBJS) $(BUILD)/src/api/response.o,$(LDFLAGS)))
 $(eval $(call CPP_UNIT_BINARY,test_text_response_builder,$(BUILD)/src/api/text_response_builder.o $(BUILD)/src/api/xout_renderer.o $(BUILD)/src/core/value/logic_value.o,))
@@ -283,6 +294,7 @@ $(eval $(call CPP_UNIT_BINARY,test_protocol_statistics_filter,$(BUILD)/src/engin
 $(eval $(call CPP_UNIT_BINARY,test_trace_source_path_formatter,$(BUILD)/src/engine/service/trace_source_path_formatter.o $(BUILD)/src/api/text_response_builder.o $(CORE_OBJS),$(LDFLAGS)))
 $(eval $(call CPP_UNIT_BINARY,test_trace_x_chain_identity,,))
 $(eval $(call CPP_UNIT_BINARY,test_common_blocks,$(CORE_OBJS) $(BUILD)/src/api/text_response_builder.o $(BUILD)/src/api/xout_renderer.o,$(LDFLAGS)))
+$(eval $(call CPP_UNIT_BINARY,test_contract_bound_request,$(BUILD)/src/engine/service/contract_bound_request.o,))
 $(eval $(call CPP_UNIT_BINARY,test_logic_value,$(BUILD)/src/core/value/logic_value.o,))
 $(eval $(call CPP_UNIT_BINARY,test_event_expr,$(BUILD)/src/waveform/event/event_expr.o $(BUILD)/src/waveform/common/expression.o $(BUILD)/src/waveform/stream/stream_expr.o $(BUILD)/src/core/value/logic_value.o,))
 $(eval $(call CPP_UNIT_BINARY,test_expression,$(BUILD)/src/waveform/common/expression.o $(BUILD)/src/waveform/stream/stream_expr.o $(BUILD)/src/core/value/logic_value.o,))
@@ -293,7 +305,12 @@ $(eval $(call CPP_UNIT_BINARY,test_axi_transaction_tracker,$(BUILD)/src/waveform
 $(eval $(call CPP_UNIT_BINARY,test_analysis_probe,$(BUILD)/src/waveform/cache/analysis_probe.o,))
 $(eval $(call CPP_UNIT_BINARY,test_analysis_repository,$(BUILD)/src/waveform/cache/analysis_repository.o $(BUILD)/src/waveform/cache/analysis_probe.o $(BUILD)/src/core/common/sha256.o,))
 $(eval $(call CPP_UNIT_BINARY,test_stream_base_analysis,$(BUILD)/src/waveform/cache/analysis_size_estimator.o,))
-$(eval $(call CPP_UNIT_BINARY,test_stream_manager,$(BUILD)/src/waveform/stream/stream_manager.o $(BUILD)/src/waveform/stream/stream_config.o $(BUILD)/src/waveform/common/xdebug_waveform_paths.o $(BUILD)/src/waveform/common/clock_sampling.o $(BUILD)/src/waveform/common/reset_config.o $(BUILD)/src/waveform/server/fsdb_value_reader.o $(BUILD)/src/waveform/server/fsdb_scan_utils.o $(CORE_OBJS),$(LDFLAGS)))
+$(eval $(call CPP_UNIT_BINARY,test_stream_manager,$(BUILD)/src/waveform/stream/stream_manager.o $(BUILD)/src/waveform/stream/stream_config.o $(BUILD)/src/waveform/common/xdebug_waveform_paths.o $(BUILD)/src/waveform/common/versioned_json_store.o $(BUILD)/src/waveform/common/clock_sampling.o $(BUILD)/src/waveform/common/reset_config.o $(BUILD)/src/waveform/server/fsdb_value_reader.o $(BUILD)/src/waveform/server/fsdb_scan_utils.o $(CORE_OBJS),$(LDFLAGS)))
+$(eval $(call CPP_UNIT_BINARY,test_apb_manager,$(BUILD)/src/waveform/apb/apb_manager.o $(BUILD)/src/waveform/common/xdebug_waveform_paths.o $(BUILD)/src/waveform/common/versioned_json_store.o $(BUILD)/src/waveform/common/clock_sampling.o $(BUILD)/src/waveform/common/reset_config.o $(BUILD)/src/waveform/server/fsdb_value_reader.o $(BUILD)/src/waveform/server/fsdb_scan_utils.o $(CORE_OBJS),$(LDFLAGS)))
+$(eval $(call CPP_UNIT_BINARY,test_cursor_manager,$(BUILD)/src/waveform/cursor/cursor_manager.o $(BUILD)/src/waveform/common/xdebug_waveform_paths.o $(BUILD)/src/waveform/common/versioned_json_store.o $(BUILD)/src/core/common/tool_config.o $(BUILD)/src/core/common/path_utils.o $(BUILD)/src/core/common/env_config.o,))
+$(eval $(call CPP_UNIT_BINARY,test_list_manager,$(BUILD)/src/waveform/list/list_manager.o $(BUILD)/src/waveform/common/xdebug_waveform_paths.o $(BUILD)/src/waveform/common/versioned_json_store.o $(BUILD)/src/core/common/tool_config.o $(BUILD)/src/core/common/path_utils.o $(BUILD)/src/core/common/env_config.o,))
+$(eval $(call CPP_UNIT_BINARY,test_versioned_json_store,$(BUILD)/src/waveform/common/versioned_json_store.o,))
+$(eval $(call CPP_UNIT_BINARY,test_clock_sampling_event_manager,$(BUILD)/src/waveform/service/action_support.o $(BUILD)/src/waveform/service/config_support.o $(BUILD)/src/waveform/event/event_manager.o $(BUILD)/src/waveform/common/xdebug_waveform_paths.o $(BUILD)/src/waveform/common/versioned_json_store.o $(BUILD)/src/waveform/common/clock_sampling.o $(BUILD)/src/waveform/common/clock_sampling_response.o $(BUILD)/src/waveform/common/reset_config.o $(BUILD)/src/waveform/server/fsdb_value_reader.o $(BUILD)/src/waveform/server/fsdb_scan_utils.o $(CORE_OBJS),$(LDFLAGS)))
 
 cpp-unit-binaries: $(CPP_UNIT_BINARIES)
 

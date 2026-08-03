@@ -11,17 +11,6 @@
 
 namespace xdebug_design {
 
-Json EngineActionHandler::run(ContractBoundRequest& request,
-                              EngineActionContext& ctx) const {
-    return run(request.consume_args_request("legacy_typed_action_parser"), ctx);
-}
-
-Json EngineActionHandler::run(const Json&, EngineActionContext&) const {
-    return make_handler_error(
-        "INTERNAL_CONTRACT_ERROR",
-        "action handler does not implement a request parser");
-}
-
 namespace {
 
 bool should_emit_scalar_key(const std::string& key, const Json& value) {
