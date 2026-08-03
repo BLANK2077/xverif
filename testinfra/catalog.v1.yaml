@@ -646,6 +646,32 @@ suites:
     cost: {class: slow, estimate_sec: 90}
     timeouts: {execute_sec: 420, cleanup_sec: 30}
 
+  - id: xdebug.native_xout_report
+    owner: xdebug
+    level: unit
+    intent: [contract]
+    domains: [xout, report]
+    runner: {kind: pytest, path: xdebug/tests/native_xout/test_report_contract.py}
+    capabilities: []
+    hermetic: true
+    deterministic: true
+    cost: {class: fast, estimate_sec: 5}
+    timeouts: {execute_sec: 60, cleanup_sec: 10}
+
+  - id: xdebug.native_xout_all
+    owner: xdebug
+    level: system
+    intent: [contract, semantics]
+    domains: [xout, cli, design, waveform, combined, apb, axi, stream, event]
+    runner: {kind: pytest, path: xdebug/tests/native_xout}
+    fixtures: [xdebug.ai_complex_wave, xdebug.active_semantics, xdebug.trace_x_xprop, xdebug.apb_vip, xdebug.axi_vip, xdebug.stream_v1, xdebug.xif_event]
+    capabilities: [child_process, npi, fsdb, daidir]
+    hermetic: false
+    deterministic: true
+    cost: {class: slow, estimate_sec: 300}
+    resources: {cpu: 1, memory_mb: 4096, tokens: [verdi_npi]}
+    timeouts: {execute_sec: 1200, cleanup_sec: 60}
+
   - id: xdebug.analysis_cache_benchmark
     owner: xdebug
     level: system
