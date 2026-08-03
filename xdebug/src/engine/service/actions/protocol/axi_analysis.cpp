@@ -18,6 +18,10 @@
 #include <memory>
 #include <ctime>
 #include <sstream>
+#include <cmath>
+#include <cstdint>
+#include <limits>
+#include <stdexcept>
 
 namespace xdebug_design {
 namespace {
@@ -47,7 +51,21 @@ static Json latency_stat_json(const xdebug_waveform::AxiStatResult& stat) {
 static Json outstanding_stat_json(const xdebug_waveform::AxiStatResult& stat) {
     if (stat.samples == 0)
         return Json{{"samples", 0}, {"status", "empty"}, {"min", 0}, {"max", 0}, {"avg", 0.0}};
-    return Json{{"samples", stat.samples}, {"min", stat.min}, {"max", stat.max}, {"avg", stat.avg}};
+    auto exact_count = [](double value) -> std::int64_t {
+        double integral = 0.0;
+        if (!std::isfinite(value) || value < 0.0 ||
+            std::modf(value, &integral) != 0.0 ||
+            integral >= std::ldexp(
+                1.0, std::numeric_limits<std::int64_t>::digits)) {
+            throw std::logic_error(
+                "AXI outstanding extrema must be exact non-negative integers");
+        }
+        return static_cast<std::int64_t>(integral);
+    };
+    return Json{{"samples", stat.samples},
+                {"min", exact_count(stat.min)},
+                {"max", exact_count(stat.max)},
+                {"avg", stat.avg}};
 }
 
 static Json pending_txn_json(const xdebug_waveform::AxiTransaction& txn,
@@ -169,14 +187,17 @@ public:
             g_axi_analyzer.get_outstanding_stats(name, filter, nullptr, selected);
             g_axi_analyzer.get_outstanding_stats(name, 2, nullptr, read);
             g_axi_analyzer.get_outstanding_stats(name, 1, nullptr, write);
-            out["summary"]["max"] = selected.max;
-            out["summary"]["min"] = selected.min;
-            out["summary"]["avg"] = selected.avg;
-            out["summary"]["samples"] = selected.samples;
+            const Json selected_json = outstanding_stat_json(selected);
+            const Json read_json = outstanding_stat_json(read);
+            const Json write_json = outstanding_stat_json(write);
+            out["summary"]["max"] = selected_json["max"];
+            out["summary"]["min"] = selected_json["min"];
+            out["summary"]["avg"] = selected_json["avg"];
+            out["summary"]["samples"] = selected_json["samples"];
             total_count = selected.samples;
             returned_count = selected.samples;
-            out["osd"] = {{"read", outstanding_stat_json(read)},
-                          {"write", outstanding_stat_json(write)},
+            out["osd"] = {{"read", read_json},
+                          {"write", write_json},
                           {"final_read", diag.final_read_outstanding},
                           {"final_write", diag.final_write_outstanding},
                           {"definitions", {{"read", "increment on AR handshake, decrement on RLAST handshake"},

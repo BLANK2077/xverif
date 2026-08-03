@@ -544,6 +544,28 @@ def test_unknown_fields_and_type_or_enum_drift_are_rejected() -> None:
     _assert_pair_invalid("apb.config.load", summary, data)
 
 
+def test_axi_analysis_osd_extrema_are_exact_integer_counts() -> None:
+    summary, data = _variant("axi.analysis", "osd")
+    _assert_pair_valid("axi.analysis", summary, data)
+
+    fractional_summary = copy.deepcopy(summary)
+    fractional_summary["min"] = 0.5
+    _assert_pair_invalid("axi.analysis", fractional_summary, data)
+
+    nonempty_data = copy.deepcopy(data)
+    nonempty_data["osd"]["read"] = {
+        "samples": 2,
+        "min": 0,
+        "max": 1,
+        "avg": 0.5,
+    }
+    _assert_pair_valid("axi.analysis", summary, nonempty_data)
+
+    fractional_data = copy.deepcopy(nonempty_data)
+    fractional_data["osd"]["read"]["max"] = 1.5
+    _assert_pair_invalid("axi.analysis", summary, fractional_data)
+
+
 @pytest.mark.parametrize(
     ("action", "summary_variant", "data_variant"),
     [

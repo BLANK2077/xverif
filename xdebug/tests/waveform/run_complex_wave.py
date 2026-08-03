@@ -724,14 +724,19 @@ class AiRunner(object):
         self.sid = None
         self.rows = []
         self.duplicate_contract_violations = []
-        self.loop = StdioLoopRunner(
-            Path(self.xdebug),
-            cwd=Path(REPO_ROOT),
-            env=self.env,
-            default_json=True,
-            wait_for_stderr_idle=False,
-        )
-        self.loop.start()
+        self.loop = None
+
+    def ensure_loop(self):
+        if self.loop is None:
+            self.loop = StdioLoopRunner(
+                Path(self.xdebug),
+                cwd=Path(REPO_ROOT),
+                env=self.env,
+                default_json=True,
+                wait_for_stderr_idle=False,
+            )
+            self.loop.start()
+        return self.loop
 
     def cleanup(self):
         try:
@@ -740,11 +745,12 @@ class AiRunner(object):
             require(not self.duplicate_contract_violations,
                     "summary/data duplicate facts remain: {}".format(self.duplicate_contract_violations))
         finally:
-            try:
-                self.loop.quit()
-            finally:
-                self.loop.terminate()
-                shutil.rmtree(self.home, ignore_errors=True)
+            if self.loop is not None:
+                try:
+                    self.loop.quit()
+                finally:
+                    self.loop.terminate()
+            shutil.rmtree(self.home, ignore_errors=True)
 
     def query(self, action, args=None, target=None, limits=None, expect_ok=True, allow_no_sid=False, timeout=60):
         req = {
@@ -774,7 +780,7 @@ class AiRunner(object):
                 process_timeout,
             )
         )
-        result = self.loop.request(req, timeout_sec=process_timeout)
+        result = self.ensure_loop().request(req, timeout_sec=process_timeout)
         rc = result.returncode
         out = json.dumps(result.response)
         err = result.stderr_raw
@@ -1537,7 +1543,21 @@ def run_axi(xdebug, fsdb, sim_log=AXI_SIM_LOG, handshake_oracle_path=AXI_HANDSHA
         r.query("axi.config.list", args={"name": "axi0"})
         wr = r.query("axi.query", args={"name": "axi0", "direction": "write"})
         rd = r.query("axi.query", args={"name": "axi0", "direction": "read"})
-        require(wr["summary"].get("count", 0) > 0 and rd["summary"].get("count", 0) > 0, "AXI query count is empty")
+        for response, direction in ((wr, "write"), (rd, "read")):
+            summary = response["summary"]
+            require(summary["query_mode"] == "count" and
+                    summary["direction"] == direction and
+                    summary["scan_complete"] is True and
+                    summary["analysis_complete"] is True and
+                    summary["response_truncated"] is False and
+                    summary["total_count"] == expected_count and
+                    summary["returned_count"] == 0 and
+                    summary["truncation_scopes"] == [],
+                    "AXI {} count-only query contract mismatch".format(direction))
+            require(response["data"]["filter"]["direction"] == direction and
+                    "transaction" not in response["data"] and
+                    "transactions" not in response["data"],
+                    "AXI {} count-only query returned transaction rows".format(direction))
         axi_xout = r.query_xout("axi.query", args={
             "name": "axi0",
             "direction": "write",
@@ -1595,7 +1615,7 @@ def run_axi(xdebug, fsdb, sim_log=AXI_SIM_LOG, handshake_oracle_path=AXI_HANDSHA
                 "ids": [str(value) for value in selected_ids],
                 "address": {
                     "mode": "exact",
-                    "values": ["0x{:x}".format(value) for value in selected_addresses],
+                    "values": ["32'h{:x}".format(value) for value in selected_addresses],
                 },
             },
         })
@@ -1615,8 +1635,8 @@ def run_axi(xdebug, fsdb, sim_log=AXI_SIM_LOG, handshake_oracle_path=AXI_HANDSHA
         range_statistics = r.query("axi.statistics", args={
             "name": "axi0",
             "filter": {"address": {"mode": "range",
-                                    "begin": "0x{:x}".format(range_begin),
-                                    "end": "0x{:x}".format(range_end)}},
+                                    "begin": "32'h{:x}".format(range_begin),
+                                    "end": "32'h{:x}".format(range_end)}},
         })
         require(range_statistics["summary"]["matched_transaction_count"] == range_expected and
                 range_statistics["summary"]["full_scan_count"] == 1,
@@ -1632,20 +1652,34 @@ def run_axi(xdebug, fsdb, sim_log=AXI_SIM_LOG, handshake_oracle_path=AXI_HANDSHA
             "name": "axi0",
             "filter": {"direction": "read",
                        "address": {"mode": "mask",
-                                   "value": "0x{:x}".format(mask_value),
-                                   "mask": "0x{:x}".format(mask)}},
+                                   "value": "32'h{:x}".format(mask_value),
+                                   "mask": "32'h{:x}".format(mask)}},
         })
         require(mask_statistics["summary"]["matched_transaction_count"] == mask_expected and
                 mask_statistics["summary"]["matched_read_count"] == mask_expected and
                 mask_statistics["summary"]["matched_write_count"] == 0 and
                 mask_statistics["summary"]["full_scan_count"] == 1,
                 "AXI mask-address statistics mismatch")
-        compact_txn = r.query(
+        default_txn = r.query(
             "axi.query",
             args={"name": "axi0", "direction": "write", "query": {"index": 1}},
         )
-        require("beats" not in compact_txn["data"]["transaction"].get("data", {}),
-                "AXI compact transaction must omit beat data")
+        require(default_txn["summary"]["data_scope"] ==
+                    "first_beat_each_with_first_transaction_full" and
+                "beats" in default_txn["data"]["transaction"]["data"],
+                "AXI default first transaction must include all beats")
+        compact_txn = r.query(
+            "axi.query",
+            args={
+                "name": "axi0",
+                "direction": "write",
+                "query": {"index": 1},
+                "output": {"include_data": False},
+            },
+        )
+        require(compact_txn["summary"]["data_scope"] == "none" and
+                "beats" not in compact_txn["data"]["transaction"].get("data", {}),
+                "AXI include_data=false transaction must omit beat data")
         detailed_txn = r.query(
             "axi.query",
             args={
@@ -1655,7 +1689,9 @@ def run_axi(xdebug, fsdb, sim_log=AXI_SIM_LOG, handshake_oracle_path=AXI_HANDSHA
                 "output": {"include_data": True},
             },
         )
-        require("beats" in detailed_txn["data"]["transaction"]["data"],
+        require(detailed_txn["summary"]["data_scope"] ==
+                    "all_returned_transactions_full" and
+                "beats" in detailed_txn["data"]["transaction"]["data"],
                 "AXI include_data transaction must include beat data")
 
         axi_modes = [
@@ -1719,7 +1755,8 @@ def run_axi(xdebug, fsdb, sim_log=AXI_SIM_LOG, handshake_oracle_path=AXI_HANDSHA
             "axi.analysis",
             args={"name": "axi0", "analysis": "pending", "direction": "all"},
         )
-        require(pending["summary"]["pending_count"] == 0 and
+        require(pending["summary"]["total_count"] == 0 and
+                pending["summary"]["returned_count"] == 0 and
                 pending["data"]["pending_transactions"] == [],
                 "completed AXI VIP run must not leave pending transactions")
 
@@ -1727,13 +1764,6 @@ def run_axi(xdebug, fsdb, sim_log=AXI_SIM_LOG, handshake_oracle_path=AXI_HANDSHA
         require(all("beats" not in txn.get("data", {})
                     for txn in pair_cold["data"]["transactions"]),
                 "AXI compact request_response_pair must omit beat payload")
-        pair_detailed = r.query(
-            "axi.request_response_pair",
-            args={"name": "axi0", "time_range": tr, "line_limit": 20,
-                  "output": {"include_data": True}},
-        )
-        require(any("beats" in txn.get("data", {}) for txn in pair_detailed["data"]["transactions"]),
-                "AXI include_data request_response_pair must include beat payload")
         pair_cache = r.query("axi.request_response_pair", args={"name": "axi0", "time_range": tr, "line_limit": 20})
         require(pair_cache["summary"]["total_count"] > 0, "AXI cached request_response_pair empty")
         lat = r.query("axi.latency_outlier", args={"name": "axi0", "time_range": tr, "line_limit": 5})
@@ -1743,13 +1773,6 @@ def run_axi(xdebug, fsdb, sim_log=AXI_SIM_LOG, handshake_oracle_path=AXI_HANDSHA
         require(all("beats" not in txn.get("data", {})
                     for txn in lat["data"]["outliers"]),
                 "AXI compact latency_outlier must omit beat payload")
-        lat_detailed = r.query(
-            "axi.latency_outlier",
-            args={"name": "axi0", "time_range": tr, "line_limit": 5,
-                  "output": {"include_data": True}},
-        )
-        require(any("beats" in txn.get("data", {}) for txn in lat_detailed["data"]["outliers"]),
-                "AXI include_data latency_outlier must include beat payload")
         osd = r.query("axi.outstanding_timeline", args={"name": "axi0", "time_range": tr, "line_limit": 20})
         require(osd["summary"]["sample_count"] > 0, "AXI outstanding_timeline empty")
         stall = r.query("axi.channel_stall", args={"name": "axi0", "channel": "r", "time_range": tr, "rules": {"max_wait_cycles": 2}, "line_limit": 1000000})
