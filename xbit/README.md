@@ -19,9 +19,9 @@
 
 ## Quick Start
 
-`xbit` wrapper 默认优先使用已配置的 Miniconda Python；没有可用配置时回退到 `python3`。如果已经按下面的 Shell 命令入口配置过，可以直接运行 `xbit ...`；否则在仓库根目录临时使用 `tools/xbit ...`。
+`xbit` wrapper 按固定顺序解析解释器：优先使用已配置的 Miniconda Python，否则使用声明的 `python3` 入口。该步骤只启动同一个 xbit 实现，不会切换 action、backend 或 data source。
 
-默认输出为 `xout` 结构化文本；需要脚本解析完整字段时加 `--json`。
+默认输出 token-efficient `xout`，用紧凑字段减少 AI/LLM token；需要稳定字段编程、schema 校验、结构化持久化或用户明确要求时才加 `--json`。
 
 ```bash
 pytest --xverif-gate regression --xverif-suite xbit.unit
@@ -71,8 +71,6 @@ xbit conv "8'shff" --json
 xbit eval "data[15:8] == 8'hbe" --var data=32'hdead_beef --json
 ```
 
-兼容入口 `xbit/xbit` 仍保留为转发 wrapper，但新文档和 skill 推荐 `tools/xbit` 或 `PATH` 中的 `xbit`。
-
 JSON 成功响应：
 
 ```json
@@ -80,7 +78,6 @@ JSON 成功响应：
   "ok": true,
   "schema": "xbit.result.v1",
   "op": "conv",
-  "input": "8'shff",
   "result": {
     "width": 8,
     "signed": true,
@@ -168,15 +165,14 @@ xbit eval "data[15:8] == 8'hbe" --var data=32'hdead_beef --json
 
 ### Wave/debug check
 
-`check` 用于吃波形或 xdebug/xwave compact values，并判断某个条件。
+`check` 用于读取明确的变量字面量 map，并判断某个条件。
 
 ```bash
 xbit check \
   --expr "valid && ready && data[15:8] == 8'hbe" \
   --var valid=1'b1 \
   --var ready=1'b1 \
-  --var data=32'hdead_beef \
-  --json
+  --var data=32'hdead_beef
 ```
 
 `--values` 支持直接 map：
@@ -189,17 +185,8 @@ xbit check \
 }
 ```
 
-也支持 compact 包装：
-
-```json
-{
-  "values": {
-    "valid": "1'b1",
-    "ready": "1'b1",
-    "data": "32'hdead_beef"
-  }
-}
-```
+`--values` 文件只接受上面的直接 map；不接受包装对象或每个值的别名字段。
+`--values` 与 `--var` 是互斥的变量来源，同时传入会直接报错。
 
 ### Agent stdio
 

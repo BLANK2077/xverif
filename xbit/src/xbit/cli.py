@@ -8,14 +8,14 @@ from .bitvector import BitVector
 from .check import run_check
 from .errors import XbitError
 from .eval import eval_expr, parse_vars
-from .format import dumps, failure, human_result, success
+from .format import dumps, failure, success, to_xout, validate_response
 from .literal import parse_value
 
 
 def _state(value: str) -> str:
-    if value in {"2", "2state"}:
+    if value == "2":
         return "2state"
-    if value in {"4", "4state"}:
+    if value == "4":
         return "4state"
     raise argparse.ArgumentTypeError("--state must be 2 or 4")
 
@@ -23,7 +23,7 @@ def _state(value: str) -> str:
 def add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--json", action="store_true", help="emit xbit.result.v1 JSON")
     parser.add_argument("--pretty", action="store_true", help="pretty-print JSON")
-    parser.add_argument("--state", type=_state, default="2state", help="2 or 4; default: 2")
+    parser.add_argument("--state", type=_state, default="2", help="2 or 4; default: 2")
 
 
 def add_value_common(parser: argparse.ArgumentParser) -> None:
@@ -34,10 +34,11 @@ def add_value_common(parser: argparse.ArgumentParser) -> None:
 
 
 def emit(payload: dict, *, json_mode: bool, pretty: bool) -> int:
+    validate_response(payload)
     if json_mode:
         print(dumps(payload, pretty=pretty))
     else:
-        print(human_result(payload))
+        print(to_xout(payload), end="")
     return 0 if payload.get("ok") else 1
 
 
@@ -51,53 +52,50 @@ def parse_input(value: str, args: argparse.Namespace) -> BitVector:
 
 
 def cmd_conv(args: argparse.Namespace) -> dict:
-    return success("conv", input_value=args.value, result=parse_input(args.value, args))
+    return success("conv", result=parse_input(args.value, args))
 
 
 def cmd_eval(args: argparse.Namespace) -> dict:
     variables = parse_vars(args.var, state=args.state)
     result = eval_expr(args.expr, variables, state=args.state, width=args.width, signed=args.signed)
-    payload = success("eval", input_value=args.expr, result=result)
-    if result.known:
-        payload["result"]["bool"] = result.truthy()
-    return payload
+    return success("eval", result=result)
 
 
 def cmd_slice(args: argparse.Namespace) -> dict:
     value = parse_value(args.value, state=args.state)
-    return success("slice", input_value=args.value, result=ops.slice_bits(value, args.msb, args.lsb))
+    return success("slice", result=ops.slice_bits(value, args.msb, args.lsb))
 
 
 def cmd_index(args: argparse.Namespace) -> dict:
     value = parse_value(args.value, state=args.state)
-    return success("index", input_value=args.value, result=ops.index_bit(value, args.bit))
+    return success("index", result=ops.index_bit(value, args.bit))
 
 
 def cmd_concat(args: argparse.Namespace) -> dict:
     values = [parse_value(v, state=args.state) for v in args.values]
-    return success("concat", input_value=args.values, result=ops.concat(values))
+    return success("concat", result=ops.concat(values))
 
 
 def cmd_repeat(args: argparse.Namespace) -> dict:
-    return success("repeat", input_value={"count": args.count, "value": args.value}, result=ops.repeat(args.count, parse_value(args.value, state=args.state)))
+    return success("repeat", result=ops.repeat(args.count, parse_value(args.value, state=args.state)))
 
 
 def cmd_resize(args: argparse.Namespace) -> dict:
     value = parse_value(args.value, state=args.state)
     fn = {"trunc": ops.trunc, "zext": ops.zext, "sext": ops.sext}[args.command]
-    return success(args.command, input_value=args.value, result=fn(value, args.to))
+    return success(args.command, result=fn(value, args.to))
 
 
 def cmd_reverse(args: argparse.Namespace) -> dict:
-    return success("reverse", input_value=args.value, result=ops.reverse_bits(parse_value(args.value, state=args.state)))
+    return success("reverse", result=ops.reverse_bits(parse_value(args.value, state=args.state)))
 
 
 def cmd_mask(args: argparse.Namespace) -> dict:
-    return success("mask", input_value={"width": args.width, "lsb": args.lsb}, result=ops.mask(args.width, args.lsb))
+    return success("mask", result=ops.mask(args.width, args.lsb))
 
 
 def cmd_align(args: argparse.Namespace) -> dict:
-    return success("align", input_value=args.value, result=ops.align(parse_value(args.value, state=args.state), args.to))
+    return success("align", result=ops.align(parse_value(args.value, state=args.state), args.to))
 
 
 def cmd_unary_op(args: argparse.Namespace) -> dict:
@@ -110,15 +108,12 @@ def cmd_unary_op(args: argparse.Namespace) -> dict:
         "bin2gray": ops.bin2gray,
     }[args.command]
     result = fn(value)
-    payload = success(args.command, input_value=args.value, result=result)
-    if args.command in {"onehot", "onehot0"}:
-        payload["result"]["bool"] = result.truthy()
-    return payload
+    return success(args.command, result=result)
 
 
 def cmd_check(args: argparse.Namespace) -> dict:
     result = run_check(args.expr, var_items=args.var, values_file=args.values, state=args.state)
-    return success("check", input_value=args.expr, result=result["result"], matched=result["matched"], evaluated=result["evaluated"])
+    return success("check", result=result["result"], matched=result["matched"], evaluated=result["evaluated"])
 
 
 def cmd_agent(args: argparse.Namespace) -> int:
@@ -201,8 +196,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("check")
     add_common(p)
     p.add_argument("--expr", required=True)
-    p.add_argument("--var", action="append", default=[])
-    p.add_argument("--values")
+    check_values = p.add_mutually_exclusive_group()
+    check_values.add_argument("--var", action="append", default=[])
+    check_values.add_argument("--values")
     p.set_defaults(func=cmd_check)
 
     p = sub.add_parser("agent")
@@ -222,7 +218,7 @@ def main(argv: list[str] | None = None) -> int:
             return result
         return emit(result, json_mode=getattr(args, "json", False), pretty=getattr(args, "pretty", False))
     except Exception as exc:
-        return emit(failure(exc), json_mode=getattr(args, "json", False), pretty=getattr(args, "pretty", False))
+        return emit(failure(exc, op=getattr(args, "command", None)), json_mode=getattr(args, "json", False), pretty=getattr(args, "pretty", False))
 
 
 if __name__ == "__main__":

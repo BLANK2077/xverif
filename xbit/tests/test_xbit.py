@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import os
 import subprocess
@@ -13,8 +14,9 @@ SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
 from xbit.check import run_check
-from xbit.errors import ValueError2State, WidthError
+from xbit.errors import ParseError, ValueError2State, WidthError
 from xbit.eval import eval_expr, parse_vars
+from xbit.format import ResponseContractError, failure, success, to_xout, validate_response
 from xbit.literal import parse_value
 from xbit import ops
 
@@ -97,6 +99,10 @@ class EvalTests(unittest.TestCase):
         self.assertEqual(eval_expr("ADDR_W + ID_W - 1", variables).unsigned, 35)
         self.assertEqual(eval_expr("sel ? 8'ha5 : 8'h00", variables).unsigned, 0xA5)
 
+    def test_duplicate_variable_assignment_is_rejected(self):
+        with self.assertRaises(ParseError):
+            parse_vars(["data=8'h01", "data=8'h02"])
+
 
 class CheckTests(unittest.TestCase):
     def test_check_vars(self):
@@ -108,7 +114,7 @@ class CheckTests(unittest.TestCase):
         self.assertIn("data", result["evaluated"])
 
     def test_check_values_file(self):
-        payload = {"values": {"valid": "1'b1", "ready": "1'b1", "opcode": "4'ha"}}
+        payload = {"valid": "1'b1", "ready": "1'b1", "opcode": "4'ha"}
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as fh:
             json.dump(payload, fh)
             path = fh.name
@@ -117,6 +123,13 @@ class CheckTests(unittest.TestCase):
             self.assertTrue(result["matched"])
         finally:
             os.unlink(path)
+
+    def test_check_rejects_wrapped_values_and_multiple_sources(self):
+        with self.assertRaises(ParseError):
+            run_check("valid", values_payload={"values": {"valid": "1'b1"}})
+        with self.assertRaises(ParseError):
+            run_check("valid", var_items=["valid=1'b1"],
+                      values_payload={"valid": "1'b1"})
 
 
 class CliTests(unittest.TestCase):
@@ -143,6 +156,33 @@ class CliTests(unittest.TestCase):
         payload = self.run_cli("eval", "data[15:8] == 8'hbe", "--var", "data=32'hdead_beef", "--json")
         self.assertTrue(payload["ok"])
         self.assertTrue(payload["result"]["bool"])
+
+    def test_default_xout_is_token_efficient_domain_text(self):
+        payload = success("conv", result=parse_value("8'h5a"))
+        output = to_xout(payload)
+        self.assertIn("  result: 8'h5a", output)
+        self.assertIn("  unsigned: 90", output)
+        self.assertNotIn("pointer\tkind\tvalue", output)
+
+    def test_response_contract_rejects_unknown_or_contradictory_fields(self):
+        payload = success("conv", result=parse_value("8'h5a"))
+        unknown = deepcopy(payload)
+        unknown["input"] = "8'h00"
+        contradictory = deepcopy(payload)
+        contradictory["result"]["hex"] = "0x00"
+        for mutated in (unknown, contradictory):
+            with self.assertRaises(ResponseContractError):
+                validate_response(mutated)
+
+    def test_error_contract_rejects_unknown_detail_fields(self):
+        payload = failure(
+            WidthError("slice range is invalid for value width",
+                       msb=15, lsb=8, width=8),
+            op="slice",
+        )
+        payload["error"]["details"]["fallback_value"] = 0
+        with self.assertRaises(ResponseContractError):
+            validate_response(payload)
 
     def test_agent_stdio(self):
         env = os.environ.copy()
