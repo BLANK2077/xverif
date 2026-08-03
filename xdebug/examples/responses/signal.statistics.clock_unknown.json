@@ -1,0 +1,66 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "signal.statistics",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
+  "summary": {
+    "signal": "top.u.count",
+    "sampling_mode": "clock_edge",
+    "clock": "top.clk",
+    "sample_time_semantics": "time is sample_time",
+    "sample_count": 4,
+    "known_count": 0,
+    "unknown_count": 4,
+    "begin": "100ns",
+    "end": "200ns",
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": true,
+    "total_count": 4,
+    "returned_count": 1,
+    "truncation_scopes": [
+      "response_evidence"
+    ]
+  },
+  "data": {
+    "evidence": [
+      {
+        "time": "120ns",
+        "kind": "unknown",
+        "value": {
+          "value": "4'hx",
+          "known": false,
+          "width": 4,
+          "bits": "xxxx",
+          "has_x": true,
+          "has_z": false
+        }
+      }
+    ],
+    "transition_count": 0,
+    "sampling": {
+      "requested": {
+        "edge": "posedge",
+        "sample_point": null
+      },
+      "effective": {
+        "edge": "posedge",
+        "sample_point": "before"
+      },
+      "sample_point_applied": true,
+      "sample_point_ignored_for_negedge": false
+    }
+  },
+  "error": null
+}

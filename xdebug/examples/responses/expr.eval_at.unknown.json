@@ -1,0 +1,76 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "expr.eval_at",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
+  "summary": {
+    "expr": "valid && !ready",
+    "time": "100ns",
+    "status": "unknown",
+    "known": false
+  },
+  "data": {
+    "expr_value": null,
+    "operands": [
+      {
+        "alias": "valid",
+        "signal": "top.u.valid",
+        "value": {
+          "value": "1'hx",
+          "known": false,
+          "width": 1,
+          "bits": "x",
+          "has_x": true,
+          "has_z": false
+        }
+      },
+      {
+        "alias": "ready",
+        "signal": "top.u.ready",
+        "value": {
+          "value": "1'b0",
+          "known": true,
+          "width": 1,
+          "bits": "0"
+        }
+      }
+    ],
+    "clock_context": {
+      "clock": "top.u.clk",
+      "requested_sampling": {
+        "edge": "posedge",
+        "sample_point": null
+      },
+      "effective_sampling": {
+        "edge": "posedge",
+        "sample_point": "before"
+      },
+      "sample_point_applied": true,
+      "sample_point_ignored_for_negedge": false,
+      "requested_time": "100ns",
+      "requested_any_edge_hit": true,
+      "clock_edge_kind": "posedge",
+      "requested_target_edge_hit": true,
+      "previous_sample_time": "90ns",
+      "next_sample_time": "110ns",
+      "bracket_complete": true
+    },
+    "expr_samples": {
+      "before": "unknown",
+      "middle": "unknown",
+      "after": "false"
+    }
+  },
+  "error": null
+}

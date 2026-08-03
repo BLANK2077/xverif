@@ -12,10 +12,10 @@
       "end": "200ns"
     },
     "vld": {
-      "expr": "valid && ready",
+      "expr": "gate_a && permit_b",
       "signals": {
-        "valid": "top.valid",
-        "ready": "top.ready"
+        "gate_a": "top.valid",
+        "permit_b": "top.ready"
       }
     },
     "cnt": "{top.cnt_hi,top.cnt_lo}",

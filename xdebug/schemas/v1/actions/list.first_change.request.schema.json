@@ -1,12 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "xdebug.list.diff.request.v1",
-  "title": "list.diff request",
+  "$id": "xdebug.list.first_change.request.v1",
+  "title": "list.first_change request",
   "type": "object",
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -16,7 +17,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -25,42 +27,83 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "name",
+        "time_range"
+      ],
       "properties": {
         "name": {
           "type": "string",
           "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
         },
+        "render_time_unit": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "ps",
+            "ns",
+            "us"
+          ],
+          "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
+        },
         "time_range": {
           "type": "object",
+          "minProperties": 1,
           "properties": {
             "begin": {
               "type": "string",
-              "description": "Action-specific begin input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "闭区间起点；省略时使用可用波形窗口起点。"
             },
             "end": {
               "type": "string",
-              "description": "Action-specific end input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "闭区间终点；省略时使用可用波形窗口终点。"
             }
           },
           "additionalProperties": false,
           "description": "Closed analysis interval. begin and end may be omitted independently to use the available waveform bounds."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
         },
         "value_format": {
           "type": "string",
@@ -69,33 +112,23 @@
             "bin",
             "dec"
           ],
-          "description": "Action-specific value_format input. Its type and accepted values are defined by this schema.",
-          "default": "hex"
+          "default": "hex",
+          "description": "返回 LogicValue 的显示格式；不改变比较、采样或底层四态值。"
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "name",
-        "time_range"
-      ]
+      "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
@@ -107,19 +140,19 @@
   "x-description-zh": "查找 list 在时间窗口内的首次差异。",
   "x-agent": {
     "use_when": [
-      "查找 list 在时间窗口内的首次差异。"
+      "Need the earliest time any member of a saved waveform list diverges within a closed interval."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 list.add、list.create 的业务目标；请改用列出的同域 action。"
+      "Do not use it for a full change timeline or point sampling."
     ],
     "alternatives": [
       {
-        "action": "list.add",
-        "when": "向信号列表追加一个信号。"
+        "action": "signal.changes",
+        "when": "Return every raw change of one signal."
       },
       {
-        "action": "list.create",
-        "when": "创建命名信号列表。"
+        "action": "value.at",
+        "when": "Sample all list signals at one or more times."
       }
     ],
     "constraints": [

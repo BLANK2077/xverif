@@ -1,0 +1,12 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "session.open",
+  "target": {
+    "daidir": "simv.daidir",
+    "fsdb": "waves.fsdb"
+  },
+  "args": {
+    "name": "case_a",
+    "ownership_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  }
+}

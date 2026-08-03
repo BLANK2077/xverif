@@ -1,12 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "xdebug.sampled_pulse.inspect.request.v1",
-  "title": "sampled_pulse.inspect request",
+  "$id": "xdebug.signal.sampled_pulse.inspect.request.v1",
+  "title": "signal.sampled_pulse.inspect request",
   "type": "object",
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -16,7 +17,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -25,14 +27,55 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "clock",
+        "valid"
+      ],
       "properties": {
         "clock": {
           "type": "string",
-          "description": "Action-specific clock input. Its type and accepted values are defined by this schema."
+          "description": "采样、统计或协议检查使用的 clock 信号路径。"
         },
         "edge": {
           "type": "string",
@@ -43,17 +86,26 @@
           "minimum": 1,
           "description": "Limits returned evidence rows only, not scanning, aggregation, or the verdict; read completeness fields as well."
         },
-        "payload": {
-          "type": "string",
-          "description": "Action-specific payload input. Its type and accepted values are defined by this schema."
-        },
         "payloads": {
           "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
           "items": {
             "type": "string",
-            "description": "Action-specific payloads input. Its type and accepted values are defined by this schema."
+            "minLength": 1,
+            "description": "payload 信号列表；每项按同一采样合同检查。"
           },
-          "description": "Ordered payloads entries. Each item must satisfy the declared item contract."
+          "description": "Non-empty payload signal list inspected under one sampling contract."
+        },
+        "render_time_unit": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "ps",
+            "ns",
+            "us"
+          ],
+          "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
         },
         "rules": {
           "type": "object",
@@ -66,7 +118,7 @@
                 "all"
               ],
               "default": "summary",
-              "description": "Action-specific payload_changed_without_sampled_valid input. Its type and accepted values are defined by this schema."
+              "description": "payload 在 sampled valid 未成立时发生变化的报告粒度：off 禁用，summary 仅汇总，all 返回逐项 evidence。"
             }
           },
           "additionalProperties": false,
@@ -82,35 +134,25 @@
         },
         "time_range": {
           "type": "object",
+          "minProperties": 1,
           "properties": {
             "begin": {
               "type": "string",
-              "description": "Action-specific begin input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "闭区间起点；省略时使用可用波形窗口起点。"
             },
             "end": {
               "type": "string",
-              "description": "Action-specific end input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "闭区间终点；省略时使用可用波形窗口终点。"
             }
           },
           "additionalProperties": false,
           "description": "Closed analysis interval. begin and end may be omitted independently to use the available waveform bounds."
         },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
-        },
         "valid": {
           "type": "string",
-          "description": "Action-specific valid input. Its type and accepted values are defined by this schema."
+          "description": "valid-ready 握手中的 valid 信号路径。"
         },
         "value_format": {
           "type": "string",
@@ -119,39 +161,50 @@
             "bin",
             "dec"
           ],
-          "description": "Action-specific value_format input. Its type and accepted values are defined by this schema.",
-          "default": "hex"
+          "default": "hex",
+          "description": "返回 LogicValue 的显示格式；不改变比较、采样或底层四态值。"
         }
       },
       "additionalProperties": false,
-      "required": [
-        "clock",
-        "valid"
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "rules"
+            ],
+            "properties": {
+              "rules": {
+                "required": [
+                  "payload_changed_without_sampled_valid"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "payloads"
+            ]
+          }
+        }
       ]
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
   "description": "Inspect valid pulses that were not observed at sampling edges.",
   "x-purpose": "检查未被 clock 采到的 valid 短脉冲。",
-  "x-how_it_works": "按 clock 采样 valid，同时扫描 valid 原始变化；若 valid 在两个采样边沿间拉高但没有采样边沿看到高电平，则报 unsampled_valid_pulse。可选 payload/payloads 用于补风险现场。",
+  "x-how_it_works": "按 clock 采样 valid，同时扫描 valid 原始变化；若 valid 在两个采样边沿间拉高但没有采样边沿看到高电平，则报 unsampled_valid_pulse。可选 payloads 用于补风险现场。",
   "x-when_to_use": "解释仿真里“波形有脉冲但 DUT 没采到”的问题。",
   "x-arg_contract_notes": "required: clock, valid",
   "x-description-zh": "检查未被 clock 采到的 valid 短脉冲。",

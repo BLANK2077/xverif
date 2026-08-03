@@ -2,11 +2,20 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "trace.driver",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
   "summary": {
     "signal": "top.u.ready",
     "mode": "driver",
-    "path_count": 1,
-    "truncated": false
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 1,
+    "returned_count": 1,
+    "truncation_scopes": []
   },
   "data": {
     "paths": [
@@ -27,5 +36,6 @@
         ]
       }
     ]
-  }
+  },
+  "error": null
 }

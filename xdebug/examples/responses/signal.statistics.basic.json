@@ -2,49 +2,107 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "signal.statistics",
-  "summary": {
-    "sampling_mode": "clock_edge",
-    "sample_count": 10,
-    "transition_count": 2,
-    "high_cycles": 0,
-    "low_cycles": 0
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
   },
-  "data": {
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
+  "summary": {
     "signal": "top.u.count",
+    "sampling_mode": "clock_edge",
     "clock": "top.clk",
-    "edge": "posedge",
-    "begin": "100ns",
-    "end": "200ns",
+    "sample_time_semantics": "time is sample_time",
+    "sample_count": 10,
     "known_count": 10,
     "unknown_count": 0,
-    "truncated": false,
+    "begin": "100ns",
+    "end": "200ns",
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 2,
+    "returned_count": 2,
+    "truncation_scopes": []
+  },
+  "data": {
+    "evidence": [
+      {
+        "time": "140ns",
+        "kind": "value_change",
+        "value": {
+          "value": "4'h5",
+          "known": true,
+          "width": 4,
+          "bits": "0101"
+        }
+      },
+      {
+        "time": "180ns",
+        "kind": "value_change",
+        "value": {
+          "value": "4'h9",
+          "known": true,
+          "width": 4,
+          "bits": "1001"
+        }
+      }
+    ],
+    "transition_count": 2,
     "first": {
-      "value": "'b0011",
+      "value": "4'h3",
       "known": true,
-      "width": 4
+      "width": 4,
+      "bits": "0011"
     },
     "final": {
-      "value": "'b1001",
+      "value": "4'h9",
       "known": true,
-      "width": 4
+      "width": 4,
+      "bits": "1001"
     },
     "min": {
-      "value": "'b0011",
+      "value": "4'h3",
       "known": true,
-      "width": 4
+      "width": 4,
+      "bits": "0011"
     },
     "max": {
-      "value": "'b1001",
+      "value": "4'h9",
       "known": true,
-      "width": 4
+      "width": 4,
+      "bits": "1001"
     },
+    "low_cycles": 0,
+    "high_cycles": 0,
     "high_ratio": 0.0,
+    "first_change_time": "140ns",
+    "last_change_time": "180ns",
     "activity": {
       "high_burst_count": 0,
       "first_high_time": null,
       "last_high_time": null,
       "last_fall_time": null,
       "max_high_cycles": 0
+    },
+    "sampling": {
+      "requested": {
+        "edge": "negedge",
+        "sample_point": null
+      },
+      "effective": {
+        "edge": "negedge",
+        "sample_point": null
+      },
+      "sample_point_applied": false,
+      "sample_point_ignored_for_negedge": false
     }
-  }
+  },
+  "error": null
 }

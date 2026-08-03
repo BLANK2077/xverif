@@ -5,9 +5,6 @@
     "args": {
       "action": "signal.statistics",
       "kind": "request"
-    },
-    "output": {
-      "verbosity": "compact"
     }
   },
   "response": {
@@ -24,202 +21,19 @@
       "kind": "request"
     },
     "data": {
+      "schema_path": "schemas/v1/actions/signal.statistics.request.schema.json",
+      "examples": [],
+      "constraints": [],
       "schema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "xdebug.signal.statistics.request.v1",
         "title": "signal.statistics request",
-        "type": "object",
         "required": [
           "api_version",
           "action",
           "target",
           "args"
-        ],
-        "properties": {
-          "api_version": {
-            "type": "string",
-            "enum": [
-              "xdebug.v1"
-            ]
-          },
-          "request_id": {
-            "type": "string"
-          },
-          "action": {
-            "type": "string",
-            "enum": [
-              "signal.statistics"
-            ]
-          },
-          "target": {
-            "type": "object"
-          },
-          "args": {
-            "type": "object",
-            "properties": {
-              "signal": {
-                "type": "string"
-              },
-              "signals": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "time": {
-                "type": "string"
-              },
-              "requested_time": {
-                "type": "string"
-              },
-              "time_a": {
-                "type": "string"
-              },
-              "time_b": {
-                "type": "string"
-              },
-              "from_signal": {
-                "type": "string"
-              },
-              "to_signal": {
-                "type": "string"
-              },
-              "file": {
-                "type": "string"
-              },
-              "line": {
-                "type": "integer"
-              },
-              "expr": {
-                "type": "string"
-              },
-              "scope": {
-                "type": "string"
-              },
-              "name": {
-                "type": "string"
-              },
-              "op": {
-                "type": "string"
-              },
-              "conditions": {
-                "type": "array",
-                "items": {
-                  "type": "object"
-                }
-              },
-              "time_range": {
-                "type": "object"
-              },
-              "requests": {
-                "type": "array",
-                "items": {
-                  "type": "object"
-                }
-              },
-              "session_id": {
-                "type": "string"
-              },
-              "valid": {
-                "type": "string"
-              },
-              "ready": {
-                "type": "string"
-              },
-              "port": {
-                "type": "string"
-              },
-              "instance": {
-                "type": "string"
-              },
-              "interface": {
-                "type": "string"
-              },
-              "format": {
-                "type": "string"
-              },
-              "direction": {
-                "type": "string"
-              },
-              "mode": {
-                "type": "string"
-              },
-              "include_source": {
-                "type": "boolean"
-              },
-              "include_ast": {
-                "type": "boolean"
-              },
-              "include_candidates": {
-                "type": "boolean"
-              },
-              "include_trace": {
-                "type": "boolean"
-              },
-              "include_expanded_queries": {
-                "type": "boolean"
-              },
-              "include_raw_edges": {
-                "type": "boolean"
-              },
-              "include_graph": {
-                "type": "boolean"
-              },
-              "include_debug": {
-                "type": "boolean"
-              },
-              "include_raw": {
-                "type": "boolean"
-              },
-              "include_signal_meta": {
-                "type": "boolean"
-              },
-              "include_rows": {
-                "type": "boolean"
-              },
-              "include_samples": {
-                "type": "boolean"
-              },
-              "include_all_changes": {
-                "type": "boolean"
-              },
-              "include_transactions": {
-                "type": "boolean"
-              },
-              "include_beats": {
-                "type": "boolean"
-              },
-              "include_accesses": {
-                "type": "boolean"
-              },
-              "max_items": {
-                "type": "integer"
-              },
-              "max_examples": {
-                "type": "integer"
-              },
-              "recursive": {
-                "type": "boolean"
-              },
-              "include_all_signals": {
-                "type": "boolean"
-              }
-            },
-            "additionalProperties": true,
-            "required": [
-              "signal"
-            ]
-          },
-          "limits": {
-            "type": "object"
-          },
-          "output": {
-            "type": "object"
-          }
-        },
-        "additionalProperties": true
-      },
-      "schema_path": "schemas/v1/actions/signal.statistics.request.schema.json"
+        ]
+      }
     },
     "error": null
   },

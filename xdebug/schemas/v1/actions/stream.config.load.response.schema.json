@@ -49,7 +49,7 @@
         "mode": {
           "enum": [
             "replace",
-            "merge"
+            "append"
           ]
         }
       },
@@ -1784,7 +1784,7 @@
         "mode": {
           "enum": [
             "replace",
-            "merge"
+            "append"
           ]
         }
       },

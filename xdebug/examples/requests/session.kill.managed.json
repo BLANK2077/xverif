@@ -1,0 +1,10 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "session.kill",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {
+    "ownership_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  }
+}

@@ -1,12 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "xdebug.cursor.set.request.v1",
-  "title": "cursor.set request",
+  "$id": "xdebug.waveform.cursor.set.request.v1",
+  "title": "waveform.cursor.set request",
   "type": "object",
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -16,7 +17,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -25,80 +27,108 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "name",
+        "time"
+      ],
       "properties": {
         "name": {
           "type": "string",
           "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
         },
-        "time": {
-          "type": "string",
-          "description": "Target sample time. Prefer a canonical string with a unit; a bare number is interpreted only with time_unit."
-        },
-        "time_unit": {
+        "render_time_unit": {
           "type": "string",
           "enum": [
             "auto",
-            "fs",
             "ps",
             "ns",
-            "us",
-            "ms",
-            "s"
+            "us"
           ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
+          "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
+        },
+        "time": {
+          "type": "string",
+          "description": "Target sample time. Prefer a canonical string with a unit; a bare number is interpreted as nanoseconds."
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "name",
-        "time"
-      ]
+      "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
   "description": "Save a named waveform cursor.",
   "x-purpose": "保存命名时间游标。",
-  "x-how_it_works": "解析 time/at 为 FSDB 时间，写入 CursorManager，可设 active。",
+  "x-how_it_works": "解析必填的 time 为 FSDB 时间并写入 CursorManager；不接受旧 at 字段。",
   "x-when_to_use": "给后续窗口、比较和人工定位复用时间点。",
   "x-arg_contract_notes": "required: name, time",
   "x-description-zh": "保存命名时间游标。",
   "x-agent": {
     "use_when": [
-      "保存命名时间游标。"
+      "Need to create or replace an arbitrary waveform time bookmark under a stable name."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 cursor.delete、cursor.get 的业务目标；请改用列出的同域 action。"
+      "Do not use it to navigate decoded protocol transactions."
     ],
     "alternatives": [
       {
-        "action": "waveform.cursor.delete",
-        "when": "删除游标。"
+        "action": "apb.transaction.cursor",
+        "when": "Move across APB transfers."
       },
       {
-        "action": "waveform.cursor.get",
-        "when": "读取命名游标。"
+        "action": "axi.transaction.cursor",
+        "when": "Move across AXI transactions."
       }
     ],
     "constraints": [

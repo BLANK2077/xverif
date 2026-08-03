@@ -1,0 +1,75 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "verify.conditions",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
+  "summary": {
+    "time": "100ns",
+    "execution_ok": true,
+    "verdict": "fail",
+    "condition_count": 2,
+    "all_passed": false,
+    "passed": 0,
+    "failed": 0,
+    "unknown": 2
+  },
+  "data": {
+    "checks": [
+      {
+        "time": "100ns",
+        "expr": "valid",
+        "name": "valid_unknown",
+        "known": false,
+        "status": "unknown",
+        "pass": null,
+        "value": {
+          "value": "'hx",
+          "known": false,
+          "has_x": true,
+          "has_z": false
+        }
+      },
+      {
+        "time": "100ns",
+        "expr": "missing_alias",
+        "known": false,
+        "status": "unknown",
+        "pass": null,
+        "error_code": "MISSING_SIGNAL_VALUE",
+        "error": "signal value not available: missing_alias"
+      }
+    ],
+    "clock_context": {
+      "clock": "top.u.clk",
+      "requested_sampling": {
+        "edge": "posedge",
+        "sample_point": null
+      },
+      "effective_sampling": {
+        "edge": "posedge",
+        "sample_point": "before"
+      },
+      "sample_point_applied": true,
+      "sample_point_ignored_for_negedge": false,
+      "requested_time": "100ns",
+      "requested_any_edge_hit": true,
+      "clock_edge_kind": "posedge",
+      "requested_target_edge_hit": true,
+      "previous_sample_time": "90ns",
+      "next_sample_time": "110ns",
+      "bracket_complete": true
+    }
+  },
+  "error": null
+}

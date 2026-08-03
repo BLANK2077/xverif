@@ -1,7 +1,15 @@
 {
-  "request_args": {
-    "name": "if0",
-    "include_transactions": false
+  "request": {
+    "api_version": "xdebug.v1",
+    "action": "axi.analysis",
+    "target": {
+      "session_id": "case_a"
+    },
+    "args": {
+      "name": "if0",
+      "analysis": "latency",
+      "direction": "all"
+    }
   },
   "response": {
     "api_version": "xdebug.v1",
@@ -11,16 +19,114 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
       "name": "if0",
       "analysis": "latency",
-      "max": 364110000.0,
-      "min": 600000.0,
-      "avg": 155662899.3710692,
-      "samples": 6360
+      "direction": "all",
+      "sample_count": 20,
+      "full_scan_count": 1,
+      "scanned_range": {
+        "begin": "0ns",
+        "end": "200ns"
+      },
+      "completed_read_count": 2,
+      "completed_write_count": 2,
+      "incomplete_read_count": 0,
+      "incomplete_write_count": 0,
+      "buffered_w_beat_count": 0,
+      "buffered_w_burst_count": 0,
+      "orphan_w_beat_count": 0,
+      "orphan_b_count": 0,
+      "orphan_r_beat_count": 0,
+      "response_dependency_violation_count": 0,
+      "channel_handshakes": {
+        "aw": 2,
+        "w": 2,
+        "b": 2,
+        "ar": 2,
+        "r": 2
+      },
+      "min": "10ns",
+      "avg": "20ns",
+      "max": "40ns",
+      "p50": "20ns",
+      "p95": "40ns",
+      "p99": "40ns",
+      "samples": 4,
+      "scan_complete": true,
+      "analysis_complete": true,
+      "response_truncated": false,
+      "total_count": 4,
+      "returned_count": 4,
+      "truncation_scopes": []
     },
-    "data": {},
+    "data": {
+      "latency": {
+        "read": {
+          "samples": 2,
+          "min": "10ns",
+          "max": "30ns",
+          "avg": "20ns",
+          "p50": "10ns",
+          "p95": "30ns",
+          "p99": "30ns"
+        },
+        "write": {
+          "samples": 2,
+          "min": "20ns",
+          "max": "40ns",
+          "avg": "30ns",
+          "p50": "20ns",
+          "p95": "40ns",
+          "p99": "40ns"
+        },
+        "definitions": {
+          "read": "AR handshake to RLAST handshake",
+          "write": "AW handshake to B handshake"
+        },
+        "write_phase_order_counts": {
+          "aw_before_w": 1,
+          "same_cycle": 0,
+          "w_before_aw": 1,
+          "unknown": 0
+        }
+      },
+      "slowest": {
+        "direction": "write",
+        "latency": "40ns",
+        "phase_order": "w_before_aw",
+        "response_dependency_violation": false,
+        "address": {
+          "channel": "aw",
+          "handshake_time": "100ns",
+          "addr": "32'h000000f0",
+          "id": "4'h1",
+          "len": "8'h00",
+          "size": "3'h2",
+          "burst": "2'h1"
+        },
+        "data": {
+          "channel": "w",
+          "first_handshake_time": "90ns",
+          "last_handshake_time": "110ns",
+          "beat_count": 1,
+          "expected_beat_count": 1
+        },
+        "response": {
+          "channel": "b",
+          "handshake_time": "140ns",
+          "resp": "2'h0"
+        }
+      }
+    },
     "error": null
   },
   "stderr": ""

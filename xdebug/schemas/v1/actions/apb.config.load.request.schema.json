@@ -6,7 +6,8 @@
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -16,7 +17,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -25,19 +27,59 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "name"
+      ],
       "properties": {
         "config": {
           "type": "object",
-          "description": "Structured config configuration. Only the declared properties are accepted.",
+          "description": "内联配置对象。",
           "properties": {
             "clock": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific clock input. Its type and accepted values are defined by this schema."
+              "description": "采样、统计或协议检查使用的 clock 信号路径。"
             },
             "edge": {
               "type": "string",
@@ -59,42 +101,42 @@
             "paddr": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific paddr input. Its type and accepted values are defined by this schema."
+              "description": "APB PADDR 信号路径。"
             },
             "psel": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific psel input. Its type and accepted values are defined by this schema."
+              "description": "APB PSEL 信号路径。"
             },
             "penable": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific penable input. Its type and accepted values are defined by this schema."
-            },
-            "pready": {
-              "type": "string",
-              "minLength": 1,
-              "description": "Action-specific pready input. Its type and accepted values are defined by this schema."
-            },
-            "pslverr": {
-              "type": "string",
-              "minLength": 1,
-              "description": "Action-specific pslverr input. Its type and accepted values are defined by this schema."
+              "description": "APB PENABLE 信号路径。"
             },
             "pwrite": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific pwrite input. Its type and accepted values are defined by this schema."
+              "description": "APB PWRITE 方向信号路径。"
             },
             "pwdata": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific pwdata input. Its type and accepted values are defined by this schema."
+              "description": "APB PWDATA 写数据总线信号路径。"
             },
             "prdata": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific prdata input. Its type and accepted values are defined by this schema."
+              "description": "APB PRDATA 读数据总线信号路径。"
+            },
+            "pready": {
+              "type": "string",
+              "minLength": 1,
+              "description": "可选 APB PREADY 信号路径；省略表示该接口没有 PREADY，access phase 按 APB2 语义完成。"
+            },
+            "pslverr": {
+              "type": "string",
+              "minLength": 1,
+              "description": "APB PSLVERR 信号路径；接口不实现错误响应时可按 config schema 省略。"
             },
             "reset": {
               "type": "object",
@@ -126,8 +168,6 @@
             "paddr",
             "psel",
             "penable",
-            "pready",
-            "pslverr",
             "pwrite",
             "pwdata",
             "prdata",
@@ -137,31 +177,16 @@
         },
         "config_path": {
           "type": "string",
-          "description": "Action-specific config_path input. Its type and accepted values are defined by this schema."
+          "minLength": 1,
+          "description": "输入配置文件路径。"
         },
         "name": {
           "type": "string",
           "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
         }
       },
       "additionalProperties": false,
-      "required": [
-        "name"
-      ],
-      "anyOf": [
+      "oneOf": [
         {
           "required": [
             "config"
@@ -175,22 +200,16 @@
       ]
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
@@ -202,19 +221,19 @@
   "x-description-zh": "加载 APB 配置。",
   "x-agent": {
     "use_when": [
-      "加载 APB 配置。"
+      "Have an inline APB signal mapping or config file that must be registered and validated before querying transfers."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 apb.config.list、apb.transaction.cursor 的业务目标；请改用列出的同域 action。"
+      "Do not use it to enumerate saved names or query decoded APB activity."
     ],
     "alternatives": [
       {
         "action": "apb.config.list",
-        "when": "列出 APB 配置。"
+        "when": "Discover saved APB configuration names."
       },
       {
-        "action": "apb.transaction.cursor",
-        "when": "在 APB transfer 间移动游标。"
+        "action": "apb.query",
+        "when": "Inspect transfers from a loaded interface."
       }
     ],
     "constraints": [

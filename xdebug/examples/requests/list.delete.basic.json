@@ -6,6 +6,6 @@
   },
   "args": {
     "name": "if0",
-    "signal": "top.u.valid"
+    "index": 1
   }
 }

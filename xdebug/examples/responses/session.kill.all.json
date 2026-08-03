@@ -1,0 +1,28 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "session.kill",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
+  "summary": {
+    "requested_count": 1,
+    "removed_count": 1
+  },
+  "data": {
+    "removed_sessions": [
+      {
+        "session_id": "case_a",
+        "mode": "combined",
+        "daidir": "simv.daidir",
+        "fsdb": "waves.fsdb",
+        "socket_path": "session-endpoints/case_a.sock",
+        "server_host": "localhost",
+        "transport": "uds"
+      }
+    ]
+  },
+  "error": null
+}

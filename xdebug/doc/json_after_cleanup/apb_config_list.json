@@ -2,15 +2,10 @@
   "request": {
     "api_version": "xdebug.v1",
     "action": "apb.config.list",
-    "output": {
-      "verbosity": "compact"
-    },
     "target": {
-      "session_id": "fix_wave"
+      "session_id": "case_a"
     },
-    "args": {
-      "name": "apb0"
-    }
+    "args": {}
   },
   "response": {
     "api_version": "xdebug.v1",
@@ -20,13 +15,37 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
-    "summary": {
-      "name": "apb0",
-      "clk": "ai_complex_top.clk",
-      "reset": {"signal": "ai_complex_top.rst_n", "polarity": "active_low"}
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
     },
-    "data": {},
+    "summary": {
+      "count": 1
+    },
+    "data": {
+      "configs": [
+        {
+          "name": "if0",
+          "sampling_mode": "clock_edge",
+          "clock": "top.clk",
+          "reset": {
+            "signal": "top.rst_n",
+            "polarity": "active_low"
+          },
+          "edge": "negedge",
+          "paddr": "top.paddr",
+          "psel": "top.psel",
+          "penable": "top.penable",
+          "pwrite": "top.pwrite",
+          "pwdata": "top.pwdata",
+          "prdata": "top.prdata"
+        }
+      ]
+    },
     "error": null
   },
   "stderr": ""

@@ -3,21 +3,16 @@
     "api_version": "xdebug.v1",
     "action": "expr.eval_at",
     "target": {
-      "session_id": "sample_wave"
+      "session_id": "case_a"
     },
     "args": {
-      "expr": "clk && rst",
+      "expr": "valid && !ready",
+      "clock": "top.u.clk",
+      "time": "100ns",
       "signals": {
-        "clk": "ai_complex_top.clk",
-        "rst": "ai_complex_top.rst_n"
-      },
-      "time": "100ns"
-    },
-    "limits": {
-      "timeout_ms": 120000
-    },
-    "output": {
-      "verbosity": "compact"
+        "valid": "top.u.valid",
+        "ready": "top.u.ready"
+      }
     }
   },
   "response": {
@@ -28,38 +23,69 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
-      "expr": "clk&&rst",
+      "expr": "valid && !ready",
       "time": "100ns",
-      "time_ps": 100000,
-      "status": "false",
-      "known": true,
-      "expr_value": false
+      "status": "true",
+      "known": true
     },
     "data": {
+      "expr_value": true,
       "operands": [
         {
-          "alias": "clk",
-          "signal": "ai_complex_top.clk",
-          "value": {
-            "value": "1'h0",
-            "known": true,
-            "width": 1,
-            "bits": "0"
-          }
-        },
-        {
-          "alias": "rst",
-          "signal": "ai_complex_top.rst_n",
+          "alias": "valid",
+          "signal": "top.u.valid",
           "value": {
             "value": "1'h1",
             "known": true,
             "width": 1,
             "bits": "1"
           }
+        },
+        {
+          "alias": "ready",
+          "signal": "top.u.ready",
+          "value": {
+            "value": "1'h0",
+            "known": true,
+            "width": 1,
+            "bits": "0"
+          }
         }
-      ]
+      ],
+      "clock_context": {
+        "clock": "top.u.clk",
+        "requested_sampling": {
+          "edge": "negedge",
+          "sample_point": null
+        },
+        "effective_sampling": {
+          "edge": "negedge",
+          "sample_point": null
+        },
+        "sample_point_applied": false,
+        "sample_point_ignored_for_negedge": false,
+        "requested_time": "100ns",
+        "requested_any_edge_hit": true,
+        "clock_edge_kind": "posedge",
+        "requested_target_edge_hit": false,
+        "previous_sample_time": "90ns",
+        "next_sample_time": "110ns",
+        "bracket_complete": true
+      },
+      "expr_samples": {
+        "before": "false",
+        "middle": "true",
+        "after": "true"
+      }
     },
     "error": null
   },

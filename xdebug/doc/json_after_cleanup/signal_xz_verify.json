@@ -3,14 +3,14 @@
     "api_version": "xdebug.v1",
     "action": "signal.xz_verify",
     "target": {
-      "session_id": "sample_wave"
+      "session_id": "case_a"
     },
     "args": {
-      "signal": "ai_complex_top.xz_bus",
+      "signal": "top.xz_bus",
       "expected_state": "x",
       "match_mode": "exact",
       "time_range": {
-        "begin": "86ns",
+        "begin": "85ns",
         "end": "94ns"
       }
     }
@@ -23,21 +23,32 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
-      "signal": "ai_complex_top.xz_bus",
+      "signal": "top.xz_bus",
       "expected_state": "x",
       "match_mode": "exact",
       "verdict": "pass",
       "always_matched": true,
       "analysis_complete": true,
       "scan_complete": true,
+      "response_truncated": false,
+      "total_count": 1,
+      "returned_count": 1,
+      "truncation_scopes": [],
       "checked_value_count": 1,
       "stop_reason": "window_end"
     },
     "data": {
       "time_range": {
-        "begin": "86ns",
+        "begin": "85ns",
         "end": "94ns"
       },
       "initial_value": {

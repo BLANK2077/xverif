@@ -2,20 +2,11 @@
   "request": {
     "api_version": "xdebug.v1",
     "action": "signal.resolve",
-    "output": {
-      "verbosity": "compact"
-    },
     "target": {
-      "session_id": "fix_uart"
+      "daidir": "simv.daidir"
     },
     "args": {
-      "signal": "uart_16550.RXDin"
-    },
-    "limits": {
-      "max_depth": 2,
-      "max_nodes": 20,
-      "max_edges": 50,
-      "max_results": 10
+      "signal": "top.u.ready"
     }
   },
   "response": {
@@ -28,20 +19,22 @@
     },
     "session": null,
     "summary": {
-      "count": 1,
-      "message": "",
-      "ok": true,
-      "query": "uart_16550.RXDin",
-      "status": "ok",
-      "truncated": false
+      "status": "found",
+      "query": "top.u.ready",
+      "scan_complete": true,
+      "analysis_complete": true,
+      "response_truncated": false,
+      "total_count": 1,
+      "returned_count": 1,
+      "truncation_scopes": []
     },
     "data": {
       "matches": [
         {
-          "file": "<xverif-repo>/xdebug/testdata/design/uart/uart_16550.sv",
-          "line": 147,
-          "signal": "uart_16550.RXDin",
-          "type": "net"
+          "signal": "top.u.ready",
+          "type": "logic",
+          "file": "rtl/top.sv",
+          "line": 42
         }
       ]
     },

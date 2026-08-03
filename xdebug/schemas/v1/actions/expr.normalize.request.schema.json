@@ -5,8 +5,7 @@
   "type": "object",
   "required": [
     "api_version",
-    "action",
-    "args"
+    "action"
   ],
   "properties": {
     "api_version": {
@@ -16,7 +15,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -25,14 +25,26 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "daidir": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [],
       "properties": {
         "expr": {
           "type": "string",
-          "description": "Action-specific expr input. Its type and accepted values are defined by this schema."
+          "description": "在指定采样语义下求值或匹配的表达式。"
         },
         "line_limit": {
           "type": "integer",
@@ -41,94 +53,167 @@
         },
         "no_statement_only": {
           "type": "boolean",
-          "description": "Action-specific no_statement_only input. Its type and accepted values are defined by this schema."
+          "description": "为 true 时排除只代表 statement、没有结构化设计对象语义的 trace 结果。"
         },
         "role": {
           "type": "string",
-          "description": "Action-specific role input. Its type and accepted values are defined by this schema."
+          "description": "设计 trace 中节点的语义角色过滤。"
         },
         "signal": {
           "type": "string",
           "description": "Final leaf signal path. Aggregate, array, and struct roots are not expanded automatically."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
         }
       },
       "additionalProperties": false,
-      "required": [
-        "expr"
-      ],
-      "allOf": [
+      "oneOf": [
         {
-          "anyOf": [
-            {
-              "required": [
-                "signal"
-              ]
-            },
-            {
-              "not": {
+          "required": [
+            "expr"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "signal"
+                ]
+              },
+              {
                 "required": [
                   "line_limit"
                 ]
+              },
+              {
+                "required": [
+                  "no_statement_only"
+                ]
+              },
+              {
+                "required": [
+                  "role"
+                ]
               }
-            }
-          ]
+            ]
+          }
+        },
+        {
+          "required": [
+            "signal"
+          ],
+          "not": {
+            "required": [
+              "expr"
+            ]
+          }
         }
       ]
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
   "description": "Normalize an expression for deterministic processing.",
-  "x-purpose": "规范化表达式。",
-  "x-how_it_works": "无 design 时做字符串级规范化；有 design/signal 时可结合设计赋值信息。",
-  "x-when_to_use": "把表达式转成 agent 更易处理的结构。",
-  "x-arg_contract_notes": "required: expr",
+  "x-purpose": "规范化表达式或设计信号赋值。",
+  "x-how_it_works": "expr 分支纯字符串规范化且禁止 session；signal 分支结合 design 赋值信息且要求 design session。两者互斥。",
+  "x-when_to_use": "把表达式或设计赋值转成 agent 更易处理的结构。",
+  "x-arg_contract_notes": "exactly one of: expr / signal；signal 分支可用 line_limit/no_statement_only/role",
   "x-description-zh": "规范化表达式。",
   "x-agent": {
     "use_when": [
-      "规范化表达式。"
+      "Need a deterministic parsed expression AST, or a design assignment normalized from one exact signal, without waveform sampling."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 expr.eval_at 的业务目标；请改用列出的同域 action。"
+      "Do not use it to evaluate an expression at waveform time or to resolve a signal name to candidates."
     ],
     "alternatives": [
       {
         "action": "expr.eval_at",
-        "when": "在指定时间求布尔/表达式值。"
+        "when": "Evaluate an expression at a sampled waveform time."
+      },
+      {
+        "action": "signal.resolve",
+        "when": "Find matching design signal objects."
       }
     ],
     "constraints": [
-      "required: expr"
+      "exactly one of: expr / signal；signal 分支可用 line_limit/no_statement_only/role"
     ]
-  }
+  },
+  "oneOf": [
+    {
+      "required": [
+        "args"
+      ],
+      "properties": {
+        "args": {
+          "required": [
+            "expr"
+          ]
+        },
+        "target": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "required": [
+        "args",
+        "target"
+      ],
+      "properties": {
+        "args": {
+          "required": [
+            "signal"
+          ]
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "session_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "daidir": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "session_id"
+              ],
+              "not": {
+                "required": [
+                  "daidir"
+                ]
+              }
+            },
+            {
+              "required": [
+                "daidir"
+              ],
+              "not": {
+                "required": [
+                  "session_id"
+                ]
+              }
+            }
+          ],
+          "additionalProperties": false
+        }
+      }
+    }
+  ]
 }

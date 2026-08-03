@@ -2,6 +2,19 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "trace.x_origin",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "xprop_debug",
+    "mode": "combined",
+    "daidir": "simv.daidir",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/xprop_debug.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
   "summary": {
     "signal": "trace_x_xprop_tb.multi_rhs_out",
     "query_time": "12ns",
@@ -11,7 +24,13 @@
     "completed_chain_count": 2,
     "limited_chain_count": 0,
     "hop_count": 4,
-    "origin_count": 2
+    "origin_count": 2,
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 2,
+    "returned_count": 2,
+    "truncation_scopes": []
   },
   "data": {
     "query": {
@@ -65,9 +84,7 @@
             "relation": "root",
             "file": "trace_x_xprop_tb.sv",
             "line": 87,
-            "signal_path": [
-              "trace_x_xprop_tb.multi_rhs_out"
-            ]
+            "signal_path": ["trace_x_xprop_tb.multi_rhs_out"]
           },
           {
             "index": 1,
@@ -87,9 +104,7 @@
             "relation": "rhs",
             "file": "trace_x_xprop_tb.sv",
             "line": 116,
-            "signal_path": [
-              "trace_x_xprop_tb.multi_rhs_a"
-            ]
+            "signal_path": ["trace_x_xprop_tb.multi_rhs_a"]
           }
         ],
         "origin": {
@@ -139,9 +154,7 @@
             "relation": "root",
             "file": "trace_x_xprop_tb.sv",
             "line": 87,
-            "signal_path": [
-              "trace_x_xprop_tb.multi_rhs_out"
-            ]
+            "signal_path": ["trace_x_xprop_tb.multi_rhs_out"]
           },
           {
             "index": 1,
@@ -161,9 +174,7 @@
             "relation": "rhs",
             "file": "trace_x_xprop_tb.sv",
             "line": 117,
-            "signal_path": [
-              "trace_x_xprop_tb.multi_rhs_b"
-            ]
+            "signal_path": ["trace_x_xprop_tb.multi_rhs_b"]
           }
         ],
         "origin": {

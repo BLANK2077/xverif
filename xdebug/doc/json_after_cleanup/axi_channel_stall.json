@@ -1,8 +1,13 @@
 {
-  "request_args": {
-    "name": "if0",
-    "channel": "aw",
-    "limit": 3
+  "request": {
+    "api_version": "xdebug.v1",
+    "action": "axi.channel_stall",
+    "target": {
+      "session_id": "case_a"
+    },
+    "args": {
+      "name": "if0"
+    }
   },
   "response": {
     "api_version": "xdebug.v1",
@@ -12,24 +17,49 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
-      "sample_count": 1000000,
-      "transfer_count": 6321,
-      "max_stall_cycles": 6,
-      "ready_without_valid_cycles": 991772,
-      "data_stability_violations": 0,
-      "truncated": true,
       "name": "if0",
-      "channel": "aw"
+      "channel": "ar",
+      "sampling_mode": "clock_edge",
+      "clock": "top.clk",
+      "edge": "negedge",
+      "sample_time_semantics": "time is sample_time",
+      "sample_count": 20,
+      "transfer_count": 3,
+      "max_stall_cycles": 4,
+      "ready_without_valid_cycles": 0,
+      "first_activity_time": "100ns",
+      "scanned_range": {
+        "begin": "0ns",
+        "end": "200ns"
+      },
+      "scan_complete": true,
+      "analysis_complete": true,
+      "response_truncated": false,
+      "total_count": 1,
+      "returned_count": 1,
+      "truncation_scopes": []
     },
     "data": {
-      "findings": []
+      "findings": [
+        {
+          "type": "long_stall",
+          "severity": "warning",
+          "begin": "100ns",
+          "end": "140ns",
+          "cycles": 4
+        }
+      ]
     },
-    "error": null,
-    "meta": {
-      "truncated": true
-    }
+    "error": null
   },
   "stderr": ""
 }

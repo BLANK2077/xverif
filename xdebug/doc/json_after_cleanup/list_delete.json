@@ -3,11 +3,11 @@
     "api_version": "xdebug.v1",
     "action": "list.delete",
     "target": {
-      "session_id": "json_after_missing_wave"
+      "session_id": "case_a"
     },
     "args": {
-      "name": "delete_me",
-      "signal": "ai_complex_top.clk"
+      "name": "if0",
+      "index": 1
     }
   },
   "response": {
@@ -18,15 +18,21 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
-    "summary": {},
-    "data": {
-      "name": "delete_me",
-      "deleted": true,
-      "removed": "ai_complex_top.clk"
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
     },
+    "summary": {
+      "name": "if0",
+      "deleted": true,
+      "removed": "top.u.valid"
+    },
+    "data": {},
     "error": null
   },
-  "returncode": 0,
-  "stderr_tail": ""
+  "stderr": ""
 }

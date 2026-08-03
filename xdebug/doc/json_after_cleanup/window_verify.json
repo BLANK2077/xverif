@@ -2,25 +2,23 @@
   "request": {
     "api_version": "xdebug.v1",
     "action": "window.verify",
-    "output": {
-      "verbosity": "compact"
-    },
     "target": {
-      "session_id": "fix3_wave"
+      "session_id": "case_a"
     },
     "args": {
-      "clock": "ai_complex_top.clk",
+      "clock": "top.u.clk",
+      "signals": {
+        "valid": "top.u.valid"
+      },
       "conditions": [
         {
-          "expr": "rst == 1",
-          "signals": {
-            "rst": "ai_complex_top.rst_n"
-          }
+          "expr": "valid == 1",
+          "mode": "always"
         }
       ],
       "time_range": {
-        "begin": "80ns",
-        "end": "120ns"
+        "begin": "0ns",
+        "end": "1us"
       }
     }
   },
@@ -32,25 +30,62 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
+      "execution_ok": true,
+      "verdict": "pass",
       "all_passed": true,
       "sample_count": 4,
       "failed_samples": 0,
       "unknown_samples": 0,
-      "truncated": false
+      "proof_begin": "0ns",
+      "proof_end": "40ns",
+      "scanned_range": {
+        "begin": "0ns",
+        "end": "30ns"
+      },
+      "stop_reason": "window_end",
+      "sampling_mode": "clock_edge",
+      "clock": "top.clk",
+      "sample_time_semantics": "time is sample_time",
+      "scan_complete": true,
+      "analysis_complete": true,
+      "response_truncated": false,
+      "total_count": 0,
+      "returned_count": 0,
+      "truncation_scopes": []
     },
     "data": {
       "conditions": [
         {
-          "expr": "rst==1",
+          "expr": "valid&&!ready",
           "mode": "always",
           "passed": true,
           "pass_samples": 4,
           "failed_samples": 0,
           "unknown_samples": 0
         }
-      ]
+      ],
+      "findings": [],
+      "sampling": {
+        "requested": {
+          "edge": "negedge",
+          "sample_point": null
+        },
+        "effective": {
+          "edge": "negedge",
+          "sample_point": null
+        },
+        "sample_point_applied": false,
+        "sample_point_ignored_for_negedge": false
+      }
     },
     "error": null
   },

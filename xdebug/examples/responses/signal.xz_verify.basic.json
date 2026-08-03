@@ -2,6 +2,18 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "signal.xz_verify",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
   "summary": {
     "signal": "top.xz_bus",
     "expected_state": "x",
@@ -10,6 +22,10 @@
     "always_matched": true,
     "analysis_complete": true,
     "scan_complete": true,
+    "response_truncated": false,
+    "total_count": 1,
+    "returned_count": 1,
+    "truncation_scopes": [],
     "checked_value_count": 1,
     "stop_reason": "window_end"
   },

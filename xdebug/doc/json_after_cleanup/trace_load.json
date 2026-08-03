@@ -2,20 +2,11 @@
   "request": {
     "api_version": "xdebug.v1",
     "action": "trace.load",
-    "output": {
-      "verbosity": "compact"
-    },
     "target": {
-      "session_id": "fix_uart"
+      "daidir": "simv.daidir"
     },
     "args": {
-      "signal": "uart_16550.RXDin"
-    },
-    "limits": {
-      "max_depth": 2,
-      "max_nodes": 20,
-      "max_edges": 50,
-      "max_results": 10
+      "signal": "top.u.ready"
     }
   },
   "response": {
@@ -28,153 +19,62 @@
     },
     "session": null,
     "summary": {
-      "confidence": "medium",
-      "confidence_reason": "source locations were resolved but some expressions used fallback AST",
-      "has_statement_only": false,
+      "signal": "top.u.ready",
       "mode": "load",
-      "ok": true,
-      "query": "uart_16550.RXDin",
-      "resolution": "signal",
-      "result_count": 3,
-      "truncated": false
+      "scan_complete": true,
+      "analysis_complete": true,
+      "response_truncated": false,
+      "total_count": 1,
+      "returned_count": 1,
+      "truncation_scopes": []
     },
     "data": {
-      "assignment": {
-        "kind": "statement_only",
-        "lhs": {
-          "kind": "signal",
-          "name": ""
-        },
-        "location": {
-          "file": "<xverif-repo>/xdebug/testdata/design/uart/uart_rx.sv",
-          "line": 26
-        },
-        "npi_type": 44,
-        "rhs": {
-          "kind": "unknown",
-          "text": ""
-        },
-        "rhs_signals": [],
-        "source": "RXD"
-      },
-      "assignments": [
+      "paths": [
         {
-          "kind": "statement_only",
-          "lhs": {
-            "kind": "signal",
-            "name": ""
-          },
-          "location": {
-            "file": "<xverif-repo>/xdebug/testdata/design/uart/uart_rx.sv",
-            "line": 26
-          },
-          "npi_type": 44,
-          "rhs": {
-            "kind": "unknown",
-            "text": ""
-          },
-          "rhs_signals": [],
-          "source": "RXD"
-        },
-        {
-          "kind": "procedural_assignment",
-          "lhs": {
-            "kind": "signal",
-            "name": "uart_16550.rx_channel.filter[0]",
-            "npi_type": 49,
-            "text": "uart_16550.rx_channel.filter[0]"
-          },
-          "location": {
-            "file": "<xverif-repo>/xdebug/testdata/design/uart/uart_rx.sv",
-            "line": 69
-          },
-          "npi_type": 3,
-          "rhs": {
-            "kind": "signal",
-            "name": "uart_16550.rx_channel.RXD",
-            "npi_type": 36,
-            "text": "uart_16550.rx_channel.RXD"
-          },
-          "rhs_signals": [
-            "uart_16550.rx_channel.RXD"
+          "file": "rtl/consumer.sv",
+          "line": 57,
+          "source_context": [
+            {
+              "line": 54,
+              "text": "always_ff @(posedge clk) begin",
+              "active": false
+            },
+            {
+              "line": 55,
+              "text": "  if (rst) begin",
+              "active": false
+            },
+            {
+              "line": 56,
+              "text": "    hold <= 1'b0;",
+              "active": false
+            },
+            {
+              "line": 57,
+              "text": "  end else if (ready) begin",
+              "active": true
+            },
+            {
+              "line": 58,
+              "text": "    hold <= data_i;",
+              "active": false
+            },
+            {
+              "line": 59,
+              "text": "  end",
+              "active": false
+            },
+            {
+              "line": 60,
+              "text": "end",
+              "active": false
+            }
           ],
-          "source": "uart_16550.rx_channel.filter[0] <= uart_16550.rx_channel.RXD;"
+          "signal_path": [
+            "top.u.ready",
+            "top.u.hold"
+          ]
         }
-      ],
-      "control_dependencies": [],
-      "dependency_edges": [
-        {
-          "confidence": "high",
-          "expr": {
-            "kind": "signal",
-            "name": "uart_16550.rx_channel.RXD",
-            "npi_type": 36,
-            "text": "uart_16550.rx_channel.RXD"
-          },
-          "file": "<xverif-repo>/xdebug/testdata/design/uart/uart_rx.sv",
-          "from": "uart_16550.rx_channel.RXD",
-          "line": 69,
-          "resolution": "signal",
-          "role": "rhs_use",
-          "source": "uart_16550.rx_channel.filter[0] <= uart_16550.rx_channel.RXD;",
-          "to": "uart_16550.RXDin",
-          "type": "load_dependency"
-        },
-        {
-          "confidence": "high",
-          "expr": {
-            "kind": "signal",
-            "name": "uart_16550.rx_channel.filter[0]",
-            "npi_type": 49,
-            "text": "uart_16550.rx_channel.filter[0]"
-          },
-          "file": "<xverif-repo>/xdebug/testdata/design/uart/uart_rx.sv",
-          "from": "uart_16550.RXDin",
-          "line": 69,
-          "resolution": "signal",
-          "role": "lhs_target",
-          "source": "uart_16550.rx_channel.filter[0] <= uart_16550.rx_channel.RXD;",
-          "to": "uart_16550.rx_channel.filter[0]",
-          "type": "load_dependency"
-        }
-      ],
-      "files": [
-        "<xverif-repo>/xdebug/testdata/design/uart/uart_rx.sv"
-      ],
-      "results": [
-        {
-          "file": "<xverif-repo>/xdebug/testdata/design/uart/uart_rx.sv",
-          "line": 26,
-          "resolution": "signal",
-          "role": "load",
-          "signal": "uart_16550.rx_channel.RXD",
-          "source": "  input RXD,"
-        },
-        {
-          "file": "<xverif-repo>/xdebug/testdata/design/uart/uart_rx.sv",
-          "line": 69,
-          "resolution": "signal",
-          "role": "rhs_use",
-          "signal": "uart_16550.rx_channel.RXD",
-          "source": "    filter[0] <= RXD;"
-        },
-        {
-          "file": "<xverif-repo>/xdebug/testdata/design/uart/uart_rx.sv",
-          "line": 69,
-          "resolution": "signal",
-          "role": "lhs_target",
-          "signal": "uart_16550.rx_channel.filter",
-          "source": "    filter[0] <= RXD;"
-        }
-      ],
-      "rhs_signals": [
-        "uart_16550.rx_channel.RXD",
-        "uart_16550.rx_channel.filter[0]"
-      ],
-      "roles": [
-        "lhs_target",
-        "load",
-        "rhs_use"
       ]
     },
     "error": null

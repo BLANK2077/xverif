@@ -2,104 +2,2215 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "xdebug.trace.x_origin.response.v1",
   "title": "trace.x_origin response",
-  "type": "object",
-  "required": [
-    "api_version",
-    "ok",
-    "action",
-    "summary",
-    "data"
-  ],
-  "properties": {
-    "api_version": {
-      "type": "string",
-      "enum": [
-        "xdebug.v1"
+  "description": "Trace an X value backward through effective semantic DFS branches to its sources or observability boundaries.",
+  "x-description-zh": "从指定信号和时间按有效语义 DFS 多分支追溯 X 的产生位置或不可见边界。",
+  "x-output_notes": "trace.x_origin 成功响应的 summary 字段为 summary.analysis_complete, summary.chain_count, summary.completed_chain_count, summary.evidence_status, summary.hop_count, summary.limited_chain_count, summary.origin_count, summary.query_time, summary.response_truncated, summary.returned_count, summary.scan_complete, summary.signal, summary.termination, summary.total_count, summary.truncation_scopes, summary.value_width_complete, summary.width_diagnostics；data 字段为 data.chains, data.depth_frontiers, data.limitations, data.query, data.suggested_next_actions。未知字段会被拒绝。完整性和裁剪事实使用 summary.scan_complete, summary.analysis_complete, summary.response_truncated, summary.total_count, summary.returned_count, summary.truncation_scopes。",
+  "$defs": {
+    "jsonValue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        },
+        {
+          "$ref": "#/$defs/jsonObject"
+        }
       ]
     },
-    "request_id": {
-      "type": "string"
-    },
-    "ok": {
-      "type": "boolean"
-    },
-    "action": {
-      "type": "string",
-      "enum": [
-        "trace.x_origin"
-      ]
-    },
-    "tool": {
-      "type": "object"
-    },
-    "session": {
-      "type": [
-        "object",
-        "null"
-      ]
-    },
-    "summary": {
+    "jsonObject": {
       "type": "object",
-      "required": [
-        "signal",
-        "query_time",
-        "termination",
-        "evidence_status",
-        "chain_count",
-        "completed_chain_count",
-        "limited_chain_count",
-        "hop_count",
-        "origin_count"
-      ],
+      "additionalProperties": {
+        "$ref": "#/$defs/jsonValue"
+      },
+      "x-dynamic-map": true,
+      "description": "显式动态键 JSON 对象；每个 value 仍受 jsonValue 递归合同约束。"
+    },
+    "successSummary": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "signal": {
+              "type": "string",
+              "minLength": 1
+            },
+            "query_time": {
+              "type": "string",
+              "minLength": 1
+            },
+            "termination": {
+              "const": "not_x_at_query_time"
+            },
+            "evidence_status": {
+              "const": "proven"
+            },
+            "chain_count": {
+              "const": 0
+            },
+            "completed_chain_count": {
+              "const": 0
+            },
+            "limited_chain_count": {
+              "const": 0
+            },
+            "hop_count": {
+              "const": 0
+            },
+            "origin_count": {
+              "const": 0
+            },
+            "value_width_complete": {
+              "type": "boolean"
+            },
+            "width_diagnostics": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "signal": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "role": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "enum": [
+                      "npi_range_size_unavailable",
+                      "conflicting_signal_widths",
+                      "derived_width_unavailable"
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "reason",
+                  "role",
+                  "signal"
+                ]
+              }
+            },
+            "scan_complete": {
+              "type": "boolean"
+            },
+            "analysis_complete": {
+              "type": "boolean"
+            },
+            "response_truncated": {
+              "type": "boolean"
+            },
+            "total_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "returned_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "truncation_scopes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "analysis_complete",
+            "chain_count",
+            "completed_chain_count",
+            "evidence_status",
+            "hop_count",
+            "limited_chain_count",
+            "origin_count",
+            "query_time",
+            "response_truncated",
+            "returned_count",
+            "scan_complete",
+            "signal",
+            "termination",
+            "total_count",
+            "truncation_scopes"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "signal": {
+              "type": "string",
+              "minLength": 1
+            },
+            "query_time": {
+              "type": "string",
+              "minLength": 1
+            },
+            "termination": {
+              "enum": [
+                "origin_found",
+                "partial",
+                "limit",
+                "x_not_observable_upstream",
+                "loop_detected",
+                "pending"
+              ]
+            },
+            "evidence_status": {
+              "enum": [
+                "unresolved",
+                "best_effort",
+                "proven"
+              ]
+            },
+            "chain_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "completed_chain_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "limited_chain_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "hop_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "origin_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "value_width_complete": {
+              "type": "boolean"
+            },
+            "width_diagnostics": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "signal": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "role": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "enum": [
+                      "npi_range_size_unavailable",
+                      "conflicting_signal_widths",
+                      "derived_width_unavailable"
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "reason",
+                  "role",
+                  "signal"
+                ]
+              }
+            },
+            "scan_complete": {
+              "type": "boolean"
+            },
+            "analysis_complete": {
+              "type": "boolean"
+            },
+            "response_truncated": {
+              "type": "boolean"
+            },
+            "total_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "returned_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "truncation_scopes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "analysis_complete",
+            "chain_count",
+            "completed_chain_count",
+            "evidence_status",
+            "hop_count",
+            "limited_chain_count",
+            "origin_count",
+            "query_time",
+            "response_truncated",
+            "returned_count",
+            "scan_complete",
+            "signal",
+            "termination",
+            "total_count",
+            "truncation_scopes"
+          ]
+        }
+      ]
+    },
+    "successData": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "query": {
+              "$ref": "#/$defs/nonSamplingXOriginQuery"
+            },
+            "chains": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/nonSamplingXOriginChain"
+              },
+              "maxItems": 0
+            },
+            "limitations": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "maxItems": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "chains",
+            "limitations",
+            "query"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "query": {
+              "$ref": "#/$defs/nonSamplingXOriginQuery"
+            },
+            "chains": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/nonSamplingXOriginChain"
+              }
+            },
+            "limitations": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "depth_frontiers": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/nonSamplingXOriginDepthFrontier"
+              },
+              "minItems": 1
+            },
+            "suggested_next_actions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/suggestedNextAction"
+              },
+              "minItems": 1
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "chains",
+            "limitations",
+            "query"
+          ]
+        }
+      ]
+    },
+    "errorSummary": {
+      "type": "object",
       "properties": {
+        "status": {
+          "const": "error"
+        },
+        "error_code": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "error_code",
+        "status"
+      ]
+    },
+    "validationIssue": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "message",
+        "path"
+      ]
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "recoverable": {
+          "type": "boolean"
+        },
+        "error_layer": {
+          "enum": [
+            "schema",
+            "handler",
+            "wrapper",
+            "session_manager",
+            "transport",
+            "internal"
+          ]
+        },
+        "invalid_arg": {
+          "type": "string"
+        },
+        "expected": {
+          "type": "string"
+        },
+        "received": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "received_type": {
+          "type": "string"
+        },
+        "received_redacted": {
+          "type": "boolean"
+        },
+        "available_values": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "schema_path": {
+          "type": "string"
+        },
+        "required_any_of": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "missing_name": {
+          "type": "string"
+        },
+        "missing_resource": {
+          "type": "string"
+        },
+        "next_actions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "example_note": {
+          "type": "string"
+        },
+        "correct_example": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "cause_code": {
+          "type": "string"
+        },
+        "validation": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "current_estimated_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hard_max_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "protocol": {
+          "enum": [
+            "apb",
+            "axi",
+            "stream"
+          ]
+        },
+        "key_summary": {
+          "type": "string"
+        },
+        "manifest_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resource": {
+          "enum": [
+            "daidir",
+            "fsdb"
+          ]
+        },
+        "expected_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "actual_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "actual_size_bytes": {
+          "type": [
+            "null",
+            "integer"
+          ],
+          "minimum": 0
+        },
+        "expected_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "actual_sha256": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{64}$"
+            }
+          ]
+        },
+        "manifest_schema_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "manifest_state": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_mode": {
+          "enum": [
+            "design",
+            "waveform",
+            "combined"
+          ]
+        },
+        "session_transport": {
+          "enum": [
+            "uds",
+            "tcp",
+            "file"
+          ]
+        },
+        "idle_sec": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "idle_timeout_sec": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cleanup_succeeded": {
+          "type": "boolean"
+        },
+        "lifecycle_state": {
+          "enum": [
+            "cleanup_failed"
+          ]
+        },
+        "compensation_status": {
+          "enum": [
+            "cleaned",
+            "not_created",
+            "token_mismatch",
+            "cleanup_failed"
+          ]
+        },
+        "backend_error_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "exit_status": {
+          "type": "integer"
+        },
+        "health_status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resource_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requested_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "removed_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed_session_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "failure_kind": {
+          "type": "string"
+        },
+        "failure_phase": {
+          "enum": [
+            "npi_init",
+            "npi_load_design",
+            "npi_fsdb_open"
+          ]
+        },
+        "startup_reason": {
+          "type": "string"
+        },
+        "native_error_summary": {
+          "type": "string"
+        },
+        "diagnostic_log": {
+          "type": "string"
+        },
+        "advisories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "severity": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "message",
+              "severity"
+            ]
+          }
+        },
+        "validation_issues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/validationIssue"
+          },
+          "minItems": 1
+        },
         "signal": {
           "type": "string"
         },
-        "query_time": {
+        "time": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "error_layer",
+        "message",
+        "recoverable"
+      ]
+    },
+    "genericError": {
+      "type": "object",
+      "properties": {
+        "code": {
           "type": "string"
         },
-        "termination": {
+        "message": {
+          "type": "string"
+        },
+        "recoverable": {
+          "type": "boolean"
+        },
+        "error_layer": {
+          "enum": [
+            "schema",
+            "handler",
+            "wrapper",
+            "session_manager",
+            "transport",
+            "internal"
+          ]
+        },
+        "invalid_arg": {
+          "type": "string"
+        },
+        "expected": {
+          "type": "string"
+        },
+        "received": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "received_type": {
+          "type": "string"
+        },
+        "received_redacted": {
+          "type": "boolean"
+        },
+        "available_values": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "schema_path": {
+          "type": "string"
+        },
+        "required_any_of": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "missing_name": {
+          "type": "string"
+        },
+        "missing_resource": {
+          "type": "string"
+        },
+        "next_actions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "example_note": {
+          "type": "string"
+        },
+        "correct_example": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "cause_code": {
+          "type": "string"
+        },
+        "validation": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "current_estimated_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hard_max_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "protocol": {
+          "enum": [
+            "apb",
+            "axi",
+            "stream"
+          ]
+        },
+        "key_summary": {
+          "type": "string"
+        },
+        "manifest_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resource": {
+          "enum": [
+            "daidir",
+            "fsdb"
+          ]
+        },
+        "expected_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "actual_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "actual_size_bytes": {
+          "type": [
+            "null",
+            "integer"
+          ],
+          "minimum": 0
+        },
+        "expected_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "actual_sha256": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{64}$"
+            }
+          ]
+        },
+        "manifest_schema_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "manifest_state": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_mode": {
+          "enum": [
+            "design",
+            "waveform",
+            "combined"
+          ]
+        },
+        "session_transport": {
+          "enum": [
+            "uds",
+            "tcp",
+            "file"
+          ]
+        },
+        "idle_sec": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "idle_timeout_sec": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cleanup_succeeded": {
+          "type": "boolean"
+        },
+        "lifecycle_state": {
+          "enum": [
+            "cleanup_failed"
+          ]
+        },
+        "compensation_status": {
+          "enum": [
+            "cleaned",
+            "not_created",
+            "token_mismatch",
+            "cleanup_failed"
+          ]
+        },
+        "backend_error_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "exit_status": {
+          "type": "integer"
+        },
+        "health_status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resource_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requested_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "removed_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed_session_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "failure_kind": {
+          "type": "string"
+        },
+        "failure_phase": {
+          "enum": [
+            "npi_init",
+            "npi_load_design",
+            "npi_fsdb_open"
+          ]
+        },
+        "startup_reason": {
+          "type": "string"
+        },
+        "native_error_summary": {
+          "type": "string"
+        },
+        "diagnostic_log": {
+          "type": "string"
+        },
+        "advisories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "severity": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "message",
+              "severity"
+            ]
+          }
+        },
+        "validation_issues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/validationIssue"
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "error_layer",
+        "message",
+        "recoverable"
+      ]
+    },
+    "tool": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "build_id": {
+          "type": "string"
+        },
+        "git_revision": {
+          "type": "string"
+        },
+        "schema_revision": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version"
+      ]
+    },
+    "sessionRecord": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "enum": [
+            "design",
+            "waveform",
+            "combined"
+          ]
+        },
+        "daidir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        },
+        "socket_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "transport": {
+          "enum": [
+            "uds",
+            "tcp",
+            "file"
+          ]
+        },
+        "file_dir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bind_host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "server_host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "server_pid": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "created_at": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "last_active": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "daidir_mtime": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "daidir_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "daidir_dev": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "daidir_inode": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fsdb_mtime": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fsdb_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fsdb_dev": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fsdb_inode": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "session_id",
+        "mode",
+        "transport"
+      ],
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "mode": {
+                  "const": "design"
+                }
+              },
+              "required": [
+                "mode",
+                "daidir"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "fsdb"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "fsdb_mtime"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "fsdb_size"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "fsdb_dev"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "fsdb_inode"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "properties": {
+                "mode": {
+                  "const": "waveform"
+                }
+              },
+              "required": [
+                "mode",
+                "fsdb"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "daidir"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "daidir_mtime"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "daidir_size"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "daidir_dev"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "daidir_inode"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "properties": {
+                "mode": {
+                  "const": "combined"
+                }
+              },
+              "required": [
+                "mode",
+                "daidir",
+                "fsdb"
+              ]
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "transport": {
+                  "const": "uds"
+                }
+              },
+              "required": [
+                "transport",
+                "socket_path",
+                "server_host"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "file_dir"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "host"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "bind_host"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "port"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "properties": {
+                "transport": {
+                  "const": "tcp"
+                }
+              },
+              "required": [
+                "transport",
+                "host",
+                "bind_host",
+                "port",
+                "server_host"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "socket_path"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "file_dir"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "properties": {
+                "transport": {
+                  "const": "file"
+                }
+              },
+              "required": [
+                "transport",
+                "file_dir",
+                "server_host"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "socket_path"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "host"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "bind_host"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "port"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "suggestedNextAction": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "chain_id": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "signal": {
+              "type": "string"
+            },
+            "time": {
+              "type": "string"
+            },
+            "value_format": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "max_depth": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_chains": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_paths": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_nodes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_time_steps": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_trace_signals": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_results": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "timeout_ms": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "reason"
+      ]
+    },
+    "finding": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "signal": {
+          "type": "string"
+        },
+        "time": {
+          "type": "string"
+        },
+        "begin": {
+          "type": "string"
+        },
+        "end": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "details": {
+          "$ref": "#/$defs/jsonValue"
+        }
+      },
+      "additionalProperties": false
+    },
+    "warning": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "signal": {
+              "type": "string"
+            },
+            "time": {
+              "type": "string"
+            },
+            "details": {
+              "$ref": "#/$defs/jsonValue"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "code",
+            "message"
+          ]
+        }
+      ]
+    },
+    "logicValue": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "known": {
+          "type": "boolean"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bits": {
+          "type": "string",
+          "minLength": 1
+        },
+        "has_x": {
+          "type": "boolean"
+        },
+        "has_z": {
+          "type": "boolean"
+        },
+        "requested_value_format": {
+          "const": "dec"
+        },
+        "effective_value_format": {
+          "const": "bin"
+        },
+        "value_format_reason": {
+          "const": "decimal cannot preserve per-bit X/Z"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "known",
+        "value"
+      ],
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "required": [
+                "width",
+                "bits"
+              ]
+            },
+            {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "width"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "bits"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "known": {
+                  "const": true
+                }
+              },
+              "required": [
+                "known"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "has_x"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "has_z"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "requested_value_format"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "effective_value_format"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "value_format_reason"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "properties": {
+                "known": {
+                  "const": false
+                },
+                "has_x": {
+                  "type": "boolean"
+                },
+                "has_z": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "known",
+                "has_x",
+                "has_z"
+              ],
+              "anyOf": [
+                {
+                  "properties": {
+                    "has_x": {
+                      "const": true
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "has_z": {
+                      "const": true
+                    }
+                  }
+                }
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "requested_value_format"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "effective_value_format"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "value_format_reason"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "properties": {
+                "known": {
+                  "const": false
+                },
+                "has_x": {
+                  "type": "boolean"
+                },
+                "has_z": {
+                  "type": "boolean"
+                },
+                "requested_value_format": {
+                  "const": "dec"
+                },
+                "effective_value_format": {
+                  "const": "bin"
+                },
+                "value_format_reason": {
+                  "const": "decimal cannot preserve per-bit X/Z"
+                }
+              },
+              "required": [
+                "known",
+                "has_x",
+                "has_z",
+                "requested_value_format",
+                "effective_value_format",
+                "value_format_reason"
+              ],
+              "anyOf": [
+                {
+                  "properties": {
+                    "has_x": {
+                      "const": true
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "has_z": {
+                      "const": true
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "sessionHealthFailureEvidence": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "health_status": {
+          "enum": [
+            "healthy",
+            "registry_missing",
+            "process_exited",
+            "socket_missing",
+            "connect_failed",
+            "ping_failed",
+            "dbdir_missing",
+            "dbdir_changed",
+            "fsdb_missing",
+            "fsdb_changed"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ]
+    },
+    "sessionCleanupItem": {
+      "type": "object",
+      "properties": {
+        "removed_session": {
+          "$ref": "#/$defs/sessionRecord"
+        },
+        "reason": {
+          "enum": [
+            "idle_timeout",
+            "unhealthy"
+          ]
+        },
+        "health_evidence": {
+          "$ref": "#/$defs/sessionHealthFailureEvidence"
+        },
+        "idle_sec": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "idle_timeout_sec": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "removed_session"
+      ],
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "reason": {
+                  "const": "idle_timeout"
+                }
+              },
+              "required": [
+                "reason",
+                "idle_sec",
+                "idle_timeout_sec"
+              ],
+              "not": {
+                "required": [
+                  "health_evidence"
+                ]
+              }
+            },
+            {
+              "properties": {
+                "reason": {
+                  "const": "unhealthy"
+                },
+                "health_evidence": {
+                  "$ref": "#/$defs/sessionHealthFailureEvidence"
+                }
+              },
+              "required": [
+                "reason",
+                "health_evidence"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "idle_sec"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "idle_timeout_sec"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "commonBlock": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "card": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "card",
+        "file",
+        "message"
+      ]
+    },
+    "reset": {
+      "type": "object",
+      "required": [
+        "signal",
+        "polarity"
+      ],
+      "properties": {
+        "signal": {
+          "type": "string",
+          "minLength": 1,
+          "description": "One-bit final waveform signal path used as reset."
+        },
+        "polarity": {
           "type": "string",
           "enum": [
-            "not_x_at_query_time",
-            "origin_found",
-            "x_not_observable_upstream",
-            "partial",
-            "limit"
+            "active_low",
+            "active_high"
+          ],
+          "description": "Level that asserts reset. X, Z, and unavailable samples are conservatively treated as asserted."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Reset definition. Both signal and polarity are required when reset is supplied."
+    },
+    "valueWidthDiagnostic": {
+      "type": "object",
+      "properties": {
+        "signal": {
+          "type": [
+            "string",
+            "null"
           ]
+        },
+        "role": {
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "npi_range_size_unavailable",
+            "conflicting_signal_widths",
+            "derived_width_unavailable"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "role",
+        "signal"
+      ]
+    },
+    "nonSamplingXOriginChain": {
+      "type": "object",
+      "properties": {
+        "chain_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "termination_detail": {
+          "type": "string"
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "current": {
+          "$ref": "#/$defs/nonSamplingXOriginCurrent"
+        },
+        "hops": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonSamplingXOriginHop"
+          }
+        },
+        "origin": {
+          "type": "object",
+          "properties": {
+            "signal": {
+              "type": "string",
+              "minLength": 1
+            },
+            "x_onset_time": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kind": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "evidence_status": {
+              "enum": [
+                "proven",
+                "best_effort"
+              ]
+            },
+            "file": {
+              "type": "string"
+            },
+            "line": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "evidence_status",
+            "file",
+            "kind",
+            "line",
+            "reason",
+            "signal",
+            "x_onset_time"
+          ]
+        },
+        "pending_x_dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonSamplingXOriginPending"
+          },
+          "minItems": 1
+        },
+        "branch_events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "hop_index": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "reason": {
+                "const": "max_chains"
+              },
+              "x_dependency_count": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "returned_x_dependency_count": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "omitted_x_dependency_count": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "pending_x_dependencies": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/nonSamplingXOriginPending"
+                },
+                "minItems": 1
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "hop_index",
+              "omitted_x_dependency_count",
+              "pending_x_dependencies",
+              "reason",
+              "returned_x_dependency_count",
+              "x_dependency_count"
+            ]
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "chain_id",
+        "complete",
+        "current",
+        "hops",
+        "status",
+        "termination_detail"
+      ]
+    },
+    "nonSamplingXOriginCurrent": {
+      "type": "object",
+      "properties": {
+        "signal": {
+          "type": "string",
+          "minLength": 1
+        },
+        "x_onset_time": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "$ref": "#/$defs/logicValue"
+        },
+        "x_mask": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "signal",
+        "value",
+        "x_mask",
+        "x_onset_time"
+      ]
+    },
+    "nonSamplingXOriginDepthFrontier": {
+      "type": "object",
+      "properties": {
+        "signal": {
+          "type": "string",
+          "minLength": 1
+        },
+        "continue_time": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "$ref": "#/$defs/logicValue"
+        },
+        "x_mask": {
+          "type": "string",
+          "minLength": 1
+        },
+        "chain_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stopped_after_depth": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "chain_id",
+        "continue_time",
+        "signal",
+        "stopped_after_depth",
+        "value",
+        "x_mask"
+      ]
+    },
+    "nonSamplingXOriginHop": {
+      "type": "object",
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "chain_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "signal": {
+          "type": "string",
+          "minLength": 1
+        },
+        "x_onset_time": {
+          "type": "string",
+          "minLength": 1
+        },
+        "active_time": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/logicValue"
+        },
+        "x_mask": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "signal_path": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "active_time",
+        "chain_id",
+        "file",
+        "index",
+        "line",
+        "relation",
+        "signal",
+        "signal_path",
+        "value",
+        "x_mask",
+        "x_onset_time"
+      ]
+    },
+    "nonSamplingXOriginPending": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "signal": {
+              "type": "string",
+              "minLength": 1
+            },
+            "relation": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reason": {
+              "const": "max_trace_signals"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "reason",
+            "relation",
+            "signal"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "signal": {
+              "type": "string",
+              "minLength": 1
+            },
+            "relation": {
+              "type": "string",
+              "minLength": 1
+            },
+            "x_onset_time": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sample_time": {
+              "type": "string",
+              "minLength": 1
+            },
+            "value": {
+              "$ref": "#/$defs/logicValue"
+            },
+            "x_mask": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "relation",
+            "signal",
+            "x_onset_time"
+          ]
+        }
+      ]
+    },
+    "nonSamplingXOriginQuery": {
+      "type": "object",
+      "properties": {
+        "signal": {
+          "type": "string",
+          "minLength": 1
+        },
+        "query_time": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "$ref": "#/$defs/logicValue"
+        },
+        "x_mask": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "query_time",
+        "signal",
+        "value",
+        "x_mask"
+      ]
+    },
+    "successSummary0": {
+      "type": "object",
+      "properties": {
+        "signal": {
+          "type": "string",
+          "minLength": 1
+        },
+        "query_time": {
+          "type": "string",
+          "minLength": 1
+        },
+        "termination": {
+          "const": "not_x_at_query_time"
         },
         "evidence_status": {
-          "type": "string",
-          "enum": [
-            "proven",
-            "best_effort",
-            "unresolved"
-          ]
+          "const": "proven"
         },
         "chain_count": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Number of returned effective semantic chains after pure port/interface/modport/ref alias routes are coalesced."
+          "const": 0
         },
         "completed_chain_count": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Number of complete chains in the final effective chain list."
+          "const": 0
         },
         "limited_chain_count": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Number of incomplete or limited chains in the final effective chain list."
+          "const": 0
         },
         "hop_count": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Total raw evidence hops retained by the final effective chain representatives."
+          "const": 0
         },
         "origin_count": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "Number of origins present in the final effective chain list."
+          "const": 0
         },
         "value_width_complete": {
           "type": "boolean"
@@ -119,7 +2230,6 @@
                 "type": "string"
               },
               "reason": {
-                "type": "string",
                 "enum": [
                   "npi_range_size_unavailable",
                   "conflicting_signal_widths",
@@ -127,494 +2237,423 @@
                 ]
               }
             },
+            "additionalProperties": false,
             "required": [
-              "signal",
+              "reason",
               "role",
-              "reason"
-            ],
-            "additionalProperties": false
+              "signal"
+            ]
+          }
+        },
+        "scan_complete": {
+          "type": "boolean"
+        },
+        "analysis_complete": {
+          "type": "boolean"
+        },
+        "response_truncated": {
+          "type": "boolean"
+        },
+        "total_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "returned_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncation_scopes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
           }
         }
       },
-      "additionalProperties": false
-    },
-    "data": {
-      "type": "object",
+      "additionalProperties": false,
       "required": [
-        "query",
-        "chains",
-        "limitations"
-      ],
+        "analysis_complete",
+        "chain_count",
+        "completed_chain_count",
+        "evidence_status",
+        "hop_count",
+        "limited_chain_count",
+        "origin_count",
+        "query_time",
+        "response_truncated",
+        "returned_count",
+        "scan_complete",
+        "signal",
+        "termination",
+        "total_count",
+        "truncation_scopes"
+      ]
+    },
+    "successData0": {
+      "type": "object",
       "properties": {
         "query": {
-          "$ref": "#/$defs/query_point"
+          "$ref": "#/$defs/nonSamplingXOriginQuery"
         },
         "chains": {
           "type": "array",
-          "description": "Final effective semantic chains; transparent alias-only route variants are represented once.",
           "items": {
-            "$ref": "#/$defs/chain"
-          }
+            "$ref": "#/$defs/nonSamplingXOriginChain"
+          },
+          "maxItems": 0
         },
-        "depth_frontiers": {
+        "limitations": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/frontier"
+            "type": "string",
+            "minLength": 1
+          },
+          "maxItems": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "chains",
+        "limitations",
+        "query"
+      ]
+    },
+    "successSummary1": {
+      "type": "object",
+      "properties": {
+        "signal": {
+          "type": "string",
+          "minLength": 1
+        },
+        "query_time": {
+          "type": "string",
+          "minLength": 1
+        },
+        "termination": {
+          "enum": [
+            "origin_found",
+            "partial",
+            "limit",
+            "x_not_observable_upstream",
+            "loop_detected",
+            "pending"
+          ]
+        },
+        "evidence_status": {
+          "enum": [
+            "unresolved",
+            "best_effort",
+            "proven"
+          ]
+        },
+        "chain_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completed_chain_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limited_chain_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hop_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "origin_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "value_width_complete": {
+          "type": "boolean"
+        },
+        "width_diagnostics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "signal": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "role": {
+                "type": "string"
+              },
+              "reason": {
+                "enum": [
+                  "npi_range_size_unavailable",
+                  "conflicting_signal_widths",
+                  "derived_width_unavailable"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "reason",
+              "role",
+              "signal"
+            ]
+          }
+        },
+        "scan_complete": {
+          "type": "boolean"
+        },
+        "analysis_complete": {
+          "type": "boolean"
+        },
+        "response_truncated": {
+          "type": "boolean"
+        },
+        "total_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "returned_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncation_scopes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "analysis_complete",
+        "chain_count",
+        "completed_chain_count",
+        "evidence_status",
+        "hop_count",
+        "limited_chain_count",
+        "origin_count",
+        "query_time",
+        "response_truncated",
+        "returned_count",
+        "scan_complete",
+        "signal",
+        "termination",
+        "total_count",
+        "truncation_scopes"
+      ]
+    },
+    "successData1": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "$ref": "#/$defs/nonSamplingXOriginQuery"
+        },
+        "chains": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonSamplingXOriginChain"
           }
         },
         "limitations": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           }
         },
-        "common_blocks": {
-          "type": "array"
+        "depth_frontiers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nonSamplingXOriginDepthFrontier"
+          },
+          "minItems": 1
+        },
+        "suggested_next_actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/suggestedNextAction"
+          },
+          "minItems": 1
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "required": [
+        "chains",
+        "limitations",
+        "query"
+      ]
+    }
+  },
+  "type": "object",
+  "properties": {
+    "api_version": {
+      "const": "xdebug.v1"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "action": {
+      "const": "trace.x_origin"
+    },
+    "tool": {
+      "$ref": "#/$defs/tool"
+    },
+    "session": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/sessionRecord"
+        }
+      ]
+    },
+    "schema_version": {
+      "type": "string"
     },
     "suggested_next_actions": {
       "type": "array",
       "items": {
-        "$ref": "#/$defs/next_action"
+        "$ref": "#/$defs/suggestedNextAction"
       }
     },
-    "error": {},
-    "meta": {
-      "type": "object"
+    "summary": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/successSummary"
+        },
+        {
+          "$ref": "#/$defs/errorSummary"
+        }
+      ]
+    },
+    "data": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/successData"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/warning"
+      }
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/error"
+        }
+      ]
     }
   },
-  "$defs": {
-    "logic_value": {
-      "type": "object",
-      "required": [
-        "value",
-        "known"
-      ],
+  "required": [
+    "api_version",
+    "ok",
+    "action",
+    "tool",
+    "session",
+    "summary",
+    "data",
+    "error"
+  ],
+  "oneOf": [
+    {
       "properties": {
-        "value": {
-          "type": "string"
+        "ok": {
+          "const": true
         },
-        "known": {
-          "type": "boolean"
-        },
-        "width": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "bits": {
-          "type": "string"
-        },
-        "has_x": {
-          "type": "boolean"
-        },
-        "has_z": {
-          "type": "boolean"
-        },
-        "requested_value_format": {
-          "type": "string"
-        },
-        "effective_value_format": {
-          "type": "string"
-        },
-        "value_format_reason": {
-          "type": "string"
+        "error": {
+          "type": "null"
         }
       },
-      "additionalProperties": false
-    },
-    "query_point": {
-      "type": "object",
       "required": [
-        "signal",
-        "query_time",
-        "value",
-        "x_mask"
-      ],
-      "properties": {
-        "signal": {
-          "type": "string"
-        },
-        "query_time": {
-          "type": "string"
-        },
-        "value": {
-          "$ref": "#/$defs/logic_value"
-        },
-        "x_mask": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false
-    },
-    "x_onset_point": {
-      "type": "object",
-      "required": [
-        "signal",
-        "x_onset_time",
-        "value",
-        "x_mask"
-      ],
-      "properties": {
-        "signal": {
-          "type": "string"
-        },
-        "x_onset_time": {
-          "type": "string"
-        },
-        "value": {
-          "$ref": "#/$defs/logic_value"
-        },
-        "x_mask": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false
-    },
-    "hop": {
-      "type": "object",
-      "required": [
-        "index",
-        "chain_id",
-        "signal",
-        "x_onset_time",
-        "active_time",
-        "value",
-        "x_mask",
-        "relation",
-        "file",
-        "line",
-        "signal_path"
-      ],
-      "properties": {
-        "index": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "chain_id": {
-          "type": "string"
-        },
-        "signal": {
-          "type": "string"
-        },
-        "x_onset_time": {
-          "type": "string"
-        },
-        "active_time": {
-          "type": "string"
-        },
-        "value": {
-          "$ref": "#/$defs/logic_value"
-        },
-        "x_mask": {
-          "type": "string"
-        },
-        "relation": {
-          "type": "string"
-        },
-        "file": {
-          "type": "string"
-        },
-        "line": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "signal_path": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    "origin": {
-      "type": "object",
-      "required": [
-        "signal",
-        "x_onset_time",
-        "kind",
-        "reason",
-        "evidence_status",
-        "file",
-        "line"
-      ],
-      "properties": {
-        "signal": {
-          "type": "string"
-        },
-        "x_onset_time": {
-          "type": "string"
-        },
-        "kind": {
-          "type": "string"
-        },
-        "reason": {
-          "type": "string"
-        },
-        "evidence_status": {
-          "type": "string",
-          "enum": [
-            "proven",
-            "best_effort",
-            "unresolved"
-          ]
-        },
-        "file": {
-          "type": "string"
-        },
-        "line": {
-          "type": "integer",
-          "minimum": 0
-        }
-      },
-      "additionalProperties": false
-    },
-    "pending_dependency": {
-      "type": "object",
-      "required": [
-        "signal",
-        "relation"
-      ],
-      "properties": {
-        "signal": {
-          "type": "string"
-        },
-        "sample_time": {
-          "type": "string"
-        },
-        "value": {
-          "$ref": "#/$defs/logic_value"
-        },
-        "x_mask": {
-          "type": "string"
-        },
-        "relation": {
-          "type": "string"
-        },
-        "x_onset_time": {
-          "type": "string"
-        },
-        "reason": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false
-    },
-    "branch_event": {
-      "type": "object",
-      "required": [
-        "hop_index",
-        "reason",
-        "x_dependency_count",
-        "returned_x_dependency_count",
-        "omitted_x_dependency_count",
-        "pending_x_dependencies"
-      ],
-      "properties": {
-        "hop_index": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "reason": {
-          "type": "string",
-          "enum": [
-            "max_chains"
-          ]
-        },
-        "x_dependency_count": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "returned_x_dependency_count": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "omitted_x_dependency_count": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "pending_x_dependencies": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/pending_dependency"
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    "chain": {
-      "type": "object",
-      "required": [
-        "chain_id",
-        "status",
-        "termination_detail",
-        "complete",
-        "current",
-        "hops"
-      ],
-      "properties": {
-        "chain_id": {
-          "type": "string"
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "origin_found",
-            "x_not_observable_upstream",
-            "loop_detected",
-            "limit"
-          ]
-        },
-        "termination_detail": {
-          "type": "string"
-        },
-        "complete": {
-          "type": "boolean"
-        },
-        "current": {
-          "$ref": "#/$defs/x_onset_point"
-        },
-        "hops": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/hop"
-          }
-        },
-        "origin": {
-          "$ref": "#/$defs/origin"
-        },
-        "pending_x_dependencies": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/pending_dependency"
-          }
-        },
-        "branch_events": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/branch_event"
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    "frontier": {
-      "type": "object",
-      "required": [
-        "signal",
-        "continue_time",
-        "value",
-        "x_mask",
-        "chain_id",
-        "stopped_after_depth"
-      ],
-      "properties": {
-        "signal": {
-          "type": "string"
-        },
-        "continue_time": {
-          "type": "string"
-        },
-        "value": {
-          "$ref": "#/$defs/logic_value"
-        },
-        "x_mask": {
-          "type": "string"
-        },
-        "chain_id": {
-          "type": "string"
-        },
-        "stopped_after_depth": {
-          "type": "integer",
-          "minimum": 1
-        }
-      },
-      "additionalProperties": false
-    },
-    "next_action": {
-      "type": "object",
-      "required": [
+        "api_version",
+        "ok",
         "action",
-        "reason",
-        "args",
-        "limits"
+        "tool",
+        "session",
+        "summary",
+        "data",
+        "error"
       ],
-      "properties": {
-        "action": {
-          "type": "string",
-          "enum": [
-            "trace.x_origin"
-          ]
-        },
-        "reason": {
-          "type": "string",
-          "enum": [
-            "continue_from_depth_frontier",
-            "rerun_from_root_with_higher_depth"
-          ]
-        },
-        "chain_id": {
-          "type": "string"
-        },
-        "args": {
-          "type": "object",
+      "oneOf": [
+        {
+          "properties": {
+            "summary": {
+              "$ref": "#/$defs/successSummary0"
+            },
+            "data": {
+              "$ref": "#/$defs/successData0"
+            }
+          },
           "required": [
-            "signal",
-            "time",
-            "value_format"
-          ],
-          "properties": {
-            "signal": {
-              "type": "string"
-            },
-            "time": {
-              "type": "string"
-            },
-            "value_format": {
-              "type": "string",
-              "enum": [
-                "hex",
-                "bin",
-                "dec"
-              ]
-            }
-          },
-          "additionalProperties": false
+            "summary",
+            "data"
+          ]
         },
-        "limits": {
-          "type": "object",
+        {
           "properties": {
-            "max_depth": {
-              "type": "integer",
-              "minimum": 1
+            "summary": {
+              "$ref": "#/$defs/successSummary1"
             },
-            "max_nodes": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "max_time_steps": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "max_trace_signals": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "max_chains": {
-              "type": "integer",
-              "minimum": 1
+            "data": {
+              "$ref": "#/$defs/successData1"
             }
           },
-          "additionalProperties": false
+          "required": [
+            "summary",
+            "data"
+          ]
+        }
+      ]
+    },
+    {
+      "properties": {
+        "ok": {
+          "const": false
+        },
+        "session": {
+          "type": "null"
+        },
+        "summary": {
+          "$ref": "#/$defs/errorSummary"
+        },
+        "data": {
+          "type": "null"
+        },
+        "error": {
+          "$ref": "#/$defs/error"
         }
       },
-      "additionalProperties": false
+      "required": [
+        "api_version",
+        "ok",
+        "action",
+        "tool",
+        "session",
+        "summary",
+        "data",
+        "error"
+      ]
     }
-  },
-  "additionalProperties": true,
-  "description": "Trace an X value backward through effective semantic DFS branches to its sources or observability boundaries.",
-  "x-description-zh": "从指定信号和时间按有效语义 DFS 多分支追溯 X 的产生位置或不可见边界。",
-  "x-output_notes": "返回该 action 的 summary/data/error/meta；具体字段以 response schema 和 response example 为准。"
+  ],
+  "additionalProperties": false
 }

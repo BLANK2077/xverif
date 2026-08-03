@@ -3,16 +3,10 @@
     "api_version": "xdebug.v1",
     "action": "list.validate",
     "target": {
-      "session_id": "sample_wave"
+      "session_id": "case_a"
     },
     "args": {
-      "name": "basic"
-    },
-    "limits": {
-      "timeout_ms": 120000
-    },
-    "output": {
-      "verbosity": "compact"
+      "name": "if0"
     }
   },
   "response": {
@@ -23,23 +17,22 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
-      "name": "basic",
+      "name": "if0",
       "all_found": true
     },
     "data": {
       "signals": [
         {
-          "signal": "ai_complex_top.clk",
-          "status": "ok"
-        },
-        {
-          "signal": "ai_complex_top.rst_n",
-          "status": "ok"
-        },
-        {
-          "signal": "ai_complex_top.counter_inc",
+          "signal": "top.u.valid",
           "status": "ok"
         }
       ]

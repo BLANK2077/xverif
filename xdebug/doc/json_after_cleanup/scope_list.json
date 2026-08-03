@@ -3,16 +3,14 @@
     "api_version": "xdebug.v1",
     "action": "scope.list",
     "target": {
-      "session_id": "sample_wave"
+      "session_id": "case_a"
     },
     "args": {
-      "path": ""
-    },
-    "limits": {
-      "timeout_ms": 120000
-    },
-    "output": {
-      "verbosity": "compact"
+      "path": "top",
+      "level": 1,
+      "kind": "all",
+      "include_patterns": [],
+      "exclude_patterns": []
     }
   },
   "response": {
@@ -23,17 +21,63 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
-      "path": "",
-      "recursive": true,
-      "total_signals": 0,
-      "truncated": false,
-      "signal_count": 0
+      "path": "top",
+      "level": 1,
+      "kind": "all",
+      "include_patterns": [],
+      "exclude_patterns": [],
+      "scanned_row_count": 5,
+      "returned_module_count": 1,
+      "returned_port_count": 2,
+      "returned_signal_count": 2,
+      "total_module_count": 1,
+      "total_port_count": 2,
+      "total_signal_count": 2,
+      "scan_complete": true,
+      "analysis_complete": true,
+      "response_truncated": false,
+      "total_count": 5,
+      "returned_count": 5,
+      "truncation_scopes": []
     },
     "data": {
-      "scopes": [],
-      "signals": []
+      "modules": [
+        {
+          "name": "u0",
+          "module_name": "worker"
+        }
+      ],
+      "ports": [
+        {
+          "name": "u0.bus",
+          "direction": "interface",
+          "width": null
+        },
+        {
+          "name": "u0.req_i",
+          "direction": "input",
+          "width": 1
+        }
+      ],
+      "signals": [
+        {
+          "name": "clk",
+          "width": 1
+        },
+        {
+          "name": "link",
+          "width": null
+        }
+      ]
     },
     "error": null
   },

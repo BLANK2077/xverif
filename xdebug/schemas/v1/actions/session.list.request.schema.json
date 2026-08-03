@@ -15,7 +15,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -24,31 +25,20 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [],
       "properties": {},
-      "additionalProperties": false,
-      "required": []
+      "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
@@ -60,19 +50,19 @@
   "x-description-zh": "列出当前 session。",
   "x-agent": {
     "use_when": [
-      "列出当前 session。"
+      "Need to discover session identifiers and lifecycle states without probing resources or mutating them."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 session.close、session.doctor 的业务目标；请改用列出的同域 action。"
+      "Do not use it to diagnose resources or mutate session lifecycle."
     ],
     "alternatives": [
       {
-        "action": "session.close",
-        "when": "关闭指定 session。"
+        "action": "session.doctor",
+        "when": "Inspect one session's health and resources."
       },
       {
-        "action": "session.doctor",
-        "when": "诊断当前 session。"
+        "action": "session.open",
+        "when": "Create a new session."
       }
     ],
     "constraints": [

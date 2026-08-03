@@ -6,7 +6,8 @@
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -16,7 +17,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -25,10 +27,50 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "name"
+      ],
       "properties": {
         "direction": {
           "type": "string",
@@ -37,7 +79,7 @@
             "read",
             "all"
           ],
-          "description": "Action-specific direction input. Its type and accepted values are defined by this schema."
+          "description": "协议 transaction 的方向过滤；read/write/all 的可用性以本 action enum 为准。"
         },
         "line_limit": {
           "type": "integer",
@@ -48,45 +90,33 @@
           "type": "string",
           "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
         },
-        "output": {
-          "type": "object",
-          "properties": {
-            "include_data": {
-              "type": "boolean",
-              "default": false,
-              "description": "Action-specific include_data input. Its type and accepted values are defined by this schema."
-            }
-          },
-          "additionalProperties": false,
-          "description": "Export destination and rendering controls. path, file_format, and verbose are supported only where this action declares them."
+        "render_time_unit": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "ps",
+            "ns",
+            "us"
+          ],
+          "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
         },
         "time_range": {
           "type": "object",
+          "minProperties": 1,
           "properties": {
             "begin": {
               "type": "string",
-              "description": "Action-specific begin input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "闭区间起点；省略时使用可用波形窗口起点。"
             },
             "end": {
               "type": "string",
-              "description": "Action-specific end input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "闭区间终点；省略时使用可用波形窗口终点。"
             }
           },
           "additionalProperties": false,
           "description": "Closed analysis interval. begin and end may be omitted independently to use the available waveform bounds."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
         },
         "value_format": {
           "type": "string",
@@ -95,32 +125,23 @@
             "bin",
             "dec"
           ],
-          "description": "Action-specific value_format input. Its type and accepted values are defined by this schema.",
-          "default": "hex"
+          "default": "hex",
+          "description": "返回 LogicValue 的显示格式；不改变比较、采样或底层四态值。"
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "name"
-      ]
+      "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
@@ -132,19 +153,19 @@
   "x-description-zh": "实验性 AXI 请求响应配对。",
   "x-agent": {
     "use_when": [
-      "实验性 AXI 请求响应配对。"
+      "Need explicit request-to-response correlation and pairing evidence for reconstructed AXI transactions."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 axi.analysis、axi.export 的业务目标；请改用列出的同域 action。"
+      "Do not use it for unrelated channel handshakes or an unpaired transaction listing."
     ],
     "alternatives": [
       {
-        "action": "axi.analysis",
-        "when": "汇总 AXI 行为。"
+        "action": "axi.query",
+        "when": "Inspect arbitrary AXI channels or transactions."
       },
       {
-        "action": "axi.export",
-        "when": "导出 AXI 数据。"
+        "action": "axi.analysis",
+        "when": "Analyze protocol-wide pending or latency behavior."
       }
     ],
     "constraints": [

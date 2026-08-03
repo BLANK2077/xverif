@@ -3,23 +3,19 @@
     "api_version": "xdebug.v1",
     "action": "verify.conditions",
     "target": {
-      "session_id": "sample_wave"
+      "session_id": "case_a"
     },
     "args": {
+      "clock": "top.u.clk",
+      "signals": {
+        "valid": "top.u.valid"
+      },
       "conditions": [
         {
-          "signal": "ai_complex_top.rst_n",
-          "op": "==",
-          "value": "'h1"
+          "expr": "valid == 'h1"
         }
       ],
       "time": "100ns"
-    },
-    "limits": {
-      "timeout_ms": 120000
-    },
-    "output": {
-      "verbosity": "compact"
     }
   },
   "response": {
@@ -30,10 +26,17 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
       "time": "100ns",
-      "all_pass": true,
+      "execution_ok": true,
       "verdict": "pass",
       "condition_count": 1,
       "all_passed": true,
@@ -44,19 +47,39 @@
     "data": {
       "checks": [
         {
-          "signal": "ai_complex_top.rst_n",
           "time": "100ns",
-          "op": "==",
-          "expected": "'h1",
-          "observed": {
-            "value": "'h1",
-            "known": true
-          },
+          "expr": "valid == 'h1",
           "known": true,
           "status": "pass",
-          "pass": true
+          "pass": true,
+          "value": {
+            "value": "1'h1",
+            "known": true,
+            "width": 1,
+            "bits": "1"
+          }
         }
-      ]
+      ],
+      "clock_context": {
+        "clock": "top.u.clk",
+        "requested_sampling": {
+          "edge": "negedge",
+          "sample_point": null
+        },
+        "effective_sampling": {
+          "edge": "negedge",
+          "sample_point": null
+        },
+        "sample_point_applied": false,
+        "sample_point_ignored_for_negedge": false,
+        "requested_time": "100ns",
+        "requested_any_edge_hit": true,
+        "clock_edge_kind": "posedge",
+        "requested_target_edge_hit": false,
+        "previous_sample_time": "90ns",
+        "next_sample_time": "110ns",
+        "bracket_complete": true
+      }
     },
     "error": null
   },

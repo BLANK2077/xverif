@@ -2,6 +2,39 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "apb.transfer_window",
-  "summary": {"name": "if0", "begin": "0ns", "end": "200ns", "transaction_count": 1},
-  "data": {"transactions": [{"time": "105ns", "type": "read", "addr": "0xf0", "data": "0x12"}]}
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
+  "summary": {
+    "name": "if0",
+    "begin": "0ns",
+    "end": "200ns",
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 1,
+    "returned_count": 1,
+    "truncation_scopes": []
+  },
+  "data": {
+    "transactions": [
+      {
+        "time": "105ns",
+        "type": "RD",
+        "addr": "32'h000000f0",
+        "data": "32'h00000012",
+        "has_error": false
+      }
+    ]
+  },
+  "error": null
 }

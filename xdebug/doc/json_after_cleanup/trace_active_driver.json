@@ -2,16 +2,12 @@
   "request": {
     "api_version": "xdebug.v1",
     "action": "trace.active_driver",
-    "output": {
-      "verbosity": "compact"
-    },
     "target": {
-      "session_id": "fix_active"
+      "session_id": "my_debug_session"
     },
     "args": {
-      "signal": "active_semantics_tb.u_dut.mux_y",
-      "requested_time": "26ns",
-      "include_trace": false
+      "signal": "top.u.ready",
+      "time": "120ns"
     }
   },
   "response": {
@@ -22,89 +18,71 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "my_debug_session",
+      "mode": "combined",
+      "daidir": "simv.daidir",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/my_debug_session.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
-      "signal": "active_semantics_tb.u_dut.mux_y",
-      "requested_time": "26ns",
-      "active_time": "22ns",
-      "driver_status": "resolved",
-      "evidence_source": "fsdb_precise_time_static_trace",
-      "static_candidate_count": 3,
-      "active_check_count": 2,
-      "trace_node_count": 2,
-      "truncated": false
+      "signal": "top.u.ready",
+      "time": "100ns",
+      "active_time": "95ns",
+      "termination": "assignment",
+      "termination_detail": "assignment",
+      "scan_complete": true,
+      "analysis_complete": true,
+      "response_truncated": false,
+      "total_count": 1,
+      "returned_count": 1,
+      "truncation_scopes": []
     },
     "data": {
-      "driver": {
-        "id": "n0",
-        "role": "assignment",
-        "kind": "assignment",
-        "signal": "active_semantics_tb.u_dut.mux_y",
-        "signals": [
-          "active_semantics_tb.u_dut.data_b"
-        ],
-        "file": "<xverif-repo>/xdebug/testdata/combined/active_semantics/active_semantics_tb.sv",
-        "line": 43,
-        "text": "npiAssignment, active_semantics_tb.u_dut.mux_y = data_b;, {<xverif-repo>/xdebug/testdata/combined/active_semantics/active_semantics_tb.sv : 43}",
-        "active_time": "22ns",
-        "value": {
-          "value": "10110001",
-          "known": true
-        },
-        "next_signal": "active_semantics_tb.u_dut.data_b",
-        "alias_kind": "none"
-      },
-      "root_driver": {
-        "kind": "assignment",
-        "file": "<xverif-repo>/xdebug/testdata/combined/active_semantics/active_semantics_tb.sv",
-        "line": 43
-      },
-      "controls": [
+      "paths": [
         {
-          "id": "n1",
-          "role": "control",
-          "kind": "if_else",
-          "signal": "active_semantics_tb.u_dut.mux_y",
-          "signals": [
-            "active_semantics_tb.u_dut.sel"
+          "file": "rtl/fifo.sv",
+          "line": 42,
+          "source_context": [
+            {
+              "line": 39,
+              "text": "always_comb begin",
+              "active": false
+            },
+            {
+              "line": 40,
+              "text": "  ready_n = 1'b0;",
+              "active": false
+            },
+            {
+              "line": 41,
+              "text": "  if (!full) begin",
+              "active": false
+            },
+            {
+              "line": 42,
+              "text": "    ready_n = valid_i;",
+              "active": true
+            },
+            {
+              "line": 43,
+              "text": "  end",
+              "active": false
+            },
+            {
+              "line": 44,
+              "text": "end",
+              "active": false
+            }
           ],
-          "file": "<xverif-repo>/xdebug/testdata/combined/active_semantics/active_semantics_tb.sv",
-          "line": 40,
-          "text": "npiIfElse, active_semantics_tb.u_dut.if (sel) ... else ..., {<xverif-repo>/xdebug/testdata/combined/active_semantics/active_semantics_tb.sv : 40}",
-          "active_time": "22ns",
-          "value": {
-            "value": "10110001",
-            "known": true
-          },
-          "next_signal": "",
-          "alias_kind": "none"
+          "signal_path": [
+            "top.u.valid_i",
+            "top.u.ready"
+          ]
         }
-      ],
-      "events": [],
-      "values": {
-        "requested": {
-          "active_semantics_tb.u_dut.mux_y": {
-            "value": "10110001",
-            "known": true
-          },
-          "active_semantics_tb.u_dut.data_b": {
-            "value": "10110001",
-            "known": true
-          }
-        },
-        "active": {
-          "active_semantics_tb.u_dut.mux_y": {
-            "value": "10110001",
-            "known": true
-          },
-          "active_semantics_tb.u_dut.data_b": {
-            "value": "10110001",
-            "known": true
-          }
-        }
-      },
-      "limitations": [],
-      "alias_candidates": []
+      ]
     },
     "error": null
   },

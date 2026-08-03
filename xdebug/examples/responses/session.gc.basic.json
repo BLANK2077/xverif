@@ -2,6 +2,42 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "session.gc",
-  "summary": {"status": "completed", "before_count": 2, "kept_count": 1, "removed_count": 1},
-  "data": {"before": [{"id": "case_a", "mode": "combined"}, {"id": "stale_a", "mode": "waveform"}], "kept": [{"session_id": "case_a", "mode": "combined"}], "removed": [{"session_id": "stale_a", "reason": "unhealthy"}]}
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
+  "summary": {"before_count": 2, "kept_count": 1, "removed_count": 1},
+  "data": {
+    "kept_sessions": [
+      {
+        "session_id": "case_a",
+        "mode": "combined",
+        "daidir": "simv.daidir",
+        "fsdb": "waves.fsdb",
+        "socket_path": "session-endpoints/case_a.sock",
+        "server_host": "localhost",
+        "transport": "uds"
+      }
+    ],
+    "removed": [
+      {
+        "removed_session": {
+          "session_id": "stale_a",
+          "mode": "waveform",
+          "fsdb": "stale.fsdb",
+          "socket_path": "session-endpoints/stale_a.sock",
+          "server_host": "localhost",
+          "transport": "uds"
+        },
+        "reason": "unhealthy",
+        "health_evidence": {
+          "code": "SESSION_UNHEALTHY",
+          "message": "Server process is not running",
+          "health_status": "process_exited"
+        }
+      }
+    ]
+  },
+  "error": null
 }

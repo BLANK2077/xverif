@@ -16,7 +16,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -26,45 +27,27 @@
     },
     "target": {
       "type": "object",
-      "required": [
-        "session_id"
-      ],
       "properties": {
         "session_id": {
           "type": "string",
-          "description": "目标 xdebug session 标识。"
+          "minLength": 1
         }
       },
+      "required": [
+        "session_id"
+      ],
       "additionalProperties": false
     },
     "args": {
       "type": "object",
-      "properties": {
-        "session_id": {
-          "type": "string",
-          "description": "Action-specific session_id input. Its type and accepted values are defined by this schema."
-        }
-      },
-      "additionalProperties": false,
-      "required": []
+      "required": [],
+      "properties": {},
+      "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
@@ -76,19 +59,19 @@
   "x-description-zh": "关闭指定 session。",
   "x-agent": {
     "use_when": [
-      "关闭指定 session。"
+      "Own a healthy session and need a graceful lifecycle close that releases its runtime resources."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 session.doctor、session.gc 的业务目标；请改用列出的同域 action。"
+      "Do not use it to forcibly remove stale state or merely inspect session health."
     ],
     "alternatives": [
       {
-        "action": "session.doctor",
-        "when": "诊断当前 session。"
+        "action": "session.kill",
+        "when": "Force removal when graceful close is impossible."
       },
       {
-        "action": "session.gc",
-        "when": "清理过期 session。"
+        "action": "session.doctor",
+        "when": "Diagnose the session without changing it."
       }
     ],
     "constraints": [

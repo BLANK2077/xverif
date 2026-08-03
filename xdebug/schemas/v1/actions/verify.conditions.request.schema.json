@@ -6,7 +6,8 @@
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -16,7 +17,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -25,17 +27,61 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "conditions",
+        "time",
+        "clock",
+        "signals"
+      ],
       "properties": {
         "clock": {
           "type": "string",
-          "description": "Action-specific clock input. Its type and accepted values are defined by this schema."
+          "description": "采样、统计或协议检查使用的 clock 信号路径。"
         },
         "conditions": {
           "type": "array",
+          "minItems": 1,
           "items": {
             "type": "object",
             "required": [
@@ -44,30 +90,33 @@
             "properties": {
               "expr": {
                 "type": "string",
-                "description": "Expression using aliases from args.signals."
+                "description": "Expression using aliases from args.signals.",
+                "minLength": 1
               },
               "name": {
                 "type": "string",
+                "minLength": 1,
                 "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
-              },
-              "mode": {
-                "type": "string",
-                "enum": [
-                  "always",
-                  "eventually",
-                  "never"
-                ],
-                "description": "Action processing or return mode. Its legal values, default, and interactions are action-specific."
               }
             },
             "additionalProperties": false,
-            "description": "Structured conditions configuration. Only the declared properties are accepted."
+            "description": "要在同一采样合同下验证的命名条件列表。"
           },
-          "description": "Ordered conditions entries. Each item must satisfy the declared item contract."
+          "description": "需要验证的条件列表。"
         },
         "edge": {
           "type": "string",
           "description": "Clock sampling edge. The schema default is authoritative; negedge often matches monitor semantics."
+        },
+        "render_time_unit": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "ps",
+            "ns",
+            "us"
+          ],
+          "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
         },
         "sample_point": {
           "type": "string",
@@ -78,43 +127,24 @@
           "description": "Before/after observation point for posedge or dual sampling; it does not change the raw waveform range."
         },
         "signals": {
-          "oneOf": [
-            {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "description": "Signal-path list or alias-to-path/expression map. Expressions must reference aliases rather than nested paths."
-              },
-              "description": "Signal-path list or alias-to-path/expression map. Expressions must reference aliases rather than nested paths."
-            },
-            {
-              "type": "object",
-              "additionalProperties": {
-                "type": "string",
-                "description": "Value for a caller-defined signal alias key. Supply the real signal path or the action-supported expression for that alias.",
-                "x-dynamic-contract": "Each property key is an alias referenced by this action; each value resolves that alias to a signal path or supported expression."
-              },
-              "description": "Signal-path list or alias-to-path/expression map. Expressions must reference aliases rather than nested paths."
-            }
-          ],
-          "description": "Signal-path list or alias-to-path/expression map. Expressions must reference aliases rather than nested paths."
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Value for a caller-defined signal alias key. Supply the real signal path or the action-supported expression for that alias."
+          },
+          "x-dynamic-map": true,
+          "x-dynamic-contract": "Each property key is an alias referenced by this action; each value resolves that alias to a signal path or supported expression.",
+          "description": "信号列表，或 alias 到信号路径的映射。"
         },
         "time": {
           "type": "string",
-          "description": "Target sample time. Prefer a canonical string with a unit; a bare number is interpreted only with time_unit."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
+          "description": "Target sample time. Prefer a canonical string with a unit; a bare number is interpreted as nanoseconds."
         },
         "value_format": {
           "type": "string",
@@ -123,35 +153,23 @@
             "bin",
             "dec"
           ],
-          "description": "Action-specific value_format input. Its type and accepted values are defined by this schema.",
-          "default": "hex"
+          "default": "hex",
+          "description": "返回 LogicValue 的显示格式；不改变比较、采样或底层四态值。"
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "conditions",
-        "time",
-        "clock",
-        "signals"
-      ]
+      "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,

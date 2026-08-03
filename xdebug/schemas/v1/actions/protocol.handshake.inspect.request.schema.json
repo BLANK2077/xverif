@@ -1,12 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "xdebug.handshake.inspect.request.v1",
-  "title": "handshake.inspect request",
+  "$id": "xdebug.protocol.handshake.inspect.request.v1",
+  "title": "protocol.handshake.inspect request",
   "type": "object",
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -16,7 +17,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -25,31 +27,77 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "clock",
+        "valid",
+        "ready"
+      ],
       "properties": {
         "clock": {
           "type": "string",
-          "description": "Action-specific clock input. Its type and accepted values are defined by this schema."
+          "description": "采样、统计或协议检查使用的 clock 信号路径。"
         },
         "data": {
           "oneOf": [
             {
               "type": "string",
-              "description": "Action-specific data input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "Valid-ready or protocol payload signal path. Data-specific checks run only when it is supplied."
             },
             {
               "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
               "items": {
                 "type": "string",
-                "description": "Action-specific data input. Its type and accepted values are defined by this schema."
+                "minLength": 1,
+                "description": "Valid-ready or protocol payload signal path. Data-specific checks run only when it is supplied."
               },
-              "description": "Ordered data entries. Each item must satisfy the declared item contract."
+              "description": "Valid-ready or protocol payload signal path. Data-specific checks run only when it is supplied."
             }
           ],
-          "description": "Valid-ready or protocol payload signal path. Data-specific checks run only when it is supplied."
+          "description": "可选 payload 信号路径或路径列表；仅提供时才可检查 stalled-data stability。"
         },
         "edge": {
           "type": "string",
@@ -62,7 +110,17 @@
         },
         "ready": {
           "type": "string",
-          "description": "Action-specific ready input. Its type and accepted values are defined by this schema."
+          "description": "valid-ready 握手中的 ready 信号路径。"
+        },
+        "render_time_unit": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "ps",
+            "ns",
+            "us"
+          ],
+          "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
         },
         "rules": {
           "type": "object",
@@ -106,35 +164,25 @@
         },
         "time_range": {
           "type": "object",
+          "minProperties": 1,
           "properties": {
             "begin": {
               "type": "string",
-              "description": "Action-specific begin input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "闭区间起点；省略时使用可用波形窗口起点。"
             },
             "end": {
               "type": "string",
-              "description": "Action-specific end input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "闭区间终点；省略时使用可用波形窗口终点。"
             }
           },
           "additionalProperties": false,
           "description": "Closed analysis interval. begin and end may be omitted independently to use the available waveform bounds."
         },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
-        },
         "valid": {
           "type": "string",
-          "description": "Action-specific valid input. Its type and accepted values are defined by this schema."
+          "description": "valid-ready 握手中的 valid 信号路径。"
         },
         "value_format": {
           "type": "string",
@@ -143,34 +191,68 @@
             "bin",
             "dec"
           ],
-          "description": "Action-specific value_format input. Its type and accepted values are defined by this schema.",
-          "default": "hex"
+          "default": "hex",
+          "description": "返回 LogicValue 的显示格式；不改变比较、采样或底层四态值。"
         }
       },
       "additionalProperties": false,
-      "required": [
-        "clock",
-        "valid",
-        "ready"
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "data"
+            ]
+          },
+          "then": {
+            "required": [
+              "rules"
+            ],
+            "properties": {
+              "rules": {
+                "required": [
+                  "check_data_stable_when_stalled"
+                ],
+                "properties": {
+                  "check_data_stable_when_stalled": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "rules"
+            ],
+            "properties": {
+              "rules": {
+                "required": [
+                  "check_data_stable_when_stalled"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "data"
+            ]
+          }
+        }
       ]
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,

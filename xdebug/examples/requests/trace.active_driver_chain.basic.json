@@ -7,6 +7,7 @@
   },
   "args": {
     "signal": "top.data_out",
-    "time": "50ns"
+    "time": "50ns",
+    "value_format": "hex"
   }
 }

@@ -2,16 +2,14 @@
   "request": {
     "api_version": "xdebug.v1",
     "action": "trace.active_driver_chain",
-    "output": {
-      "verbosity": "compact"
-    },
     "target": {
-      "session_id": "fix3_active"
+      "daidir": "simv.daidir",
+      "fsdb": "waves.fsdb"
     },
     "args": {
-      "signal": "active_semantics_tb.u_dut.chain_out",
-      "requested_time": "26ns",
-      "clk_period": "10ns"
+      "signal": "top.data_out",
+      "time": "50ns",
+      "value_format": "hex"
     }
   },
   "response": {
@@ -24,89 +22,140 @@
     },
     "session": null,
     "summary": {
-      "signal": "active_semantics_tb.u_dut.chain_out",
-      "start_time": "26ns",
-      "chain_length": 4,
-      "termination": "primary_input",
-      "evidence_source": "fsdb_precise_time_static_trace",
-      "static_candidate_count": 1,
-      "active_check_count": 1,
-      "temporal_boundaries": 1,
-      "truncated": false
+      "signal": "top.u.out",
+      "time": "26ns",
+      "termination": "limit",
+      "termination_detail": "max_depth",
+      "scan_complete": false,
+      "analysis_complete": false,
+      "response_truncated": false,
+      "total_count": 2,
+      "returned_count": 2,
+      "truncation_scopes": [
+        "analysis_trace"
+      ]
     },
     "data": {
-      "chain": {
-        "chain": [
-          {
-            "index": 0,
-            "signal": "active_semantics_tb.u_dut.chain_out",
-            "time": "26ns",
-            "active_time": "22ns",
-            "value": "8'h31",
-            "value_known": true,
-            "driver_kind": "assignment",
-            "driver": "active_semantics_tb.u_dut.assign chain_out = chain_mid,",
-            "file": "<xverif-repo>/xdebug/testdata/combined/active_semantics/active_semantics_tb.sv",
-            "line": 28,
-            "hop": "⏱",
-            "next": "active_semantics_tb.u_dut.chain_mid"
-          },
-          {
-            "index": 1,
-            "signal": "active_semantics_tb.u_dut.chain_mid",
-            "time": "22ns",
-            "active_time": "22ns",
-            "value": "8'h31",
-            "value_known": true,
-            "driver_kind": "assignment",
-            "driver": "active_semantics_tb.u_dut.assign chain_mid = chain_src,",
-            "file": "<xverif-repo>/xdebug/testdata/combined/active_semantics/active_semantics_tb.sv",
-            "line": 27,
-            "hop": "→",
-            "next": "active_semantics_tb.u_dut.chain_src"
-          },
-          {
-            "index": 2,
-            "signal": "active_semantics_tb.u_dut.chain_src",
-            "time": "22ns",
-            "active_time": "22ns",
-            "value": "8'h31",
-            "value_known": true,
-            "driver_kind": "assignment",
-            "driver": "active_semantics_tb.chain_src = 'h31;,",
-            "file": "<xverif-repo>/xdebug/testdata/combined/active_semantics/active_semantics_tb.sv",
-            "line": 149,
-            "hop": "→",
-            "next": "active_semantics_tb.chain_src"
-          },
-          {
-            "index": 3,
-            "signal": "active_semantics_tb.chain_src",
-            "time": "22ns",
-            "active_time": "22ns",
-            "value": "8'h31",
-            "value_known": true,
-            "driver_kind": "assignment",
-            "driver": "active_semantics_tb.chain_src = 'h31;,",
-            "file": "<xverif-repo>/xdebug/testdata/combined/active_semantics/active_semantics_tb.sv",
-            "line": 149,
-            "hop": "■",
-            "next": ""
-          }
-        ],
-        "branch_evidence": [],
-        "stats": {
-          "calls": 4,
-          "edgecheck_direct": 3,
-          "fallback": 0,
-          "temporal_boundaries": 1
+      "hops": [
+        {
+          "index": 0,
+          "chain_id": "c0",
+          "signal": "top.u.out",
+          "time": "26ns",
+          "active_time": "25ns",
+          "value": "8'hxx",
+          "relation": "root",
+          "file": "rtl/top.sv",
+          "line": 88,
+          "source_context": [
+            {
+              "line": 85,
+              "text": "logic mid;",
+              "active": false
+            },
+            {
+              "line": 86,
+              "text": "",
+              "active": false
+            },
+            {
+              "line": 87,
+              "text": "always_comb begin",
+              "active": false
+            },
+            {
+              "line": 88,
+              "text": "  out = mid;",
+              "active": true
+            },
+            {
+              "line": 89,
+              "text": "end",
+              "active": false
+            }
+          ],
+          "signal_path": [
+            "top.u.mid",
+            "top.u.out"
+          ]
         },
-        "limitations": [],
-        "evidence_source": "fsdb_precise_time_static_trace",
-        "static_candidate_count": 1,
-        "active_check_count": 1,
-        "truncated": false
-      }
+        {
+          "index": 1,
+          "chain_id": "c0",
+          "signal": "top.u.mid",
+          "time": "25ns",
+          "active_time": "20ns",
+          "value": "8'hxx",
+          "relation": "driver",
+          "file": "rtl/top.sv",
+          "line": 73,
+          "source_context": [
+            {
+              "line": 70,
+              "text": "assign src = in;",
+              "active": false
+            },
+            {
+              "line": 71,
+              "text": "",
+              "active": false
+            },
+            {
+              "line": 72,
+              "text": "always_ff @(posedge clk) begin",
+              "active": false
+            },
+            {
+              "line": 73,
+              "text": "  mid <= src;",
+              "active": true
+            },
+            {
+              "line": 74,
+              "text": "end",
+              "active": false
+            }
+          ],
+          "signal_path": [
+            "top.u.src",
+            "top.u.mid"
+          ]
+        }
+      ],
+      "depth_frontiers": [
+        {
+          "chain_id": "c0",
+          "signal": "top.u.src",
+          "time": "20ns",
+          "value": "8'hxx",
+          "stopped_after_depth": 1
+        }
+      ],
+      "suggested_next_actions": [
+        {
+          "action": "trace.active_driver_chain",
+          "reason": "continue_from_depth_frontier",
+          "chain_id": "c0",
+          "args": {
+            "signal": "top.u.src",
+            "time": "20ns"
+          },
+          "limits": {
+            "max_depth": 1
+          }
+        },
+        {
+          "action": "trace.active_driver_chain",
+          "reason": "rerun_from_root_with_higher_depth",
+          "args": {
+            "signal": "top.u.out",
+            "time": "26ns"
+          },
+          "limits": {
+            "max_depth": 2
+          }
+        }
+      ]
     },
     "error": null
   },

@@ -8,36 +8,27 @@ import copy
 import json
 import sys
 from pathlib import Path
-from typing import Any
-
-from sync_action_schema_hints import PARAM_DESCRIPTIONS
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "specs"))
-from action_contracts import apply_argument_contract, complete_descriptions, reset_schema
-
+from typing import Any, NamedTuple
 
 XDEBUG_ROOT = Path(__file__).resolve().parents[1]
+TOOLS_ROOT = XDEBUG_ROOT / "tools"
+SPECS_ROOT = XDEBUG_ROOT / "specs"
+for import_root in (TOOLS_ROOT, SPECS_ROOT):
+    import_root_text = str(import_root)
+    if import_root_text not in sys.path:
+        sys.path.insert(0, import_root_text)
+
+from sync_action_schema_hints import PARAM_DESCRIPTIONS
+from action_contracts import (
+    actions_filter_schema,
+    apply_argument_contract,
+    complete_descriptions,
+    reset_schema,
+)
+
+
 SPEC_PATH = XDEBUG_ROOT / "specs" / "actions" / "actions.yaml"
 REQUEST_EXAMPLES = XDEBUG_ROOT / "examples" / "requests"
-
-RENAMED_FROM = {
-    "apb.transaction.cursor": "apb.cursor",
-    "axi.transaction.cursor": "axi.cursor",
-    "waveform.cursor.delete": "cursor.delete",
-    "waveform.cursor.get": "cursor.get",
-    "waveform.cursor.list": "cursor.list",
-    "waveform.cursor.set": "cursor.set",
-    "waveform.cursor.use": "cursor.use",
-    "signal.anomaly.inspect": "detect_abnormal",
-    "protocol.handshake.inspect": "handshake.inspect",
-    "list.first_change": "list.diff",
-    "nwave.rc.generate": "rc.generate",
-    "signal.sampled_pulse.inspect": "sampled_pulse.inspect",
-    "stream.describe": "stream.show",
-    "trace.x_origin": "trace.x",
-    "list.load": "list.create",
-    "stream.config.get": "stream.config.list",
-}
 
 
 ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
@@ -46,16 +37,21 @@ ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
     "apb": {"type": "string", "minLength": 1},
     "address": {"type": "string"},
     "aggregate": {"type": "object"},
-    "aggregate_only": {"type": "boolean"},
-    "auth_token": {"type": "string"},
-    "bind": {"type": "string"},
-    "bind_host": {"type": "string"},
+    "bind_host": {"type": "string", "minLength": 1},
     "cache_scope": {"type": "string", "enum": ["full", "range"], "default": "full"},
     "channel": {"type": "string"},
     "config": {"type": "object"},
-    "context_lines": {"type": "integer"},
-    "data": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]},
-    "dependency_types": {"type": "array", "items": {"type": "string"}},
+    "data": {
+        "oneOf": [
+            {"type": "string", "minLength": 1},
+            {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": True,
+                "items": {"type": "string", "minLength": 1},
+            },
+        ]
+    },
     "dynamic": {"type": "boolean"},
     "edge": {"type": "string", "enum": ["posedge", "negedge", "dual"]},
     "expected_state": {
@@ -63,21 +59,14 @@ ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
         "enum": ["x", "z"],
         "description": PARAM_DESCRIPTIONS["expected_state"],
     },
-    "events": {"type": "boolean"},
-    "group_by": {"type": "array"},
-    "host": {"type": "string"},
-    "include_alias_candidates": {"type": "boolean"},
-    "include_compat_fields": {"type": "boolean"},
-    "include_control": {"type": "boolean"},
-    "include_parity": {"type": "boolean"},
-    "include_preview": {"type": "boolean"},
-    "include_statement_only": {"type": "boolean"},
+    "host": {"type": "string", "minLength": 1},
+    "id": {"type": "string"},
     "include_patterns": {
         "type": "array",
         "uniqueItems": True,
         "items": {"type": "string", "minLength": 1},
     },
-    "id": {"type": "string"},
+    "index": {"type": "integer", "minimum": 1},
     "last": {"type": "boolean"},
     "level": {"type": "integer", "minimum": 0, "default": 0},
     "line_limit": {"type": "integer", "minimum": 1},
@@ -89,30 +78,28 @@ ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
         "default": "exact",
         "description": PARAM_DESCRIPTIONS["match_mode"],
     },
-    "limits": {"type": "object"},
     "protocol_query": {
         "type": "object",
+        "minProperties": 1,
         "properties": {
             "line_limit": {"type": "integer", "minimum": 1},
             "index": {"type": "integer", "minimum": 1},
         },
+        "anyOf": [
+            {"required": ["line_limit"]},
+            {"required": ["index"]},
+        ],
         "additionalProperties": False,
         "description": "Protocol query controls; use 1-based query.index and query.line_limit; legacy quantity fields are rejected.",
     },
-    "max_depth": {"type": "integer"},
-    "max_edges": {"type": "integer"},
     "max_events": {"type": "integer", "minimum": 1},
-    "max_rows": {"type": "integer"},
     "max_samples": {"type": "integer", "minimum": 1},
-    "name_pattern": {"type": "string"},
     "exclude_patterns": {
         "type": "array",
         "uniqueItems": True,
         "items": {"type": "string", "minLength": 1},
     },
     "no_statement_only": {"type": "boolean"},
-    "note": {"type": "string"},
-    "origin": {"type": "string"},
     "output": {
         "type": "object",
         "properties": {
@@ -122,7 +109,20 @@ ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         "additionalProperties": False,
     },
-    "payload": {"type": "string"},
+    "ownership_token": {
+        "type": "string",
+        "minLength": 64,
+        "maxLength": 64,
+        "pattern": "^[0-9a-f]{64}$",
+        "description": (
+            "Opaque 256-bit conditional-cleanup token encoded as exactly 64 "
+            "lowercase hexadecimal characters. A managed wrapper may supply it "
+            "at session.open and provide it to session.kill as an optional "
+            "match precondition, not as authorization. When session.open omits "
+            "it, the frontend binds a fail-closed internally generated token; "
+            "never log or publish either form."
+        ),
+    },
     "packet_index": {"type": "integer"},
     "path": {"type": "string"},
     "role": {"type": "string"},
@@ -132,29 +132,28 @@ ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
     "signal": {"type": "string", "minLength": 1},
     "slice_hint": {"type": "object"},
     "source": {"type": "string"},
-    "symbol": {"type": "string"},
     "time_range": {
         "type": "object",
+        "minProperties": 1,
         "properties": {
-            "begin": {"type": "string"},
-            "end": {"type": "string"},
+            "begin": {"type": "string", "minLength": 1},
+            "end": {"type": "string", "minLength": 1},
         },
         "additionalProperties": False,
     },
-    "time_unit": {"type": "string", "enum": ["auto", "fs", "ps", "ns", "us", "ms", "s"]},
-    "threshold": {"type": "string"},
-    "time": {"type": "string", "minLength": 1},
     "times": {
         "type": "array",
         "minItems": 1,
         "uniqueItems": True,
         "items": {"type": "string", "minLength": 1},
     },
+    "render_time_unit": {"type": "string", "enum": ["auto", "ps", "ns", "us"]},
+    "threshold": {"type": "string"},
+    "time": {"type": "string", "minLength": 1},
     "top_n": {"type": "integer", "minimum": 1},
     "transport": {"type": "string", "enum": ["uds", "tcp", "file"]},
     "axi": {"type": "string", "minLength": 1},
     "stream": {"type": "string", "minLength": 1},
-    "verbose": {"type": "boolean"},
     "value_format": {
         "type": "string",
         "enum": ["hex", "bin", "dec"],
@@ -163,105 +162,470 @@ ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
 }
 
 
-EXTRA_ARGS_BY_ACTION: dict[str, set[str]] = {
-    "actions": {"filter", "output"},
-    "apb.transaction.cursor": {"direction"},
-    "apb.config.list": {"name"},
-    "apb.config.load": {"config", "config_path"},
-    "apb.query": {"direction", "address", "query", "last"},
-    "apb.statistics": {"filter"},
-    "apb.transfer_window": {"line_limit", "time_range"},
-    "axi.analysis": {"analysis", "direction", "line_limit"},
-    "axi.channel_stall": {"channel", "line_limit", "rules", "time_range"},
-    "axi.config.list": {"name"},
-    "axi.config.load": {"config", "config_path"},
-    "axi.transaction.cursor": {"direction"},
-    "axi.export": {"output", "time_range"},
-    "axi.latency_outlier": {"direction", "line_limit", "method", "output", "threshold", "time_range", "top_n"},
-    "axi.outstanding_timeline": {"direction", "line_limit", "time_range"},
+class RuntimeConsumerContract(NamedTuple):
+    """Named runtime boundary that owns an action's public optional args."""
+
+    consumer_id: str
+    optional_args: set[str]
+
+
+def _runtime_consumer_contract(
+    action: str,
+    optional_args: set[str] | None = None,
+) -> RuntimeConsumerContract:
+    return RuntimeConsumerContract(
+        consumer_id=(
+            f"EngineActionRegistry[action={action}]"
+            "::run(ContractBoundRequest)"
+        ),
+        optional_args=set(optional_args or ()),
+    )
+
+
+def _named_runtime_consumer_contract(
+    consumer_id: str,
+    optional_args: set[str] | None = None,
+) -> RuntimeConsumerContract:
+    return RuntimeConsumerContract(
+        consumer_id=consumer_id,
+        optional_args=set(optional_args or ()),
+    )
+
+
+RUNTIME_CONSUMER_CONTRACTS_BY_ACTION: dict[
+    str, RuntimeConsumerContract
+] = {
+    "actions": _named_runtime_consumer_contract(
+        "xdebug::catalog_actions_response(const Json&)",
+        {"filter", "output"},
+    ),
+    "apb.transaction.cursor": _runtime_consumer_contract(
+        "apb.transaction.cursor", {"direction"}
+    ),
+    "apb.config.list": _runtime_consumer_contract("apb.config.list", {"name"}),
+    "apb.config.load": _runtime_consumer_contract(
+        "apb.config.load", {"config", "config_path"}
+    ),
+    "apb.query": _runtime_consumer_contract(
+        "apb.query", {"direction", "address", "query", "last"}
+    ),
+    "apb.statistics": _runtime_consumer_contract(
+        "apb.statistics", {"filter"}
+    ),
+    "apb.transfer_window": _runtime_consumer_contract(
+        "apb.transfer_window", {"line_limit", "time_range"}
+    ),
+    "axi.analysis": _runtime_consumer_contract(
+        "axi.analysis", {"analysis", "direction", "line_limit"}
+    ),
+    "axi.channel_stall": _runtime_consumer_contract(
+        "axi.channel_stall", {"channel", "line_limit", "rules", "time_range"}
+    ),
+    "axi.config.list": _runtime_consumer_contract("axi.config.list", {"name"}),
+    "axi.config.load": _runtime_consumer_contract(
+        "axi.config.load", {"config", "config_path"}
+    ),
+    "axi.transaction.cursor": _runtime_consumer_contract(
+        "axi.transaction.cursor", {"direction"}
+    ),
+    "axi.export": _runtime_consumer_contract(
+        "axi.export", {"output", "time_range"}
+    ),
+    "axi.latency_outlier": _runtime_consumer_contract(
+        "axi.latency_outlier",
+        {"direction", "line_limit", "method", "threshold", "time_range", "top_n"},
+    ),
+    "axi.outstanding_timeline": _runtime_consumer_contract(
+        "axi.outstanding_timeline", {"direction", "line_limit", "time_range"}
+    ),
+    "axi.query": _runtime_consumer_contract(
+        "axi.query",
+        {
+            "direction", "address", "id", "query", "last", "output",
+            "time_range",
+        },
+    ),
+    "axi.request_response_pair": _runtime_consumer_contract(
+        "axi.request_response_pair", {"direction", "line_limit", "time_range"}
+    ),
+    "axi.statistics": _runtime_consumer_contract(
+        "axi.statistics", {"filter"}
+    ),
+    "batch": _named_runtime_consumer_contract(
+        "xdebug::Dispatcher::handle_batch(const Json&, const Json&)",
+        {"mode"},
+    ),
+    "counter.statistics": _runtime_consumer_contract(
+        "counter.statistics", {"edge", "line_limit", "max_samples", "sample_point"}
+    ),
+    "signal.anomaly.inspect": _runtime_consumer_contract(
+        "signal.anomaly.inspect",
+        {"checks", "line_limit", "time_range"},
+    ),
+    "event.config.list": _runtime_consumer_contract(
+        "event.config.list", {"line_limit", "name"}
+    ),
+    "event.config.load": _runtime_consumer_contract(
+        "event.config.load", {"config_path"}
+    ),
+    "event.export": _runtime_consumer_contract(
+        "event.export",
+        {
+            "aggregate",
+            "edge",
+            "line_limit",
+            "max_events",
+            "max_samples",
+            "mode",
+            "name",
+            "output",
+            "reset",
+            "sample_point",
+            "time_range",
+        },
+    ),
+    "event.find": _runtime_consumer_contract(
+        "event.find",
+        {
+            "edge",
+            "line_limit",
+            "max_samples",
+            "mode",
+            "name",
+            "reset",
+            "sample_point",
+            "time_range",
+        },
+    ),
+    "expr.eval_at": _runtime_consumer_contract(
+        "expr.eval_at", {"edge", "sample_point", "time_range"}
+    ),
+    "expr.normalize": _runtime_consumer_contract(
+        "expr.normalize", {"expr", "line_limit", "no_statement_only", "role", "signal"}
+    ),
+    "protocol.handshake.inspect": _runtime_consumer_contract(
+        "protocol.handshake.inspect",
+        {"data", "edge", "line_limit", "rules", "sample_point", "time_range"},
+    ),
+    "list.add": _runtime_consumer_contract("list.add"),
+    "list.create": _runtime_consumer_contract("list.create", {"signals"}),
+    "list.load": _runtime_consumer_contract(
+        "list.load", {"config", "config_path", "mode"}
+    ),
+    "list.delete": _runtime_consumer_contract("list.delete", {"index"}),
+    "list.first_change": _runtime_consumer_contract(
+        "list.first_change"
+    ),
+    "list.export": _runtime_consumer_contract(
+        "list.export", {"line_limit", "output", "time_range"}
+    ),
+    "list.show": _runtime_consumer_contract("list.show", {"name"}),
+    "list.validate": _runtime_consumer_contract("list.validate"),
+    "nwave.rc.generate": _runtime_consumer_contract("nwave.rc.generate"),
+    "signal.sampled_pulse.inspect": _runtime_consumer_contract(
+        "signal.sampled_pulse.inspect",
+        {
+            "edge",
+            "line_limit",
+            "payloads",
+            "rules",
+            "sample_point",
+            "time_range",
+        },
+    ),
+    "schema": _named_runtime_consumer_contract(
+        "xdebug::catalog_schema_response(const Json&)",
+        {"kind"},
+    ),
+    "scope.list": _runtime_consumer_contract(
+        "scope.list",
+        {"exclude_patterns", "include_patterns", "kind", "level", "path"},
+    ),
+    "scope.roots": _runtime_consumer_contract("scope.roots", {"source"}),
+    "session.close": _named_runtime_consumer_contract(
+        "xdebug::Dispatcher::handle_session[action=session.close]"
+    ),
+    "session.doctor": _named_runtime_consumer_contract(
+        "xdebug/src/engine/engine_query.cpp"
+        "::handle_session_action[action=session.doctor](ContractBoundRequest&)"
+    ),
+    "session.gc": _named_runtime_consumer_contract(
+        "xdebug::Dispatcher::handle_session[action=session.gc]"
+    ),
+    "session.kill": _named_runtime_consumer_contract(
+        "xdebug/src/engine/engine_query.cpp"
+        "::handle_session_action[action=session.kill](ContractBoundRequest&)",
+        {"ownership_token"},
+    ),
+    "session.list": _named_runtime_consumer_contract(
+        "xdebug::Dispatcher::handle_session[action=session.list]"
+    ),
+    "session.open": _named_runtime_consumer_contract(
+        "xdebug/src/engine/engine_query.cpp"
+        "::handle_session_action[action=session.open](ContractBoundRequest&)",
+        {"bind_host", "host", "ownership_token", "port", "transport"},
+    ),
+    "signal.changes": _runtime_consumer_contract(
+        "signal.changes",
+        {"line_limit", "mode", "time_range"},
+    ),
+    "signal.canonicalize": _runtime_consumer_contract("signal.canonicalize"),
+    "signal.resolve": _runtime_consumer_contract("signal.resolve"),
+    "signal.stability": _runtime_consumer_contract(
+        "signal.stability", {"time_range"}
+    ),
+    "signal.statistics": _runtime_consumer_contract(
+        "signal.statistics",
+        {
+            "clock",
+            "edge",
+            "line_limit",
+            "max_samples",
+            "sample_point",
+            "time_range",
+        },
+    ),
+    "signal.xz_verify": _runtime_consumer_contract(
+        "signal.xz_verify", {"match_mode"}
+    ),
+    "stream.config.load": _runtime_consumer_contract(
+        "stream.config.load", {"config", "config_path", "mode"}
+    ),
+    "stream.config.list": _runtime_consumer_contract(
+        "stream.config.list", {"output"}
+    ),
+    "stream.config.get": _runtime_consumer_contract("stream.config.get"),
+    "stream.export": _runtime_consumer_contract(
+        "stream.export",
+        {"cache_scope", "channel", "kind", "line_limit", "output", "time_range"},
+    ),
+    "stream.query": _runtime_consumer_contract(
+        "stream.query",
+        {"cache_scope", "channel", "filter", "line_limit", "packet_index", "time_range"},
+    ),
+    "stream.describe": _runtime_consumer_contract("stream.describe"),
+    "stream.validate": _runtime_consumer_contract(
+        "stream.validate",
+        {"cache_scope", "channel", "dynamic", "line_limit", "time_range"},
+    ),
+    "trace.active_driver": _runtime_consumer_contract("trace.active_driver"),
+    "trace.active_driver_chain": _runtime_consumer_contract(
+        "trace.active_driver_chain"
+    ),
+    "trace.x_origin": _runtime_consumer_contract(
+        "trace.x_origin"
+    ),
+    "trace.driver": _runtime_consumer_contract(
+        "trace.driver", {"no_statement_only", "role"}
+    ),
+    "trace.load": _runtime_consumer_contract(
+        "trace.load", {"no_statement_only", "role"}
+    ),
+    "value.at": _runtime_consumer_contract(
+        "value.at",
+        {
+            "signal", "list", "apb", "stream", "axi",
+            "time", "times", "clock", "edge", "sample_point",
+            "slice_hint",
+        },
+    ),
+    "verify.conditions": _runtime_consumer_contract(
+        "verify.conditions", {"edge", "sample_point", "signals"}
+    ),
+    "waveform.cursor.delete": _runtime_consumer_contract(
+        "waveform.cursor.delete"
+    ),
+    "waveform.cursor.get": _runtime_consumer_contract("waveform.cursor.get"),
+    "waveform.cursor.list": _runtime_consumer_contract("waveform.cursor.list"),
+    "waveform.cursor.set": _runtime_consumer_contract("waveform.cursor.set"),
+    "waveform.cursor.use": _runtime_consumer_contract("waveform.cursor.use"),
+    "window.verify": _runtime_consumer_contract(
+        "window.verify",
+        {"edge", "line_limit", "max_samples", "sample_point", "signals", "time_range"},
+    ),
+}
+
+OUTPUT_SCHEMAS_BY_ACTION: dict[str, dict[str, Any]] = {
+    "actions": {
+        "type": "object",
+        "properties": {
+            "verbose": {
+                "type": "boolean",
+                "default": False,
+                "description": "Return full action descriptors instead of the compact action-name list.",
+            },
+        },
+        "additionalProperties": False,
+    },
+    "stream.config.list": {
+        "type": "object",
+        "properties": {
+            "verbose": {
+                "type": "boolean",
+                "default": False,
+                "description": "Include each saved configuration object with the name list.",
+            },
+        },
+        "additionalProperties": False,
+    },
     "axi.query": {
-        "direction", "address", "id", "query", "last", "output",
-        "time_range",
+        "type": "object",
+        "properties": {
+            "include_data": {
+                "type": "boolean",
+                "default": False,
+                "description": "Include AXI beat payload data in transaction results.",
+            },
+        },
+        "additionalProperties": False,
     },
-    "axi.request_response_pair": {"direction", "line_limit", "time_range", "output"},
-    "axi.statistics": {"filter"},
-    "batch": {"mode"},
-    "counter.statistics": {"edge", "line_limit", "max_samples", "sample_point"},
-    "signal.anomaly.inspect": {"line_limit", "time_range", "value_format"},
-    "event.config.list": {"line_limit", "name"},
-    "event.config.load": {"config_path"},
+    "axi.export": {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Output path prefix; omit it to return an in-response preview.",
+            },
+            "file_format": {
+                "type": "string",
+                "enum": ["tsv", "csv"],
+                "default": "tsv",
+                "description": "AXI artifact file format.",
+            },
+        },
+        "allOf": [
+            {
+                "if": {"required": ["file_format"]},
+                "then": {"required": ["path"]},
+            }
+        ],
+        "additionalProperties": False,
+    },
     "event.export": {
-        "aggregate",
-        "edge",
-        "line_limit",
-        "max_events",
-        "max_samples",
-        "mode",
-        "name",
-        "output",
-        "reset",
-        "sample_point",
-        "time_range",
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Artifact path; omit it to return an in-response preview.",
+            },
+            "file_format": {
+                "type": "string",
+                "enum": ["json"],
+                "default": "json",
+                "description": "Event artifact file format.",
+            },
+        },
+        "allOf": [
+            {
+                "if": {"required": ["file_format"]},
+                "then": {"required": ["path"]},
+            }
+        ],
+        "additionalProperties": False,
     },
-    "event.find": {
-        "edge",
-        "line_limit",
-        "max_samples",
-        "mode",
-        "name",
-        "reset",
-        "sample_point",
-        "time_range",
+    "list.export": {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Artifact directory; omit it to return an in-response preview.",
+            },
+            "file_format": {
+                "type": "string",
+                "enum": ["u64bin"],
+                "default": "u64bin",
+                "description": "Waveform-list artifact format; the manifest publishes u64bin.v1.",
+            },
+        },
+        "allOf": [
+            {
+                "if": {"required": ["file_format"]},
+                "then": {"required": ["path"]},
+            }
+        ],
+        "additionalProperties": False,
     },
-    "expr.eval_at": {"edge", "sample_point", "time_range"},
-    "expr.normalize": {"line_limit", "no_statement_only", "role", "signal"},
-    "protocol.handshake.inspect": {"data", "edge", "line_limit", "rules", "sample_point", "time_range"},
-    "list.delete": {"index"},
-    "list.first_change": {"value_format"},
-    "list.load": {"config", "config_path", "mode"},
-    "list.export": {"line_limit", "output", "time_range"},
-    "list.show": {"name"},
-    "signal.sampled_pulse.inspect": {
-        "edge",
-        "line_limit",
-        "payload",
-        "payloads",
-        "rules",
-        "sample_point",
-        "time_range",
+    "stream.export": {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Artifact path; omit it to return an in-response preview.",
+            },
+            "file_format": {
+                "type": "string",
+                "enum": ["tsv", "csv", "xout"],
+                "default": "tsv",
+                "description": "Stream artifact file format.",
+            },
+        },
+        "allOf": [
+            {
+                "if": {"required": ["file_format"]},
+                "then": {"required": ["path"]},
+            }
+        ],
+        "additionalProperties": False,
     },
-    "scope.list": {"exclude_patterns", "include_patterns", "kind", "level", "path"},
-    "session.close": set(),
-    "session.doctor": set(),
-    "session.gc": set(),
-    "session.kill": set(),
-    "session.list": set(),
-    "session.open": {"bind", "bind_host", "host", "port", "session_id", "transport"},
-    "signal.changes": {"aggregate_only", "line_limit", "mode", "time_range", "value_format"},
-    "signal.stability": {"conditions", "mode", "signals", "time_range"},
-    "signal.statistics": {"clock", "conditions", "edge", "line_limit", "max_samples", "mode", "sample_point", "signals", "time_range"},
-    "signal.xz_verify": {"match_mode"},
-    "stream.config.load": {"config", "config_path", "file", "mode"},
-    "stream.config.list": {"name", "output"},
-    "stream.config.get": set(),
-    "stream.export": {"cache_scope", "channel", "line_limit", "output", "time_range"},
-    "stream.query": {"cache_scope", "channel", "filter", "line_limit", "packet_index", "time_range"},
-    "stream.describe": set(),
-    "stream.validate": {"cache_scope", "channel", "line_limit", "time_range"},
-    "trace.active_driver": {
-        "limits",
+    "nwave.rc.generate": {
+        "type": "object",
+        "required": ["path"],
+        "properties": {
+            "path": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Required destination path for the generated waveform RC artifact.",
+            },
+        },
+        "additionalProperties": False,
     },
-    "trace.active_driver_chain": set(),
-    "trace.x_origin": {"value_format"},
-    "trace.driver": {"line_limit", "no_statement_only", "role"},
-    "trace.load": {"line_limit", "no_statement_only", "role"},
-    "value.at": {
-        "signal", "list", "apb", "stream", "axi",
-        "time", "times", "clock", "edge", "sample_point",
-        "slice_hint", "value_format",
-    },
-    "verify.conditions": {"edge", "sample_point", "signals", "value_format"},
-    "window.verify": {"edge", "line_limit", "max_samples", "sample_point", "signals", "time_range"},
+}
+
+# Only actions whose public response can contain canonical time values expose
+# the display-only render_time_unit selector. It is not a generic engine knob.
+TIME_RENDERING_ACTIONS = {
+    "apb.transaction.cursor",
+    "apb.query",
+    "apb.transfer_window",
+    "axi.analysis",
+    "axi.export",
+    "axi.channel_stall",
+    "axi.transaction.cursor",
+    "axi.latency_outlier",
+    "axi.outstanding_timeline",
+    "axi.query",
+    "axi.request_response_pair",
+    "counter.statistics",
+    "waveform.cursor.get",
+    "waveform.cursor.list",
+    "waveform.cursor.set",
+    "waveform.cursor.use",
+    "signal.anomaly.inspect",
+    "event.export",
+    "event.find",
+    "expr.eval_at",
+    "protocol.handshake.inspect",
+    "list.first_change",
+    "list.export",
+    "signal.sampled_pulse.inspect",
+    "signal.changes",
+    "signal.stability",
+    "signal.statistics",
+    "signal.xz_verify",
+    "trace.active_driver",
+    "trace.active_driver_chain",
+    "trace.x_origin",
+    "nwave.rc.generate",
+    "value.at",
+    "verify.conditions",
+    "window.verify",
+    "stream.validate",
+    "stream.query",
+    "stream.export",
 }
 
 # Every action that can publish sampled or derived logic values exposes the
@@ -293,25 +657,20 @@ VALUE_BEARING_ACTIONS = {
     "signal.xz_verify",
     "stream.export",
     "stream.query",
+    "trace.active_driver_chain",
     "trace.x_origin",
     "value.at",
     "verify.conditions",
     "window.verify",
 }
+for _action in TIME_RENDERING_ACTIONS:
+    RUNTIME_CONSUMER_CONTRACTS_BY_ACTION[_action].optional_args.add(
+        "render_time_unit"
+    )
 for _action in VALUE_BEARING_ACTIONS:
-    EXTRA_ARGS_BY_ACTION[_action].add("value_format")
-
-
-ENGINE_FORWARD_TIME_UNIT_EXCLUDE = {
-    "actions",
-    "batch",
-    "schema",
-    "session.close",
-    "session.gc",
-    "session.kill",
-    "session.list",
-    "session.open",
-}
+    RUNTIME_CONSUMER_CONTRACTS_BY_ACTION[_action].optional_args.add(
+        "value_format"
+    )
 
 
 ARGS_REQUIRED_EXCEPTIONS = {
@@ -322,17 +681,246 @@ ARGS_REQUIRED_EXCEPTIONS = {
 
 TOP_LEVEL_PROPERTIES: dict[str, dict[str, Any]] = {
     "api_version": {"type": "string", "enum": ["xdebug.v1"]},
-    "request_id": {"type": "string"},
-    "id": {"type": "string"},
-    "trace_id": {"type": "string"},
-    "span_id": {"type": "string"},
-    "parent_span_id": {"type": "string"},
+    "request_id": {"type": "string", "minLength": 1},
     "action": {"type": "string"},
     "target": {"type": "object"},
     "args": {"type": "object"},
     "limits": {"type": "object"},
-    "auth_token": {"type": "string"},
 }
+
+TARGET_FIELD_SCHEMAS: dict[str, dict[str, Any]] = {
+    "session_id": {"type": "string", "minLength": 1},
+    "daidir": {"type": "string", "minLength": 1},
+    "fsdb": {"type": "string", "minLength": 1},
+    "run_manifest": {"type": "string", "minLength": 1},
+}
+
+RUNTIME_SIGNED_INT_MAX = 2_147_483_647
+
+LIMIT_PROPERTIES_BY_ACTION: dict[str, dict[str, dict[str, Any]]] = {
+    "scope.list": {
+        "max_rows": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Maximum hierarchy rows returned by the scope traversal.",
+        },
+    },
+    "trace.driver": {
+        "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": RUNTIME_SIGNED_INT_MAX,
+            "description": "Maximum static driver paths returned.",
+        },
+    },
+    "trace.load": {
+        "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": RUNTIME_SIGNED_INT_MAX,
+            "description": "Maximum static load paths returned.",
+        },
+    },
+    "trace.active_driver": {
+        "max_depth": {
+            "type": "integer", "minimum": 1, "default": 8,
+            "description": "Maximum active-driver recursion depth.",
+        },
+        "max_nodes": {
+            "type": "integer", "minimum": 1, "default": 50,
+            "description": "Maximum active-trace nodes analyzed.",
+        },
+        "max_time_steps": {
+            "type": "integer", "minimum": 1, "default": 128,
+            "description": "Maximum distinct waveform times visited by active tracing.",
+        },
+        "max_trace_signals": {
+            "type": "integer", "minimum": 1, "default": 64,
+            "description": "Maximum candidate signals sampled for active-driver evidence.",
+        },
+        "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": RUNTIME_SIGNED_INT_MAX,
+            "default": 10,
+            "description": "Maximum simplified active-driver paths returned.",
+        },
+    },
+    "trace.active_driver_chain": {
+        "max_depth": {
+            "type": "integer", "minimum": 1, "default": 8,
+            "description": "Maximum recursive depth of the active-driver chain.",
+        },
+        "max_nodes": {
+            "type": "integer", "minimum": 1, "default": 50,
+            "description": "Maximum active-driver chain nodes analyzed.",
+        },
+        "max_trace_signals": {
+            "type": "integer", "minimum": 1, "default": 64,
+            "description": "Maximum candidate signals sampled for ambiguity evidence.",
+        },
+        "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": RUNTIME_SIGNED_INT_MAX,
+            "default": 10,
+            "description": "Maximum simplified chain evidence paths returned.",
+        },
+    },
+    "trace.x_origin": {
+        "max_depth": {
+            "type": "integer", "minimum": 1, "default": 8,
+            "description": "Maximum X-origin recursion depth.",
+        },
+        "max_nodes": {
+            "type": "integer", "minimum": 1, "default": 50,
+            "description": "Maximum X-origin nodes analyzed across all branches.",
+        },
+        "max_time_steps": {
+            "type": "integer", "minimum": 1, "default": 128,
+            "description": "Maximum distinct waveform times visited across X-origin branches.",
+        },
+        "max_trace_signals": {
+            "type": "integer", "minimum": 1, "default": 64,
+            "description": "Maximum dependency candidates sampled at one X-origin step.",
+        },
+        "max_chains": {
+            "type": "integer", "minimum": 1, "default": 8,
+            "description": "Maximum effective X-semantic chains returned.",
+        },
+    },
+}
+
+
+def exclusive_target_schema(
+    direct_fields: tuple[str, ...],
+    *,
+    require_all_direct: bool,
+) -> dict[str, Any]:
+    """Choose exactly one target source: session lookup or direct resources."""
+    properties = {
+        key: copy.deepcopy(TARGET_FIELD_SCHEMAS[key])
+        for key in ("session_id",) + direct_fields
+    }
+    session_branch = {
+        "required": ["session_id"],
+        "not": {
+            "anyOf": [{"required": [key]} for key in direct_fields],
+        },
+    }
+    direct_required = list(direct_fields) if require_all_direct else []
+    direct_branch: dict[str, Any] = {
+        "not": {"required": ["session_id"]},
+    }
+    if require_all_direct:
+        direct_branch["required"] = direct_required
+    else:
+        direct_branch["anyOf"] = [
+            {"required": [key]} for key in direct_fields
+        ]
+    return {
+        "type": "object",
+        "properties": properties,
+        "oneOf": [session_branch, direct_branch],
+        "additionalProperties": False,
+    }
+
+
+def target_schema_for_spec(spec: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    action = spec["name"]
+    if action == "session.open":
+        return ({
+            "type": "object",
+            "properties": {
+                key: copy.deepcopy(TARGET_FIELD_SCHEMAS[key])
+                for key in ("daidir", "fsdb", "run_manifest")
+            },
+            "anyOf": [{"required": ["daidir"]}, {"required": ["fsdb"]}],
+            "allOf": [
+                {
+                    "if": {"required": ["run_manifest"]},
+                    "then": {"required": ["fsdb"]},
+                }
+            ],
+            "additionalProperties": False,
+        }, True)
+
+    required_target = list(spec.get("required_target", []))
+    if required_target:
+        return ({
+            "type": "object",
+            "properties": {
+                key: copy.deepcopy(TARGET_FIELD_SCHEMAS[key])
+                for key in required_target
+            },
+            "required": required_target,
+            "additionalProperties": False,
+        }, True)
+
+    requirement = spec.get("requires", "none")
+    if action == "expr.normalize":
+        return ({
+            "type": "object",
+            "properties": {
+                "session_id": copy.deepcopy(TARGET_FIELD_SCHEMAS["session_id"]),
+                "daidir": copy.deepcopy(TARGET_FIELD_SCHEMAS["daidir"]),
+            },
+            "additionalProperties": False,
+        }, False)
+    if requirement == "design":
+        return (
+            exclusive_target_schema(("daidir",), require_all_direct=True),
+            True,
+        )
+    if requirement == "waveform":
+        return (
+            exclusive_target_schema(("fsdb",), require_all_direct=True),
+            True,
+        )
+    if requirement == "combined":
+        return (
+            exclusive_target_schema(
+                ("daidir", "fsdb"), require_all_direct=True
+            ),
+            True,
+        )
+    if requirement == "any":
+        return (
+            exclusive_target_schema(
+                ("daidir", "fsdb"), require_all_direct=False
+            ),
+            True,
+        )
+    if requirement == "session":
+        return ({
+            "type": "object",
+            "properties": {
+                "session_id": copy.deepcopy(TARGET_FIELD_SCHEMAS["session_id"]),
+            },
+            "required": ["session_id"],
+            "additionalProperties": False,
+        }, True)
+    return ({"type": "object", "properties": {}, "additionalProperties": False}, False)
+
+
+def limits_schema_for_spec(spec: dict[str, Any]) -> dict[str, Any]:
+    properties = copy.deepcopy(LIMIT_PROPERTIES_BY_ACTION.get(spec["name"], {}))
+    if spec.get("handler_kind") == "engine_forward":
+        properties["timeout_ms"] = {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": RUNTIME_SIGNED_INT_MAX,
+            "description": (
+                "Positive public frontend-to-engine request timeout in "
+                "milliseconds. Omit limits.timeout_ms to disable the public "
+                "watchdog."
+            ),
+        }
+    return {
+        "type": "object",
+        "properties": properties,
+        "additionalProperties": False,
+    }
 
 
 def load_json(path: Path) -> Any:
@@ -367,13 +955,20 @@ def example_args(action: str) -> set[str]:
 
 
 def collect_arg_schemas(specs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    # Checked-in request schemas are generated artifacts, not contract
+    # sources.  They may still contain a field removed from the declarative
+    # runtime-consumer contract at the beginning of a regeneration.  Only
+    # collect templates for fields that the current source contract publishes
+    # so a retired field cannot keep itself alive or block its own removal.
+    published_args = {
+        arg
+        for spec in specs
+        for arg in allowed_args_for_spec(spec)
+    }
     arg_schemas: dict[str, dict[str, Any]] = {}
     for spec in specs:
         for kind in ("request",):
             path = XDEBUG_ROOT / spec["schemas"][kind]
-            if not path.exists() and spec["name"] in RENAMED_FROM:
-                path = path.with_name(
-                    RENAMED_FROM[spec["name"]] + ".request.schema.json")
             if not path.exists():
                 continue
             schema = load_json(path)
@@ -382,88 +977,169 @@ def collect_arg_schemas(specs: list[dict[str, Any]]) -> dict[str, dict[str, Any]
                 for key, value in props.items():
                     if not isinstance(value, dict):
                         continue
+                    if key not in published_args:
+                        continue
                     if key not in arg_schemas:
                         arg_schemas[key] = copy.deepcopy(value)
     for key, value in ADDITIONAL_ARG_SCHEMAS.items():
         arg_schemas.setdefault(key, copy.deepcopy(value))
+    # Sensitive conditional-cleanup semantics must come from the generator,
+    # never from a previously checked-in schema artifact.  Otherwise the
+    # first schema encountered can keep stale managed-wrapper wording alive.
+    arg_schemas["ownership_token"] = copy.deepcopy(
+        ADDITIONAL_ARG_SCHEMAS["ownership_token"]
+    )
     # Keep generic channel open for stream/APB-style uses; action-specific
     # channel enums are applied in sync_schema().
     arg_schemas["channel"] = copy.deepcopy(ADDITIONAL_ARG_SCHEMAS["channel"])
+    # list.delete owns the only top-level args.index contract.  Do not let a
+    # previously generated string-compatible schema re-enter the source
+    # templates: the canonical index is a one-based positive integer.
+    arg_schemas["index"] = copy.deepcopy(ADDITIONAL_ARG_SCHEMAS["index"])
     arg_schemas["output"] = copy.deepcopy(ADDITIONAL_ARG_SCHEMAS["output"])
     arg_schemas["time_range"] = copy.deepcopy(ADDITIONAL_ARG_SCHEMAS["time_range"])
+    arg_schemas["render_time_unit"] = copy.deepcopy(
+        ADDITIONAL_ARG_SCHEMAS["render_time_unit"]
+    )
 
     arg_schemas["checks"] = {
         "type": "array",
+        "minItems": 1,
+        "maxItems": 3,
+        "uniqueItems": True,
         "items": {
-            "type": "object",
-            "required": ["type"],
-            "properties": {
-                "type": {"type": "string", "enum": ["unknown_xz", "glitch", "stuck"]},
-                "min_pulse_width": {"type": "string"},
-                "min_duration": {"type": "string"},
-            },
-            "additionalProperties": False,
+            "oneOf": [
+                {
+                    "type": "object",
+                    "required": ["type"],
+                    "properties": {
+                        "type": {"const": "unknown_xz"},
+                    },
+                    "additionalProperties": False,
+                },
+                {
+                    "type": "object",
+                    "required": ["type"],
+                    "properties": {
+                        "type": {"const": "glitch"},
+                        "min_pulse_width": {
+                            "type": "string",
+                            "minLength": 1,
+                        },
+                    },
+                    "additionalProperties": False,
+                },
+                {
+                    "type": "object",
+                    "required": ["type"],
+                    "properties": {
+                        "type": {"const": "stuck"},
+                        "min_duration": {
+                            "type": "string",
+                            "minLength": 1,
+                        },
+                    },
+                    "additionalProperties": False,
+                },
+            ],
         },
-        "description": "detect_abnormal checks. Each item must be an object with type; string shorthand is not supported.",
+        "description": (
+            "signal.anomaly.inspect checks. Each check type has a closed, "
+            "type-specific object contract; string shorthand is not supported."
+        ),
     }
     arg_schemas["direction"] = {"type": "string", "enum": ["write", "read", "all"]}
-    arg_schemas["format"] = {
-        "type": "string",
-        "enum": [
-            "h",
-            "hex",
-            "b",
-            "bin",
-            "binary",
-            "d",
-            "dec",
-            "decimal",
-            "array_indexed",
-            "json",
-            "tsv",
-            "csv",
-            "u64bin",
-        ],
-    }
     arg_schemas["kind"] = {
         "type": "string", "enum": ["request", "response"], "default": "request",
         "description": "schema action 要返回的 JSON Schema 类别：request 或 response。",
     }
-    string_filter = lambda values: {
-        "type": "array", "minItems": 1, "uniqueItems": True,
-        "items": {"type": "string", "enum": values},
+    arg_schemas["filter"] = actions_filter_schema()
+    arg_schemas["mode"] = {"type": "string"}
+    arg_schemas["op"] = {"type": "string", "enum": ["begin", "next", "prev", "pre", "last"]}
+    arg_schemas["port"] = {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 65535,
     }
-    arg_schemas["filter"] = {
+    arg_schemas["query"] = {"oneOf": [{"type": "string"}, {"type": "object"}]}
+    arg_schemas["vld"] = {
+        "oneOf": [
+            {
+                "type": "string",
+                "minLength": 1,
+                "description": "Signal path used directly as the counter-valid predicate.",
+            },
+            {
+                "type": "object",
+                "required": ["expr", "signals"],
+                "properties": {
+                    "expr": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Boolean expression over aliases declared in signals.",
+                    },
+                    "signals": {
+                        "type": "object",
+                        "minProperties": 1,
+                        "propertyNames": {
+                            "type": "string",
+                            "minLength": 1,
+                        },
+                        "additionalProperties": {
+                            "type": "string",
+                            "minLength": 1,
+                        },
+                        "x-dynamic-map": True,
+                        "description": "Alias-to-waveform-signal map consumed by expr.",
+                    },
+                },
+                "additionalProperties": False,
+                "description": "Expression predicate with an explicit alias-to-signal map.",
+            },
+        ]
+    }
+    arg_schemas["slice_hint"] = {
         "type": "object",
+        "required": ["chunk_width"],
         "properties": {
-            "category": string_filter(["builtin", "design", "waveform", "combined", "session"]),
-            "requires": string_filter(["none", "design", "waveform", "combined", "any", "session"]),
-            "purposes": string_filter(["discover", "configure", "query", "inspect", "analyze", "trace", "verify", "export", "manage", "transform", "orchestrate"]),
-            "keyword": {"type": "string", "pattern": ".*\\S.*"},
+            "chunk_width": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Width in bits of each deterministic xbit slice.",
+            },
+            "count": {
+                "type": "integer",
+                "minimum": 1,
+                "default": 1,
+                "description": "Number of consecutive chunks starting at bit zero.",
+            },
         },
         "additionalProperties": False,
     }
-    arg_schemas["mode"] = {"type": "string"}
-    arg_schemas["op"] = {"type": "string", "enum": ["begin", "next", "prev", "pre", "last"]}
-    arg_schemas["port"] = {"type": "integer"}
-    arg_schemas["query"] = {"oneOf": [{"type": "string"}, {"type": "object"}]}
-    arg_schemas["vld"] = {"oneOf": [{"type": "string"}, {"type": "object"}]}
     return arg_schemas
 
 
 def allowed_args_for_spec(spec: dict[str, Any]) -> set[str]:
     action = spec["name"]
-    keys = set(example_args(action))
-    keys.update(required_related_args(spec))
-    keys.update(EXTRA_ARGS_BY_ACTION.get(action, set()))
-    if spec.get("handler_kind") == "engine_forward" and action not in ENGINE_FORWARD_TIME_UNIT_EXCLUDE:
-        keys.add("time_unit")
-    return keys
+    if action not in RUNTIME_CONSUMER_CONTRACTS_BY_ACTION:
+        raise ValueError(
+            f"{action}: missing runtime optional-argument consumer declaration"
+        )
+    return (
+        required_related_args(spec)
+        | RUNTIME_CONSUMER_CONTRACTS_BY_ACTION[action].optional_args
+    )
 
 
-def protocol_config_schema(required_signals: list[str], description: str) -> dict[str, Any]:
+def protocol_config_schema(
+    required_signals: list[str],
+    description: str,
+    *,
+    optional_signals: list[str] | None = None,
+) -> dict[str, Any]:
+    optional_signals = optional_signals or []
     properties: dict[str, Any] = {}
-    for signal in required_signals:
+    for signal in required_signals + optional_signals:
         properties[signal] = {"type": "string", "minLength": 1}
         if signal == "clock" and "paddr" in required_signals:
             properties["edge"] = {"type": "string", "enum": ["posedge", "negedge", "dual"]}
@@ -481,15 +1157,63 @@ def protocol_config_schema(required_signals: list[str], description: str) -> dic
     }
 
 
-def protocol_statistics_filter_schema(allow_ids: bool) -> dict[str, Any]:
-    literal = {
+def signal_alias_map_schema(description: str) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "minProperties": 1,
+        "propertyNames": {"type": "string", "minLength": 1},
+        "additionalProperties": {"type": "string", "minLength": 1},
+        "x-dynamic-map": True,
+        "x-dynamic-contract": (
+            "Every non-empty property key is an expression alias and every "
+            "value is the non-empty waveform path resolved for that alias."
+        ),
+        "description": description,
+    }
+
+
+def signal_path_array_schema(
+    description: str,
+    *,
+    min_items: int = 1,
+) -> dict[str, Any]:
+    return {
+        "type": "array",
+        "minItems": min_items,
+        "uniqueItems": True,
+        "items": {"type": "string", "minLength": 1},
+        "description": description,
+    }
+
+
+def known_unsigned_literal_schema(*, max_bits: int | None = None) -> dict[str, Any]:
+    width_note = f" up to {max_bits} bits" if max_bits is not None else ""
+    return {
         "type": "string",
         "minLength": 1,
-        "description": "Known integer, hexadecimal, or SystemVerilog literal up to 64 bits.",
-        "x-description-zh": "不含 X/Z、宽度不超过 64 bit 的整数、十六进制或 SystemVerilog literal。",
+        "oneOf": [
+            {"pattern": "^[0-9]+$"},
+            {"pattern": "^(?:[1-9][0-9]*)?'[bB][01](?:_?[01])*$"},
+            {"pattern": "^(?:[1-9][0-9]*)?'[dD][0-9](?:_?[0-9])*$"},
+            {"pattern": "^(?:[1-9][0-9]*)?'[hH][0-9a-fA-F](?:_?[0-9a-fA-F])*$"},
+        ],
+        "description": (
+            f"Known unsigned decimal or b/d/h SystemVerilog literal{width_note}; "
+            "X/Z and C-style 0x are rejected."
+        ),
+        "x-description-zh": (
+            f"不含 X/Z 的无符号十进制或 b/d/h SystemVerilog literal"
+            f"{'，宽度不超过 ' + str(max_bits) + ' bit' if max_bits is not None else ''}；"
+            "不接受 C 风格 0x。"
+        ),
     }
+
+
+def protocol_statistics_filter_schema(allow_ids: bool) -> dict[str, Any]:
+    literal = known_unsigned_literal_schema(max_bits=64)
     exact = {
         "type": "object",
+        "description": "Exact-match branch: at least one listed value must equal the sampled field value.",
         "required": ["mode", "values"],
         "properties": {
             "mode": {"const": "exact"},
@@ -502,6 +1226,7 @@ def protocol_statistics_filter_schema(allow_ids: bool) -> dict[str, Any]:
     }
     range_filter = {
         "type": "object",
+        "description": "Inclusive-range branch: the sampled field value must lie between begin and end.",
         "required": ["mode", "begin", "end"],
         "properties": {
             "mode": {"const": "range"},
@@ -512,6 +1237,7 @@ def protocol_statistics_filter_schema(allow_ids: bool) -> dict[str, Any]:
     }
     mask = {
         "type": "object",
+        "description": "Masked-match branch: compare only the bits selected by mask against value.",
         "required": ["mode", "value", "mask"],
         "properties": {
             "mode": {"const": "mask"},
@@ -549,14 +1275,10 @@ def protocol_statistics_filter_schema(allow_ids: bool) -> dict[str, Any]:
 
 
 def stream_query_filter_schema() -> dict[str, Any]:
-    literal = {
-        "type": "string",
-        "minLength": 1,
-        "description": "Known unsigned integer or SystemVerilog literal of arbitrary width; X/Z and 0x are rejected.",
-        "x-description-zh": "任意位宽的已知无符号整数或 SystemVerilog literal；不允许 X/Z 和 0x。",
-    }
+    literal = known_unsigned_literal_schema()
     exact = {
         "type": "object",
+        "description": "Exact-match branch: at least one listed value must equal the sampled stream field.",
         "required": ["mode", "values"],
         "properties": {
             "mode": {"const": "exact"},
@@ -569,6 +1291,7 @@ def stream_query_filter_schema() -> dict[str, Any]:
     }
     range_filter = {
         "type": "object",
+        "description": "Inclusive-range branch: the sampled stream field must lie between begin and end.",
         "required": ["mode", "begin", "end"],
         "properties": {
             "mode": {"const": "range"},
@@ -579,6 +1302,7 @@ def stream_query_filter_schema() -> dict[str, Any]:
     }
     mask = {
         "type": "object",
+        "description": "Masked-match branch: compare only stream-field bits selected by mask against value.",
         "required": ["mode", "value", "mask"],
         "properties": {
             "mode": {"const": "mask"},
@@ -617,30 +1341,13 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
         if key not in TOP_LEVEL_PROPERTIES:
             del properties[key]
     for key, value in TOP_LEVEL_PROPERTIES.items():
-        properties.setdefault(key, copy.deepcopy(value))
+        properties[key] = copy.deepcopy(value)
     properties["action"] = {"type": "string", "enum": [action]}
-    if spec.get("required_target"):
+    target_schema, target_required = target_schema_for_spec(spec)
+    properties["target"] = target_schema
+    if target_required:
         updated["required"].append("target")
-        target_properties = {
-            "session_id": {"type": "string", "description": PARAM_DESCRIPTIONS["session_id"]},
-        }
-        # engine_forward requests are enriched by Dispatcher::resolve_target()
-        # before the already-open session receives and validates them.  Keep
-        # that internal routed form inside the same strict schema contract.
-        if spec.get("handler_kind") == "engine_forward":
-            target_properties.update({
-                "daidir": {"type": "string"},
-                "fsdb": {"type": "string"},
-                "mode": {"type": "string", "enum": ["design", "waveform", "combined"]},
-            })
-        properties["target"] = {
-            "type": "object",
-            "required": list(spec["required_target"]),
-            "properties": target_properties,
-            "additionalProperties": False,
-        }
-    else:
-        properties.setdefault("target", copy.deepcopy(TOP_LEVEL_PROPERTIES["target"]))
+    properties["limits"] = limits_schema_for_spec(spec)
 
     args = properties.setdefault("args", {"type": "object"})
     args["type"] = "object"
@@ -652,6 +1359,12 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
         selected_props[key] = apply_argument_contract(action, key, arg_schemas[key])
         if key in PARAM_DESCRIPTIONS:
             selected_props[key].setdefault("description", PARAM_DESCRIPTIONS[key])
+    if "output" in selected_props:
+        if action not in OUTPUT_SCHEMAS_BY_ACTION:
+            raise ValueError(
+                f"{action}: args.output is public but has no action-specific contract"
+            )
+        selected_props["output"] = copy.deepcopy(OUTPUT_SCHEMAS_BY_ACTION[action])
     if action == "value.at":
         selected_props.pop("format", None)
     if action in ("apb.query", "axi.query") and "query" in selected_props:
@@ -669,10 +1382,11 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
     if action == "apb.config.load" and "config" in selected_props:
         selected_props["config"] = protocol_config_schema(
             [
-                "clock", "paddr", "psel", "penable", "pready",
-                "pslverr", "pwrite", "pwdata", "prdata",
+                "clock", "paddr", "psel", "penable",
+                "pwrite", "pwdata", "prdata",
             ],
             PARAM_DESCRIPTIONS["config"],
+            optional_signals=["pready", "pslverr"],
         )
     if action == "axi.config.load" and "config" in selected_props:
         selected_props["config"] = protocol_config_schema(
@@ -688,28 +1402,54 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
         )
     if action == "stream.config.load":
         field_map = {
-            "type": "object", "additionalProperties": {"type": "string"},
+            "type": "object",
+            "minProperties": 1,
+            "propertyNames": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            },
+            "additionalProperties": {
+                "type": "string",
+                "minLength": 1,
+            },
         }
         stream_item = {
             "type": "object",
             "required": ["name", "signals", "clock", "vld"],
             "properties": {
-                "name": {"type": "string"},
-                "signals": {"type": "object", "minProperties": 1,
-                            "additionalProperties": {"type": "string", "minLength": 1}},
-                "clock": {"type": "string"},
+                "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                },
+                "signals": {
+                    "type": "object",
+                    "minProperties": 1,
+                    "propertyNames": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                    },
+                    "additionalProperties": {
+                        "type": "string",
+                        "minLength": 1,
+                    },
+                },
+                "clock": {"type": "string", "minLength": 1},
                 "edge": {"type": "string", "enum": ["posedge", "negedge", "dual"]},
                 "sample_point": {"type": "string", "enum": ["before", "after"]},
-                "reset": reset_schema(), "vld": {"type": "string"},
-                "rdy": {"type": "string"}, "bp": {"type": "string"},
-                "sop": {"type": "string"}, "eop": {"type": "string"},
-                "data": {"type": "string"},
+                "reset": reset_schema(),
+                "vld": {"type": "string", "minLength": 1},
+                "rdy": {"type": "string", "minLength": 1},
+                "bp": {"type": "string", "minLength": 1},
+                "sop": {"type": "string", "minLength": 1},
+                "eop": {"type": "string", "minLength": 1},
+                "data": {"type": "string", "minLength": 1},
                 "beat_fields": copy.deepcopy(field_map),
                 "packet_stable_fields": copy.deepcopy(field_map),
-                "channel_id": {"type": "string"},
+                "channel_id": {"type": "string", "minLength": 1},
                 "channel_id_valid": {"type": "string", "enum": ["sop", "eop", "every_beat"]},
                 "allow_interleaving": {"type": "boolean"},
-                "description": {"type": "string"},
+                "description": {"type": "string", "minLength": 1},
             },
             "additionalProperties": False,
         }
@@ -717,7 +1457,6 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
             "type": "array", "minItems": 1, "items": stream_item,
             "description": PARAM_DESCRIPTIONS["streams"],
         }
-        selected_props["streams"] = copy.deepcopy(streams)
         selected_props["config"] = {
             "type": "object", "required": ["streams"],
             "properties": {"streams": copy.deepcopy(streams)},
@@ -725,15 +1464,76 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
             "description": PARAM_DESCRIPTIONS["config"],
         }
         selected_props["mode"] = {"type": "string", "enum": ["replace", "append"]}
+    if action == "list.load":
+        list_item = {
+            "type": "object",
+            "required": ["name", "signals"],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "minLength": 1,
+                },
+                "signals": signal_path_array_schema(
+                    "Non-empty unique final leaf waveform paths in this named list."
+                ),
+            },
+            "additionalProperties": False,
+            "description": (
+                "One named collection of unique final leaf waveform signal paths."
+            ),
+        }
+        selected_props["config"] = {
+            "type": "object",
+            "required": ["lists"],
+            "properties": {
+                "lists": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": list_item,
+                    "description": (
+                        "One or more named waveform signal lists loaded atomically."
+                    ),
+                }
+            },
+            "additionalProperties": False,
+            "description": PARAM_DESCRIPTIONS["config"],
+        }
+        selected_props["mode"] = {
+            "type": "string",
+            "enum": ["replace", "append"],
+            "default": "replace",
+        }
+    if action in {
+        "event.find",
+        "event.export",
+        "expr.eval_at",
+        "verify.conditions",
+        "window.verify",
+    } and "signals" in selected_props:
+        selected_props["signals"] = signal_alias_map_schema(
+            PARAM_DESCRIPTIONS["signals"]
+        )
+    if action in {
+        "signal.anomaly.inspect",
+        "list.create",
+    } and "signals" in selected_props:
+        selected_props["signals"] = signal_path_array_schema(
+            PARAM_DESCRIPTIONS["signals"]
+        )
     if action == "axi.query" and "query" in selected_props:
         selected_props["query"] = {
             "oneOf": [
                 {
                     "type": "object",
+                    "minProperties": 1,
                     "properties": {
                         "line_limit": {"type": "integer", "minimum": 1},
                         "index": {"type": "integer", "minimum": 1},
                     },
+                    "anyOf": [
+                        {"required": ["line_limit"]},
+                        {"required": ["index"]},
+                    ],
                     "additionalProperties": False,
                 },
                 {
@@ -741,7 +1541,10 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
                     "required": ["channel", "handshake_time"],
                     "properties": {
                         "channel": {"type": "string", "enum": ["aw", "w", "b", "ar", "r"]},
-                        "handshake_time": {"type": "string"},
+                        "handshake_time": {
+                            "type": "string",
+                            "minLength": 1,
+                        },
                     },
                     "additionalProperties": False,
                 },
@@ -766,46 +1569,21 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
                     "AXI ID 只能选择精确值队列或闭区间两种模式之一。"
                 ),
             }
-    if action in {"axi.query", "axi.request_response_pair", "axi.latency_outlier"} and "output" in selected_props:
-        selected_props["output"] = {
-            "type": "object",
-            "properties": {
-                "include_data": {"type": "boolean", "default": False},
-            },
-            "additionalProperties": False,
-            "description": "AXI payload display controls; beat data is omitted unless include_data is true.",
-        }
+        if "last" in selected_props:
+            selected_props["last"] = {
+                "const": True,
+                "description": (
+                    "Select the final transaction matching the other "
+                    "transaction filters."
+                ),
+            }
     if action == "list.export" and "format" in selected_props:
         selected_props["format"] = {
             "type": "string",
             "enum": ["u64bin"],
             "description": "list.export input format. The response manifest uses versioned format u64bin.v1.",
         }
-    if action == "list.export" and "output" in selected_props:
-        selected_props["output"]["properties"]["file_format"] = {
-            "type": "string",
-            "enum": ["u64bin"],
-            "description": "list.export file format; response manifest uses versioned format u64bin.v1.",
-        }
-    if action == "axi.export" and "output" in selected_props:
-        selected_props["output"]["properties"]["file_format"] = {
-            "type": "string",
-            "enum": ["tsv", "csv"],
-            "description": "axi.export file format.",
-        }
-    if action == "event.export" and "output" in selected_props:
-        selected_props["output"]["properties"]["file_format"] = {
-            "type": "string",
-            "enum": ["json"],
-            "description": "event.export file format.",
-        }
     if action == "stream.export":
-        if "output" in selected_props:
-            selected_props["output"]["properties"]["file_format"] = {
-                "type": "string",
-                "enum": ["tsv", "csv", "xout"],
-                "description": "stream.export file format.",
-            }
         if "kind" in selected_props:
             selected_props["kind"] = {
                 "type": "string",
@@ -814,65 +1592,34 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
             }
     if action in VALUE_BEARING_ACTIONS and "value_format" in selected_props:
         selected_props["value_format"]["default"] = "hex"
-    if action == "trace.active_driver_chain":
-        properties["limits"] = {
-            "type": "object",
-            "description": "Resource limits for the recursive active trace.",
-            "properties": {
-                "max_depth": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "default": 8,
-                    "description": "Maximum recursion depth through pass-through assignments and aliases.",
-                },
-                "max_nodes": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "default": 50,
-                    "description": "Maximum number of trace nodes before truncation.",
-                },
-                "max_trace_signals": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "default": 64,
-                    "description": "Maximum signal count for ambiguity evidence lookup.",
-                },
-            },
-            "additionalProperties": False,
-        }
-    if action == "trace.x_origin":
-        properties["limits"] = {
-            "type": "object",
-            "properties": {
-                "max_depth": {"type": "integer", "minimum": 1, "default": 8},
-                "max_nodes": {"type": "integer", "minimum": 1, "default": 50},
-                "max_time_steps": {"type": "integer", "minimum": 1, "default": 128},
-                "max_trace_signals": {"type": "integer", "minimum": 1, "default": 64},
-                "max_chains": {"type": "integer", "minimum": 1, "default": 8},
-            },
-            "additionalProperties": False,
-        }
     if action in {"verify.conditions", "window.verify"} and "conditions" in selected_props:
+        condition_properties = {
+            "expr": {
+                "type": "string",
+                "description": "Expression using aliases from args.signals.",
+            },
+        }
+        if action == "verify.conditions":
+            condition_properties["name"] = {"type": "string"}
+        else:
+            condition_properties["mode"] = {
+                "type": "string",
+                "enum": ["always", "eventually", "never"],
+            }
         selected_props["conditions"] = {
             "type": "array",
+            "minItems": 1,
             "items": {
                 "type": "object",
                 "required": ["expr"],
-                "properties": {
-                    "expr": {
-                        "type": "string",
-                        "description": "Expression using aliases from args.signals.",
-                    },
-                    "name": {"type": "string"},
-                    "mode": {
-                        "type": "string",
-                        "enum": ["always", "eventually", "never"],
-                    },
-                },
+                "properties": condition_properties,
                 "additionalProperties": False,
             },
             "description": PARAM_DESCRIPTIONS["conditions"],
         }
+        selected_props["conditions"]["items"]["properties"]["expr"]["minLength"] = 1
+        if action == "verify.conditions":
+            selected_props["conditions"]["items"]["properties"]["name"]["minLength"] = 1
     if action == "axi.channel_stall" and "channel" in selected_props:
         selected_props["channel"] = {
             "type": "string",
@@ -887,11 +1634,12 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
             "description": "只返回 module、port、signal，或三者都返回。",
         }
     if action == "protocol.handshake.inspect":
+        selected_props["data"] = copy.deepcopy(ADDITIONAL_ARG_SCHEMAS["data"])
         selected_props["rules"] = {
             "type": "object",
             "properties": {
                 "max_wait_cycles": {"type": "integer", "minimum": 0},
-                "check_data_stable_when_stalled": {"type": "boolean"},
+                "check_data_stable_when_stalled": {"const": True},
                 "require_valid_hold_until_handshake": {"type": "boolean", "default": True},
                 "ready_without_valid": {
                     "type": "string",
@@ -902,6 +1650,10 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
             "additionalProperties": False,
         }
     if action == "signal.sampled_pulse.inspect":
+        if "payloads" in selected_props:
+            selected_props["payloads"] = signal_path_array_schema(
+                "Non-empty payload signal list inspected under one sampling contract."
+            )
         selected_props["rules"] = {
             "type": "object",
             "properties": {
@@ -913,6 +1665,24 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
             },
             "additionalProperties": False,
         }
+    if action == "event.export" and "aggregate" in selected_props:
+        selected_props["aggregate"] = {
+            "type": "object",
+            "properties": {
+                "events": {"type": "boolean", "default": True},
+                "group_by": {
+                    "type": "array",
+                    "minItems": 1,
+                    "uniqueItems": True,
+                    "items": {"type": "string", "minLength": 1},
+                },
+            },
+            "additionalProperties": False,
+            "description": (
+                "Event-export aggregation controls. Every group_by entry "
+                "must name a configured event signal alias or field."
+            ),
+        }
     if action == "event.find":
         selected_props["mode"] = {
             "type": "string",
@@ -921,6 +1691,32 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
         }
     if action == "event.export":
         selected_props["mode"] = {"type": "string", "enum": ["export"], "default": "export"}
+    if action in {
+        "apb.config.load",
+        "axi.config.load",
+        "event.config.load",
+        "list.load",
+        "stream.config.load",
+        "nwave.rc.generate",
+    }:
+        for path_arg in ("config_path", "file"):
+            if path_arg in selected_props:
+                selected_props[path_arg] = {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": PARAM_DESCRIPTIONS[path_arg],
+                }
+    if action == "session.open":
+        selected_props["name"] = {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$",
+            "description": (
+                "Session name: start with an ASCII letter, then use only "
+                "ASCII letters, digits, or underscores; maximum 64 characters."
+            ),
+        }
     for key, value in list(selected_props.items()):
         selected_props[key] = complete_descriptions(
             apply_argument_contract(action, key, value), f"args.{key}"
@@ -932,6 +1728,20 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
         args["anyOf"] = [{"required": list(group)} for group in groups]
     else:
         args.pop("anyOf", None)
+    if action == "list.delete":
+        args.pop("anyOf", None)
+        args["oneOf"] = [
+            {
+                "required": ["signal"],
+                "not": {"required": ["index"]},
+            },
+            {
+                "required": ["index"],
+                "not": {"required": ["signal"]},
+            },
+        ]
+    else:
+        args.pop("oneOf", None)
     conditionals = spec.get("conditional_required_args", [])
     if conditionals:
         args["allOf"] = [
@@ -943,20 +1753,34 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
         ]
     else:
         args.pop("allOf", None)
+    exclusive_config_sources = {
+        "apb.config.load": ("config", "config_path"),
+        "axi.config.load": ("config", "config_path"),
+        "list.load": ("config", "config_path"),
+        "stream.config.load": ("config", "config_path"),
+    }
+    if action in exclusive_config_sources:
+        args.pop("anyOf", None)
+        args["oneOf"] = [
+            {"required": [source]}
+            for source in exclusive_config_sources[action]
+        ]
     if action == "value.at":
         selectors = ("signal", "list", "apb", "stream", "axi")
         selector_variants = []
         for selector in selectors:
-            selector_variants.append({
-                "required": [selector],
-                "not": {
-                    "anyOf": [
-                        {"required": [other]}
-                        for other in selectors
-                        if other != selector
-                    ]
-                },
-            })
+            selector_variants.append(
+                {
+                    "required": [selector],
+                    "not": {
+                        "anyOf": [
+                            {"required": [other]}
+                            for other in selectors
+                            if other != selector
+                        ]
+                    },
+                }
+            )
         args.pop("oneOf", None)
         args["allOf"] = [
             {
@@ -972,63 +1796,161 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
                     "times for one or more ordered unique points."
                 ),
                 "oneOf": [
-                    {"required": ["time"], "not": {"required": ["times"]}},
-                    {"required": ["times"], "not": {"required": ["time"]}},
-                ],
+                    {
+                        "required": ["time"],
+                        "not": {"required": ["times"]},
+                    },
+                    {
+                        "required": ["times"],
+                        "not": {"required": ["time"]},
+                    },
+                ]
             },
             {
                 "if": {"required": ["slice_hint"]},
                 "then": {"required": ["signal"]},
             },
         ]
-        args["allOf"].append({
-            "if": {"not": {"required": ["clock"]}},
-            "then": {
-                "not": {
-                    "anyOf": [
-                        {"required": ["edge"]},
-                        {"required": ["sample_point"]},
-                    ]
-                }
-            },
-        })
     if action in {"apb.query", "axi.query"}:
         query_constraints: list[dict[str, Any]] = [
             {"not": {"required": ["last", "query"]}},
         ]
         if action == "axi.query":
-            query_constraints.append({
-                "if": {
-                    "required": ["output"],
+            query_constraints.append(
+                {
+                    "if": {
+                        "required": ["output"],
+                        "properties": {
+                            "output": {"required": ["include_data"]},
+                        },
+                    },
+                    "then": {
+                        "anyOf": [
+                            {"required": ["last"]},
+                            {"required": ["query"]},
+                        ]
+                    },
+                }
+            )
+            query_constraints.append(
+                {
+                    "if": {
+                        "required": ["query"],
+                        "properties": {
+                            "query": {"required": ["channel"]}
+                        },
+                    },
+                    "then": {
+                        "not": {
+                            "anyOf": [
+                                {"required": [key]}
+                                for key in (
+                                    "direction",
+                                    "address",
+                                    "id",
+                                    "time_range",
+                                    "last",
+                                )
+                            ]
+                        }
+                    },
+                }
+            )
+        args["allOf"] = list(args.get("allOf", [])) + query_constraints
+    if action == "protocol.handshake.inspect":
+        args["allOf"] = list(args.get("allOf", [])) + [
+            {
+                "if": {"required": ["data"]},
+                "then": {
+                    "required": ["rules"],
                     "properties": {
-                        "output": {"required": ["include_data"]},
+                        "rules": {
+                            "required": [
+                                "check_data_stable_when_stalled"
+                            ],
+                            "properties": {
+                                "check_data_stable_when_stalled": {
+                                    "const": True
+                                }
+                            },
+                        }
                     },
                 },
-                "then": {
-                    "anyOf": [
-                        {"required": ["last"]},
-                        {"required": ["query"]},
-                    ]
-                },
-            })
-            query_constraints.append({
+            },
+            {
                 "if": {
-                    "required": ["query"],
-                    "properties": {"query": {"required": ["channel"]}},
+                    "required": ["rules"],
+                    "properties": {
+                        "rules": {
+                            "required": [
+                                "check_data_stable_when_stalled"
+                            ],
+                        }
+                    },
                 },
+                "then": {"required": ["data"]},
+            },
+        ]
+    if action == "value.at":
+        args["allOf"] = list(args.get("allOf", [])) + [
+            {
+                "if": {"not": {"required": ["clock"]}},
                 "then": {
                     "not": {
                         "anyOf": [
-                            {"required": [key]}
-                            for key in (
-                                "direction", "address", "id", "time_range",
-                                "last",
-                            )
+                            {"required": ["edge"]},
+                            {"required": ["sample_point"]},
                         ]
                     }
                 },
-            })
-        args["allOf"] = list(args.get("allOf", [])) + query_constraints
+            }
+        ]
+    if action == "signal.sampled_pulse.inspect":
+        args["allOf"] = list(args.get("allOf", [])) + [
+            {
+                "if": {
+                    "required": ["rules"],
+                    "properties": {
+                        "rules": {
+                            "required": [
+                                "payload_changed_without_sampled_valid"
+                            ]
+                        }
+                    },
+                },
+                "then": {
+                    "required": ["payloads"]
+                },
+            },
+        ]
+    if action == "signal.changes":
+        args["allOf"] = list(args.get("allOf", [])) + [
+            {
+                "if": {
+                    "required": ["mode"],
+                    "properties": {"mode": {"const": "summary"}},
+                },
+                "then": {"not": {"required": ["line_limit"]}},
+            }
+        ]
+    if action == "session.open":
+        args["allOf"] = list(args.get("allOf", [])) + [
+            {
+                "if": {
+                    "anyOf": [
+                        {"required": ["host"]},
+                        {"required": ["bind_host"]},
+                        {"required": ["port"]},
+                    ]
+                },
+                "then": {
+                    "required": ["transport"],
+                    "properties": {
+                        "transport": {"const": "tcp"},
+                    },
+                },
+            }
+        ]
     if action == "event.find":
         args["allOf"] = list(args.get("allOf", [])) + [
             {
@@ -1054,10 +1976,59 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
             {"not": {"required": ["name", "line_limit"]}}
         ]
     if action == "expr.normalize":
-        args["allOf"] = list(args.get("allOf", [])) + [
-            {"anyOf": [{"required": ["signal"]}, {"not": {"required": ["line_limit"]}}]}
+        args["oneOf"] = [
+            {
+                "required": ["expr"],
+                "not": {
+                    "anyOf": [
+                        {"required": [key]}
+                        for key in ("signal", "line_limit", "no_statement_only", "role")
+                    ]
+                },
+            },
+            {
+                "required": ["signal"],
+                "not": {"required": ["expr"]},
+            },
         ]
-    if action in {"list.export", "stream.export"}:
+        updated["oneOf"] = [
+            {
+                "required": ["args"],
+                "properties": {
+                    "args": {"required": ["expr"]},
+                    "target": {
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            {
+                "required": ["args", "target"],
+                "properties": {
+                    "args": {"required": ["signal"]},
+                    "target": {
+                        "type": "object",
+                        "properties": {
+                            "session_id": copy.deepcopy(TARGET_FIELD_SCHEMAS["session_id"]),
+                            "daidir": copy.deepcopy(TARGET_FIELD_SCHEMAS["daidir"]),
+                        },
+                        "oneOf": [
+                            {
+                                "required": ["session_id"],
+                                "not": {"required": ["daidir"]},
+                            },
+                            {
+                                "required": ["daidir"],
+                                "not": {"required": ["session_id"]},
+                            },
+                        ],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+        ]
+    if action in {"event.export", "list.export", "stream.export"}:
         args["allOf"] = list(args.get("allOf", [])) + [
             {
                 "if": {
@@ -1066,6 +2037,21 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
                         "output": {
                             "required": ["path"],
                             "properties": {"path": {"type": "string", "minLength": 1}},
+                        }
+                    },
+                },
+                "then": {"not": {"required": ["line_limit"]}},
+            }
+        ]
+    if action == "event.export":
+        args["allOf"] = list(args.get("allOf", [])) + [
+            {
+                "if": {
+                    "required": ["aggregate"],
+                    "properties": {
+                        "aggregate": {
+                            "required": ["events"],
+                            "properties": {"events": {"const": False}},
                         }
                     },
                 },
@@ -1082,6 +2068,26 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
                 "then": {"not": {"required": ["cache_scope"]}},
             }
         ]
+    if action in {"stream.query", "stream.export", "stream.validate"}:
+        args["allOf"] = list(args.get("allOf", [])) + [
+            {
+                "if": {
+                    "required": ["cache_scope"],
+                    "properties": {"cache_scope": {"const": "range"}},
+                },
+                "then": {
+                    "required": ["time_range"],
+                    "properties": {
+                        "time_range": {
+                            "anyOf": [
+                                {"required": ["begin"]},
+                                {"required": ["end"]},
+                            ]
+                        }
+                    },
+                },
+            }
+        ]
     if action == "axi.analysis":
         args["allOf"] = list(args.get("allOf", [])) + [
             {
@@ -1093,114 +2099,215 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
         ]
     updated.pop("anyOf", None)
     updated.pop("allOf", None)
-    updated.pop("oneOf", None)
+    if action != "expr.normalize":
+        updated.pop("oneOf", None)
     updated["additionalProperties"] = False
     return updated
 
 
-def value_at_schema_is_unified(schema: dict[str, Any]) -> bool:
-    args = schema.get("properties", {}).get("args", {})
-    properties = args.get("properties", {})
-    required_properties = {
-        "signal", "list", "apb", "stream", "axi",
-        "time", "times", "clock", "edge", "sample_point",
-        "slice_hint", "value_format",
+def attach_strict_batch_child_envelope(
+    generated: dict[str, dict[str, Any]],
+) -> None:
+    batch = generated.get("batch")
+    if batch is None:
+        raise ValueError("batch: generated request schema is missing")
+
+    requests = (
+        batch["properties"]["args"]["properties"]["requests"]
+    )
+    requests["type"] = "array"
+    requests["minItems"] = 1
+    requests["items"] = {
+        "type": "object",
+        "properties": {
+            "api_version": {
+                "type": "string",
+                "description": (
+                    "Child public API version. It is intentionally not "
+                    "defaulted by batch."
+                ),
+            },
+            "request_id": {
+                "type": "string",
+                "description": "Optional child request correlation id.",
+            },
+            "action": {
+                "type": "string",
+                "description": (
+                    "Child action name selected for action-specific dispatch."
+                ),
+            },
+            "target": {
+                "type": "object",
+                "x-deferred-action-validation": True,
+                "description": (
+                    "Child target, validated by the selected action contract."
+                ),
+            },
+            "args": {
+                "type": "object",
+                "x-deferred-action-validation": True,
+                "description": (
+                    "Child arguments, validated by the selected action contract."
+                ),
+            },
+            "limits": {
+                "type": "object",
+                "x-deferred-action-validation": True,
+                "description": (
+                    "Child limits, validated by the selected action contract."
+                ),
+            },
+        },
+        "additionalProperties": False,
+        "x-deferred-action-validation": True,
+        "description": (
+            "Closed child envelope. Required fields and nested payload are "
+            "validated by the child's action-specific public contract during "
+            "child dispatch, so an invalid child is reported in data.results "
+            "without turning the batch envelope into an outer schema error."
+        ),
     }
-    if not required_properties.issubset(properties):
-        return False
-    if properties["times"].get("uniqueItems") is not True:
-        return False
-    if properties["times"].get("minItems") != 1:
-        return False
-    all_of = args.get("allOf", [])
-    return isinstance(all_of, list) and len(all_of) >= 4
+    batch.pop("definitions", None)
 
 
-def scope_list_schema_is_hierarchical(schema: dict[str, Any]) -> bool:
-    properties = schema.get("properties", {}).get(
-        "args", {}).get("properties", {})
-    required = {
-        "path", "level", "kind", "include_patterns", "exclude_patterns",
+def audit_runtime_consumer_contract(
+    specs: list[dict[str, Any]],
+    arg_schemas: dict[str, dict[str, Any]],
+) -> list[str]:
+    """Fail closed when a public arg has no explicit runtime owner.
+
+    Required and conditional args are declared in actions.yaml.  Every
+    optional top-level args leaf belongs to a named
+    RUNTIME_CONSUMER_CONTRACTS_BY_ACTION boundary.  Request examples are
+    witnesses, never an implicit allowlist source.
+    """
+    errors: list[str] = []
+    action_names = {spec["name"] for spec in specs}
+    declared_actions = set(RUNTIME_CONSUMER_CONTRACTS_BY_ACTION)
+    if declared_actions != action_names:
+        missing = sorted(action_names - declared_actions)
+        unknown = sorted(declared_actions - action_names)
+        if missing:
+            errors.append(
+                "runtime consumer declarations missing actions: " +
+                ", ".join(missing)
+            )
+        if unknown:
+            errors.append(
+                "runtime consumer declarations reference unknown actions: " +
+                ", ".join(unknown)
+            )
+
+    public_args: set[str] = set()
+    for spec in specs:
+        action = spec["name"]
+        if action not in RUNTIME_CONSUMER_CONTRACTS_BY_ACTION:
+            continue
+        contract = RUNTIME_CONSUMER_CONTRACTS_BY_ACTION[action]
+        if not contract.consumer_id.strip():
+            errors.append(f"{action}: runtime consumer_id must be nonempty")
+        declared = allowed_args_for_spec(spec)
+        public_args.update(declared)
+        undeclared_example_args = example_args(action) - declared
+        if undeclared_example_args:
+            errors.append(
+                f"{action}: request example contains args without a runtime "
+                "consumer declaration: " +
+                ", ".join(sorted(undeclared_example_args))
+            )
+
+    component_only = {"protocol_query"}
+    unused_additional = (
+        set(ADDITIONAL_ARG_SCHEMAS) - public_args - component_only
+    )
+    if unused_additional:
+        errors.append(
+            "unused additional public arg definitions: " +
+            ", ".join(sorted(unused_additional))
+        )
+    unused_collected = set(arg_schemas) - public_args - component_only
+    if unused_collected:
+        errors.append(
+            "unused collected public arg definitions: " +
+            ", ".join(sorted(unused_collected))
+        )
+
+    output_consumers = {
+        action
+        for action in action_names
+        if "output" in (
+            required_related_args(
+                next(spec for spec in specs if spec["name"] == action)
+            )
+            | (
+                RUNTIME_CONSUMER_CONTRACTS_BY_ACTION[action].optional_args
+                if action in RUNTIME_CONSUMER_CONTRACTS_BY_ACTION
+                else set()
+            )
+        )
     }
-    if not required.issubset(properties):
-        return False
-    return properties["kind"].get("enum") == [
-        "all", "module", "port", "signal",
-    ]
-
-
-def scope_roots_schema_has_source_selection(schema: dict[str, Any]) -> bool:
-    properties = schema.get("properties", {}).get(
-        "args", {}).get("properties", {})
-    source = properties.get("source", {})
-    return (source.get("enum") == ["auto", "wave", "design"] and
-            source.get("default") == "auto")
-
-
-def protocol_query_schema_is_current(
-    action: str,
-    schema: dict[str, Any],
-) -> bool:
-    properties = schema.get("properties", {}).get(
-        "args", {}).get("properties", {})
-    if action == "apb.query":
-        address = properties.get("address", {})
-        return ("addr" not in properties and
-                len(address.get("oneOf", [])) == 3)
-    if action == "axi.query":
-        address = properties.get("address", {})
-        identifier = properties.get("id", {})
-        output = properties.get("output", {}).get("properties", {})
-        return ("addr" not in properties and
-                len(address.get("oneOf", [])) == 3 and
-                len(identifier.get("oneOf", [])) == 2 and
-                "time_range" in properties and
-                "include_data" in output)
-    if action == "stream.query":
-        fields = properties.get("filter", {}).get(
-            "properties", {}).get("fields", {})
-        return ("cache_scope" in properties and
-                fields.get("type") == "object")
-    return False
+    output_definitions = set(OUTPUT_SCHEMAS_BY_ACTION)
+    if output_definitions != output_consumers:
+        missing = sorted(output_consumers - output_definitions)
+        unused = sorted(output_definitions - output_consumers)
+        if missing:
+            errors.append(
+                "args.output consumers missing action-specific schema: " +
+                ", ".join(missing)
+            )
+        if unused:
+            errors.append(
+                "unused action-specific args.output schemas: " +
+                ", ".join(unused)
+            )
+    return errors
 
 
 def sync(check: bool, selected_actions: set[str] | None = None) -> list[str]:
-    specs = [spec for spec in action_specs() if spec.get("status") != "removed"]
+    specs = action_specs()
     arg_schemas = collect_arg_schemas(specs)
-    errors: list[str] = []
+    errors = audit_runtime_consumer_contract(specs, arg_schemas)
+    if errors:
+        return errors
+    original: dict[str, dict[str, Any]] = {}
+    generated: dict[str, dict[str, Any]] = {}
+    paths: dict[str, Path] = {}
 
     for spec in specs:
-        if selected_actions and spec["name"] not in selected_actions:
-            continue
         path = XDEBUG_ROOT / spec["schemas"]["request"]
-        source_path = path
-        if not source_path.exists() and spec["name"] in RENAMED_FROM:
-            source_path = path.with_name(
-                RENAMED_FROM[spec["name"]] + ".request.schema.json")
-        if not source_path.exists():
-            errors.append(f"{spec['name']}: request schema seed is missing")
-            continue
-        schema = load_json(source_path)
-        if spec["name"] == "value.at" and value_at_schema_is_unified(schema):
-            continue
-        if (spec["name"] == "scope.list" and
-                scope_list_schema_is_hierarchical(schema)):
-            continue
-        if (spec["name"] == "scope.roots" and
-                scope_roots_schema_has_source_selection(schema)):
-            continue
-        if protocol_query_schema_is_current(spec["name"], schema):
-            continue
+        schema = load_json(path)
+        original[spec["name"]] = schema
+        paths[spec["name"]] = path
         try:
             updated = sync_schema(schema, spec, arg_schemas)
         except ValueError as exc:
             errors.append(str(exc))
             continue
+        generated[spec["name"]] = updated
+
+    if errors:
+        return errors
+    try:
+        attach_strict_batch_child_envelope(generated)
+    except ValueError as exc:
+        return [str(exc)]
+
+    selected = set(generated) if not selected_actions else set(selected_actions) | {"batch"}
+    for action in sorted(selected):
+        if action not in generated:
+            errors.append(f"unknown action selected for request schema sync: {action}")
+            continue
+        schema = original[action]
+        updated = generated[action]
         if schema != updated:
             if check:
-                errors.append(f"{spec['schemas']['request']}: runtime request schema is not synced")
+                errors.append(
+                    f"{paths[action].relative_to(XDEBUG_ROOT)}: "
+                    "runtime request schema is not synced"
+                )
             else:
-                path.write_text(dump_json(updated), encoding="utf-8")
+                paths[action].write_text(dump_json(updated), encoding="utf-8")
     return errors
 
 
@@ -1221,4 +2328,3 @@ def main(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
-    properties["reset"] = reset_schema()

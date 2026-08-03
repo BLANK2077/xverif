@@ -6,7 +6,8 @@
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -22,7 +23,44 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
@@ -37,11 +75,11 @@
             "range"
           ],
           "default": "full",
-          "description": "Base-analysis cache scope. full (default) is reusable by query, export, and dynamic validate; use range explicitly for a one-off narrow interval. range without time_range reuses full."
+          "description": "Base-analysis cache scope. full (default) is reusable by query, export, and dynamic validate; range requires a non-empty time_range and caches only that one-off normalized interval."
         },
         "channel": {
           "type": "string",
-          "description": "Action-specific channel input. Its type and accepted values are defined by this schema."
+          "description": "协议或 stream 的逻辑 channel 选择；可用值由本 action 的 enum 决定。"
         },
         "kind": {
           "type": "string",
@@ -50,7 +88,7 @@
             "packet",
             "packet_beats"
           ],
-          "description": "Action-specific kind input. Its type and accepted values are defined by this schema."
+          "description": "导出或查询的结果类型。"
         },
         "line_limit": {
           "type": "integer",
@@ -62,7 +100,8 @@
           "properties": {
             "path": {
               "type": "string",
-              "description": "Action-specific path input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "Artifact path; omit it to return an in-response preview."
             },
             "file_format": {
               "type": "string",
@@ -71,47 +110,59 @@
                 "csv",
                 "xout"
               ],
-              "description": "stream.export file format."
-            },
-            "verbose": {
-              "type": "boolean",
-              "description": "Action-specific verbose input. Its type and accepted values are defined by this schema."
+              "default": "tsv",
+              "description": "Stream artifact file format."
             }
           },
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "file_format"
+                ]
+              },
+              "then": {
+                "required": [
+                  "path"
+                ]
+              },
+              "description": "Export destination and rendering controls. path, file_format, and verbose are supported only where this action declares them."
+            }
+          ],
           "additionalProperties": false,
           "description": "Export destination and rendering controls. path, file_format, and verbose are supported only where this action declares them."
         },
+        "render_time_unit": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "ps",
+            "ns",
+            "us"
+          ],
+          "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
+        },
         "stream": {
           "type": "string",
-          "description": "Action-specific stream input. Its type and accepted values are defined by this schema."
+          "description": "已加载的 stream 配置名称。"
         },
         "time_range": {
           "type": "object",
+          "minProperties": 1,
           "properties": {
             "begin": {
               "type": "string",
-              "description": "Action-specific begin input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "闭区间起点；省略时使用可用波形窗口起点。"
             },
             "end": {
               "type": "string",
-              "description": "Action-specific end input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "闭区间终点；省略时使用可用波形窗口终点。"
             }
           },
           "additionalProperties": false,
           "description": "Closed analysis interval. begin and end may be omitted independently to use the available waveform bounds."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
         },
         "value_format": {
           "type": "string",
@@ -120,8 +171,8 @@
             "bin",
             "dec"
           ],
-          "description": "Action-specific value_format input. Its type and accepted values are defined by this schema.",
-          "default": "hex"
+          "default": "hex",
+          "description": "返回 LogicValue 的显示格式；不改变比较、采样或底层四态值。"
         }
       },
       "additionalProperties": false,
@@ -152,29 +203,57 @@
               ]
             }
           }
+        },
+        {
+          "if": {
+            "required": [
+              "cache_scope"
+            ],
+            "properties": {
+              "cache_scope": {
+                "const": "range"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "time_range"
+            ],
+            "properties": {
+              "time_range": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "begin"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "end"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
         }
       ]
     },
     "limits": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     },
     "request_id": {
-      "type": "string"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     }
   },
   "additionalProperties": false,
@@ -186,19 +265,15 @@
   "x-description-zh": "从显式 full 或 range 基础分析缓存范围导出 stream 查询结果。",
   "x-agent": {
     "use_when": [
-      "从显式 full 或 range 基础分析缓存范围导出 stream 查询结果。"
+      "Export stream transfers or packet data while reusing an explicit full/range base analysis."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 stream.config.load、stream.config.list 的业务目标；请改用列出的同域 action。"
+      "Do not use it when no artifact/preview export is required or when applying interactive query filters."
     ],
     "alternatives": [
       {
-        "action": "stream.config.load",
-        "when": "加载 stream 配置。"
-      },
-      {
-        "action": "stream.config.list",
-        "when": "列出 stream 配置。"
+        "action": "stream.query",
+        "when": "Return filtered stream evidence in the response."
       }
     ],
     "constraints": [

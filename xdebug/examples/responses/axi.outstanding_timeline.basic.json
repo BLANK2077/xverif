@@ -2,6 +2,70 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "axi.outstanding_timeline",
-  "summary": {"name": "if0", "sample_count": 20, "change_point_count": 3, "returned_change_point_count": 3, "peak_read": 2, "peak_write": 1, "peak_read_time": "120ns", "peak_write_time": "100ns", "final_read": 0, "final_write": 0, "analysis_complete": true, "truncated": false},
-  "data": {"change_points": [{"time": "100ns", "read": 0, "write": 1, "read_delta": 0, "write_delta": 1, "read_event": "none", "write_event": "aw_handshake"}, {"time": "120ns", "read": 2, "write": 1, "read_delta": 2, "write_delta": 0, "read_event": "ar_handshake", "write_event": "none"}]}
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
+  "summary": {
+    "name": "if0",
+    "sampling_mode": "clock_edge",
+    "clock": "top.clk",
+    "edge": "negedge",
+    "sample_time_semantics": "time is sample_time",
+    "sample_count": 20,
+    "peak_read": 2,
+    "peak_write": 1,
+    "peak_read_time": "120ns",
+    "peak_write_time": "100ns",
+    "first_nonzero_time": "100ns",
+    "final_read": 0,
+    "final_write": 0,
+    "requested_range": {"begin": "0ns", "end": "200ns"},
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 3,
+    "returned_count": 3,
+    "truncation_scopes": []
+  },
+  "data": {
+    "change_points": [
+      {
+        "time": "100ns",
+        "read": 0,
+        "write": 1,
+        "read_delta": 0,
+        "write_delta": 1,
+        "read_event": "none",
+        "write_event": "aw_handshake"
+      },
+      {
+        "time": "120ns",
+        "read": 2,
+        "write": 1,
+        "read_delta": 2,
+        "write_delta": 0,
+        "read_event": "ar_handshake",
+        "write_event": "none"
+      },
+      {
+        "time": "160ns",
+        "read": 0,
+        "write": 0,
+        "read_delta": -2,
+        "write_delta": -1,
+        "read_event": "rlast_handshake",
+        "write_event": "b_handshake"
+      }
+    ]
+  },
+  "error": null
 }

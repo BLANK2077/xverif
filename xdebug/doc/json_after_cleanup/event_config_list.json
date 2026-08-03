@@ -2,11 +2,8 @@
   "request": {
     "api_version": "xdebug.v1",
     "action": "event.config.list",
-    "output": {
-      "verbosity": "compact"
-    },
     "target": {
-      "session_id": "fix_wave"
+      "session_id": "case_a"
     },
     "args": {
       "name": "evt0"
@@ -20,18 +17,31 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
-      "name": "evt0",
-      "clk": "ai_complex_top.clk",
-      "posedge": true
+      "status": "found"
     },
     "data": {
-      "signals": {
-        "payload": "ai_complex_top.event_payload",
-        "rdy": "ai_complex_top.event_rdy",
-        "vld": "ai_complex_top.event_vld",
-        "xz": "ai_complex_top.xz_bus"
+      "config": {
+        "name": "evt0",
+        "clock": "top.clk",
+        "reset": {
+          "signal": "top.rst_n",
+          "polarity": "active_low"
+        },
+        "edge": "negedge",
+        "signals": {
+          "vld": "top.valid",
+          "payload": "top.payload"
+        },
+        "fields": {}
       }
     },
     "error": null

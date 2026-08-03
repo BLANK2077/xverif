@@ -7,7 +7,10 @@
   "type": "object",
   "properties": {
     "api_version": {
-      "type": "string"
+      "type": "string",
+      "enum": [
+        "xdebug.v1"
+      ]
     },
     "action": {
       "type": "string",
@@ -17,29 +20,15 @@
     },
     "target": {
       "type": "object",
-      "required": [
-        "session_id"
-      ],
       "properties": {
         "session_id": {
           "type": "string",
-          "description": "目标 xdebug session 标识。"
-        },
-        "daidir": {
-          "type": "string"
-        },
-        "fsdb": {
-          "type": "string"
-        },
-        "mode": {
-          "type": "string",
-          "enum": [
-            "design",
-            "waveform",
-            "combined"
-          ]
+          "minLength": 1
         }
       },
+      "required": [
+        "session_id"
+      ],
       "additionalProperties": false
     },
     "args": {
@@ -65,6 +54,7 @@
               "oneOf": [
                 {
                   "type": "object",
+                  "description": "Exact-match branch: at least one listed value must equal the sampled field value.",
                   "required": [
                     "mode",
                     "values"
@@ -81,16 +71,34 @@
                       "items": {
                         "type": "string",
                         "minLength": 1,
-                        "description": "Known integer, hexadecimal, or SystemVerilog literal up to 64 bits."
+                        "oneOf": [
+                          {
+                            "pattern": "^[0-9]+$",
+                            "description": "地址或字段过滤的候选值列表；候选之间按 OR 匹配，空列表不合法。"
+                          },
+                          {
+                            "pattern": "^(?:[1-9][0-9]*)?'[bB][01](?:_?[01])*$",
+                            "description": "地址或字段过滤的候选值列表；候选之间按 OR 匹配，空列表不合法。"
+                          },
+                          {
+                            "pattern": "^(?:[1-9][0-9]*)?'[dD][0-9](?:_?[0-9])*$",
+                            "description": "地址或字段过滤的候选值列表；候选之间按 OR 匹配，空列表不合法。"
+                          },
+                          {
+                            "pattern": "^(?:[1-9][0-9]*)?'[hH][0-9a-fA-F](?:_?[0-9a-fA-F])*$",
+                            "description": "地址或字段过滤的候选值列表；候选之间按 OR 匹配，空列表不合法。"
+                          }
+                        ],
+                        "description": "Known unsigned decimal or b/d/h SystemVerilog literal up to 64 bits; X/Z and C-style 0x are rejected."
                       },
-                      "description": "Ordered values entries. Each item must satisfy the declared item contract."
+                      "description": "地址或字段过滤的候选值列表；候选之间按 OR 匹配，空列表不合法。"
                     }
                   },
-                  "additionalProperties": false,
-                  "description": "Structured address configuration. Only the declared properties are accepted."
+                  "additionalProperties": false
                 },
                 {
                   "type": "object",
+                  "description": "Inclusive-range branch: the sampled field value must lie between begin and end.",
                   "required": [
                     "mode",
                     "begin",
@@ -104,19 +112,55 @@
                     "begin": {
                       "type": "string",
                       "minLength": 1,
-                      "description": "Known integer, hexadecimal, or SystemVerilog literal up to 64 bits."
+                      "oneOf": [
+                        {
+                          "pattern": "^[0-9]+$",
+                          "description": "闭区间起点；省略时使用可用波形窗口起点。"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[bB][01](?:_?[01])*$",
+                          "description": "闭区间起点；省略时使用可用波形窗口起点。"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[dD][0-9](?:_?[0-9])*$",
+                          "description": "闭区间起点；省略时使用可用波形窗口起点。"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[hH][0-9a-fA-F](?:_?[0-9a-fA-F])*$",
+                          "description": "闭区间起点；省略时使用可用波形窗口起点。"
+                        }
+                      ],
+                      "description": "Known unsigned decimal or b/d/h SystemVerilog literal up to 64 bits; X/Z and C-style 0x are rejected."
                     },
                     "end": {
                       "type": "string",
                       "minLength": 1,
-                      "description": "Known integer, hexadecimal, or SystemVerilog literal up to 64 bits."
+                      "oneOf": [
+                        {
+                          "pattern": "^[0-9]+$",
+                          "description": "闭区间终点；省略时使用可用波形窗口终点。"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[bB][01](?:_?[01])*$",
+                          "description": "闭区间终点；省略时使用可用波形窗口终点。"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[dD][0-9](?:_?[0-9])*$",
+                          "description": "闭区间终点；省略时使用可用波形窗口终点。"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[hH][0-9a-fA-F](?:_?[0-9a-fA-F])*$",
+                          "description": "闭区间终点；省略时使用可用波形窗口终点。"
+                        }
+                      ],
+                      "description": "Known unsigned decimal or b/d/h SystemVerilog literal up to 64 bits; X/Z and C-style 0x are rejected."
                     }
                   },
-                  "additionalProperties": false,
-                  "description": "Structured address configuration. Only the declared properties are accepted."
+                  "additionalProperties": false
                 },
                 {
                   "type": "object",
+                  "description": "Masked-match branch: compare only the bits selected by mask against value.",
                   "required": [
                     "mode",
                     "value",
@@ -130,16 +174,43 @@
                     "value": {
                       "type": "string",
                       "minLength": 1,
-                      "description": "Known integer, hexadecimal, or SystemVerilog literal up to 64 bits."
+                      "oneOf": [
+                        {
+                          "pattern": "^[0-9]+$"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[bB][01](?:_?[01])*$"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[dD][0-9](?:_?[0-9])*$"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[hH][0-9a-fA-F](?:_?[0-9a-fA-F])*$"
+                        }
+                      ],
+                      "description": "Known unsigned decimal or b/d/h SystemVerilog literal up to 64 bits; X/Z and C-style 0x are rejected."
                     },
                     "mask": {
                       "type": "string",
                       "minLength": 1,
-                      "description": "Known integer, hexadecimal, or SystemVerilog literal up to 64 bits."
+                      "oneOf": [
+                        {
+                          "pattern": "^[0-9]+$"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[bB][01](?:_?[01])*$"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[dD][0-9](?:_?[0-9])*$"
+                        },
+                        {
+                          "pattern": "^(?:[1-9][0-9]*)?'[hH][0-9a-fA-F](?:_?[0-9a-fA-F])*$"
+                        }
+                      ],
+                      "description": "Known unsigned decimal or b/d/h SystemVerilog literal up to 64 bits; X/Z and C-style 0x are rejected."
                     }
                   },
-                  "additionalProperties": false,
-                  "description": "Structured address configuration. Only the declared properties are accepted."
+                  "additionalProperties": false
                 }
               ],
               "description": "Exactly one address filtering mode: exact queue, inclusive range, or value/mask."
@@ -151,7 +222,21 @@
               "items": {
                 "type": "string",
                 "minLength": 1,
-                "description": "Known integer, hexadecimal, or SystemVerilog literal up to 64 bits."
+                "oneOf": [
+                  {
+                    "pattern": "^[0-9]+$"
+                  },
+                  {
+                    "pattern": "^(?:[1-9][0-9]*)?'[bB][01](?:_?[01])*$"
+                  },
+                  {
+                    "pattern": "^(?:[1-9][0-9]*)?'[dD][0-9](?:_?[0-9])*$"
+                  },
+                  {
+                    "pattern": "^(?:[1-9][0-9]*)?'[hH][0-9a-fA-F](?:_?[0-9a-fA-F])*$"
+                  }
+                ],
+                "description": "Known unsigned decimal or b/d/h SystemVerilog literal up to 64 bits; X/Z and C-style 0x are rejected."
               },
               "description": "AXI transaction ID queue; values are ORed within the queue."
             }
@@ -163,19 +248,6 @@
           "type": "string",
           "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
         },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
-        },
         "value_format": {
           "type": "string",
           "enum": [
@@ -183,32 +255,27 @@
             "bin",
             "dec"
           ],
-          "description": "Action-specific value_format input. Its type and accepted values are defined by this schema.",
-          "default": "hex"
+          "default": "hex",
+          "description": "返回 LogicValue 的显示格式；不改变比较、采样或底层四态值。"
         }
       },
       "additionalProperties": false
     },
     "request_id": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
@@ -224,21 +291,12 @@
   "x-arg_contract_notes": "required: name; filter direction/ids/address with AND; address mode is exact/range/mask",
   "x-agent": {
     "use_when": [
-      "按方向、ID 和地址过滤统计已完成 AXI 事务。"
+      "Count completed AXI read and write transactions after applying protocol filters."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 axi.analysis、axi.export 的业务目标；请改用列出的同域 action。"
+      "Inspecting individual AXI payload beats or pending transactions."
     ],
-    "alternatives": [
-      {
-        "action": "axi.analysis",
-        "when": "汇总 AXI 行为。"
-      },
-      {
-        "action": "axi.export",
-        "when": "导出 AXI 数据。"
-      }
-    ],
+    "alternatives": [],
     "constraints": [
       "required: name; filter direction/ids/address with AND; address mode is exact/range/mask"
     ]

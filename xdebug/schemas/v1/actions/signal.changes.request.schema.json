@@ -6,7 +6,8 @@
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -16,7 +17,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -25,15 +27,51 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "signal"
+      ],
       "properties": {
-        "aggregate_only": {
-          "type": "boolean",
-          "description": "Return only counts, first/last/final values, and warnings; omit data.changes rows."
-        },
         "line_limit": {
           "type": "integer",
           "minimum": 1,
@@ -41,12 +79,22 @@
         },
         "mode": {
           "type": "string",
-          "description": "Return mode: timeline emits each change evidence, while summary emits aggregate facts only. Do not combine it with aggregate_only.",
+          "description": "Return mode: timeline emits each change evidence, while summary emits aggregate facts only.",
           "enum": [
             "timeline",
             "summary"
           ],
           "default": "timeline"
+        },
+        "render_time_unit": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "ps",
+            "ns",
+            "us"
+          ],
+          "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
         },
         "signal": {
           "type": "string",
@@ -54,31 +102,21 @@
         },
         "time_range": {
           "type": "object",
+          "minProperties": 1,
           "properties": {
             "begin": {
               "type": "string",
-              "description": "Action-specific begin input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "闭区间起点；省略时使用可用波形窗口起点。"
             },
             "end": {
               "type": "string",
-              "description": "Action-specific end input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "闭区间终点；省略时使用可用波形窗口终点。"
             }
           },
           "additionalProperties": false,
           "description": "Closed analysis interval. begin and end may be omitted independently to use the available waveform bounds."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
         },
         "value_format": {
           "type": "string",
@@ -87,44 +125,56 @@
             "bin",
             "dec"
           ],
-          "description": "Action-specific value_format input. Its type and accepted values are defined by this schema.",
-          "default": "hex"
+          "default": "hex",
+          "description": "返回 LogicValue 的显示格式；不改变比较、采样或底层四态值。"
         }
       },
       "additionalProperties": false,
-      "required": [
-        "signal"
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "const": "summary"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "line_limit"
+              ]
+            }
+          }
+        }
       ]
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
   "description": "List raw waveform value changes for a signal.",
   "x-purpose": "读取信号变化点。",
-  "x-how_it_works": "扫描 FSDB value changes，支持窗口、line_limit 和聚合。",
+  "x-how_it_works": "扫描 FSDB value changes；mode:\"timeline\" 可配 line_limit 返回逐项证据，mode:\"summary\" 只返回聚合事实。",
   "x-when_to_use": "看信号何时跳变。",
   "x-arg_contract_notes": "required: signal",
   "x-description-zh": "读取信号变化点。",
   "x-agent": {
     "use_when": [
-      "需要一个信号的原始波形变化时间线或聚合变化统计。"
+      "需要一个信号的原始波形变化时间线，或通过 mode=summary 读取不含逐项变化的聚合事实。"
     ],
     "do_not_use_when": [
       "需要按 clock edge 的协议语义采样。"

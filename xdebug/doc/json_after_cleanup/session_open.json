@@ -2,14 +2,12 @@
   "request": {
     "api_version": "xdebug.v1",
     "action": "session.open",
-    "output": {
-      "verbosity": "compact"
-    },
     "target": {
-      "fsdb": "<xverif-repo>/xdebug/testdata/waveform/ai_complex_wave/out/waves.fsdb"
+      "daidir": "simv.daidir",
+      "fsdb": "waves.fsdb"
     },
     "args": {
-      "name": "fix3_wave"
+      "name": "case_a"
     }
   },
   "response": {
@@ -21,30 +19,19 @@
       "version": "0.1.0"
     },
     "session": {
-      "id": "fix3_wave",
-      "session_id": "fix3_wave",
-      "mode": "waveform",
-      "fsdb": "<xverif-repo>/xdebug/testdata/waveform/ai_complex_wave/out/waves.fsdb",
-      "socket_path": "<repo>/tmp/xdebug_action_sampling3/home/.xdebug/engine/sessions/fix3_wave_98a8c8559b4b1b69/socket",
-      "transport": "uds",
-      "file_dir": "<repo>/tmp/xdebug_action_sampling3/home/.xdebug/engine/sessions/fix3_wave_98a8c8559b4b1b69/transport",
-      "server_host": "localhost.localdomain"
+      "session_id": "case_a",
+      "mode": "combined",
+      "daidir": "simv.daidir",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "server_host": "localhost",
+      "transport": "uds"
     },
     "summary": {
-      "session_id": "fix3_wave",
-      "mode": "waveform"
+      "status": "opened"
     },
     "data": {
-      "session": {
-        "id": "fix3_wave",
-        "session_id": "fix3_wave",
-        "mode": "waveform",
-        "fsdb": "<xverif-repo>/xdebug/testdata/waveform/ai_complex_wave/out/waves.fsdb",
-        "socket_path": "<repo>/tmp/xdebug_action_sampling3/home/.xdebug/engine/sessions/fix3_wave_98a8c8559b4b1b69/socket",
-        "transport": "uds",
-        "file_dir": "<repo>/tmp/xdebug_action_sampling3/home/.xdebug/engine/sessions/fix3_wave_98a8c8559b4b1b69/transport",
-        "server_host": "localhost.localdomain"
-      }
+      "run_manifest": null
     },
     "error": null
   },

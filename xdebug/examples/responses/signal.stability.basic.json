@@ -2,6 +2,44 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "signal.stability",
-  "summary": {"signal": "top.stable_sig", "stable": true, "transition_count": 1, "begin": "0ns", "end": "200ns"},
-  "data": {"initial_value": {"value": "1'h1", "known": true}, "final_value": {"value": "1'h1", "known": true}, "first_change": "0ns", "last_change": "0ns", "changes": [{"time": "0ns", "value": {"value": "1'h1", "known": true}}]}
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
+  "summary": {
+    "stable": true,
+    "change_row_count": 1,
+    "actual_transition_count": 0,
+    "scan_stopped_on_first_transition": false,
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 1,
+    "returned_count": 1,
+    "truncation_scopes": []
+  },
+  "data": {
+    "signal": "top.stable_sig",
+    "begin": "0ns",
+    "end": "200ns",
+    "changes": [
+      {
+        "time": "0ns",
+        "value": {
+          "value": "1'h1",
+          "known": true
+        }
+      }
+    ],
+    "includes_initial_value": true
+  },
+  "error": null
 }

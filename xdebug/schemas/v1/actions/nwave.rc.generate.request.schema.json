@@ -1,12 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "xdebug.rc.generate.request.v1",
-  "title": "rc.generate request",
+  "$id": "xdebug.nwave.rc.generate.request.v1",
+  "title": "nwave.rc.generate request",
   "type": "object",
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -16,7 +17,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -25,71 +27,96 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "config_path",
+        "output"
+      ],
       "properties": {
         "config_path": {
           "type": "string",
-          "description": "Action-specific config_path input. Its type and accepted values are defined by this schema."
+          "minLength": 1,
+          "description": "输入配置文件路径。"
         },
         "output": {
           "type": "object",
+          "required": [
+            "path"
+          ],
           "properties": {
             "path": {
               "type": "string",
-              "description": "Action-specific path input. Its type and accepted values are defined by this schema."
-            },
-            "file_format": {
-              "type": "string",
-              "description": "Action-specific file_format input. Its type and accepted values are defined by this schema."
-            },
-            "verbose": {
-              "type": "boolean",
-              "description": "Action-specific verbose input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "Required destination path for the generated waveform RC artifact."
             }
           },
           "additionalProperties": false,
           "description": "Export destination and rendering controls. path, file_format, and verbose are supported only where this action declares them."
         },
-        "time_unit": {
+        "render_time_unit": {
           "type": "string",
           "enum": [
             "auto",
-            "fs",
             "ps",
             "ns",
-            "us",
-            "ms",
-            "s"
+            "us"
           ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
+          "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
         }
       },
-      "required": [
-        "config_path",
-        "output"
-      ],
       "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,

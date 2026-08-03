@@ -2,20 +2,11 @@
   "request": {
     "api_version": "xdebug.v1",
     "action": "signal.canonicalize",
-    "output": {
-      "verbosity": "compact"
-    },
     "target": {
-      "session_id": "fix_uart"
+      "daidir": "simv.daidir"
     },
     "args": {
-      "signal": "uart_16550.RXDin"
-    },
-    "limits": {
-      "max_depth": 2,
-      "max_nodes": 20,
-      "max_edges": 50,
-      "max_results": 10
+      "signal": "top.u.ready"
     }
   },
   "response": {
@@ -28,19 +19,20 @@
     },
     "session": null,
     "summary": {
-      "query": "uart_16550.RXDin",
-      "ambiguous": false
+      "status": "found",
+      "query": "top.u.ready",
+      "match_count": 1,
+      "canonicalization_scope": "static_design_connectivity"
     },
     "data": {
-      "canonical": "uart_16550.RXDin",
-      "rtl_path": null,
-      "leaf": null,
-      "scope": null,
-      "base_signal": null,
-      "select": null,
-      "aliases": [],
-      "fsdb_candidates": [],
-      "port_mappings": []
+      "resolved_path": "top.u.ready",
+      "connected_path": null,
+      "canonical_path": "top.u.ready",
+      "mapping_kind": "identity",
+      "selection_basis": "unique_exact_design_match",
+      "scope": "top.u",
+      "leaf": "ready",
+      "connection": null
     },
     "error": null
   },

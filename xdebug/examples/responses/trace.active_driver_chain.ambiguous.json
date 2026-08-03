@@ -2,18 +2,33 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "trace.active_driver_chain",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
   "summary": {
     "signal": "top.u.result",
     "time": "50ns",
-    "hop_count": 1,
     "termination": "ambiguous",
     "termination_detail": "multiple_rhs_sources",
-    "truncated": false
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 1,
+    "returned_count": 1,
+    "truncation_scopes": []
   },
   "data": {
     "hops": [
       {
         "index": 0,
+        "chain_id": "c0",
+        "signal": "top.u.result",
+        "time": "50ns",
+        "active_time": "45ns",
+        "value": "4'hx",
+        "relation": "root",
         "file": "rtl/top.sv",
         "line": 88,
         "source_context": [
@@ -31,8 +46,8 @@
       "rhs_signal_count": 2,
       "returned_rhs_signal_count": 2,
       "omitted_rhs_signal_count": 0,
-      "complete": true,
-      "truncation_scope": null,
+      "analysis_complete": true,
+      "truncation_scopes": [],
       "statements": [
         {
           "kind": "assignment",

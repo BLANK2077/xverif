@@ -2,6 +2,18 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "stream.config.get",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "wave0",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/wave0.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
   "summary": {
     "name": "req_stream"
   },
@@ -10,14 +22,31 @@
       "name": "req_stream",
       "signals": {
         "clk": "top.clk",
-        "vld": "top.req_vld",
-        "rdy": "top.req_rdy"
+        "req_vld": "top.req_vld",
+        "req_rdy": "top.req_rdy",
+        "req_sop": "top.req_sop",
+        "req_eop": "top.req_eop",
+        "req_data": "top.req_data",
+        "addr_hi": "top.addr_hi",
+        "addr_lo": "top.addr_lo",
+        "req_cmd": "top.req_cmd"
       },
       "clock": "clk",
       "edge": "posedge",
       "sample_point": "before",
-      "vld": "vld",
-      "rdy": "rdy"
+      "reset": {"signal": "top.rst_n", "polarity": "active_low"},
+      "vld": "req_vld",
+      "rdy": "req_rdy",
+      "sop": "req_sop",
+      "eop": "req_eop",
+      "beat_fields": {
+        "opcode": "req_data[7:0]",
+        "addr": "{addr_hi, addr_lo}",
+        "is_wr": "req_cmd == 2'b01"
+      },
+      "channel_id_valid": "every_beat",
+      "allow_interleaving": false
     }
-  }
+  },
+  "error": null
 }

@@ -2,27 +2,77 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "signal.changes",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
   "summary": {
-    "transition_count": 2,
-    "returned_change_rows": 3,
-    "includes_initial_value": true,
+    "signal": "top.u.ready",
     "actual_transition_count": 2,
-    "first_change": {
-      "time": "100ns",
-      "value": "0"
-    },
-    "last_change": {
-      "time": "180ns",
-      "value": "0"
-    },
-    "semantic_note": "signal.changes rows are value-change timeline rows; use signal.statistics for sampled high cycles."
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 3,
+    "returned_count": 3,
+    "truncation_scopes": []
   },
   "data": {
-    "signal": "top.u.ready",
-    "time_range": {
-      "start": "100ns",
-      "end": "200ns"
+    "begin": "100ns",
+    "end": "200ns",
+    "includes_initial_value": true,
+    "semantic_note": "signal.changes returns value-change rows for timeline inspection. Do not use row counts as sampled high cycles; use signal.statistics.high_cycles for clock-sampled activity.",
+    "initial_value": {
+      "value": "1'h0",
+      "known": true,
+      "width": 1,
+      "bits": "0"
     },
-    "final_value": "0"
-  }
+    "final_value": {
+      "value": "1'h0",
+      "known": true,
+      "width": 1,
+      "bits": "0"
+    },
+    "first_change": "100ns",
+    "last_change": "180ns",
+    "mode": "timeline",
+    "changes": [
+      {
+        "time": "100ns",
+        "value": {
+          "value": "1'h0",
+          "known": true,
+          "width": 1,
+          "bits": "0"
+        }
+      },
+      {
+        "time": "140ns",
+        "value": {
+          "value": "1'h1",
+          "known": true,
+          "width": 1,
+          "bits": "1"
+        }
+      },
+      {
+        "time": "180ns",
+        "value": {
+          "value": "1'h0",
+          "known": true,
+          "width": 1,
+          "bits": "0"
+        }
+      }
+    ]
+  },
+  "error": null
 }

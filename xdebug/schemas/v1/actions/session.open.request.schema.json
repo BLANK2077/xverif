@@ -6,7 +6,8 @@
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -16,7 +17,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -27,38 +29,80 @@
     "target": {
       "type": "object",
       "properties": {
+        "daidir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        },
         "run_manifest": {
           "type": "string",
-          "description": "可选 xdebug.run-manifest.v1 路径；提供时在启动 engine 前严格校验 target 资源。"
+          "minLength": 1
         }
-      }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "daidir"
+          ]
+        },
+        {
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "run_manifest"
+            ]
+          },
+          "then": {
+            "required": [
+              "fsdb"
+            ]
+          }
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "name"
+      ],
       "properties": {
-        "bind": {
-          "type": "string",
-          "description": "Action-specific bind input. Its type and accepted values are defined by this schema."
-        },
         "bind_host": {
           "type": "string",
-          "description": "Action-specific bind_host input. Its type and accepted values are defined by this schema."
+          "description": "TCP session server 的监听主机地址。"
         },
         "host": {
           "type": "string",
-          "description": "Action-specific host input. Its type and accepted values are defined by this schema."
+          "description": "要连接或启动 session server 的主机名。"
         },
         "name": {
           "type": "string",
-          "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$",
+          "description": "Session name: start with an ASCII letter, then use only ASCII letters, digits, or underscores; maximum 64 characters."
+        },
+        "ownership_token": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Opaque 256-bit conditional-cleanup token encoded as exactly 64 lowercase hexadecimal characters. A managed wrapper may supply it at session.open and provide it to session.kill as an optional match precondition, not as authorization. When session.open omits it, the frontend binds a fail-closed internally generated token; never log or publish either form."
         },
         "port": {
           "type": "integer",
-          "description": "Action-specific port input. Its type and accepted values are defined by this schema."
-        },
-        "session_id": {
-          "type": "string",
-          "description": "Action-specific session_id input. Its type and accepted values are defined by this schema."
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "session TCP 端口号。"
         },
         "transport": {
           "type": "string",
@@ -67,59 +111,77 @@
             "tcp",
             "file"
           ],
-          "description": "Action-specific transport input. Its type and accepted values are defined by this schema."
+          "description": "session transport 类型；只使用 schema enum 中明确支持的模式。"
         }
       },
       "additionalProperties": false,
-      "required": [
-        "name"
+      "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              {
+                "required": [
+                  "host"
+                ]
+              },
+              {
+                "required": [
+                  "bind_host"
+                ]
+              },
+              {
+                "required": [
+                  "port"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "required": [
+              "transport"
+            ],
+            "properties": {
+              "transport": {
+                "const": "tcp"
+              }
+            }
+          }
+        }
       ]
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
   "description": "Open a design, waveform, or combined debug session.",
   "x-purpose": "打开 design/waveform session。",
-  "x-how_it_works": "解析 target 中的 daidir/fsdb；可选 target.run_manifest 会在启动前校验 published state、canonical path、size 与 SHA-256。",
+  "x-how_it_works": "解析 target 中的 daidir/fsdb；可选 target.run_manifest 会在启动前校验 published state、canonical path、size 与 SHA-256；每次 backend open 前 frontend 都绑定 cleanup token，沿用 managed wrapper 提供值或 fail-closed 地内部高熵生成，catalog 只原子保存其 SHA-256 digest。",
   "x-when_to_use": "建立后续 design/waveform 查询的资源上下文。",
-  "x-arg_contract_notes": "required: name",
+  "x-arg_contract_notes": "required: name；ownership_token 仅是 managed wrapper 可选提供的 conditional-cleanup token；普通 CLI caller 省略，但 frontend 仍绑定内部 token，所有输出禁止回显",
   "x-description-zh": "打开 design/waveform session。",
   "x-agent": {
     "use_when": [
-      "打开 design/waveform session。"
+      "Need a new managed session bound to explicit design, waveform, or combined resources."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 session.close、session.doctor 的业务目标；请改用列出的同域 action。"
+      "Do not use it when an existing session already owns the required resources or when only discovery is needed.",
+      "Do not treat public args.ownership_token as authorization; ordinary CLI callers omit it, while the frontend still binds a fail-closed internally generated cleanup token before every backend open unless a managed wrapper supplied its own. The key must never be exposed or logged."
     ],
     "alternatives": [
       {
-        "action": "session.close",
-        "when": "关闭指定 session。"
+        "action": "session.list",
+        "when": "Discover existing sessions."
       },
       {
         "action": "session.doctor",
-        "when": "诊断当前 session。"
+        "when": "Verify an existing session's health."
       }
     ],
     "constraints": [
-      "required: name"
+      "required: name；ownership_token 仅是 managed wrapper 可选提供的 conditional-cleanup token；普通 CLI caller 省略，但 frontend 仍绑定内部 token，所有输出禁止回显"
     ]
   }
 }

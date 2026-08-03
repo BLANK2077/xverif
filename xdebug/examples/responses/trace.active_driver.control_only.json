@@ -8,16 +8,26 @@
     "version": "1.0.0"
   },
   "session": {
+    "session_id": "case_a",
     "mode": "combined",
     "daidir": "simv.daidir",
-    "fsdb": "waves.fsdb"
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
   },
   "summary": {
     "signal": "top.u.state",
     "time": "100ns",
     "active_time": "100ns",
-    "path_count": 1,
-    "truncated": false
+    "termination": "control_only",
+    "termination_detail": "control_only",
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 1,
+    "returned_count": 1,
+    "truncation_scopes": []
   },
   "data": {
     "paths": [

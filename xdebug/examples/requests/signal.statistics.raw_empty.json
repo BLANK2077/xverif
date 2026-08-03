@@ -1,0 +1,14 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "signal.statistics",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {
+    "signal": "top.u.late_signal",
+    "time_range": {
+      "begin": "100ns",
+      "end": "200ns"
+    }
+  }
+}

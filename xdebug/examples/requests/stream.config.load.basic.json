@@ -6,8 +6,9 @@
   },
   "args": {
     "mode": "replace",
-    "streams": [
-      {
+    "config": {
+      "streams": [
+        {
         "name": "req_stream",
         "signals": {
           "clk": "top.clk",
@@ -32,7 +33,8 @@
           "addr": "{addr_hi, addr_lo}",
           "is_wr": "req_cmd == 2'b01"
         }
-      }
-    ]
+        }
+      ]
+    }
   }
 }

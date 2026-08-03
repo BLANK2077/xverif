@@ -6,7 +6,8 @@
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -16,7 +17,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -25,80 +27,102 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "name"
+      ],
       "properties": {
         "index": {
-          "oneOf": [
-            {
-              "type": "integer",
-              "description": "Action-specific index input. Its type and accepted values are defined by this schema."
-            },
-            {
-              "type": "string",
-              "description": "Action-specific index input. Its type and accepted values are defined by this schema."
-            }
-          ],
+          "type": "integer",
+          "minimum": 1,
           "description": "One-based query, cursor, or list position; the action schema defines its exact reference set."
         },
         "name": {
           "type": "string",
-          "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
+          "description": "Non-empty saved waveform-list name in the current session.",
+          "minLength": 1
         },
         "signal": {
           "type": "string",
-          "description": "Final leaf signal path. Aggregate, array, and struct roots are not expanded automatically."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
+          "description": "Non-empty exact signal path to remove; numeric-looking paths remain paths.",
+          "minLength": 1
         }
       },
       "additionalProperties": false,
-      "required": [
-        "name"
-      ],
-      "anyOf": [
+      "oneOf": [
         {
           "required": [
             "signal"
-          ]
+          ],
+          "not": {
+            "required": [
+              "index"
+            ]
+          }
         },
         {
           "required": [
             "index"
-          ]
+          ],
+          "not": {
+            "required": [
+              "signal"
+            ]
+          }
         }
       ]
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
@@ -110,19 +134,19 @@
   "x-description-zh": "从信号列表删除信号或 index。",
   "x-agent": {
     "use_when": [
-      "从信号列表删除信号或 index。"
+      "Know a stored signal path or one-based list index and need to remove only that entry."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 list.add、list.create 的业务目标；请改用列出的同域 action。"
+      "Do not use it to remove the whole list or inspect list contents."
     ],
     "alternatives": [
       {
-        "action": "list.add",
-        "when": "向信号列表追加一个信号。"
+        "action": "list.show",
+        "when": "Inspect current one-based indexes and signal paths."
       },
       {
         "action": "list.create",
-        "when": "创建命名信号列表。"
+        "when": "Replace the named list with a new definition."
       }
     ],
     "constraints": [

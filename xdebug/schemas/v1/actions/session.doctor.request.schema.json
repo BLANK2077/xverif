@@ -5,7 +5,8 @@
   "type": "object",
   "required": [
     "api_version",
-    "action"
+    "action",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -15,7 +16,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -24,31 +26,28 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [],
       "properties": {},
-      "additionalProperties": false,
-      "required": []
+      "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
@@ -60,19 +59,19 @@
   "x-description-zh": "诊断当前 session。",
   "x-agent": {
     "use_when": [
-      "诊断当前 session。"
+      "Know a session identifier and need read-only health, resource, process, and accessibility diagnostics."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 session.close、session.gc 的业务目标；请改用列出的同域 action。"
+      "Do not use it to open, close, kill, or garbage-collect sessions."
     ],
     "alternatives": [
       {
-        "action": "session.close",
-        "when": "关闭指定 session。"
+        "action": "session.list",
+        "when": "Discover session identifiers."
       },
       {
-        "action": "session.gc",
-        "when": "清理过期 session。"
+        "action": "session.close",
+        "when": "Gracefully close one session."
       }
     ],
     "constraints": [

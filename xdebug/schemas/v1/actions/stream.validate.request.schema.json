@@ -6,7 +6,8 @@
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -22,7 +23,44 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
@@ -37,52 +75,52 @@
             "range"
           ],
           "default": "full",
-          "description": "Base-analysis cache scope for dynamic=true only. full (default) caches the complete FSDB; range caches the normalized time_range. Omit this argument when dynamic=false."
+          "description": "Base-analysis cache scope for dynamic=true only. full (default) caches the complete FSDB; range requires a non-empty time_range and caches that normalized interval. Omit this argument when dynamic=false."
         },
         "channel": {
           "type": "string",
-          "description": "Action-specific channel input. Its type and accepted values are defined by this schema."
+          "description": "协议或 stream 的逻辑 channel 选择；可用值由本 action 的 enum 决定。"
         },
         "dynamic": {
           "type": "boolean",
-          "description": "Action-specific dynamic input. Its type and accepted values are defined by this schema."
+          "description": "为 true 时允许本 action 已声明的运行时动态检查；不开放未声明字段。"
         },
         "line_limit": {
           "type": "integer",
           "minimum": 1,
           "description": "Limits returned evidence rows only, not scanning, aggregation, or the verdict; read completeness fields as well."
         },
+        "render_time_unit": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "ps",
+            "ns",
+            "us"
+          ],
+          "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
+        },
         "stream": {
           "type": "string",
-          "description": "Action-specific stream input. Its type and accepted values are defined by this schema."
+          "description": "已加载的 stream 配置名称。"
         },
         "time_range": {
           "type": "object",
+          "minProperties": 1,
           "properties": {
             "begin": {
               "type": "string",
-              "description": "Action-specific begin input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "闭区间起点；省略时使用可用波形窗口起点。"
             },
             "end": {
               "type": "string",
-              "description": "Action-specific end input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "闭区间终点；省略时使用可用波形窗口终点。"
             }
           },
           "additionalProperties": false,
           "description": "Closed analysis interval. begin and end may be omitted independently to use the available waveform bounds."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
         }
       },
       "additionalProperties": false,
@@ -105,29 +143,57 @@
               ]
             }
           }
+        },
+        {
+          "if": {
+            "required": [
+              "cache_scope"
+            ],
+            "properties": {
+              "cache_scope": {
+                "const": "range"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "time_range"
+            ],
+            "properties": {
+              "time_range": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "begin"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "end"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
         }
       ]
     },
     "limits": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     },
     "request_id": {
-      "type": "string"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     }
   },
   "additionalProperties": false,
@@ -139,19 +205,19 @@
   "x-description-zh": "验证 stream 配置；动态验证可显式选择 full 或 range 基础分析缓存范围。",
   "x-agent": {
     "use_when": [
-      "验证 stream 配置；动态验证可显式选择 full 或 range 基础分析缓存范围。"
+      "Validate stream configuration statically, or reuse an explicit full/range base analysis for dynamic validation."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 stream.config.load、stream.config.list 的业务目标；请改用列出的同域 action。"
+      "Do not use it to return transfer evidence or export artifacts."
     ],
     "alternatives": [
       {
-        "action": "stream.config.load",
-        "when": "加载 stream 配置。"
+        "action": "stream.query",
+        "when": "Return observed stream evidence."
       },
       {
-        "action": "stream.config.list",
-        "when": "列出 stream 配置。"
+        "action": "stream.export",
+        "when": "Write stream artifacts."
       }
     ],
     "constraints": [

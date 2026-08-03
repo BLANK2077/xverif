@@ -1,0 +1,16 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "signal.statistics",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {
+    "signal": "top.u.count",
+    "clock": "top.clk",
+    "time_range": {
+      "begin": "100ns",
+      "end": "200ns"
+    },
+    "line_limit": 1
+  }
+}

@@ -2,20 +2,1579 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "xdebug.list.delete.response.v1",
   "title": "list.delete response",
+  "description": "Delete a signal or index from a waveform list.",
+  "x-description-zh": "从信号列表删除信号或 index。",
+  "x-output_notes": "list.delete 成功响应的 summary 字段为 summary.deleted, summary.name, summary.removed；data 字段为 （空对象）。未知字段会被拒绝。",
+  "$defs": {
+    "jsonValue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        },
+        {
+          "$ref": "#/$defs/jsonObject"
+        }
+      ]
+    },
+    "jsonObject": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/jsonValue"
+      },
+      "x-dynamic-map": true,
+      "description": "显式动态键 JSON 对象；每个 value 仍受 jsonValue 递归合同约束。"
+    },
+    "successSummary": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "deleted": {
+          "const": true
+        },
+        "removed": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "deleted",
+        "name",
+        "removed"
+      ]
+    },
+    "successData": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "errorSummary": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "error"
+        },
+        "error_code": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "error_code",
+        "status"
+      ]
+    },
+    "validationIssue": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "message",
+        "path"
+      ]
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "recoverable": {
+          "type": "boolean"
+        },
+        "error_layer": {
+          "enum": [
+            "schema",
+            "handler",
+            "wrapper",
+            "session_manager",
+            "transport",
+            "internal"
+          ]
+        },
+        "invalid_arg": {
+          "type": "string"
+        },
+        "expected": {
+          "type": "string"
+        },
+        "received": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "received_type": {
+          "type": "string"
+        },
+        "received_redacted": {
+          "type": "boolean"
+        },
+        "available_values": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "schema_path": {
+          "type": "string"
+        },
+        "required_any_of": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "missing_name": {
+          "type": "string"
+        },
+        "missing_resource": {
+          "type": "string"
+        },
+        "next_actions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "example_note": {
+          "type": "string"
+        },
+        "correct_example": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "cause_code": {
+          "type": "string"
+        },
+        "validation": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "current_estimated_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hard_max_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "protocol": {
+          "enum": [
+            "apb",
+            "axi",
+            "stream"
+          ]
+        },
+        "key_summary": {
+          "type": "string"
+        },
+        "manifest_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resource": {
+          "enum": [
+            "daidir",
+            "fsdb"
+          ]
+        },
+        "expected_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "actual_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "actual_size_bytes": {
+          "type": [
+            "null",
+            "integer"
+          ],
+          "minimum": 0
+        },
+        "expected_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "actual_sha256": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{64}$"
+            }
+          ]
+        },
+        "manifest_schema_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "manifest_state": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_mode": {
+          "enum": [
+            "design",
+            "waveform",
+            "combined"
+          ]
+        },
+        "session_transport": {
+          "enum": [
+            "uds",
+            "tcp",
+            "file"
+          ]
+        },
+        "idle_sec": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "idle_timeout_sec": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cleanup_succeeded": {
+          "type": "boolean"
+        },
+        "lifecycle_state": {
+          "enum": [
+            "cleanup_failed"
+          ]
+        },
+        "compensation_status": {
+          "enum": [
+            "cleaned",
+            "not_created",
+            "token_mismatch",
+            "cleanup_failed"
+          ]
+        },
+        "backend_error_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "exit_status": {
+          "type": "integer"
+        },
+        "health_status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resource_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requested_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "removed_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed_session_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "failure_kind": {
+          "type": "string"
+        },
+        "failure_phase": {
+          "enum": [
+            "npi_init",
+            "npi_load_design",
+            "npi_fsdb_open"
+          ]
+        },
+        "startup_reason": {
+          "type": "string"
+        },
+        "native_error_summary": {
+          "type": "string"
+        },
+        "diagnostic_log": {
+          "type": "string"
+        },
+        "advisories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "severity": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "message",
+              "severity"
+            ]
+          }
+        },
+        "validation_issues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/validationIssue"
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "error_layer",
+        "message",
+        "recoverable"
+      ]
+    },
+    "genericError": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "recoverable": {
+          "type": "boolean"
+        },
+        "error_layer": {
+          "enum": [
+            "schema",
+            "handler",
+            "wrapper",
+            "session_manager",
+            "transport",
+            "internal"
+          ]
+        },
+        "invalid_arg": {
+          "type": "string"
+        },
+        "expected": {
+          "type": "string"
+        },
+        "received": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "received_type": {
+          "type": "string"
+        },
+        "received_redacted": {
+          "type": "boolean"
+        },
+        "available_values": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "schema_path": {
+          "type": "string"
+        },
+        "required_any_of": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "missing_name": {
+          "type": "string"
+        },
+        "missing_resource": {
+          "type": "string"
+        },
+        "next_actions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "example_note": {
+          "type": "string"
+        },
+        "correct_example": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "cause_code": {
+          "type": "string"
+        },
+        "validation": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "current_estimated_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hard_max_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "protocol": {
+          "enum": [
+            "apb",
+            "axi",
+            "stream"
+          ]
+        },
+        "key_summary": {
+          "type": "string"
+        },
+        "manifest_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resource": {
+          "enum": [
+            "daidir",
+            "fsdb"
+          ]
+        },
+        "expected_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "actual_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "actual_size_bytes": {
+          "type": [
+            "null",
+            "integer"
+          ],
+          "minimum": 0
+        },
+        "expected_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "actual_sha256": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{64}$"
+            }
+          ]
+        },
+        "manifest_schema_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "manifest_state": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_mode": {
+          "enum": [
+            "design",
+            "waveform",
+            "combined"
+          ]
+        },
+        "session_transport": {
+          "enum": [
+            "uds",
+            "tcp",
+            "file"
+          ]
+        },
+        "idle_sec": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "idle_timeout_sec": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cleanup_succeeded": {
+          "type": "boolean"
+        },
+        "lifecycle_state": {
+          "enum": [
+            "cleanup_failed"
+          ]
+        },
+        "compensation_status": {
+          "enum": [
+            "cleaned",
+            "not_created",
+            "token_mismatch",
+            "cleanup_failed"
+          ]
+        },
+        "backend_error_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "exit_status": {
+          "type": "integer"
+        },
+        "health_status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resource_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requested_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "removed_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed_session_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "failure_kind": {
+          "type": "string"
+        },
+        "failure_phase": {
+          "enum": [
+            "npi_init",
+            "npi_load_design",
+            "npi_fsdb_open"
+          ]
+        },
+        "startup_reason": {
+          "type": "string"
+        },
+        "native_error_summary": {
+          "type": "string"
+        },
+        "diagnostic_log": {
+          "type": "string"
+        },
+        "advisories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "severity": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "message",
+              "severity"
+            ]
+          }
+        },
+        "validation_issues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/validationIssue"
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "error_layer",
+        "message",
+        "recoverable"
+      ]
+    },
+    "tool": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "build_id": {
+          "type": "string"
+        },
+        "git_revision": {
+          "type": "string"
+        },
+        "schema_revision": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version"
+      ]
+    },
+    "sessionRecord": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "enum": [
+            "design",
+            "waveform",
+            "combined"
+          ]
+        },
+        "daidir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        },
+        "socket_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "transport": {
+          "enum": [
+            "uds",
+            "tcp",
+            "file"
+          ]
+        },
+        "file_dir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bind_host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "server_host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "server_pid": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "created_at": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "last_active": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "daidir_mtime": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "daidir_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "daidir_dev": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "daidir_inode": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fsdb_mtime": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fsdb_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fsdb_dev": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fsdb_inode": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "session_id",
+        "mode",
+        "transport"
+      ],
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "mode": {
+                  "const": "design"
+                }
+              },
+              "required": [
+                "mode",
+                "daidir"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "fsdb"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "fsdb_mtime"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "fsdb_size"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "fsdb_dev"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "fsdb_inode"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "properties": {
+                "mode": {
+                  "const": "waveform"
+                }
+              },
+              "required": [
+                "mode",
+                "fsdb"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "daidir"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "daidir_mtime"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "daidir_size"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "daidir_dev"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "daidir_inode"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "properties": {
+                "mode": {
+                  "const": "combined"
+                }
+              },
+              "required": [
+                "mode",
+                "daidir",
+                "fsdb"
+              ]
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "transport": {
+                  "const": "uds"
+                }
+              },
+              "required": [
+                "transport",
+                "socket_path",
+                "server_host"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "file_dir"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "host"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "bind_host"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "port"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "properties": {
+                "transport": {
+                  "const": "tcp"
+                }
+              },
+              "required": [
+                "transport",
+                "host",
+                "bind_host",
+                "port",
+                "server_host"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "socket_path"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "file_dir"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "properties": {
+                "transport": {
+                  "const": "file"
+                }
+              },
+              "required": [
+                "transport",
+                "file_dir",
+                "server_host"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "socket_path"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "host"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "bind_host"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "port"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "suggestedNextAction": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "chain_id": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "signal": {
+              "type": "string"
+            },
+            "time": {
+              "type": "string"
+            },
+            "value_format": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "max_depth": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_chains": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_paths": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_nodes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_time_steps": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_trace_signals": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_results": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "timeout_ms": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "reason"
+      ]
+    },
+    "finding": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "signal": {
+          "type": "string"
+        },
+        "time": {
+          "type": "string"
+        },
+        "begin": {
+          "type": "string"
+        },
+        "end": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "details": {
+          "$ref": "#/$defs/jsonValue"
+        }
+      },
+      "additionalProperties": false
+    },
+    "warning": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "signal": {
+              "type": "string"
+            },
+            "time": {
+              "type": "string"
+            },
+            "details": {
+              "$ref": "#/$defs/jsonValue"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "code",
+            "message"
+          ]
+        }
+      ]
+    },
+    "logicValue": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "known": {
+          "type": "boolean"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bits": {
+          "type": "string",
+          "minLength": 1
+        },
+        "has_x": {
+          "type": "boolean"
+        },
+        "has_z": {
+          "type": "boolean"
+        },
+        "requested_value_format": {
+          "const": "dec"
+        },
+        "effective_value_format": {
+          "const": "bin"
+        },
+        "value_format_reason": {
+          "const": "decimal cannot preserve per-bit X/Z"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "known",
+        "value"
+      ],
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "required": [
+                "width",
+                "bits"
+              ]
+            },
+            {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "width"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "bits"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "known": {
+                  "const": true
+                }
+              },
+              "required": [
+                "known"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "has_x"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "has_z"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "requested_value_format"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "effective_value_format"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "value_format_reason"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "properties": {
+                "known": {
+                  "const": false
+                },
+                "has_x": {
+                  "type": "boolean"
+                },
+                "has_z": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "known",
+                "has_x",
+                "has_z"
+              ],
+              "anyOf": [
+                {
+                  "properties": {
+                    "has_x": {
+                      "const": true
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "has_z": {
+                      "const": true
+                    }
+                  }
+                }
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "requested_value_format"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "effective_value_format"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "value_format_reason"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "properties": {
+                "known": {
+                  "const": false
+                },
+                "has_x": {
+                  "type": "boolean"
+                },
+                "has_z": {
+                  "type": "boolean"
+                },
+                "requested_value_format": {
+                  "const": "dec"
+                },
+                "effective_value_format": {
+                  "const": "bin"
+                },
+                "value_format_reason": {
+                  "const": "decimal cannot preserve per-bit X/Z"
+                }
+              },
+              "required": [
+                "known",
+                "has_x",
+                "has_z",
+                "requested_value_format",
+                "effective_value_format",
+                "value_format_reason"
+              ],
+              "anyOf": [
+                {
+                  "properties": {
+                    "has_x": {
+                      "const": true
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "has_z": {
+                      "const": true
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "sessionHealthFailureEvidence": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "health_status": {
+          "enum": [
+            "healthy",
+            "registry_missing",
+            "process_exited",
+            "socket_missing",
+            "connect_failed",
+            "ping_failed",
+            "dbdir_missing",
+            "dbdir_changed",
+            "fsdb_missing",
+            "fsdb_changed"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ]
+    },
+    "sessionCleanupItem": {
+      "type": "object",
+      "properties": {
+        "removed_session": {
+          "$ref": "#/$defs/sessionRecord"
+        },
+        "reason": {
+          "enum": [
+            "idle_timeout",
+            "unhealthy"
+          ]
+        },
+        "health_evidence": {
+          "$ref": "#/$defs/sessionHealthFailureEvidence"
+        },
+        "idle_sec": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "idle_timeout_sec": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "removed_session"
+      ],
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "reason": {
+                  "const": "idle_timeout"
+                }
+              },
+              "required": [
+                "reason",
+                "idle_sec",
+                "idle_timeout_sec"
+              ],
+              "not": {
+                "required": [
+                  "health_evidence"
+                ]
+              }
+            },
+            {
+              "properties": {
+                "reason": {
+                  "const": "unhealthy"
+                },
+                "health_evidence": {
+                  "$ref": "#/$defs/sessionHealthFailureEvidence"
+                }
+              },
+              "required": [
+                "reason",
+                "health_evidence"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "idle_sec"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "idle_timeout_sec"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "commonBlock": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "card": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "card",
+        "file",
+        "message"
+      ]
+    },
+    "reset": {
+      "type": "object",
+      "required": [
+        "signal",
+        "polarity"
+      ],
+      "properties": {
+        "signal": {
+          "type": "string",
+          "minLength": 1,
+          "description": "One-bit final waveform signal path used as reset."
+        },
+        "polarity": {
+          "type": "string",
+          "enum": [
+            "active_low",
+            "active_high"
+          ],
+          "description": "Level that asserts reset. X, Z, and unavailable samples are conservatively treated as asserted."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Reset definition. Both signal and polarity are required when reset is supplied."
+    },
+    "valueWidthDiagnostic": {
+      "type": "object",
+      "properties": {
+        "signal": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role": {
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "npi_range_size_unavailable",
+            "conflicting_signal_widths",
+            "derived_width_unavailable"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "role",
+        "signal"
+      ]
+    },
+    "successSummary0": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "deleted": {
+          "const": true
+        },
+        "removed": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "deleted",
+        "name",
+        "removed"
+      ]
+    },
+    "successData0": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
   "type": "object",
-  "required": [
-    "api_version",
-    "ok",
-    "action",
-    "summary",
-    "data"
-  ],
   "properties": {
     "api_version": {
-      "type": "string",
-      "enum": [
-        "xdebug.v1"
-      ]
+      "const": "xdebug.v1"
     },
     "request_id": {
       "type": "string"
@@ -24,32 +1583,139 @@
       "type": "boolean"
     },
     "action": {
-      "type": "string",
-      "enum": [
-        "list.delete"
+      "const": "list.delete"
+    },
+    "tool": {
+      "$ref": "#/$defs/tool"
+    },
+    "session": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/sessionRecord"
+        }
       ]
     },
+    "schema_version": {
+      "type": "string"
+    },
+    "suggested_next_actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/suggestedNextAction"
+      }
+    },
     "summary": {
-      "type": "object",
-      "additionalProperties": true
+      "anyOf": [
+        {
+          "$ref": "#/$defs/successSummary"
+        },
+        {
+          "$ref": "#/$defs/errorSummary"
+        }
+      ]
     },
     "data": {
-      "type": "object",
-      "additionalProperties": true
+      "anyOf": [
+        {
+          "$ref": "#/$defs/successData"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "findings": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
     },
     "warnings": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/warning"
+      }
     },
-    "error": {},
-    "meta": {
-      "type": "object"
+    "error": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/error"
+        }
+      ]
     }
   },
-  "additionalProperties": true,
-  "description": "Delete a signal or index from a waveform list.",
-  "x-output_notes": "返回该 action 的 summary/data/error/meta；具体字段以 response schema 和 response example 为准。",
-  "x-description-zh": "从信号列表删除信号或 index。"
+  "required": [
+    "api_version",
+    "ok",
+    "action",
+    "tool",
+    "session",
+    "summary",
+    "data",
+    "error"
+  ],
+  "oneOf": [
+    {
+      "properties": {
+        "ok": {
+          "const": true
+        },
+        "error": {
+          "type": "null"
+        },
+        "summary": {
+          "$ref": "#/$defs/successSummary0"
+        },
+        "data": {
+          "$ref": "#/$defs/successData0"
+        }
+      },
+      "required": [
+        "api_version",
+        "ok",
+        "action",
+        "tool",
+        "session",
+        "summary",
+        "data",
+        "error"
+      ]
+    },
+    {
+      "properties": {
+        "ok": {
+          "const": false
+        },
+        "session": {
+          "type": "null"
+        },
+        "summary": {
+          "$ref": "#/$defs/errorSummary"
+        },
+        "data": {
+          "type": "null"
+        },
+        "error": {
+          "$ref": "#/$defs/error"
+        }
+      },
+      "required": [
+        "api_version",
+        "ok",
+        "action",
+        "tool",
+        "session",
+        "summary",
+        "data",
+        "error"
+      ]
+    }
+  ],
+  "additionalProperties": false
 }

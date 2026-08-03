@@ -3,13 +3,12 @@
     "api_version": "xdebug.v1",
     "action": "stream.config.list",
     "target": {
-      "session_id": "sample_stream"
+      "session_id": "wave0"
     },
     "args": {
-      "verbose": false
-    },
-    "output": {
-      "verbosity": "compact"
+      "output": {
+        "verbose": false
+      }
     }
   },
   "response": {
@@ -20,79 +19,28 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "wave0",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/wave0.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
-      "count": 7
+      "count": 1
     },
     "data": {
       "streams": [
         {
-          "name": "bp_packet",
-          "clock": "stream_v1_top.clk",
-          "clock_edge": "posedge",
-          "handshake": "vld/bp",
-          "packet": "sop/eop",
-          "field_count": 3,
-          "channel_id_valid": "every_beat",
-          "allow_interleaving": false
-        },
-        {
-          "name": "bp_stream",
-          "clock": "stream_v1_top.clk",
-          "clock_edge": "posedge",
-          "handshake": "vld/bp",
-          "packet": "none",
-          "field_count": 1,
-          "channel_id_valid": "every_beat",
-          "allow_interleaving": false
-        },
-        {
-          "name": "interleaved_packet",
-          "clock": "stream_v1_top.clk",
-          "clock_edge": "posedge",
+          "name": "req_stream",
+          "sampling_mode": "clock_edge",
+          "clock": "clk",
+          "edge": "posedge",
+          "sample_point": "before",
           "handshake": "vld/rdy",
           "packet": "sop/eop",
           "field_count": 3,
-          "channel_id_valid": "every_beat",
-          "allow_interleaving": true
-        },
-        {
-          "name": "ready_bp_packet_negedge",
-          "clock": "stream_v1_top.clk",
-          "clock_edge": "negedge",
-          "handshake": "vld/rdy/bp",
-          "packet": "sop/eop",
-          "field_count": 2,
-          "channel_id_valid": "every_beat",
-          "allow_interleaving": false
-        },
-        {
-          "name": "ready_packet",
-          "clock": "stream_v1_top.clk",
-          "clock_edge": "posedge",
-          "handshake": "vld/rdy",
-          "packet": "sop/eop",
-          "field_count": 3,
-          "channel_id_valid": "every_beat",
-          "allow_interleaving": false
-        },
-        {
-          "name": "ready_stream",
-          "clock": "stream_v1_top.clk",
-          "clock_edge": "posedge",
-          "handshake": "vld/rdy",
-          "packet": "none",
-          "field_count": 4,
-          "channel_id_valid": "every_beat",
-          "allow_interleaving": false
-        },
-        {
-          "name": "valid_only",
-          "clock": "stream_v1_top.clk || 1'b0",
-          "clock_edge": "posedge",
-          "handshake": "vld",
-          "packet": "none",
-          "field_count": 1,
           "channel_id_valid": "every_beat",
           "allow_interleaving": false
         }

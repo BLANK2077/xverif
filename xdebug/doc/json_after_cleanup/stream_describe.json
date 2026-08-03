@@ -1,0 +1,153 @@
+{
+  "request": {
+    "api_version": "xdebug.v1",
+    "action": "stream.describe",
+    "target": {
+      "session_id": "wave0"
+    },
+    "args": {
+      "stream": "req_stream"
+    }
+  },
+  "response": {
+    "api_version": "xdebug.v1",
+    "ok": true,
+    "action": "stream.describe",
+    "tool": {
+      "name": "xdebug",
+      "version": "0.1.0"
+    },
+    "session": {
+      "session_id": "wave0",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/wave0.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
+    "summary": {
+      "stream": "req_stream",
+      "handshake": "vld/rdy",
+      "packet_enabled": true
+    },
+    "data": {
+      "config": {
+        "name": "req_stream",
+        "signals": {
+          "clk": "top.clk",
+          "req_vld": "top.req_vld",
+          "req_rdy": "top.req_rdy",
+          "req_sop": "top.req_sop",
+          "req_eop": "top.req_eop",
+          "req_data": "top.req_data",
+          "addr_hi": "top.addr_hi",
+          "addr_lo": "top.addr_lo",
+          "req_cmd": "top.req_cmd"
+        },
+        "clock": "clk",
+        "reset": {
+          "signal": "top.rst_n",
+          "polarity": "active_low"
+        },
+        "edge": "posedge",
+        "sample_point": "before",
+        "vld": "req_vld",
+        "rdy": "req_rdy",
+        "sop": "req_sop",
+        "eop": "req_eop",
+        "beat_fields": {
+          "opcode": "req_data[7:0]",
+          "addr": "{addr_hi, addr_lo}",
+          "is_wr": "req_cmd == 2'b01"
+        },
+        "channel_id_valid": "every_beat",
+        "allow_interleaving": false
+      },
+      "issues": [],
+      "validation": {
+        "status": "ok",
+        "signals": [
+          {
+            "alias": "addr_hi",
+            "requested_path": "top.addr_hi",
+            "resolved_path": "top.addr_hi",
+            "width": 16,
+            "status": "ok"
+          },
+          {
+            "alias": "addr_lo",
+            "requested_path": "top.addr_lo",
+            "resolved_path": "top.addr_lo",
+            "width": 16,
+            "status": "ok"
+          },
+          {
+            "alias": "clk",
+            "requested_path": "top.clk",
+            "resolved_path": "top.clk",
+            "width": 1,
+            "status": "ok"
+          },
+          {
+            "alias": "req_cmd",
+            "requested_path": "top.req_cmd",
+            "resolved_path": "top.req_cmd",
+            "width": 2,
+            "status": "ok"
+          },
+          {
+            "alias": "req_data",
+            "requested_path": "top.req_data",
+            "resolved_path": "top.req_data",
+            "width": 8,
+            "status": "ok"
+          },
+          {
+            "alias": "req_eop",
+            "requested_path": "top.req_eop",
+            "resolved_path": "top.req_eop",
+            "width": 1,
+            "status": "ok"
+          },
+          {
+            "alias": "req_rdy",
+            "requested_path": "top.req_rdy",
+            "resolved_path": "top.req_rdy",
+            "width": 1,
+            "status": "ok"
+          },
+          {
+            "alias": "req_sop",
+            "requested_path": "top.req_sop",
+            "resolved_path": "top.req_sop",
+            "width": 1,
+            "status": "ok"
+          },
+          {
+            "alias": "req_vld",
+            "requested_path": "top.req_vld",
+            "resolved_path": "top.req_vld",
+            "width": 1,
+            "status": "ok"
+          }
+        ],
+        "sampling": {
+          "clock": "clk",
+          "edge": "posedge",
+          "sample_point": "before"
+        },
+        "packet_rules": {
+          "packet_enabled": true,
+          "channel_id_valid": "every_beat",
+          "allow_interleaving": false
+        }
+      },
+      "semantics": {
+        "transfer": "vld/rdy",
+        "stall": "enabled"
+      }
+    },
+    "error": null
+  },
+  "stderr": ""
+}

@@ -1,0 +1,23 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "verify.conditions",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {
+    "clock": "top.u.clk",
+    "signals": {
+      "valid": "top.u.valid"
+    },
+    "conditions": [
+      {
+        "name": "valid_unknown",
+        "expr": "valid"
+      },
+      {
+        "expr": "missing_alias"
+      }
+    ],
+    "time": "100ns"
+  }
+}

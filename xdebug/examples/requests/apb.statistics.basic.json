@@ -10,7 +10,7 @@
       "direction": "all",
       "address": {
         "mode": "exact",
-        "values": ["0x0", "0x4"]
+        "values": ["'h0", "'h4"]
       }
     }
   }

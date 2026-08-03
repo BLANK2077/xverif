@@ -1,0 +1,15 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "event.export",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {
+    "clock": "top.u.clk",
+    "signals": {
+      "valid": "top.u.valid"
+    },
+    "expr": "valid == 0",
+    "line_limit": 5
+  }
+}

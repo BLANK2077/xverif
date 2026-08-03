@@ -2,19 +2,19 @@
   "request": {
     "api_version": "xdebug.v1",
     "action": "event.find",
-    "output": {
-      "verbosity": "compact"
-    },
     "target": {
-      "session_id": "fix_wave"
+      "session_id": "case_a"
     },
     "args": {
-      "name": "evt0",
-      "expr": "vld && !rdy && payload_lo != 0",
-      "time_range": {
-        "begin": "0ns",
-        "end": "200ns"
-      }
+      "clock": "top.u.clk",
+      "signals": {
+        "valid": "top.u.valid",
+        "ready": "top.u.ready",
+        "wait_count": "top.u.dbg_wait_count"
+      },
+      "expr": "valid && !ready && wait_count >= 512",
+      "mode": "all",
+      "line_limit": 5
     }
   },
   "response": {
@@ -25,60 +25,67 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
-      "event_count": 1,
-      "first": "105ns",
-      "last": "105ns",
+      "sample_count": 20,
+      "mode": "all",
+      "inline": true,
+      "sampling_mode": "clock_edge",
+      "clock": "top.clk",
+      "sample_time_semantics": "time is sample_time",
+      "first": "100ns",
+      "last": "100ns",
       "begin": "0ns",
       "end": "200ns",
-      "mode": "first",
-      "sampling_mode": "clock_edge",
-      "inline": false
+      "scan_complete": true,
+      "analysis_complete": true,
+      "response_truncated": false,
+      "total_count": 1,
+      "returned_count": 1,
+      "truncation_scopes": []
     },
     "data": {
       "events": [
         {
-          "time": "105ns",
-          "time_ps": 105000,
+          "time": "100ns",
           "signals": {
-            "payload": {
-              "value": "8'h5a",
-              "known": true,
-              "width": 8,
-              "bits": "01011010"
-            },
-            "rdy": {
-              "value": "1'h0",
-              "known": true,
-              "width": 1,
-              "bits": "0"
-            },
-            "vld": {
+            "valid": {
               "value": "1'h1",
-              "known": true,
-              "width": 1,
-              "bits": "1"
+              "known": true
             },
-            "xz": {
-              "value": "8'hzz",
-              "known": false,
-              "width": 8,
-              "bits": "zzzzzzzz",
-              "has_x": false,
-              "has_z": true
+            "ready": {
+              "value": "1'h0",
+              "known": true
+            },
+            "wait_count": {
+              "value": "10'h200",
+              "known": true,
+              "width": 10,
+              "bits": "1000000000"
             }
           },
-          "fields": {
-            "payload_lo": {
-              "value": "4'ha",
-              "known": true,
-              "width": 4,
-              "bits": "1010"
-            }
-          }
+          "fields": {}
         }
-      ]
+      ],
+      "sampling": {
+        "requested": {
+          "edge": "negedge",
+          "sample_point": null
+        },
+        "effective": {
+          "edge": "negedge",
+          "sample_point": null
+        },
+        "sample_point_applied": false,
+        "sample_point_ignored_for_negedge": false
+      }
     },
     "error": null
   },

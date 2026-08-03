@@ -2,19 +2,11 @@
   "request": {
     "api_version": "xdebug.v1",
     "action": "apb.transfer_window",
-    "output": {
-      "verbosity": "compact"
-    },
     "target": {
-      "session_id": "fix_wave"
+      "session_id": "case_a"
     },
     "args": {
-      "name": "apb0",
-      "time_range": {
-        "begin": "200ns",
-        "end": "400ns"
-      },
-      "limit": 2
+      "name": "if0"
     }
   },
   "response": {
@@ -25,38 +17,37 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
-      "name": "apb0",
-      "begin": "200ns",
-      "end": "400ns",
-      "transaction_count": 2,
-      "truncated": true
+      "name": "if0",
+      "begin": "0ns",
+      "end": "200ns",
+      "scan_complete": true,
+      "analysis_complete": true,
+      "response_truncated": false,
+      "total_count": 1,
+      "returned_count": 1,
+      "truncation_scopes": []
     },
     "data": {
       "transactions": [
         {
-          "time": "215ns",
-          "type": "WR",
-          "addr": "'h0100",
-          "data": "'hdeadbeef",
-          "has_error": false,
-          "time_ps": 215000
-        },
-        {
-          "time": "245ns",
+          "time": "105ns",
           "type": "RD",
-          "addr": "'h0100",
-          "data": "'hcafef00d",
-          "has_error": false,
-          "time_ps": 245000
+          "addr": "32'h000000f0",
+          "data": "32'h00000012",
+          "has_error": false
         }
       ]
     },
-    "error": null,
-    "meta": {
-      "truncated": true
-    }
+    "error": null
   },
   "stderr": ""
 }

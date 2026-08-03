@@ -1,0 +1,67 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "protocol.handshake.inspect",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
+  "summary": {
+    "sampling_mode": "clock_edge",
+    "clock": "top.u.clk",
+    "sample_time_semantics": "time is sample_time",
+    "sample_count": 10,
+    "transfer_count": 3,
+    "max_stall_cycles": 3,
+    "ready_without_valid_cycles": 1,
+    "ready_without_valid_reporting": "all",
+    "ready_without_valid_interval_count": 1,
+    "data_stability_violations": 0,
+    "require_valid_hold_until_handshake": true,
+    "valid_hold_violations": 0,
+    "valid_wait_open_at_window_end": false,
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 2,
+    "returned_count": 2,
+    "truncation_scopes": []
+  },
+  "data": {
+    "findings": [
+      {
+        "type": "ready_without_valid",
+        "severity": "info",
+        "time": "100ns"
+      },
+      {
+        "type": "long_stall",
+        "severity": "warning",
+        "begin": "120ns",
+        "end": "150ns",
+        "cycles": 3
+      }
+    ],
+    "sampling": {
+      "requested": {
+        "edge": "posedge",
+        "sample_point": null
+      },
+      "effective": {
+        "edge": "posedge",
+        "sample_point": "before"
+      },
+      "sample_point_applied": true,
+      "sample_point_ignored_for_negedge": false
+    }
+  },
+  "error": null
+}

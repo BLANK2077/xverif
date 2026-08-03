@@ -2,21 +2,23 @@
   "api_version": "xdebug.v1",
   "ok": false,
   "action": "no.such.action",
-  "summary": {},
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
+  "summary": {
+    "status": "error",
+    "error_code": "UNKNOWN_ACTION"
+  },
   "data": null,
   "error": {
     "code": "UNKNOWN_ACTION",
     "message": "unknown action: no.such.action",
     "recoverable": true,
     "error_layer": "handler",
-    "candidates": [],
     "invalid_arg": "action",
     "received": "no.such.action",
-    "did_you_mean": "actions",
-    "available_values": ["actions", "schema", "batch"],
-    "suggested_actions": ["actions", "schema", "batch"]
-  },
-  "meta": {
-    "truncated": false
+    "available_values": ["actions", "schema", "batch"]
   }
 }

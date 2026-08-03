@@ -3,21 +3,15 @@
     "api_version": "xdebug.v1",
     "action": "signal.changes",
     "target": {
-      "session_id": "sample_wave"
+      "session_id": "case_a"
     },
     "args": {
-      "signal": "ai_complex_top.clk",
+      "signal": "top.u.ready",
       "time_range": {
-        "begin": "0ns",
-        "end": "100ns"
+        "begin": "100ns",
+        "end": "200ns"
       },
-      "aggregate_only": true
-    },
-    "limits": {
-      "timeout_ms": 120000
-    },
-    "output": {
-      "verbosity": "compact"
+      "mode": "timeline"
     }
   },
   "response": {
@@ -28,21 +22,29 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
-      "signal": "ai_complex_top.clk",
-      "begin": "0ps",
-      "end": "100ns",
-      "returned_change_rows": 21,
-      "includes_initial_value": true,
-      "actual_transition_count": 20,
-      "semantic_note": "signal.changes returns value-change rows for timeline inspection. Do not use row counts as sampled high cycles; use signal.statistics.high_cycles for clock-sampled activity.",
-      "transition_count": 20,
-      "truncated": false,
-      "first_change": "0ps",
-      "last_change": "100ns"
+      "signal": "top.u.ready",
+      "actual_transition_count": 2,
+      "scan_complete": true,
+      "analysis_complete": true,
+      "response_truncated": false,
+      "total_count": 3,
+      "returned_count": 3,
+      "truncation_scopes": []
     },
     "data": {
+      "begin": "100ns",
+      "end": "200ns",
+      "includes_initial_value": true,
+      "semantic_note": "signal.changes returns value-change rows for timeline inspection. Do not use row counts as sampled high cycles; use signal.statistics.high_cycles for clock-sampled activity.",
       "initial_value": {
         "value": "1'h0",
         "known": true,
@@ -54,7 +56,39 @@
         "known": true,
         "width": 1,
         "bits": "0"
-      }
+      },
+      "first_change": "100ns",
+      "last_change": "180ns",
+      "mode": "timeline",
+      "changes": [
+        {
+          "time": "100ns",
+          "value": {
+            "value": "1'h0",
+            "known": true,
+            "width": 1,
+            "bits": "0"
+          }
+        },
+        {
+          "time": "140ns",
+          "value": {
+            "value": "1'h1",
+            "known": true,
+            "width": 1,
+            "bits": "1"
+          }
+        },
+        {
+          "time": "180ns",
+          "value": {
+            "value": "1'h0",
+            "known": true,
+            "width": 1,
+            "bits": "0"
+          }
+        }
+      ]
     },
     "error": null
   },

@@ -6,7 +6,8 @@
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -16,7 +17,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -27,93 +29,133 @@
     "target": {
       "type": "object",
       "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
         "daidir": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "fsdb": {
-          "type": "string"
-        },
-        "session_id": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         }
-      }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "daidir"
+                ]
+              },
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "daidir",
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "signal",
+        "time"
+      ],
       "properties": {
+        "render_time_unit": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "ps",
+            "ns",
+            "us"
+          ],
+          "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
+        },
         "signal": {
           "type": "string",
           "description": "Final leaf signal path. Aggregate, array, and struct roots are not expanded automatically."
         },
         "time": {
           "type": "string",
-          "description": "Target sample time. Prefer a canonical string with a unit; a bare number is interpreted only with time_unit."
+          "description": "Target sample time. Prefer a canonical string with a unit; a bare number is interpreted as nanoseconds."
         },
-        "time_unit": {
+        "value_format": {
           "type": "string",
           "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
+            "hex",
+            "bin",
+            "dec"
           ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
+          "default": "hex",
+          "description": "返回 LogicValue 的显示格式；不改变比较、采样或底层四态值。"
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "signal",
-        "time"
-      ]
+      "additionalProperties": false
     },
     "limits": {
       "type": "object",
-      "description": "Resource limits for the recursive active trace.",
       "properties": {
         "max_depth": {
           "type": "integer",
           "minimum": 1,
           "default": 8,
-          "description": "Maximum recursion depth through pass-through assignments and aliases."
+          "description": "Maximum recursive depth of the active-driver chain."
         },
         "max_nodes": {
           "type": "integer",
           "minimum": 1,
           "default": 50,
-          "description": "Maximum number of trace nodes before truncation."
+          "description": "Maximum active-driver chain nodes analyzed."
         },
         "max_trace_signals": {
           "type": "integer",
           "minimum": 1,
           "default": 64,
-          "description": "Maximum signal count for ambiguity evidence lookup."
+          "description": "Maximum candidate signals sampled for ambiguity evidence."
+        },
+        "max_results": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "default": 10,
+          "description": "Maximum simplified chain evidence paths returned."
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
         }
       },
       "additionalProperties": false
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
     }
   },
   "additionalProperties": false,
   "description": "Trace an active-driver chain across multiple levels.",
   "x-purpose": "展开 active driver 链。",
-  "x-how_it_works": "从 signal/time 递归追溯 active driver；深度限制写 top-level limits.max_depth，默认 8。遇到多个 active assignments 或多个 RHS sources 时在精确 active_time 返回前后值证据并停止。因 max_depth 停止时读取 data.depth_frontiers 与 suggested_next_actions，可从 frontier 续查或提高深度重跑。",
+  "x-how_it_works": "从 signal/time 递归追溯 active driver；value_format 支持 hex、bin、dec 并统一控制链上采样值显示，默认 hex；深度限制写 top-level limits.max_depth，默认 8。遇到多个 active assignments 或多个 RHS sources 时在精确 active_time 返回前后值证据并停止。因 max_depth 停止时读取 data.depth_frontiers 与 suggested_next_actions，可从 frontier 续查或提高深度重跑。",
   "x-when_to_use": "给出跨级根因链及 ambiguous RHS 现场。",
   "x-arg_contract_notes": "required: signal, time; limits: max_depth(default 8), max_nodes(default 50), max_trace_signals(default 64); do not use args.depth, args.clk_period or limits.max_alias_candidates",
   "x-description-zh": "展开 active driver 链。",

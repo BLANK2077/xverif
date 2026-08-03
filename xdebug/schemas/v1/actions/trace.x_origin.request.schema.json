@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "xdebug.trace.x.request.v1",
-  "title": "trace.x request",
+  "$id": "xdebug.trace.x_origin.request.v1",
+  "title": "trace.x_origin request",
   "type": "object",
   "required": [
     "api_version",
@@ -17,7 +17,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -27,54 +28,41 @@
     },
     "target": {
       "type": "object",
-      "required": [
-        "session_id"
-      ],
       "properties": {
         "session_id": {
           "type": "string",
-          "description": "目标 xdebug session 标识。"
-        },
-        "daidir": {
-          "type": "string"
-        },
-        "fsdb": {
-          "type": "string"
-        },
-        "mode": {
-          "type": "string",
-          "enum": [
-            "design",
-            "waveform",
-            "combined"
-          ]
+          "minLength": 1
         }
       },
+      "required": [
+        "session_id"
+      ],
       "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "signal",
+        "time"
+      ],
       "properties": {
+        "render_time_unit": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "ps",
+            "ns",
+            "us"
+          ],
+          "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
+        },
         "signal": {
           "type": "string",
           "description": "Final leaf signal path. Aggregate, array, and struct roots are not expanded automatically."
         },
         "time": {
           "type": "string",
-          "description": "Target sample time. Prefer a canonical string with a unit; a bare number is interpreted only with time_unit."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
+          "description": "Target sample time. Prefer a canonical string with a unit; a bare number is interpreted as nanoseconds."
         },
         "value_format": {
           "type": "string",
@@ -83,14 +71,10 @@
             "bin",
             "dec"
           ],
-          "description": "Action-specific value_format input. Its type and accepted values are defined by this schema.",
-          "default": "hex"
+          "default": "hex",
+          "description": "返回 LogicValue 的显示格式；不改变比较、采样或底层四态值。"
         }
       },
-      "required": [
-        "signal",
-        "time"
-      ],
       "additionalProperties": false
     },
     "limits": {
@@ -99,45 +83,41 @@
         "max_depth": {
           "type": "integer",
           "minimum": 1,
-          "default": 8
+          "default": 8,
+          "description": "Maximum X-origin recursion depth."
         },
         "max_nodes": {
           "type": "integer",
           "minimum": 1,
-          "default": 50
+          "default": 50,
+          "description": "Maximum X-origin nodes analyzed across all branches."
         },
         "max_time_steps": {
           "type": "integer",
           "minimum": 1,
-          "default": 128
+          "default": 128,
+          "description": "Maximum distinct waveform times visited across X-origin branches."
         },
         "max_trace_signals": {
           "type": "integer",
           "minimum": 1,
-          "default": 64
+          "default": 64,
+          "description": "Maximum dependency candidates sampled at one X-origin step."
         },
         "max_chains": {
           "type": "integer",
           "minimum": 1,
-          "default": 8
+          "default": 8,
+          "description": "Maximum effective X-semantic chains returned."
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
         }
       },
       "additionalProperties": false
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
     }
   },
   "additionalProperties": false,

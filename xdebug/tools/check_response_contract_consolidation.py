@@ -21,7 +21,7 @@ def main() -> int:
     errors += forbid("src/api/dispatcher.cpp", "data_payload.erase(data_it)")
     for path in (
         "src/engine/service/actions/waveform/expr_eval_at.cpp",
-        "src/engine/service/actions/waveform/sampled_pulse_inspect.cpp",
+        "src/engine/service/actions/waveform/signal_sampled_pulse_inspect.cpp",
         "src/engine/service/actions/waveform/signal_changes.cpp",
         "src/engine/service/actions/waveform/signal_stability.cpp",
         "src/engine/service/actions/waveform/window_verify.cpp",
@@ -30,8 +30,6 @@ def main() -> int:
         errors += forbid(path, 'name_ == "signal.changes"')
     for path in (
         "src/engine/service/actions/waveform/value_at.cpp",
-        "src/engine/service/actions/waveform/value_batch_at.cpp",
-        "src/engine/service/actions/waveform/list_value_at.cpp",
         "src/engine/service/actions/waveform/verify_conditions.cpp",
     ):
         errors += forbid(path, 'out["sample_rows"]')

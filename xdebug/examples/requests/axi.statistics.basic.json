@@ -11,8 +11,8 @@
       "ids": ["1", "3"],
       "address": {
         "mode": "range",
-        "begin": "0x1000",
-        "end": "0x1fff"
+        "begin": "'h1000",
+        "end": "'h1fff"
       }
     }
   }

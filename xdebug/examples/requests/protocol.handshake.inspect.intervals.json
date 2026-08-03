@@ -1,0 +1,20 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "protocol.handshake.inspect",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {
+    "clock": "top.u.clk",
+    "valid": "top.u.valid",
+    "ready": "top.u.ready",
+    "data": [
+      "top.u.data"
+    ],
+    "rules": {
+      "max_wait_cycles": 2,
+      "check_data_stable_when_stalled": true,
+      "ready_without_valid": "intervals"
+    }
+  }
+}

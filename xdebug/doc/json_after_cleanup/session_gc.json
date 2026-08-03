@@ -2,9 +2,7 @@
   "request": {
     "api_version": "xdebug.v1",
     "action": "session.gc",
-    "output": {
-      "verbosity": "compact"
-    }
+    "args": {}
   },
   "response": {
     "api_version": "xdebug.v1",
@@ -16,15 +14,40 @@
     },
     "session": null,
     "summary": {
-      "status": "completed",
-      "before_count": 0,
-      "kept_count": 0,
-      "removed_count": 0
+      "before_count": 2,
+      "kept_count": 1,
+      "removed_count": 1
     },
     "data": {
-      "before": [],
-      "kept": [],
-      "removed": []
+      "kept_sessions": [
+        {
+          "session_id": "case_a",
+          "mode": "combined",
+          "daidir": "simv.daidir",
+          "fsdb": "waves.fsdb",
+          "socket_path": "session-endpoints/case_a.sock",
+          "server_host": "localhost",
+          "transport": "uds"
+        }
+      ],
+      "removed": [
+        {
+          "removed_session": {
+            "session_id": "stale_a",
+            "mode": "waveform",
+            "fsdb": "stale.fsdb",
+            "socket_path": "session-endpoints/stale_a.sock",
+            "server_host": "localhost",
+            "transport": "uds"
+          },
+          "reason": "unhealthy",
+          "health_evidence": {
+            "code": "SESSION_UNHEALTHY",
+            "message": "Server process is not running",
+            "health_status": "process_exited"
+          }
+        }
+      ]
     },
     "error": null
   },

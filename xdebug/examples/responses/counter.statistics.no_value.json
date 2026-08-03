@@ -1,0 +1,63 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "counter.statistics",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "wave0",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/wave0.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
+  "summary": {
+    "sample_count": 10,
+    "valid_count": 0,
+    "sampling_mode": "clock_edge",
+    "clock": "top.clk",
+    "sample_time_semantics": "time is sample_time",
+    "begin": "100ns",
+    "end": "200ns",
+    "valid_false_count": 8,
+    "unknown_count": 2,
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 2,
+    "returned_count": 2,
+    "truncation_scopes": []
+  },
+  "data": {
+    "cnt": "top.count",
+    "vld": "top.valid",
+    "evidence": [
+      {
+        "time": "120ns",
+        "kind": "unknown_valid",
+        "value": null
+      },
+      {
+        "time": "160ns",
+        "kind": "unknown_counter",
+        "value": null
+      }
+    ],
+    "sampling": {
+      "requested": {
+        "edge": "posedge",
+        "sample_point": null
+      },
+      "effective": {
+        "edge": "posedge",
+        "sample_point": "before"
+      },
+      "sample_point_applied": true,
+      "sample_point_ignored_for_negedge": false
+    }
+  },
+  "error": null
+}

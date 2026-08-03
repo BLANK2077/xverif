@@ -1,0 +1,86 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "window.verify",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
+  "summary": {
+    "execution_ok": true,
+    "verdict": "inconclusive",
+    "all_passed": null,
+    "sample_count": 1,
+    "failed_samples": 0,
+    "unknown_samples": 1,
+    "proof_begin": "0ns",
+    "proof_end": "1us",
+    "scanned_range": {
+      "begin": "5ns",
+      "end": "5ns"
+    },
+    "stop_reason": "max_samples",
+    "sampling_mode": "clock_edge",
+    "clock": "top.u.clk",
+    "sample_time_semantics": "time is sample_time",
+    "scan_complete": false,
+    "analysis_complete": false,
+    "response_truncated": false,
+    "total_count": 1,
+    "returned_count": 1,
+    "truncation_scopes": [
+      "analysis_samples"
+    ]
+  },
+  "data": {
+    "conditions": [
+      {
+        "expr": "valid == 1",
+        "mode": "eventually",
+        "passed": false,
+        "pass_samples": 0,
+        "failed_samples": 0,
+        "unknown_samples": 1
+      }
+    ],
+    "findings": [
+      {
+        "time": "5ns",
+        "expr": "valid == 1",
+        "mode": "eventually",
+        "status": "unknown",
+        "signals": {
+          "valid": {
+            "value": "1'hx",
+            "known": false,
+            "width": 1,
+            "bits": "x",
+            "has_x": true,
+            "has_z": false
+          }
+        }
+      }
+    ],
+    "sampling": {
+      "requested": {
+        "edge": "posedge",
+        "sample_point": null
+      },
+      "effective": {
+        "edge": "posedge",
+        "sample_point": "before"
+      },
+      "sample_point_applied": true,
+      "sample_point_ignored_for_negedge": false
+    }
+  },
+  "error": null
+}

@@ -15,7 +15,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -24,31 +25,20 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [],
       "properties": {},
-      "additionalProperties": false,
-      "required": []
+      "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
@@ -60,19 +50,19 @@
   "x-description-zh": "清理过期 session。",
   "x-agent": {
     "use_when": [
-      "清理过期 session。"
+      "Need policy-driven cleanup of all expired session records rather than mutation of one named active session."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 session.close、session.doctor 的业务目标；请改用列出的同域 action。"
+      "Do not use it to remove a specific active session or diagnose one session."
     ],
     "alternatives": [
       {
-        "action": "session.close",
-        "when": "关闭指定 session。"
+        "action": "session.kill",
+        "when": "Force removal of one explicit session."
       },
       {
         "action": "session.doctor",
-        "when": "诊断当前 session。"
+        "when": "Diagnose one explicit session."
       }
     ],
     "constraints": [

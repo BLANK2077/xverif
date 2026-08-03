@@ -2,6 +2,73 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "expr.eval_at",
-  "summary": {"expr": "valid&&!ready", "time": "145ns", "status": "true", "known": true, "clock_edge_hit": true, "target_edge_hit": false, "bracket_complete": true},
-  "data": {"expr_value": true, "operands": [{"alias": "valid", "signal": "top.valid", "value": {"value": "1'h1", "known": true}}, {"alias": "ready", "signal": "top.ready", "value": {"value": "1'h0", "known": true}}]}
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
+  "summary": {
+    "expr": "valid && !ready",
+    "time": "100ns",
+    "status": "true",
+    "known": true
+  },
+  "data": {
+    "expr_value": true,
+    "operands": [
+      {
+        "alias": "valid",
+        "signal": "top.u.valid",
+        "value": {
+          "value": "1'h1",
+          "known": true,
+          "width": 1,
+          "bits": "1"
+        }
+      },
+      {
+        "alias": "ready",
+        "signal": "top.u.ready",
+        "value": {
+          "value": "1'h0",
+          "known": true,
+          "width": 1,
+          "bits": "0"
+        }
+      }
+    ],
+    "clock_context": {
+      "clock": "top.u.clk",
+      "requested_sampling": {
+        "edge": "negedge",
+        "sample_point": null
+      },
+      "effective_sampling": {
+        "edge": "negedge",
+        "sample_point": null
+      },
+      "sample_point_applied": false,
+      "sample_point_ignored_for_negedge": false,
+      "requested_time": "100ns",
+      "requested_any_edge_hit": true,
+      "clock_edge_kind": "posedge",
+      "requested_target_edge_hit": false,
+      "previous_sample_time": "90ns",
+      "next_sample_time": "110ns",
+      "bracket_complete": true
+    },
+    "expr_samples": {
+      "before": "false",
+      "middle": "true",
+      "after": "true"
+    }
+  },
+  "error": null
 }

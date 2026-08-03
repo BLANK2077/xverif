@@ -16,7 +16,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -25,10 +26,15 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "action"
+      ],
       "properties": {
         "action": {
           "type": "string",
@@ -41,31 +47,15 @@
             "response"
           ],
           "default": "request",
-          "description": "Action-specific kind input. Its type and accepted values are defined by this schema."
+          "description": "schema action 要返回的 JSON Schema 类别：request 或 response。"
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "action"
-      ]
+      "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,

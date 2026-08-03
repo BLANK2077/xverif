@@ -2,6 +2,18 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "nwave.rc.generate",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
   "summary": {
     "config_path": "wave_view.json",
     "output": {
@@ -9,8 +21,6 @@
     },
     "group_count": 2,
     "signal_count": 4,
-    "expr_signal_count": 1,
-    "marker_count": 1,
     "written": true,
     "valid": true
   },
@@ -26,5 +36,6 @@
       "fileTimeScale 1ns",
       "signalSpacing 5"
     ]
-  }
+  },
+  "error": null
 }

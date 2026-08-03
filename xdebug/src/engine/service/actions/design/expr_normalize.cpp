@@ -22,7 +22,7 @@
 namespace xdebug_design {
 namespace {
 
-static TraceOptions parse_trace_opts(const Json& args) {
+static TraceOptions parse_trace_opts(const ContractJsonView& args) {
     TraceOptions opts;
     opts.limit = args.value("line_limit", 0);
     opts.role = args.value("role", std::string());
@@ -40,14 +40,30 @@ static nlohmann::json trace_one_signal(const std::string& signal,
 class ExprNormalizeHandler : public EngineActionHandler {
 public:
     const char* action_name() const override { return "expr.normalize"; }
-    bool needs_design() const override { return true; }
+    bool needs_design() const override { return false; }
     bool needs_waveform() const override { return false; }
-    Json run(const Json& request, EngineActionContext& ctx) const override {
-        Json args = request.value("args", Json::object());
+    Json run(ContractBoundRequest& request, EngineActionContext& ctx) const override {
+        auto args = request.args();
         std::string signal = args.value("signal", "");
+        std::string expr = args.value("expr", "");
+        if (!signal.empty() && !expr.empty()) {
+            return make_handler_error(
+                "INVALID_REQUEST",
+                "args.expr and args.signal are mutually exclusive",
+                {{"invalid_arg", "args"},
+                 {"expected", "exactly one of args.expr or args.signal"},
+                 {"required_any_of", Json::array({"args.expr", "args.signal"})}});
+        }
 
         Json out;
         if (!signal.empty()) {
+            if (!g_has_design) {
+                return make_handler_error(
+                    "DESIGN_NOT_LOADED",
+                    "expr.normalize signal variant requires a design resource",
+                    {{"invalid_arg", "target"},
+                     {"expected", "target.daidir or a design session"}});
+            }
             TraceOptions opts = parse_trace_opts(args);
             nlohmann::json trace = trace_one_signal(signal, TraceMode::Driver, opts);
             nlohmann::json assignment = trace.value("assignment", nlohmann::json::object());
@@ -58,10 +74,8 @@ public:
             out["assignment"] = Json::parse(assignment.dump());
             out["rhs_signals"] = Json::parse(
                 assignment.value("rhs_signals", nlohmann::json::array()).dump());
-            out["confidence"] = trace.value("confidence", "unknown");
             return out;
         }
-        std::string expr = args.value("expr", "");
         if (!expr.empty() && args.contains("line_limit"))
             return make_handler_error("INVALID_REQUEST",
                                       "expr.normalize args.line_limit is only valid with args.signal",
@@ -89,12 +103,15 @@ public:
                                        {"args", {{"expr", "valid && ready"}}}}},
                  {"next_actions", Json::array({"Fix the expression syntax before using it for debug queries."})}});
         }
-        out["summary"] = {{"status", "parsed"}, {"source", "string_parser"},
-                          {"confidence", "syntax_only"}};
+        out["summary"] = {
+            {"status", "parsed"},
+            {"source", "deterministic_syntax_parser"},
+            {"confidence", "syntax_validated"}
+        };
         out["expr"] = Json::parse(parse_expr_ast(expr).dump());
         out["parsed"] = true;
-        out["confidence"] = "syntax_only";
-        out["confidence_reason"] = "syntax validated without an NPI expression handle";
+        out["confidence_reason"] =
+            "expression syntax was validated and parsed without design-resource semantics";
         return out;
     }
 };

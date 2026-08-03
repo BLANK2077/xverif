@@ -2,15 +2,39 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "event.export",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
   "summary": {
-    "event_count": 1,
-    "mode": "all",
-    "inline": false,
-    "truncated": false,
+    "sample_count": 20,
+    "mode": "export",
+    "inline": true,
+    "sampling_mode": "clock_edge",
+    "clock": "top.clk",
+    "sample_time_semantics": "time is sample_time",
+    "first": "100ns",
+    "last": "100ns",
+    "begin": "0ns",
+    "end": "200ns",
     "status": "preview",
     "output_written": false,
     "row_count": 1,
-    "line_limit": 5
+    "line_limit": 5,
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 1,
+    "returned_count": 1,
+    "truncation_scopes": []
   },
   "data": {
     "events": [
@@ -18,25 +42,25 @@
         "time": "100ns",
         "signals": {
           "valid": {
-            "value": "1'b1",
+            "value": "1'h1",
             "known": true
           }
-        }
+        },
+        "fields": {}
       }
     ],
-    "preview": [
-      {
-        "time": "100ns",
-        "signals": {
-          "valid": {
-            "value": "1'b1",
-            "known": true
-          }
-        }
-      }
-    ],
-    "begin": "0ns",
-    "end": "200ns",
-    "sampling_mode": "clock_edge"
-  }
+    "sampling": {
+      "requested": {
+        "edge": "negedge",
+        "sample_point": null
+      },
+      "effective": {
+        "edge": "negedge",
+        "sample_point": null
+      },
+      "sample_point_applied": false,
+      "sample_point_ignored_for_negedge": false
+    }
+  },
+  "error": null
 }

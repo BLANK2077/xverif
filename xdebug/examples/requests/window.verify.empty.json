@@ -1,0 +1,23 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "window.verify",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {
+    "clock": "top.u.clk",
+    "signals": {
+      "valid": "top.u.valid"
+    },
+    "conditions": [
+      {
+        "expr": "valid == 1",
+        "mode": "eventually"
+      }
+    ],
+    "time_range": {
+      "begin": "0ns",
+      "end": "1ns"
+    }
+  }
+}

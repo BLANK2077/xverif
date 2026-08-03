@@ -2,6 +2,26 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "signal.canonicalize",
-  "summary": {"status": "found", "query": "top.u.ready", "ambiguous": false},
-  "data": {"canonical": "top.u.ready", "rtl_path": "top.u.ready", "leaf": "ready", "scope": "top.u", "base_signal": "top.u.ready", "select": null, "aliases": [], "fsdb_candidates": [], "port_mappings": []}
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
+  "summary": {
+    "status": "found",
+    "query": "top.u.ready",
+    "match_count": 1,
+    "canonicalization_scope": "static_design_connectivity"
+  },
+  "data": {
+    "resolved_path": "top.u.ready",
+    "connected_path": null,
+    "canonical_path": "top.u.ready",
+    "mapping_kind": "identity",
+    "selection_basis": "unique_exact_design_match",
+    "scope": "top.u",
+    "leaf": "ready",
+    "connection": null
+  },
+  "error": null
 }

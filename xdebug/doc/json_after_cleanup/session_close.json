@@ -3,8 +3,9 @@
     "api_version": "xdebug.v1",
     "action": "session.close",
     "target": {
-      "session_id": "json_after_missing_wave"
-    }
+      "session_id": "case_a"
+    },
+    "args": {}
   },
   "response": {
     "api_version": "xdebug.v1",
@@ -16,42 +17,20 @@
     },
     "session": null,
     "summary": {
-      "session_id": "json_after_missing_wave",
-      "mode": "waveform",
       "removed": true
     },
     "data": {
-      "session": {
-        "id": "json_after_missing_wave",
-        "session_id": "json_after_missing_wave",
-        "mode": "waveform",
-        "fsdb": "<xverif-repo>/xdebug/testdata/waveform/ai_complex_wave/out/waves.fsdb",
-        "socket_path": "~/.xdebug/engine/sessions/json_after_missi_684029234a189b91/socket",
-        "transport": "uds",
-        "file_dir": "~/.xdebug/engine/sessions/json_after_missi_684029234a189b91/transport",
-        "server_host": "localhost.localdomain"
-      },
-      "backends": {
-        "api_version": "xdebug.v1",
-        "request_id": "",
-        "ok": true,
-        "action": "session.kill",
-        "tool": {
-          "name": "xdebug",
-          "version": "0.1.0"
-        },
-        "session": null,
-        "summary": {
-          "id": "json_after_missing_wave",
-          "session_id": "json_after_missing_wave",
-          "killed": true
-        },
-        "data": {},
-        "error": null
+      "removed_session": {
+        "session_id": "case_a",
+        "mode": "combined",
+        "daidir": "simv.daidir",
+        "fsdb": "waves.fsdb",
+        "socket_path": "session-endpoints/case_a.sock",
+        "server_host": "localhost",
+        "transport": "uds"
       }
     },
     "error": null
   },
-  "returncode": 0,
-  "stderr_tail": ""
+  "stderr": ""
 }

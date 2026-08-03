@@ -2,6 +2,36 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "event.config.load",
-  "summary": {"name": "evt0", "status": "loaded"},
-  "data": {"config": {"name": "evt0", "clock": "top.clk", "reset": {"signal": "top.rst_n", "polarity": "active_low"}, "edge": "negedge", "signals": {"vld": "top.valid", "payload": "top.payload"}}}
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
+  "summary": {
+    "status": "loaded"
+  },
+  "data": {
+    "config": {
+      "name": "evt0",
+      "clock": "top.clk",
+      "reset": {
+        "signal": "top.rst_n",
+        "polarity": "active_low"
+      },
+      "edge": "negedge",
+      "signals": {
+        "vld": "top.valid",
+        "payload": "top.payload"
+      },
+      "fields": {}
+    }
+  },
+  "error": null
 }

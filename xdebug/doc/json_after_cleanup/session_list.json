@@ -2,9 +2,7 @@
   "request": {
     "api_version": "xdebug.v1",
     "action": "session.list",
-    "output": {
-      "verbosity": "compact"
-    }
+    "args": {}
   },
   "response": {
     "api_version": "xdebug.v1",
@@ -16,10 +14,21 @@
     },
     "session": null,
     "summary": {
-      "session_count": 0
+      "session_count": 1,
+      "expired_removed_count": 0
     },
     "data": {
-      "sessions": []
+      "sessions": [
+        {
+          "session_id": "case_a",
+          "mode": "combined",
+          "daidir": "simv.daidir",
+          "fsdb": "waves.fsdb",
+          "socket_path": "session-endpoints/case_a.sock",
+          "server_host": "localhost",
+          "transport": "uds"
+        }
+      ]
     },
     "error": null
   },

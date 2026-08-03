@@ -42,6 +42,7 @@ PARAM_DESCRIPTIONS = {
     "name": "已保存配置、游标、列表或接口配置名称。",
     "op": "游标移动或协议浏览操作。",
     "output": "导出配置对象；路径统一使用 output.path。",
+    "ownership_token": "managed wrapper 可选提供并复用的 64 个小写十六进制字符（256 bit）conditional-cleanup token，不是授权；session.open 省略时 frontend 仍会 fail-closed 地生成内部 token 并绑定 digest；session.kill 提供时必须匹配，省略时不改变既有显式管理语义；禁止记录、回显或人工构造。",
     "query": "stream 查询条件。",
     "ready": "valid-ready 握手中的 ready 信号路径。",
     "requests": "batch action 中按顺序执行的 request 列表。",
@@ -52,6 +53,7 @@ PARAM_DESCRIPTIONS = {
     "stream": "已保存 stream 配置名称。",
     "streams": "需要加载的 stream 配置列表。",
     "time": "查询或验证的目标时间点。",
+    "times": "按请求顺序查询的一个或多个目标时间点。",
     "time_range": "查询或分析的时间窗口。",
     "to_signal": "路径查询的终点信号。",
     "valid": "valid-ready 握手或采样检查中的 valid 信号路径。",
@@ -168,9 +170,8 @@ def update_request_schema(schema: dict[str, Any], spec: dict[str, Any], hint: di
 def update_response_schema(schema: dict[str, Any], spec: dict[str, Any], hint: dict[str, str]) -> None:
     schema["description"] = spec["description_en"]
     schema["x-description-zh"] = spec["description_zh"]
-    schema["x-output_notes"] = (
-        "返回该 action 的 summary/data/error/meta；具体字段以 response schema 和 response example 为准。"
-    )
+    # x-output_notes is action-shape data owned by sync_response_schemas.py.
+    # This hint synchronizer must not replace it with a generic tautology.
 
 
 def sync(check: bool, selected_actions: set[str] | None = None) -> list[str]:
@@ -179,8 +180,6 @@ def sync(check: bool, selected_actions: set[str] | None = None) -> list[str]:
     errors: list[str] = []
 
     for spec in specs:
-        if spec["status"] == "removed":
-            continue
         name = spec["name"]
         if selected_actions and name not in selected_actions:
             continue

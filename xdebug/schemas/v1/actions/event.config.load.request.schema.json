@@ -6,7 +6,8 @@
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -16,7 +17,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -25,79 +27,99 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "name",
+        "config_path"
+      ],
       "properties": {
         "config_path": {
           "type": "string",
-          "description": "Action-specific config_path input. Its type and accepted values are defined by this schema."
+          "minLength": 1,
+          "description": "输入配置文件路径。"
         },
         "name": {
           "type": "string",
           "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "name"
-      ]
+      "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
   "description": "Load an event-query configuration.",
-  "x-purpose": "保存事件查询配置。",
-  "x-how_it_works": "request args 只传 name 和可选 config_path/time_unit；clock/edge/sample_point/signals/reset 来自配置文件内容。",
+  "x-purpose": "加载事件查询配置。",
+  "x-how_it_works": "request args 只传 name 和可选 config_path/render_time_unit；clock/edge/sample_point/signals/reset 来自配置文件内容。",
   "x-when_to_use": "复用常见事件查询上下文。",
   "x-arg_contract_notes": "required: name",
-  "x-description-zh": "保存事件查询配置。",
+  "x-description-zh": "加载事件查询配置。",
   "x-agent": {
     "use_when": [
-      "保存事件查询配置。"
+      "Have a persisted event-query configuration that must be read and registered before event search or export."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 event.config.list、event.export 的业务目标；请改用列出的同域 action。"
+      "Do not use it to enumerate configuration names or execute the configured event search."
     ],
     "alternatives": [
       {
         "action": "event.config.list",
-        "when": "列出事件配置。"
+        "when": "Discover saved event configuration names."
       },
       {
-        "action": "event.export",
-        "when": "导出满足表达式的事件。"
+        "action": "event.find",
+        "when": "Execute an event search."
       }
     ],
     "constraints": [

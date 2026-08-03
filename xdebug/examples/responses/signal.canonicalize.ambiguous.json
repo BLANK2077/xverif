@@ -1,0 +1,44 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": false,
+  "action": "signal.canonicalize",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
+  "summary": {
+    "status": "error",
+    "error_code": "AMBIGUOUS_SIGNAL"
+  },
+  "data": null,
+  "error": {
+    "code": "AMBIGUOUS_SIGNAL",
+    "message": "args.signal resolves to multiple design objects; provide one exact path",
+    "recoverable": true,
+    "error_layer": "handler",
+    "invalid_arg": "args.signal",
+    "expected": "one exact design signal path",
+    "query": "ready",
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 2,
+    "returned_count": 2,
+    "truncation_scopes": [],
+    "available_values": [
+      {
+        "path": "top.u0.ready",
+        "type": "net",
+        "file": "rtl/top.sv",
+        "line": 41
+      },
+      {
+        "path": "top.u1.ready",
+        "type": "net",
+        "file": "rtl/top.sv",
+        "line": 57
+      }
+    ]
+  }
+}

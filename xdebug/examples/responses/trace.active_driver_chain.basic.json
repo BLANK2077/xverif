@@ -2,22 +2,24 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "trace.active_driver_chain",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
   "summary": {
     "signal": "top.u.out",
     "time": "26ns",
-    "hop_count": 2,
     "termination": "limit",
     "termination_detail": "max_depth",
-    "truncated": true
+    "scan_complete": false,
+    "analysis_complete": false,
+    "response_truncated": false,
+    "total_count": 2,
+    "returned_count": 2,
+    "truncation_scopes": ["analysis_trace"]
   },
   "data": {
-    "requested_time": "26ns",
-    "time_semantics": {"requested_time": "query time"},
-    "evidence_scope": "design_and_waveform",
-    "evidence_status": "supported",
-    "evidence_source": "assignment",
-    "static_candidate_count": 2,
-    "active_check_count": 2,
     "hops": [
       {
         "index": 0,
@@ -72,22 +74,22 @@
         "value": "8'hxx",
         "stopped_after_depth": 1
       }
+    ],
+    "suggested_next_actions": [
+      {
+        "action": "trace.active_driver_chain",
+        "reason": "continue_from_depth_frontier",
+        "chain_id": "c0",
+        "args": {"signal": "top.u.src", "time": "20ns"},
+        "limits": {"max_depth": 1}
+      },
+      {
+        "action": "trace.active_driver_chain",
+        "reason": "rerun_from_root_with_higher_depth",
+        "args": {"signal": "top.u.out", "time": "26ns"},
+        "limits": {"max_depth": 2}
+      }
     ]
   },
-  "suggested_next_actions": [
-    {
-      "action": "trace.active_driver_chain",
-      "reason": "continue_from_depth_frontier",
-      "chain_id": "c0",
-      "args": {"signal": "top.u.src", "time": "20ns"},
-      "limits": {"max_depth": 1}
-    },
-    {
-      "action": "trace.active_driver_chain",
-      "reason": "rerun_from_root_with_higher_depth",
-      "args": {"signal": "top.u.out", "time": "26ns"},
-      "limits": {"max_depth": 2}
-    }
-  ],
   "error": null
 }

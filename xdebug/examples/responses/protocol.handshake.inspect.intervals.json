@@ -1,0 +1,90 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "protocol.handshake.inspect",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
+  "summary": {
+    "sampling_mode": "clock_edge",
+    "clock": "top.u.clk",
+    "sample_time_semantics": "time is sample_time",
+    "sample_count": 10,
+    "transfer_count": 2,
+    "max_stall_cycles": 4,
+    "ready_without_valid_cycles": 2,
+    "ready_without_valid_reporting": "intervals",
+    "ready_without_valid_interval_count": 1,
+    "data_stability_violations": 1,
+    "require_valid_hold_until_handshake": true,
+    "valid_hold_violations": 1,
+    "valid_wait_open_at_window_end": false,
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 3,
+    "returned_count": 3,
+    "truncation_scopes": []
+  },
+  "data": {
+    "findings": [
+      {
+        "type": "valid_dropped_before_handshake",
+        "severity": "error",
+        "begin": "110ns",
+        "time": "130ns",
+        "observed_valid": {
+          "value": "1'h0",
+          "known": true,
+          "width": 1,
+          "bits": "0"
+        },
+        "reason": "valid deasserted before a handshake"
+      },
+      {
+        "type": "data_changed_while_stalled",
+        "severity": "warning",
+        "begin": "140ns",
+        "time": "150ns",
+        "signal": "data0"
+      },
+      {
+        "type": "long_stall",
+        "severity": "warning",
+        "begin": "160ns",
+        "end": "200ns",
+        "cycles": 4,
+        "open_at_window_end": true
+      }
+    ],
+    "ready_without_valid_intervals": [
+      {
+        "begin": "100ns",
+        "end": "110ns",
+        "cycle_count": 2
+      }
+    ],
+    "sampling": {
+      "requested": {
+        "edge": "posedge",
+        "sample_point": null
+      },
+      "effective": {
+        "edge": "posedge",
+        "sample_point": "before"
+      },
+      "sample_point_applied": true,
+      "sample_point_ignored_for_negedge": false
+    }
+  },
+  "error": null
+}

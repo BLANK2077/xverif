@@ -16,7 +16,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -25,10 +26,15 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "requests"
+      ],
       "properties": {
         "mode": {
           "type": "string",
@@ -38,33 +44,49 @@
           "type": "array",
           "items": {
             "type": "object",
-            "description": "Structured requests configuration. Only the declared properties are accepted."
+            "properties": {
+              "api_version": {
+                "type": "string",
+                "description": "Child public API version. It is intentionally not defaulted by batch."
+              },
+              "request_id": {
+                "type": "string",
+                "description": "Optional child request correlation id."
+              },
+              "action": {
+                "type": "string",
+                "description": "Child action name selected for action-specific dispatch."
+              },
+              "target": {
+                "type": "object",
+                "x-deferred-action-validation": true,
+                "description": "Child target, validated by the selected action contract."
+              },
+              "args": {
+                "type": "object",
+                "x-deferred-action-validation": true,
+                "description": "Child arguments, validated by the selected action contract."
+              },
+              "limits": {
+                "type": "object",
+                "x-deferred-action-validation": true,
+                "description": "Child limits, validated by the selected action contract."
+              }
+            },
+            "additionalProperties": false,
+            "x-deferred-action-validation": true,
+            "description": "Closed child envelope. Required fields and nested payload are validated by the child's action-specific public contract during child dispatch, so an invalid child is reported in data.results without turning the batch envelope into an outer schema error."
           },
-          "description": "Ordered requests entries. Each item must satisfy the declared item contract."
+          "description": "Batch 中按顺序执行的完整 xdebug public request 列表；每个子请求仍按自身 action schema 严格校验。",
+          "minItems": 1
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "requests"
-      ]
+      "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,

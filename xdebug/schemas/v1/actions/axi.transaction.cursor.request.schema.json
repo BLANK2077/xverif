@@ -1,12 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "xdebug.axi.cursor.request.v1",
-  "title": "axi.cursor request",
+  "$id": "xdebug.axi.transaction.cursor.request.v1",
+  "title": "axi.transaction.cursor request",
   "type": "object",
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -16,7 +17,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -25,10 +27,51 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "name",
+        "op"
+      ],
       "properties": {
         "direction": {
           "type": "string",
@@ -37,7 +80,7 @@
             "read",
             "all"
           ],
-          "description": "Action-specific direction input. Its type and accepted values are defined by this schema."
+          "description": "协议 transaction 的方向过滤；read/write/all 的可用性以本 action enum 为准。"
         },
         "name": {
           "type": "string",
@@ -52,20 +95,17 @@
             "pre",
             "last"
           ],
-          "description": "Action-specific op input. Its type and accepted values are defined by this schema."
+          "description": "游标移动或协议浏览操作。"
         },
-        "time_unit": {
+        "render_time_unit": {
           "type": "string",
           "enum": [
             "auto",
-            "fs",
             "ps",
             "ns",
-            "us",
-            "ms",
-            "s"
+            "us"
           ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
+          "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
         },
         "value_format": {
           "type": "string",
@@ -74,33 +114,23 @@
             "bin",
             "dec"
           ],
-          "description": "Action-specific value_format input. Its type and accepted values are defined by this schema.",
-          "default": "hex"
+          "default": "hex",
+          "description": "返回 LogicValue 的显示格式；不改变比较、采样或底层四态值。"
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "name",
-        "op"
-      ]
+      "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
@@ -112,19 +142,19 @@
   "x-description-zh": "在 AXI transfer 间移动游标。",
   "x-agent": {
     "use_when": [
-      "在 AXI transfer 间移动游标。"
+      "Need stateful begin/next/prev navigation through reconstructed AXI transactions one item at a time."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 axi.analysis、axi.export 的业务目标；请改用列出的同域 action。"
+      "Do not use it for arbitrary waveform time bookmarks or bulk AXI filtering."
     ],
     "alternatives": [
       {
-        "action": "axi.analysis",
-        "when": "汇总 AXI 行为。"
+        "action": "waveform.cursor.set",
+        "when": "Store an arbitrary waveform time bookmark."
       },
       {
-        "action": "axi.export",
-        "when": "导出 AXI 数据。"
+        "action": "axi.query",
+        "when": "Filter or enumerate AXI transactions."
       }
     ],
     "constraints": [

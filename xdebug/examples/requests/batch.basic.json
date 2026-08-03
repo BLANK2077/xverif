@@ -5,10 +5,8 @@
     "requests": [
       {
         "api_version": "xdebug.v1",
-        "action": "schema",
-        "args": {
-          "action": "value.at"
-        }
+        "action": "session.list",
+        "args": {}
       }
     ]
   }

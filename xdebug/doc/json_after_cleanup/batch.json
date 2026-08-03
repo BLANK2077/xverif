@@ -6,16 +6,10 @@
       "requests": [
         {
           "api_version": "xdebug.v1",
-          "action": "schema",
-          "args": {
-            "action": "actions",
-            "kind": "request"
-          }
+          "action": "session.list",
+          "args": {}
         }
       ]
-    },
-    "output": {
-      "verbosity": "compact"
     }
   },
   "response": {
@@ -29,225 +23,41 @@
     "session": null,
     "summary": {
       "count": 1,
-      "all_ok": true
+      "all_ok": true,
+      "failed_count": 0,
+      "failed_indexes": [],
+      "failed_codes": [],
+      "failed_layers": []
     },
     "data": {
       "results": [
         {
           "api_version": "xdebug.v1",
           "ok": true,
-          "action": "schema",
+          "action": "session.list",
           "tool": {
             "name": "xdebug",
             "version": "0.1.0"
           },
           "session": null,
           "summary": {
-            "action": "actions",
-            "kind": "request"
+            "session_count": 1,
+            "expired_removed_count": 0
           },
           "data": {
-            "action": "actions",
-            "kind": "request",
-            "schema": {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "$id": "xdebug.actions.request.v1",
-              "title": "actions request",
-              "type": "object",
-              "required": [
-                "api_version",
-                "action"
-              ],
-              "properties": {
-                "api_version": {
-                  "type": "string",
-                  "enum": [
-                    "xdebug.v1"
-                  ]
-                },
-                "request_id": {
-                  "type": "string"
-                },
-                "action": {
-                  "type": "string",
-                  "enum": [
-                    "actions"
-                  ]
-                },
-                "target": {
-                  "type": "object"
-                },
-                "args": {
-                  "type": "object",
-                  "properties": {
-                    "signal": {
-                      "type": "string"
-                    },
-                    "signals": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "time": {
-                      "type": "string"
-                    },
-                    "requested_time": {
-                      "type": "string"
-                    },
-                    "time_a": {
-                      "type": "string"
-                    },
-                    "time_b": {
-                      "type": "string"
-                    },
-                    "from_signal": {
-                      "type": "string"
-                    },
-                    "to_signal": {
-                      "type": "string"
-                    },
-                    "file": {
-                      "type": "string"
-                    },
-                    "line": {
-                      "type": "integer"
-                    },
-                    "expr": {
-                      "type": "string"
-                    },
-                    "scope": {
-                      "type": "string"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "op": {
-                      "type": "string"
-                    },
-                    "conditions": {
-                      "type": "array",
-                      "items": {
-                        "type": "object"
-                      }
-                    },
-                    "time_range": {
-                      "type": "object"
-                    },
-                    "requests": {
-                      "type": "array",
-                      "items": {
-                        "type": "object"
-                      }
-                    },
-                    "session_id": {
-                      "type": "string"
-                    },
-                    "valid": {
-                      "type": "string"
-                    },
-                    "ready": {
-                      "type": "string"
-                    },
-                    "port": {
-                      "type": "string"
-                    },
-                    "instance": {
-                      "type": "string"
-                    },
-                    "interface": {
-                      "type": "string"
-                    },
-                    "format": {
-                      "type": "string"
-                    },
-                    "direction": {
-                      "type": "string"
-                    },
-                    "mode": {
-                      "type": "string"
-                    },
-                    "include_source": {
-                      "type": "boolean"
-                    },
-                    "include_ast": {
-                      "type": "boolean"
-                    },
-                    "include_candidates": {
-                      "type": "boolean"
-                    },
-                    "include_trace": {
-                      "type": "boolean"
-                    },
-                    "include_expanded_queries": {
-                      "type": "boolean"
-                    },
-                    "include_raw_edges": {
-                      "type": "boolean"
-                    },
-                    "include_graph": {
-                      "type": "boolean"
-                    },
-                    "include_debug": {
-                      "type": "boolean"
-                    },
-                    "include_raw": {
-                      "type": "boolean"
-                    },
-                    "include_signal_meta": {
-                      "type": "boolean"
-                    },
-                    "include_rows": {
-                      "type": "boolean"
-                    },
-                    "include_samples": {
-                      "type": "boolean"
-                    },
-                    "include_all_changes": {
-                      "type": "boolean"
-                    },
-                    "include_transactions": {
-                      "type": "boolean"
-                    },
-                    "include_beats": {
-                      "type": "boolean"
-                    },
-                    "include_accesses": {
-                      "type": "boolean"
-                    },
-                    "max_items": {
-                      "type": "integer"
-                    },
-                    "max_examples": {
-                      "type": "integer"
-                    },
-                    "recursive": {
-                      "type": "boolean"
-                    },
-                    "include_all_signals": {
-                      "type": "boolean"
-                    }
-                  },
-                  "additionalProperties": true
-                },
-                "limits": {
-                  "type": "object"
-                },
-                "output": {
-                  "type": "object"
-                }
-              },
-              "additionalProperties": true
-            },
-            "schema_path": "schemas/v1/actions/actions.request.schema.json"
+            "sessions": [
+              {
+                "session_id": "case_a",
+                "mode": "combined",
+                "daidir": "simv.daidir",
+                "fsdb": "waves.fsdb",
+                "socket_path": "session-endpoints/case_a.sock",
+                "server_host": "localhost",
+                "transport": "uds"
+              }
+            ]
           },
-          "findings": [],
-          "suggested_next_actions": [],
-          "warnings": [],
-          "error": null,
-          "meta": {
-            "truncated": false
-          }
+          "error": null
         }
       ]
     },

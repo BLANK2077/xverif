@@ -6,7 +6,6 @@
 
 #include "nlohmann/json-schema.hpp"
 
-#include <cctype>
 #include <fstream>
 #include <map>
 #include <memory>
@@ -36,23 +35,6 @@ struct ValidationIssue {
     std::string pointer;
     std::string message;
 };
-
-bool sensitive_diagnostic_path(const std::string& path) {
-    std::string segment;
-    for (size_t i = 0; i <= path.size(); ++i) {
-        const char c = i < path.size() ? path[i] : '\0';
-        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_') {
-            segment.push_back(c);
-            continue;
-        }
-        if (segment == "ownership_token" ||
-            segment == "ownership_token_hash") {
-            return true;
-        }
-        segment.clear();
-    }
-    return false;
-}
 
 struct CachedBatchValidators {
     CachedValidator envelope;

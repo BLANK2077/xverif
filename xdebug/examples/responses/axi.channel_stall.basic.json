@@ -2,6 +2,48 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "axi.channel_stall",
-  "summary": {"name": "if0", "channel": "ar", "sample_count": 20, "transfer_count": 3, "max_stall_cycles": 4, "finding_count": 1, "truncated": false},
-  "data": {"findings": [{"type": "stall", "begin": "100ns", "end": "140ns", "cycles": 4}]}
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
+  "summary": {
+    "name": "if0",
+    "channel": "ar",
+    "sampling_mode": "clock_edge",
+    "clock": "top.clk",
+    "edge": "negedge",
+    "sample_time_semantics": "time is sample_time",
+    "sample_count": 20,
+    "transfer_count": 3,
+    "max_stall_cycles": 4,
+    "ready_without_valid_cycles": 0,
+    "first_activity_time": "100ns",
+    "scanned_range": {"begin": "0ns", "end": "200ns"},
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 1,
+    "returned_count": 1,
+    "truncation_scopes": []
+  },
+  "data": {
+    "findings": [
+      {
+        "type": "long_stall",
+        "severity": "warning",
+        "begin": "100ns",
+        "end": "140ns",
+        "cycles": 4
+      }
+    ]
+  },
+  "error": null
 }

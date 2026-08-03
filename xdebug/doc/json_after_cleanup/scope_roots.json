@@ -1,70 +1,99 @@
 {
   "request": {
     "api_version": "xdebug.v1",
+    "request_id": "scope-roots-basic",
     "action": "scope.roots",
     "target": {
-      "session_id": "sample_wave"
+      "session_id": "example"
     },
     "args": {
       "source": "auto"
-    },
-    "limits": {
-      "timeout_ms": 120000
-    },
-    "output": {
-      "verbosity": "compact"
     }
   },
   "response": {
     "api_version": "xdebug.v1",
+    "request_id": "scope-roots-basic",
     "ok": true,
     "action": "scope.roots",
     "tool": {
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "example",
+      "mode": "combined",
+      "daidir": "simv.daidir",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/example.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
       "source": "auto",
+      "wave_available": true,
+      "design_available": true,
+      "resource_available": true,
       "root_count": 1,
       "wave_count": 1,
-      "design_count": 0,
-      "matched_count": 0,
-      "recommended_root": "ai_complex_top",
-      "recommended_reason": "unique root"
+      "design_count": 1,
+      "matched_count": 1,
+      "recommended_root": "top",
+      "recommended_reason": "unique root",
+      "scan_complete": true,
+      "analysis_complete": true,
+      "response_truncated": false,
+      "total_count": 1,
+      "returned_count": 1,
+      "truncation_scopes": []
     },
     "data": {
       "roots": [
         {
-          "path": "ai_complex_top",
+          "path": "top",
           "sources": [
+            "design",
             "wave"
           ],
+          "status": "matched",
           "wave": {
-            "path": "ai_complex_top",
-            "name": "ai_complex_top",
-            "full_name": "ai_complex_top",
-            "def_name": "ai_complex_top",
+            "path": "top",
+            "name": "top",
+            "full_name": "top",
+            "def_name": "top",
             "type": 0,
             "queryable": true
           },
-          "design": null,
-          "status": "wave_only"
+          "design": {
+            "path": "top",
+            "name": "top",
+            "full_name": "top",
+            "def_name": "top",
+            "kind": "module",
+            "discovery": "npi_top",
+            "traceable": true
+          }
         }
       ],
       "wave_roots": [
         {
-          "path": "ai_complex_top",
-          "name": "ai_complex_top",
-          "full_name": "ai_complex_top",
-          "def_name": "ai_complex_top",
+          "path": "top",
+          "name": "top",
+          "full_name": "top",
+          "def_name": "top",
           "type": 0,
           "queryable": true
         }
       ],
-      "design_roots": [],
-      "limitations": [
-        "design roots unavailable: design not loaded"
+      "design_roots": [
+        {
+          "path": "top",
+          "name": "top",
+          "full_name": "top",
+          "def_name": "top",
+          "kind": "module",
+          "discovery": "npi_top",
+          "traceable": true
+        }
       ]
     },
     "error": null

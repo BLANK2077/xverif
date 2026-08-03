@@ -2,15 +2,12 @@
   "request": {
     "api_version": "xdebug.v1",
     "action": "event.config.load",
-    "output": {
-      "verbosity": "compact"
-    },
     "target": {
-      "session_id": "fix_wave"
+      "session_id": "case_a"
     },
     "args": {
-      "name": "evt0",
-      "config_path": "<xverif-repo>/xdebug/testdata/waveform/ai_complex_wave/config/event0.json"
+      "name": "if0",
+      "config_path": "events.json"
     }
   },
   "response": {
@@ -21,30 +18,31 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
-      "name": "evt0",
       "status": "loaded"
     },
     "data": {
       "config": {
         "name": "evt0",
-        "clk": "ai_complex_top.clk",
-        "reset": {"signal": "ai_complex_top.rst_n", "polarity": "active_low"},
-        "edge": "posedge",
-        "signals": {
-          "payload": "ai_complex_top.event_payload",
-          "rdy": "ai_complex_top.event_rdy",
-          "vld": "ai_complex_top.event_vld",
-          "xz": "ai_complex_top.xz_bus"
+        "clock": "top.clk",
+        "reset": {
+          "signal": "top.rst_n",
+          "polarity": "active_low"
         },
-        "fields": {
-          "payload_lo": {
-            "signal": "payload",
-            "left": 3,
-            "right": 0
-          }
-        }
+        "edge": "negedge",
+        "signals": {
+          "vld": "top.valid",
+          "payload": "top.payload"
+        },
+        "fields": {}
       }
     },
     "error": null

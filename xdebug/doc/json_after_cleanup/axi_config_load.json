@@ -1,39 +1,49 @@
 {
-  "request_args": {
-    "name": "if0",
-    "config": {
-      "awaddr": "axi_vip_fixture_top.axi_vip_if.master_if[0].awaddr",
-      "awid": "axi_vip_fixture_top.axi_vip_if.master_if[0].awid",
-      "awlen": "axi_vip_fixture_top.axi_vip_if.master_if[0].awlen",
-      "awsize": "axi_vip_fixture_top.axi_vip_if.master_if[0].awsize",
-      "awburst": "axi_vip_fixture_top.axi_vip_if.master_if[0].awburst",
-      "awvalid": "axi_vip_fixture_top.axi_vip_if.master_if[0].awvalid",
-      "awready": "axi_vip_fixture_top.axi_vip_if.master_if[0].awready",
-      "wdata": "axi_vip_fixture_top.axi_vip_if.master_if[0].wdata",
-      "wstrb": "axi_vip_fixture_top.axi_vip_if.master_if[0].wstrb",
-      "wlast": "axi_vip_fixture_top.axi_vip_if.master_if[0].wlast",
-      "wvalid": "axi_vip_fixture_top.axi_vip_if.master_if[0].wvalid",
-      "wready": "axi_vip_fixture_top.axi_vip_if.master_if[0].wready",
-      "bid": "axi_vip_fixture_top.axi_vip_if.master_if[0].bid",
-      "bresp": "axi_vip_fixture_top.axi_vip_if.master_if[0].bresp",
-      "bvalid": "axi_vip_fixture_top.axi_vip_if.master_if[0].bvalid",
-      "bready": "axi_vip_fixture_top.axi_vip_if.master_if[0].bready",
-      "araddr": "axi_vip_fixture_top.axi_vip_if.master_if[0].araddr",
-      "arid": "axi_vip_fixture_top.axi_vip_if.master_if[0].arid",
-      "arlen": "axi_vip_fixture_top.axi_vip_if.master_if[0].arlen",
-      "arsize": "axi_vip_fixture_top.axi_vip_if.master_if[0].arsize",
-      "arburst": "axi_vip_fixture_top.axi_vip_if.master_if[0].arburst",
-      "arvalid": "axi_vip_fixture_top.axi_vip_if.master_if[0].arvalid",
-      "arready": "axi_vip_fixture_top.axi_vip_if.master_if[0].arready",
-      "rid": "axi_vip_fixture_top.axi_vip_if.master_if[0].rid",
-      "rdata": "axi_vip_fixture_top.axi_vip_if.master_if[0].rdata",
-      "rresp": "axi_vip_fixture_top.axi_vip_if.master_if[0].rresp",
-      "rlast": "axi_vip_fixture_top.axi_vip_if.master_if[0].rlast",
-      "rvalid": "axi_vip_fixture_top.axi_vip_if.master_if[0].rvalid",
-      "rready": "axi_vip_fixture_top.axi_vip_if.master_if[0].rready",
-      "clk": "axi_vip_fixture_top.clk",
-      "reset": {"signal": "axi_vip_fixture_top.rst_n", "polarity": "active_low"},
-      "edge": "posedge"
+  "request": {
+    "api_version": "xdebug.v1",
+    "action": "axi.config.load",
+    "target": {
+      "session_id": "case_a"
+    },
+    "args": {
+      "name": "if0",
+      "config": {
+        "clock": "axi_vip_fixture_top.clk",
+        "reset": {
+          "signal": "axi_vip_fixture_top.rst_n",
+          "polarity": "active_low"
+        },
+        "edge": "posedge",
+        "awaddr": "axi_vip_fixture_top.axi_vip_if.master_if[0].awaddr",
+        "awid": "axi_vip_fixture_top.axi_vip_if.master_if[0].awid",
+        "awlen": "axi_vip_fixture_top.axi_vip_if.master_if[0].awlen",
+        "awsize": "axi_vip_fixture_top.axi_vip_if.master_if[0].awsize",
+        "awburst": "axi_vip_fixture_top.axi_vip_if.master_if[0].awburst",
+        "awvalid": "axi_vip_fixture_top.axi_vip_if.master_if[0].awvalid",
+        "awready": "axi_vip_fixture_top.axi_vip_if.master_if[0].awready",
+        "wdata": "axi_vip_fixture_top.axi_vip_if.master_if[0].wdata",
+        "wstrb": "axi_vip_fixture_top.axi_vip_if.master_if[0].wstrb",
+        "wlast": "axi_vip_fixture_top.axi_vip_if.master_if[0].wlast",
+        "wvalid": "axi_vip_fixture_top.axi_vip_if.master_if[0].wvalid",
+        "wready": "axi_vip_fixture_top.axi_vip_if.master_if[0].wready",
+        "bid": "axi_vip_fixture_top.axi_vip_if.master_if[0].bid",
+        "bresp": "axi_vip_fixture_top.axi_vip_if.master_if[0].bresp",
+        "bvalid": "axi_vip_fixture_top.axi_vip_if.master_if[0].bvalid",
+        "bready": "axi_vip_fixture_top.axi_vip_if.master_if[0].bready",
+        "araddr": "axi_vip_fixture_top.axi_vip_if.master_if[0].araddr",
+        "arid": "axi_vip_fixture_top.axi_vip_if.master_if[0].arid",
+        "arlen": "axi_vip_fixture_top.axi_vip_if.master_if[0].arlen",
+        "arsize": "axi_vip_fixture_top.axi_vip_if.master_if[0].arsize",
+        "arburst": "axi_vip_fixture_top.axi_vip_if.master_if[0].arburst",
+        "arvalid": "axi_vip_fixture_top.axi_vip_if.master_if[0].arvalid",
+        "arready": "axi_vip_fixture_top.axi_vip_if.master_if[0].arready",
+        "rid": "axi_vip_fixture_top.axi_vip_if.master_if[0].rid",
+        "rdata": "axi_vip_fixture_top.axi_vip_if.master_if[0].rdata",
+        "rresp": "axi_vip_fixture_top.axi_vip_if.master_if[0].rresp",
+        "rlast": "axi_vip_fixture_top.axi_vip_if.master_if[0].rlast",
+        "rvalid": "axi_vip_fixture_top.axi_vip_if.master_if[0].rvalid",
+        "rready": "axi_vip_fixture_top.axi_vip_if.master_if[0].rready"
+      }
     }
   },
   "response": {
@@ -44,7 +54,14 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
       "name": "if0",
       "status": "loaded"
@@ -52,9 +69,325 @@
     "data": {
       "config": {
         "name": "if0",
-        "clk": "axi_vip_fixture_top.clk",
-        "reset": {"signal": "axi_vip_fixture_top.rst_n", "polarity": "active_low"}
-      }
+        "sampling_mode": "clock_edge",
+        "clock": "axi_vip_fixture_top.clk",
+        "reset": {
+          "signal": "axi_vip_fixture_top.rst_n",
+          "polarity": "active_low"
+        },
+        "edge": "posedge",
+        "sample_point": "before",
+        "channels": {
+          "aw": {
+            "addr": "axi_vip_fixture_top.axi_vip_if.master_if[0].awaddr",
+            "id": "axi_vip_fixture_top.axi_vip_if.master_if[0].awid",
+            "len": "axi_vip_fixture_top.axi_vip_if.master_if[0].awlen",
+            "size": "axi_vip_fixture_top.axi_vip_if.master_if[0].awsize",
+            "burst": "axi_vip_fixture_top.axi_vip_if.master_if[0].awburst",
+            "valid": "axi_vip_fixture_top.axi_vip_if.master_if[0].awvalid",
+            "ready": "axi_vip_fixture_top.axi_vip_if.master_if[0].awready"
+          },
+          "w": {
+            "data": "axi_vip_fixture_top.axi_vip_if.master_if[0].wdata",
+            "strb": "axi_vip_fixture_top.axi_vip_if.master_if[0].wstrb",
+            "last": "axi_vip_fixture_top.axi_vip_if.master_if[0].wlast",
+            "valid": "axi_vip_fixture_top.axi_vip_if.master_if[0].wvalid",
+            "ready": "axi_vip_fixture_top.axi_vip_if.master_if[0].wready"
+          },
+          "b": {
+            "id": "axi_vip_fixture_top.axi_vip_if.master_if[0].bid",
+            "resp": "axi_vip_fixture_top.axi_vip_if.master_if[0].bresp",
+            "valid": "axi_vip_fixture_top.axi_vip_if.master_if[0].bvalid",
+            "ready": "axi_vip_fixture_top.axi_vip_if.master_if[0].bready"
+          },
+          "ar": {
+            "addr": "axi_vip_fixture_top.axi_vip_if.master_if[0].araddr",
+            "id": "axi_vip_fixture_top.axi_vip_if.master_if[0].arid",
+            "len": "axi_vip_fixture_top.axi_vip_if.master_if[0].arlen",
+            "size": "axi_vip_fixture_top.axi_vip_if.master_if[0].arsize",
+            "burst": "axi_vip_fixture_top.axi_vip_if.master_if[0].arburst",
+            "valid": "axi_vip_fixture_top.axi_vip_if.master_if[0].arvalid",
+            "ready": "axi_vip_fixture_top.axi_vip_if.master_if[0].arready"
+          },
+          "r": {
+            "id": "axi_vip_fixture_top.axi_vip_if.master_if[0].rid",
+            "data": "axi_vip_fixture_top.axi_vip_if.master_if[0].rdata",
+            "resp": "axi_vip_fixture_top.axi_vip_if.master_if[0].rresp",
+            "last": "axi_vip_fixture_top.axi_vip_if.master_if[0].rlast",
+            "valid": "axi_vip_fixture_top.axi_vip_if.master_if[0].rvalid",
+            "ready": "axi_vip_fixture_top.axi_vip_if.master_if[0].rready"
+          }
+        }
+      },
+      "validation": {
+        "status": "ok",
+        "clock": {
+          "status": "ok",
+          "edge": "posedge",
+          "first_edge": 5000
+        },
+        "signals": [
+          {
+            "field": "clock",
+            "requested_path": "axi_vip_fixture_top.clk",
+            "resolved_path": "axi_vip_fixture_top.clk",
+            "width": 1,
+            "status": "ok"
+          },
+          {
+            "field": "reset",
+            "requested_path": "axi_vip_fixture_top.rst_n",
+            "resolved_path": "axi_vip_fixture_top.rst_n",
+            "width": 1,
+            "status": "ok"
+          },
+          {
+            "field": "awvalid",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].awvalid",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].awvalid",
+            "width": 1,
+            "status": "ok"
+          },
+          {
+            "field": "awready",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].awready",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].awready",
+            "width": 1,
+            "status": "ok"
+          },
+          {
+            "field": "awaddr",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].awaddr",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].awaddr",
+            "width": 32,
+            "status": "ok"
+          },
+          {
+            "field": "awid",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].awid",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].awid",
+            "width": 4,
+            "status": "ok"
+          },
+          {
+            "field": "awlen",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].awlen",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].awlen",
+            "width": 8,
+            "status": "ok"
+          },
+          {
+            "field": "awsize",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].awsize",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].awsize",
+            "width": 3,
+            "status": "ok"
+          },
+          {
+            "field": "awburst",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].awburst",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].awburst",
+            "width": 2,
+            "status": "ok"
+          },
+          {
+            "field": "wvalid",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].wvalid",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].wvalid",
+            "width": 1,
+            "status": "ok"
+          },
+          {
+            "field": "wready",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].wready",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].wready",
+            "width": 1,
+            "status": "ok"
+          },
+          {
+            "field": "wdata",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].wdata",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].wdata",
+            "width": 32,
+            "status": "ok"
+          },
+          {
+            "field": "wstrb",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].wstrb",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].wstrb",
+            "width": 4,
+            "status": "ok"
+          },
+          {
+            "field": "wlast",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].wlast",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].wlast",
+            "width": 1,
+            "status": "ok"
+          },
+          {
+            "field": "bvalid",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].bvalid",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].bvalid",
+            "width": 1,
+            "status": "ok"
+          },
+          {
+            "field": "bready",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].bready",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].bready",
+            "width": 1,
+            "status": "ok"
+          },
+          {
+            "field": "bid",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].bid",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].bid",
+            "width": 4,
+            "status": "ok"
+          },
+          {
+            "field": "bresp",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].bresp",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].bresp",
+            "width": 2,
+            "status": "ok"
+          },
+          {
+            "field": "arvalid",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].arvalid",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].arvalid",
+            "width": 1,
+            "status": "ok"
+          },
+          {
+            "field": "arready",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].arready",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].arready",
+            "width": 1,
+            "status": "ok"
+          },
+          {
+            "field": "araddr",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].araddr",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].araddr",
+            "width": 32,
+            "status": "ok"
+          },
+          {
+            "field": "arid",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].arid",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].arid",
+            "width": 4,
+            "status": "ok"
+          },
+          {
+            "field": "arlen",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].arlen",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].arlen",
+            "width": 8,
+            "status": "ok"
+          },
+          {
+            "field": "arsize",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].arsize",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].arsize",
+            "width": 3,
+            "status": "ok"
+          },
+          {
+            "field": "arburst",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].arburst",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].arburst",
+            "width": 2,
+            "status": "ok"
+          },
+          {
+            "field": "rvalid",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].rvalid",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].rvalid",
+            "width": 1,
+            "status": "ok"
+          },
+          {
+            "field": "rready",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].rready",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].rready",
+            "width": 1,
+            "status": "ok"
+          },
+          {
+            "field": "rdata",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].rdata",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].rdata",
+            "width": 32,
+            "status": "ok"
+          },
+          {
+            "field": "rid",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].rid",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].rid",
+            "width": 4,
+            "status": "ok"
+          },
+          {
+            "field": "rresp",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].rresp",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].rresp",
+            "width": 2,
+            "status": "ok"
+          },
+          {
+            "field": "rlast",
+            "requested_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].rlast",
+            "resolved_path": "axi_vip_fixture_top.axi_vip_if.master_if[0].rlast",
+            "width": 1,
+            "status": "ok"
+          }
+        ]
+      },
+      "recommended_actions": [
+        {
+          "action": "value.at",
+          "purpose": "按一个或多个指定时间读取单信号、命名信号列表或接口配置维护的值。"
+        },
+        {
+          "action": "axi.query",
+          "purpose": "查询 AXI channel/transaction。"
+        },
+        {
+          "action": "axi.transaction.cursor",
+          "purpose": "在 AXI transfer 间移动游标。"
+        },
+        {
+          "action": "axi.analysis",
+          "purpose": "汇总 AXI 行为。"
+        },
+        {
+          "action": "axi.statistics",
+          "purpose": "按方向、ID 和地址过滤统计已完成 AXI 事务。"
+        },
+        {
+          "action": "axi.export",
+          "purpose": "导出 AXI 数据。"
+        },
+        {
+          "action": "axi.channel_stall",
+          "purpose": "实验性 AXI stall 分析。"
+        },
+        {
+          "action": "axi.latency_outlier",
+          "purpose": "实验性 AXI latency 异常。"
+        },
+        {
+          "action": "axi.outstanding_timeline",
+          "purpose": "实验性 AXI outstanding 时间线。"
+        },
+        {
+          "action": "axi.request_response_pair",
+          "purpose": "实验性 AXI 请求响应配对。"
+        }
+      ]
     },
     "error": null
   },

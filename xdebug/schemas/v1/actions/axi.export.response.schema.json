@@ -3,28 +3,843 @@
   "$id": "xdebug.axi.export.response.v1",
   "title": "axi.export response",
   "description": "Export AXI transactions for external analysis.",
-  "x-output_notes": "返回该 action 的 summary/data/error/meta；具体字段以 response schema 和 response example 为准。",
-  "type": "object",
-  "required": [
-    "api_version",
-    "ok",
-    "action",
-    "summary",
-    "data"
-  ],
-  "properties": {
-    "api_version": {
-      "const": "xdebug.v1"
+  "x-description-zh": "导出 AXI 数据。",
+  "x-output_notes": "axi.export 成功响应的 summary 字段为 summary.analysis_complete, summary.buffered_w_beat_count, summary.buffered_w_burst_count, summary.format, summary.full_scan_count, summary.incomplete_read_count, summary.incomplete_write_count, summary.name, summary.orphan_b_count, summary.orphan_r_beat_count, summary.orphan_w_beat_count, summary.output, summary.output_written, summary.read_count, summary.requested_range, summary.response_dependency_violation_count, summary.response_truncated, summary.returned_count, summary.row_count, summary.sample_count, summary.scan_complete, summary.scanned_range, summary.status, summary.total_count, summary.truncation_scopes, summary.value_width_complete, summary.width_diagnostics, summary.write_count；data 字段为 （空对象）。未知字段会被拒绝。完整性和裁剪事实使用 summary.scan_complete, summary.analysis_complete, summary.response_truncated, summary.total_count, summary.returned_count, summary.truncation_scopes。",
+  "$defs": {
+    "jsonValue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        },
+        {
+          "$ref": "#/$defs/jsonObject"
+        }
+      ]
     },
-    "request_id": {
-      "type": "string"
+    "jsonObject": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/jsonValue"
+      },
+      "x-dynamic-map": true,
+      "description": "显式动态键 JSON 对象；每个 value 仍受 jsonValue 递归合同约束。"
     },
-    "ok": {
-      "type": "boolean"
+    "successSummary": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "write_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "read_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "row_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "format": {
+          "enum": [
+            "tsv",
+            "csv"
+          ]
+        },
+        "status": {
+          "const": "written"
+        },
+        "output_written": {
+          "const": true
+        },
+        "sample_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "full_scan_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "incomplete_write_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "incomplete_read_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "buffered_w_beat_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "buffered_w_burst_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "orphan_w_beat_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "orphan_b_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "orphan_r_beat_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "response_dependency_violation_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "requested_range": {
+          "$ref": "#/$defs/nonSamplingTimeRange"
+        },
+        "scanned_range": {
+          "$ref": "#/$defs/nonSamplingTimeRange"
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "write_path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "read_path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "meta_path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "file_format": {
+              "enum": [
+                "tsv",
+                "csv"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "file_format",
+            "meta_path",
+            "path",
+            "read_path",
+            "write_path"
+          ]
+        },
+        "value_width_complete": {
+          "type": "boolean"
+        },
+        "width_diagnostics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "signal": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "role": {
+                "type": "string"
+              },
+              "reason": {
+                "enum": [
+                  "npi_range_size_unavailable",
+                  "conflicting_signal_widths",
+                  "derived_width_unavailable"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "reason",
+              "role",
+              "signal"
+            ]
+          }
+        },
+        "scan_complete": {
+          "type": "boolean"
+        },
+        "analysis_complete": {
+          "type": "boolean"
+        },
+        "response_truncated": {
+          "type": "boolean"
+        },
+        "total_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "returned_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncation_scopes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "analysis_complete",
+        "buffered_w_beat_count",
+        "buffered_w_burst_count",
+        "format",
+        "full_scan_count",
+        "incomplete_read_count",
+        "incomplete_write_count",
+        "name",
+        "orphan_b_count",
+        "orphan_r_beat_count",
+        "orphan_w_beat_count",
+        "output",
+        "output_written",
+        "read_count",
+        "requested_range",
+        "response_dependency_violation_count",
+        "response_truncated",
+        "returned_count",
+        "row_count",
+        "sample_count",
+        "scan_complete",
+        "scanned_range",
+        "status",
+        "total_count",
+        "truncation_scopes",
+        "write_count"
+      ]
     },
-    "action": {
-      "enum": [
-        "axi.export"
+    "successData": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "errorSummary": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "error"
+        },
+        "error_code": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "error_code",
+        "status"
+      ]
+    },
+    "validationIssue": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "message",
+        "path"
+      ]
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "recoverable": {
+          "type": "boolean"
+        },
+        "error_layer": {
+          "enum": [
+            "schema",
+            "handler",
+            "wrapper",
+            "session_manager",
+            "transport",
+            "internal"
+          ]
+        },
+        "invalid_arg": {
+          "type": "string"
+        },
+        "expected": {
+          "type": "string"
+        },
+        "received": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "received_type": {
+          "type": "string"
+        },
+        "received_redacted": {
+          "type": "boolean"
+        },
+        "available_values": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "schema_path": {
+          "type": "string"
+        },
+        "required_any_of": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "missing_name": {
+          "type": "string"
+        },
+        "missing_resource": {
+          "type": "string"
+        },
+        "next_actions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "example_note": {
+          "type": "string"
+        },
+        "correct_example": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "cause_code": {
+          "type": "string"
+        },
+        "validation": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "current_estimated_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hard_max_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "protocol": {
+          "enum": [
+            "apb",
+            "axi",
+            "stream"
+          ]
+        },
+        "key_summary": {
+          "type": "string"
+        },
+        "manifest_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resource": {
+          "enum": [
+            "daidir",
+            "fsdb"
+          ]
+        },
+        "expected_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "actual_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "actual_size_bytes": {
+          "type": [
+            "null",
+            "integer"
+          ],
+          "minimum": 0
+        },
+        "expected_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "actual_sha256": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{64}$"
+            }
+          ]
+        },
+        "manifest_schema_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "manifest_state": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_mode": {
+          "enum": [
+            "design",
+            "waveform",
+            "combined"
+          ]
+        },
+        "session_transport": {
+          "enum": [
+            "uds",
+            "tcp",
+            "file"
+          ]
+        },
+        "idle_sec": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "idle_timeout_sec": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cleanup_succeeded": {
+          "type": "boolean"
+        },
+        "lifecycle_state": {
+          "enum": [
+            "cleanup_failed"
+          ]
+        },
+        "compensation_status": {
+          "enum": [
+            "cleaned",
+            "not_created",
+            "token_mismatch",
+            "cleanup_failed"
+          ]
+        },
+        "backend_error_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "exit_status": {
+          "type": "integer"
+        },
+        "health_status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resource_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requested_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "removed_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed_session_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "failure_kind": {
+          "type": "string"
+        },
+        "failure_phase": {
+          "enum": [
+            "npi_init",
+            "npi_load_design",
+            "npi_fsdb_open"
+          ]
+        },
+        "startup_reason": {
+          "type": "string"
+        },
+        "native_error_summary": {
+          "type": "string"
+        },
+        "diagnostic_log": {
+          "type": "string"
+        },
+        "advisories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "severity": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "message",
+              "severity"
+            ]
+          }
+        },
+        "validation_issues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/validationIssue"
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "error_layer",
+        "message",
+        "recoverable"
+      ]
+    },
+    "genericError": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "recoverable": {
+          "type": "boolean"
+        },
+        "error_layer": {
+          "enum": [
+            "schema",
+            "handler",
+            "wrapper",
+            "session_manager",
+            "transport",
+            "internal"
+          ]
+        },
+        "invalid_arg": {
+          "type": "string"
+        },
+        "expected": {
+          "type": "string"
+        },
+        "received": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "received_type": {
+          "type": "string"
+        },
+        "received_redacted": {
+          "type": "boolean"
+        },
+        "available_values": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "schema_path": {
+          "type": "string"
+        },
+        "required_any_of": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "missing_name": {
+          "type": "string"
+        },
+        "missing_resource": {
+          "type": "string"
+        },
+        "next_actions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "example_note": {
+          "type": "string"
+        },
+        "correct_example": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "cause_code": {
+          "type": "string"
+        },
+        "validation": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "current_estimated_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hard_max_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "protocol": {
+          "enum": [
+            "apb",
+            "axi",
+            "stream"
+          ]
+        },
+        "key_summary": {
+          "type": "string"
+        },
+        "manifest_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resource": {
+          "enum": [
+            "daidir",
+            "fsdb"
+          ]
+        },
+        "expected_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "actual_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "actual_size_bytes": {
+          "type": [
+            "null",
+            "integer"
+          ],
+          "minimum": 0
+        },
+        "expected_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "actual_sha256": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{64}$"
+            }
+          ]
+        },
+        "manifest_schema_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "manifest_state": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_mode": {
+          "enum": [
+            "design",
+            "waveform",
+            "combined"
+          ]
+        },
+        "session_transport": {
+          "enum": [
+            "uds",
+            "tcp",
+            "file"
+          ]
+        },
+        "idle_sec": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "idle_timeout_sec": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cleanup_succeeded": {
+          "type": "boolean"
+        },
+        "lifecycle_state": {
+          "enum": [
+            "cleanup_failed"
+          ]
+        },
+        "compensation_status": {
+          "enum": [
+            "cleaned",
+            "not_created",
+            "token_mismatch",
+            "cleanup_failed"
+          ]
+        },
+        "backend_error_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "exit_status": {
+          "type": "integer"
+        },
+        "health_status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resource_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requested_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "removed_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed_session_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "failure_kind": {
+          "type": "string"
+        },
+        "failure_phase": {
+          "enum": [
+            "npi_init",
+            "npi_load_design",
+            "npi_fsdb_open"
+          ]
+        },
+        "startup_reason": {
+          "type": "string"
+        },
+        "native_error_summary": {
+          "type": "string"
+        },
+        "diagnostic_log": {
+          "type": "string"
+        },
+        "advisories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "severity": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "message",
+              "severity"
+            ]
+          }
+        },
+        "validation_issues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/validationIssue"
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "error_layer",
+        "message",
+        "recoverable"
       ]
     },
     "tool": {
@@ -49,573 +864,433 @@
       "additionalProperties": false,
       "required": [
         "name",
-        "version",
-        "build_id",
-        "git_revision",
-        "schema_revision"
+        "version"
       ]
     },
-    "session": {
-      "oneOf": [
-        {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string"
-            },
-            "session_id": {
-              "type": "string"
-            },
-            "mode": {
-              "type": "string"
-            },
-            "daidir": {
-              "type": "string"
-            },
-            "dbdir": {
-              "type": "string"
-            },
-            "dbdir_path": {
-              "type": "string"
-            },
-            "design_file": {
-              "type": "string"
-            },
-            "fsdb": {
-              "type": "string"
-            },
-            "fsdb_file": {
-              "type": "string"
-            },
-            "socket_path": {
-              "type": "string"
-            },
-            "transport": {
-              "type": "string"
-            },
-            "file_dir": {
-              "type": "string"
-            },
-            "host": {
-              "type": "string"
-            },
-            "bind_host": {
-              "type": "string"
-            },
-            "server_host": {
-              "type": "string"
-            },
-            "pid": {
-              "type": "integer"
-            },
-            "port": {
-              "type": "integer"
-            },
-            "server_pid": {
-              "type": "integer"
-            },
-            "created_at": {
-              "type": "integer"
-            },
-            "last_active": {
-              "type": "integer"
-            },
-            "dbdir_mtime": {
-              "type": "integer"
-            },
-            "dbdir_size": {
-              "type": "integer"
-            },
-            "dbdir_dev": {
-              "type": "integer"
-            },
-            "dbdir_inode": {
-              "type": "integer"
-            },
-            "fsdb_mtime": {
-              "type": "integer"
-            },
-            "fsdb_size": {
-              "type": "integer"
-            },
-            "fsdb_dev": {
-              "type": "integer"
-            },
-            "fsdb_inode": {
-              "type": "integer"
-            },
-            "healthy": {
-              "type": "boolean"
-            }
-          },
-          "additionalProperties": false
+    "sessionRecord": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
         },
-        {
-          "type": "null"
+        "mode": {
+          "enum": [
+            "design",
+            "waveform",
+            "combined"
+          ]
+        },
+        "daidir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        },
+        "socket_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "transport": {
+          "enum": [
+            "uds",
+            "tcp",
+            "file"
+          ]
+        },
+        "file_dir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bind_host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "server_host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "server_pid": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "created_at": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "last_active": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "daidir_mtime": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "daidir_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "daidir_dev": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "daidir_inode": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fsdb_mtime": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fsdb_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fsdb_dev": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fsdb_inode": {
+          "type": "integer",
+          "minimum": 1
         }
-      ]
-    },
-    "schema_version": {
-      "type": "string"
-    },
-    "text": {
-      "type": "string"
-    },
-    "summary": {
-      "oneOf": [
+      },
+      "additionalProperties": false,
+      "required": [
+        "session_id",
+        "mode",
+        "transport"
+      ],
+      "allOf": [
         {
-          "type": "object",
-          "properties": {
-            "name": {
-              "type": "string"
-            },
-            "sampling_mode": {
-              "type": "string"
-            },
-            "clock": {
-              "type": "string"
-            },
-            "edge": {
-              "type": "string"
-            },
-            "sample_point": {
-              "type": "string"
-            },
-            "sample_time_semantics": {
-              "type": "string"
-            },
-            "sample_count": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "full_scan_count": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "analysis_complete": {
-              "type": "boolean"
-            },
-            "truncated": {
-              "type": "boolean"
-            },
-            "truncation_scope": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "requested_range": {
-              "type": "object",
+          "oneOf": [
+            {
               "properties": {
-                "begin": {
-                  "type": "string",
-                  "description": "规范化时间字符串。"
-                },
-                "end": {
-                  "type": "string",
-                  "description": "规范化时间字符串。"
+                "mode": {
+                  "const": "design"
                 }
               },
-              "additionalProperties": false
-            },
-            "scanned_range": {
-              "type": "object",
-              "properties": {
-                "begin": {
-                  "type": "string",
-                  "description": "规范化时间字符串。"
-                },
-                "end": {
-                  "type": "string",
-                  "description": "规范化时间字符串。"
-                }
-              },
-              "additionalProperties": false
-            },
-            "write_count": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "read_count": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "total_count": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "row_count": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "format": {
-              "type": "string"
-            },
-            "status": {
-              "type": "string"
-            },
-            "output_written": {
-              "type": "boolean"
-            },
-            "incomplete_write_count": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "incomplete_read_count": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "buffered_w_beat_count": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "buffered_w_burst_count": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "orphan_w_beat_count": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "orphan_b_count": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "orphan_r_beat_count": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "response_dependency_violation_count": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "output": {
-              "type": "object",
-              "properties": {
-                "path": {
-                  "type": "string"
-                },
-                "write_path": {
-                  "type": "string"
-                },
-                "read_path": {
-                  "type": "string"
-                },
-                "meta_path": {
-                  "type": "string"
-                },
-                "file_format": {
-                  "type": "string"
-                }
-              },
-              "additionalProperties": false
-            },
-            "value_width_complete": {
-              "type": "boolean"
-            },
-            "width_diagnostics": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "signal": {
-                    "type": [
-                      "string",
-                      "null"
+              "required": [
+                "mode",
+                "daidir"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "fsdb"
                     ]
                   },
-                  "role": {
-                    "type": "string"
+                  {
+                    "required": [
+                      "fsdb_mtime"
+                    ]
                   },
-                  "reason": {
-                    "type": "string",
-                    "enum": [
-                      "npi_range_size_unavailable",
-                      "conflicting_signal_widths",
-                      "derived_width_unavailable"
+                  {
+                    "required": [
+                      "fsdb_size"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "fsdb_dev"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "fsdb_inode"
                     ]
                   }
-                },
-                "required": [
-                  "signal",
-                  "role",
-                  "reason"
-                ],
-                "additionalProperties": false
+                ]
               }
+            },
+            {
+              "properties": {
+                "mode": {
+                  "const": "waveform"
+                }
+              },
+              "required": [
+                "mode",
+                "fsdb"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "daidir"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "daidir_mtime"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "daidir_size"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "daidir_dev"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "daidir_inode"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "properties": {
+                "mode": {
+                  "const": "combined"
+                }
+              },
+              "required": [
+                "mode",
+                "daidir",
+                "fsdb"
+              ]
             }
-          },
-          "additionalProperties": false
+          ]
         },
         {
-          "type": "object",
-          "properties": {
-            "status": {
-              "const": "error"
+          "oneOf": [
+            {
+              "properties": {
+                "transport": {
+                  "const": "uds"
+                }
+              },
+              "required": [
+                "transport",
+                "socket_path",
+                "server_host"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "file_dir"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "host"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "bind_host"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "port"
+                    ]
+                  }
+                ]
+              }
             },
-            "error_code": {
-              "type": "string"
+            {
+              "properties": {
+                "transport": {
+                  "const": "tcp"
+                }
+              },
+              "required": [
+                "transport",
+                "host",
+                "bind_host",
+                "port",
+                "server_host"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "socket_path"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "file_dir"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "properties": {
+                "transport": {
+                  "const": "file"
+                }
+              },
+              "required": [
+                "transport",
+                "file_dir",
+                "server_host"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "socket_path"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "host"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "bind_host"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "port"
+                    ]
+                  }
+                ]
+              }
             }
-          },
-          "additionalProperties": false,
-          "required": [
-            "status",
-            "error_code"
           ]
         }
       ]
     },
-    "data": {
-      "oneOf": [
-        {
+    "suggestedNextAction": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "chain_id": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "args": {
           "type": "object",
           "properties": {
-            "preview": {
-              "type": "object",
-              "properties": {
-                "writes": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "seq": {
-                        "type": "integer",
-                        "minimum": 0
-                      },
-                      "direction": {
-                        "enum": [
-                          "read",
-                          "write"
-                        ]
-                      },
-                      "completion_time": {
-                        "type": "string",
-                        "description": "规范化时间字符串。"
-                      },
-                      "addr_time": {
-                        "type": "string",
-                        "description": "规范化时间字符串。"
-                      },
-                      "first_data_time": {
-                        "type": "string",
-                        "description": "规范化时间字符串。"
-                      },
-                      "last_data_time": {
-                        "type": "string",
-                        "description": "规范化时间字符串。"
-                      },
-                      "latency": {
-                        "type": "string",
-                        "description": "规范化时间字符串。"
-                      },
-                      "phase_order": {
-                        "type": "string"
-                      },
-                      "response_dependency_violation": {
-                        "type": "boolean"
-                      },
-                      "id": {
-                        "oneOf": [
-                          {
-                            "type": "integer"
-                          },
-                          {
-                            "type": "string"
-                          }
-                        ]
-                      },
-                      "addr": {
-                        "oneOf": [
-                          {
-                            "type": "integer"
-                          },
-                          {
-                            "type": "string"
-                          }
-                        ]
-                      },
-                      "len": {
-                        "oneOf": [
-                          {
-                            "type": "integer"
-                          },
-                          {
-                            "type": "string"
-                          }
-                        ]
-                      },
-                      "size": {
-                        "oneOf": [
-                          {
-                            "type": "integer"
-                          },
-                          {
-                            "type": "string"
-                          }
-                        ]
-                      },
-                      "burst": {
-                        "oneOf": [
-                          {
-                            "type": "integer"
-                          },
-                          {
-                            "type": "string"
-                          }
-                        ]
-                      },
-                      "resp": {
-                        "oneOf": [
-                          {
-                            "type": "integer"
-                          },
-                          {
-                            "type": "string"
-                          }
-                        ]
-                      },
-                      "beat_count": {
-                        "type": "integer",
-                        "minimum": 0
-                      },
-                      "expected_beat_count": {
-                        "type": "integer",
-                        "minimum": 0
-                      }
-                    },
-                    "additionalProperties": false
-                  }
-                },
-                "reads": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "seq": {
-                        "type": "integer",
-                        "minimum": 0
-                      },
-                      "direction": {
-                        "enum": [
-                          "read",
-                          "write"
-                        ]
-                      },
-                      "completion_time": {
-                        "type": "string",
-                        "description": "规范化时间字符串。"
-                      },
-                      "addr_time": {
-                        "type": "string",
-                        "description": "规范化时间字符串。"
-                      },
-                      "first_data_time": {
-                        "type": "string",
-                        "description": "规范化时间字符串。"
-                      },
-                      "last_data_time": {
-                        "type": "string",
-                        "description": "规范化时间字符串。"
-                      },
-                      "latency": {
-                        "type": "string",
-                        "description": "规范化时间字符串。"
-                      },
-                      "phase_order": {
-                        "type": "string"
-                      },
-                      "response_dependency_violation": {
-                        "type": "boolean"
-                      },
-                      "id": {
-                        "oneOf": [
-                          {
-                            "type": "integer"
-                          },
-                          {
-                            "type": "string"
-                          }
-                        ]
-                      },
-                      "addr": {
-                        "oneOf": [
-                          {
-                            "type": "integer"
-                          },
-                          {
-                            "type": "string"
-                          }
-                        ]
-                      },
-                      "len": {
-                        "oneOf": [
-                          {
-                            "type": "integer"
-                          },
-                          {
-                            "type": "string"
-                          }
-                        ]
-                      },
-                      "size": {
-                        "oneOf": [
-                          {
-                            "type": "integer"
-                          },
-                          {
-                            "type": "string"
-                          }
-                        ]
-                      },
-                      "burst": {
-                        "oneOf": [
-                          {
-                            "type": "integer"
-                          },
-                          {
-                            "type": "string"
-                          }
-                        ]
-                      },
-                      "resp": {
-                        "oneOf": [
-                          {
-                            "type": "integer"
-                          },
-                          {
-                            "type": "string"
-                          }
-                        ]
-                      },
-                      "beat_count": {
-                        "type": "integer",
-                        "minimum": 0
-                      },
-                      "expected_beat_count": {
-                        "type": "integer",
-                        "minimum": 0
-                      }
-                    },
-                    "additionalProperties": false
-                  }
-                }
-              },
-              "additionalProperties": false,
-              "required": [
-                "writes",
-                "reads"
-              ]
+            "signal": {
+              "type": "string"
+            },
+            "time": {
+              "type": "string"
+            },
+            "value_format": {
+              "type": "string"
             }
           },
           "additionalProperties": false
         },
-        {
-          "type": "null"
+        "limits": {
+          "type": "object",
+          "properties": {
+            "max_depth": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_chains": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_paths": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_nodes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_time_steps": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_trace_signals": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_results": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "timeout_ms": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
         }
+      },
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "reason"
       ]
     },
-    "error": {
-      "oneOf": [
+    "finding": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "signal": {
+          "type": "string"
+        },
+        "time": {
+          "type": "string"
+        },
+        "begin": {
+          "type": "string"
+        },
+        "end": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "details": {
+          "$ref": "#/$defs/jsonValue"
+        }
+      },
+      "additionalProperties": false
+    },
+    "warning": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
         {
           "type": "object",
           "properties": {
@@ -625,93 +1300,796 @@
             "message": {
               "type": "string"
             },
-            "recoverable": {
-              "type": "boolean"
-            },
-            "error_layer": {
+            "severity": {
               "type": "string"
             },
-            "invalid_arg": {
+            "path": {
               "type": "string"
             },
-            "expected": {
+            "signal": {
               "type": "string"
             },
-            "received": {},
-            "received_type": {
+            "time": {
               "type": "string"
             },
-            "allowed_values": {},
-            "available_values": {},
-            "did_you_mean": {},
-            "schema_path": {
-              "type": "string"
-            },
-            "required_any_of": {},
-            "missing_name": {
-              "type": "string"
-            },
-            "missing_resource": {
-              "type": "string"
-            },
-            "next_actions": {},
-            "example_note": {
-              "type": "string"
-            },
-            "correct_example": {},
-            "cause_code": {
-              "type": "string"
-            },
-            "validation": {},
-            "current_estimated_bytes": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "hard_max_bytes": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "protocol": {
-              "type": "string",
-              "enum": [
-                "apb",
-                "axi",
-                "stream"
-              ]
-            },
-            "key_summary": {
-              "type": "string"
-            },
-            "suggestions": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+            "details": {
+              "$ref": "#/$defs/jsonValue"
             }
           },
           "additionalProperties": false,
           "required": [
             "code",
-            "message",
-            "recoverable",
-            "error_layer"
+            "message"
           ]
+        }
+      ]
+    },
+    "logicValue": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "known": {
+          "type": "boolean"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bits": {
+          "type": "string",
+          "minLength": 1
+        },
+        "has_x": {
+          "type": "boolean"
+        },
+        "has_z": {
+          "type": "boolean"
+        },
+        "requested_value_format": {
+          "const": "dec"
+        },
+        "effective_value_format": {
+          "const": "bin"
+        },
+        "value_format_reason": {
+          "const": "decimal cannot preserve per-bit X/Z"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "known",
+        "value"
+      ],
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "required": [
+                "width",
+                "bits"
+              ]
+            },
+            {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "width"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "bits"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "known": {
+                  "const": true
+                }
+              },
+              "required": [
+                "known"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "has_x"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "has_z"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "requested_value_format"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "effective_value_format"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "value_format_reason"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "properties": {
+                "known": {
+                  "const": false
+                },
+                "has_x": {
+                  "type": "boolean"
+                },
+                "has_z": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "known",
+                "has_x",
+                "has_z"
+              ],
+              "anyOf": [
+                {
+                  "properties": {
+                    "has_x": {
+                      "const": true
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "has_z": {
+                      "const": true
+                    }
+                  }
+                }
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "requested_value_format"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "effective_value_format"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "value_format_reason"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "properties": {
+                "known": {
+                  "const": false
+                },
+                "has_x": {
+                  "type": "boolean"
+                },
+                "has_z": {
+                  "type": "boolean"
+                },
+                "requested_value_format": {
+                  "const": "dec"
+                },
+                "effective_value_format": {
+                  "const": "bin"
+                },
+                "value_format_reason": {
+                  "const": "decimal cannot preserve per-bit X/Z"
+                }
+              },
+              "required": [
+                "known",
+                "has_x",
+                "has_z",
+                "requested_value_format",
+                "effective_value_format",
+                "value_format_reason"
+              ],
+              "anyOf": [
+                {
+                  "properties": {
+                    "has_x": {
+                      "const": true
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "has_z": {
+                      "const": true
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "sessionHealthFailureEvidence": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "health_status": {
+          "enum": [
+            "healthy",
+            "registry_missing",
+            "process_exited",
+            "socket_missing",
+            "connect_failed",
+            "ping_failed",
+            "dbdir_missing",
+            "dbdir_changed",
+            "fsdb_missing",
+            "fsdb_changed"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ]
+    },
+    "sessionCleanupItem": {
+      "type": "object",
+      "properties": {
+        "removed_session": {
+          "$ref": "#/$defs/sessionRecord"
+        },
+        "reason": {
+          "enum": [
+            "idle_timeout",
+            "unhealthy"
+          ]
+        },
+        "health_evidence": {
+          "$ref": "#/$defs/sessionHealthFailureEvidence"
+        },
+        "idle_sec": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "idle_timeout_sec": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "removed_session"
+      ],
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "reason": {
+                  "const": "idle_timeout"
+                }
+              },
+              "required": [
+                "reason",
+                "idle_sec",
+                "idle_timeout_sec"
+              ],
+              "not": {
+                "required": [
+                  "health_evidence"
+                ]
+              }
+            },
+            {
+              "properties": {
+                "reason": {
+                  "const": "unhealthy"
+                },
+                "health_evidence": {
+                  "$ref": "#/$defs/sessionHealthFailureEvidence"
+                }
+              },
+              "required": [
+                "reason",
+                "health_evidence"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "idle_sec"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "idle_timeout_sec"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "commonBlock": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "card": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "card",
+        "file",
+        "message"
+      ]
+    },
+    "reset": {
+      "type": "object",
+      "required": [
+        "signal",
+        "polarity"
+      ],
+      "properties": {
+        "signal": {
+          "type": "string",
+          "minLength": 1,
+          "description": "One-bit final waveform signal path used as reset."
+        },
+        "polarity": {
+          "type": "string",
+          "enum": [
+            "active_low",
+            "active_high"
+          ],
+          "description": "Level that asserts reset. X, Z, and unavailable samples are conservatively treated as asserted."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Reset definition. Both signal and polarity are required when reset is supplied."
+    },
+    "valueWidthDiagnostic": {
+      "type": "object",
+      "properties": {
+        "signal": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role": {
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "npi_range_size_unavailable",
+            "conflicting_signal_widths",
+            "derived_width_unavailable"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "role",
+        "signal"
+      ]
+    },
+    "nonSamplingTimeRange": {
+      "type": "object",
+      "properties": {
+        "begin": {
+          "type": "string",
+          "minLength": 1
+        },
+        "end": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "begin",
+        "end"
+      ]
+    },
+    "successSummary0": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "write_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "read_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "row_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "format": {
+          "enum": [
+            "tsv",
+            "csv"
+          ]
+        },
+        "status": {
+          "const": "written"
+        },
+        "output_written": {
+          "const": true
+        },
+        "sample_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "full_scan_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "incomplete_write_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "incomplete_read_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "buffered_w_beat_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "buffered_w_burst_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "orphan_w_beat_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "orphan_b_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "orphan_r_beat_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "response_dependency_violation_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "requested_range": {
+          "$ref": "#/$defs/nonSamplingTimeRange"
+        },
+        "scanned_range": {
+          "$ref": "#/$defs/nonSamplingTimeRange"
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "write_path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "read_path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "meta_path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "file_format": {
+              "enum": [
+                "tsv",
+                "csv"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "file_format",
+            "meta_path",
+            "path",
+            "read_path",
+            "write_path"
+          ]
+        },
+        "value_width_complete": {
+          "type": "boolean"
+        },
+        "width_diagnostics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "signal": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "role": {
+                "type": "string"
+              },
+              "reason": {
+                "enum": [
+                  "npi_range_size_unavailable",
+                  "conflicting_signal_widths",
+                  "derived_width_unavailable"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "reason",
+              "role",
+              "signal"
+            ]
+          }
+        },
+        "scan_complete": {
+          "type": "boolean"
+        },
+        "analysis_complete": {
+          "type": "boolean"
+        },
+        "response_truncated": {
+          "type": "boolean"
+        },
+        "total_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "returned_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncation_scopes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "analysis_complete",
+        "buffered_w_beat_count",
+        "buffered_w_burst_count",
+        "format",
+        "full_scan_count",
+        "incomplete_read_count",
+        "incomplete_write_count",
+        "name",
+        "orphan_b_count",
+        "orphan_r_beat_count",
+        "orphan_w_beat_count",
+        "output",
+        "output_written",
+        "read_count",
+        "requested_range",
+        "response_dependency_violation_count",
+        "response_truncated",
+        "returned_count",
+        "row_count",
+        "sample_count",
+        "scan_complete",
+        "scanned_range",
+        "status",
+        "total_count",
+        "truncation_scopes",
+        "write_count"
+      ]
+    },
+    "successData0": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "properties": {
+    "api_version": {
+      "const": "xdebug.v1"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "action": {
+      "const": "axi.export"
+    },
+    "tool": {
+      "$ref": "#/$defs/tool"
+    },
+    "session": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/sessionRecord"
+        }
+      ]
+    },
+    "schema_version": {
+      "type": "string"
+    },
+    "suggested_next_actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/suggestedNextAction"
+      }
+    },
+    "summary": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/successSummary"
+        },
+        {
+          "$ref": "#/$defs/errorSummary"
+        }
+      ]
+    },
+    "data": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/successData"
         },
         {
           "type": "null"
         }
       ]
     },
-    "meta": {
-      "type": "object",
-      "properties": {
-        "truncated": {
-          "type": "boolean"
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/warning"
+      }
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/error"
         }
-      },
-      "additionalProperties": false
+      ]
     }
   },
-  "additionalProperties": false,
-  "x-description-zh": "导出 AXI 数据。"
+  "required": [
+    "api_version",
+    "ok",
+    "action",
+    "tool",
+    "session",
+    "summary",
+    "data",
+    "error"
+  ],
+  "oneOf": [
+    {
+      "properties": {
+        "ok": {
+          "const": true
+        },
+        "error": {
+          "type": "null"
+        },
+        "summary": {
+          "$ref": "#/$defs/successSummary0"
+        },
+        "data": {
+          "$ref": "#/$defs/successData0"
+        }
+      },
+      "required": [
+        "api_version",
+        "ok",
+        "action",
+        "tool",
+        "session",
+        "summary",
+        "data",
+        "error"
+      ]
+    },
+    {
+      "properties": {
+        "ok": {
+          "const": false
+        },
+        "session": {
+          "type": "null"
+        },
+        "summary": {
+          "$ref": "#/$defs/errorSummary"
+        },
+        "data": {
+          "type": "null"
+        },
+        "error": {
+          "$ref": "#/$defs/error"
+        }
+      },
+      "required": [
+        "api_version",
+        "ok",
+        "action",
+        "tool",
+        "session",
+        "summary",
+        "data",
+        "error"
+      ]
+    }
+  ],
+  "additionalProperties": false
 }

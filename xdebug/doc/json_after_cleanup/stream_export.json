@@ -2,19 +2,21 @@
   "request": {
     "api_version": "xdebug.v1",
     "action": "stream.export",
-    "output": {
-      "verbosity": "compact"
-    },
     "target": {
-      "session_id": "fix_stream"
+      "session_id": "case_a"
     },
     "args": {
-      "stream": "ready_stream",
+      "stream": "req_stream",
       "kind": "transfer",
-      "format": "tsv",
-      "start": "0ns",
-      "end": "250us",
-      "output_file": "<repo>/tmp/xdebug_action_sampling2/stream.tsv"
+      "cache_scope": "full",
+      "time_range": {
+        "begin": "0ns",
+        "end": "1us"
+      },
+      "output": {
+        "path": "artifacts/req_stream.tsv",
+        "file_format": "tsv"
+      }
     }
   },
   "response": {
@@ -25,136 +27,65 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
-      "stream": "ready_stream",
-      "clock": "stream_v1_top.clk",
-      "clock_edge": "posedge",
+      "stream": "req_stream",
+      "sampling_mode": "clock_edge",
+      "clock": "clk",
+      "edge": "posedge",
+      "sample_point": "before",
+      "sample_time_semantics": "time is sample_time",
       "handshake": "vld/rdy",
-      "packet_enabled": false,
-      "clock_edges": 20011,
-      "vld_cycles": 18823,
-      "transfer_count": 15059,
-      "stall_cycles": 3764,
-      "stall_windows": 3764,
-      "packet_count": 0,
+      "packet_enabled": true,
+      "clock_edges": 200,
+      "vld_cycles": 132,
+      "transfer_count": 128,
+      "stall_cycles": 4,
+      "stall_windows": 1,
+      "complete_packet_count": 16,
+      "partial_packet_count": 0,
+      "packet_count_status": "exact",
       "control_xz_count": 0,
       "data_xz_count": 0,
       "ready_bp_conflict_count": 0,
-      "stable_mismatch_count": 0,
-      "truncated": false,
-      "first_transfer": {
-        "cycle": 7,
-        "time": "75ns",
-        "vld": true,
-        "rdy": true,
-        "bp": false,
-        "sop": false,
-        "eop": false,
-        "transfer": true,
-        "stall": false,
-        "beat_index": 0,
-        "fields": {
-          "addr": {
-            "value": "32'h40010101",
-            "bits": "01000000000000010000000100000001",
-            "known": true,
-            "width": 32
-          },
-          "data": {
-            "value": "32'h20000001",
-            "bits": "00100000000000000000000000000001",
-            "known": true,
-            "width": 32
-          },
-          "is_wr": {
-            "value": "1'h0",
-            "bits": "0",
-            "known": true,
-            "width": 1
-          },
-          "low8": {
-            "value": "8'h01",
-            "bits": "00000001",
-            "known": true,
-            "width": 8
-          }
-        },
-        "channel_id": {
-          "value": "2'h1",
-          "bits": "01",
-          "known": true,
-          "width": 2
-        }
+      "packet_stable_mismatch_count": 0,
+      "requested_range": {
+        "begin": "0ns",
+        "end": "1us"
       },
-      "last_transfer": {
-        "cycle": 20005,
-        "time": "200055ns",
-        "vld": true,
-        "rdy": true,
-        "bp": false,
-        "sop": false,
-        "eop": false,
-        "transfer": true,
-        "stall": false,
-        "beat_index": 0,
-        "fields": {
-          "addr": {
-            "value": "32'h8e1f4f1f",
-            "bits": "10001110000111110100111100011111",
-            "known": true,
-            "width": 32
-          },
-          "data": {
-            "value": "32'h20004e1f",
-            "bits": "00100000000000000100111000011111",
-            "known": true,
-            "width": 32
-          },
-          "is_wr": {
-            "value": "1'h0",
-            "bits": "0",
-            "known": true,
-            "width": 1
-          },
-          "low8": {
-            "value": "8'h1f",
-            "bits": "00011111",
-            "known": true,
-            "width": 8
-          }
-        },
-        "channel_id": {
-          "value": "2'h3",
-          "bits": "11",
-          "known": true,
-          "width": 2
-        }
+      "scanned_range": {
+        "begin": "5ns",
+        "end": "995ns"
       },
-      "first_stall": {
-        "start_cycle": 11,
-        "end_cycle": 12,
-        "start_time": "115ns",
-        "end_time": "125ns",
-        "cycles": 1,
-        "reason": "rdy_low"
-      },
-      "last_stall": {
-        "start_cycle": 20001,
-        "end_cycle": 20002,
-        "start_time": "200015ns",
-        "end_time": "200025ns",
-        "cycles": 1,
-        "reason": "rdy_low"
-      }
-    },
-    "data": {
-      "output_file": "<repo>/tmp/xdebug_action_sampling2/stream.tsv",
-      "meta_file": "<repo>/tmp/xdebug_action_sampling2/stream.tsv.meta.json",
+      "first_transfer_time": "20ns",
+      "last_transfer_time": "980ns",
+      "first_stall_time": "200ns",
+      "last_stall_time": "200ns",
+      "status": "written",
+      "output_written": true,
+      "row_count": 128,
+      "line_limit": 16,
       "kind": "transfer",
-      "format": "tsv",
-      "row_count": 15059
+      "output": {
+        "path": "artifacts/req_stream.tsv",
+        "meta_path": "artifacts/req_stream.tsv.meta.json",
+        "file_format": "tsv"
+      },
+      "scan_complete": true,
+      "analysis_complete": true,
+      "response_truncated": false,
+      "total_count": 128,
+      "returned_count": 128,
+      "truncation_scopes": []
     },
+    "data": {},
     "error": null
   },
   "stderr": ""

@@ -1,8 +1,15 @@
 {
-  "request_args": {
-    "name": "if0",
-    "direction": "wr",
-    "limit": 3
+  "request": {
+    "api_version": "xdebug.v1",
+    "action": "axi.outstanding_timeline",
+    "target": {
+      "session_id": "case_a"
+    },
+    "args": {
+      "name": "if0",
+      "direction": "all",
+      "line_limit": 100
+    }
   },
   "response": {
     "api_version": "xdebug.v1",
@@ -12,35 +19,71 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
       "name": "if0",
-      "sample_count": 3,
-      "truncated": true
+      "sampling_mode": "clock_edge",
+      "clock": "top.clk",
+      "edge": "negedge",
+      "sample_time_semantics": "time is sample_time",
+      "sample_count": 20,
+      "peak_read": 2,
+      "peak_write": 1,
+      "peak_read_time": "120ns",
+      "peak_write_time": "100ns",
+      "first_nonzero_time": "100ns",
+      "final_read": 0,
+      "final_write": 0,
+      "requested_range": {
+        "begin": "0ns",
+        "end": "200ns"
+      },
+      "scan_complete": true,
+      "analysis_complete": true,
+      "response_truncated": false,
+      "total_count": 3,
+      "returned_count": 3,
+      "truncation_scopes": []
     },
     "data": {
-      "samples": [
+      "change_points": [
         {
-          "time": "195ns",
-          "time_ps": 195000,
-          "write": 0
+          "time": "100ns",
+          "read": 0,
+          "write": 1,
+          "read_delta": 0,
+          "write_delta": 1,
+          "read_event": "none",
+          "write_event": "aw_handshake"
         },
         {
-          "time": "205ns",
-          "time_ps": 205000,
-          "write": 0
+          "time": "120ns",
+          "read": 2,
+          "write": 1,
+          "read_delta": 2,
+          "write_delta": 0,
+          "read_event": "ar_handshake",
+          "write_event": "none"
         },
         {
-          "time": "215ns",
-          "time_ps": 215000,
-          "write": 0
+          "time": "160ns",
+          "read": 0,
+          "write": 0,
+          "read_delta": -2,
+          "write_delta": -1,
+          "read_event": "rlast_handshake",
+          "write_event": "b_handshake"
         }
       ]
     },
-    "error": null,
-    "meta": {
-      "truncated": true
-    }
+    "error": null
   },
   "stderr": ""
 }

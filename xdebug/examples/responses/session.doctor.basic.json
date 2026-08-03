@@ -2,6 +2,22 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "session.doctor",
-  "summary": {"session_id": "case_a", "mode": "combined", "healthy": true},
-  "data": {"health": {"ok": true, "action": "session.doctor", "summary": {"status": "healthy"}}}
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "combined",
+    "daidir": "simv.daidir",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "server_host": "localhost",
+    "transport": "uds"
+  },
+  "summary": {"healthy": true},
+  "data": {
+    "message": "Session is healthy"
+  },
+  "error": null
 }

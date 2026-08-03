@@ -2,18 +2,53 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "protocol.handshake.inspect",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
   "summary": {
     "sampling_mode": "clock_edge",
     "clock": "top.clk",
-    "edge": "negedge",
+    "sample_time_semantics": "time is sample_time",
     "sample_count": 10,
     "transfer_count": 3,
     "max_stall_cycles": 4,
-    "truncated": false
+    "ready_without_valid_cycles": 2,
+    "ready_without_valid_reporting": "summary",
+    "ready_without_valid_interval_count": 1,
+    "data_stability_violations": 0,
+    "require_valid_hold_until_handshake": true,
+    "valid_hold_violations": 0,
+    "valid_wait_open_at_window_end": false,
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 0,
+    "returned_count": 0,
+    "truncation_scopes": []
   },
   "data": {
-    "ready_without_valid_cycles": 2,
-    "data_stability_violations": 0,
-    "findings": []
-  }
+    "findings": [],
+    "sampling": {
+      "requested": {
+        "edge": "negedge",
+        "sample_point": null
+      },
+      "effective": {
+        "edge": "negedge",
+        "sample_point": null
+      },
+      "sample_point_applied": false,
+      "sample_point_ignored_for_negedge": false
+    }
+  },
+  "error": null
 }

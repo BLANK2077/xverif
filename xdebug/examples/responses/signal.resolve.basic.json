@@ -2,6 +2,21 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "signal.resolve",
-  "summary": {"status": "found", "query": "top.u.ready", "match_count": 1, "truncated": false},
-  "data": {"matches": [{"signal": "top.u.ready", "type": "logic", "file": "rtl/top.sv", "line": 42}]}
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
+  "summary": {
+    "status": "found",
+    "query": "top.u.ready",
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 1,
+    "returned_count": 1,
+    "truncation_scopes": []
+  },
+  "data": {"matches": [{"signal": "top.u.ready", "type": "logic", "file": "rtl/top.sv", "line": 42}]},
+  "error": null
 }

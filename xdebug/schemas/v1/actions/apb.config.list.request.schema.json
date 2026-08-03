@@ -5,7 +5,8 @@
   "type": "object",
   "required": [
     "api_version",
-    "action"
+    "action",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -15,7 +16,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -24,49 +26,67 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [],
       "properties": {
         "name": {
           "type": "string",
           "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
         }
       },
-      "additionalProperties": false,
-      "required": []
+      "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
@@ -78,19 +98,19 @@
   "x-description-zh": "列出 APB 配置。",
   "x-agent": {
     "use_when": [
-      "列出 APB 配置。"
+      "Need to discover saved APB interface names before selecting one, without decoding transfers."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 apb.config.load、apb.transaction.cursor 的业务目标；请改用列出的同域 action。"
+      "Do not use it to register a configuration or inspect APB transfers."
     ],
     "alternatives": [
       {
         "action": "apb.config.load",
-        "when": "加载 APB 配置。"
+        "when": "Register or replace an APB interface configuration."
       },
       {
-        "action": "apb.transaction.cursor",
-        "when": "在 APB transfer 间移动游标。"
+        "action": "apb.query",
+        "when": "Inspect decoded APB transfers."
       }
     ],
     "constraints": [

@@ -2,15 +2,12 @@
   "request": {
     "api_version": "xdebug.v1",
     "action": "apb.config.load",
-    "output": {
-      "verbosity": "compact"
-    },
     "target": {
-      "session_id": "fix_wave"
+      "session_id": "case_a"
     },
     "args": {
-      "name": "apb0",
-      "config_path": "<xverif-repo>/xdebug/testdata/waveform/ai_complex_wave/config/apb0.json"
+      "name": "if0",
+      "config_path": "xdebug/testdata/waveform/apb_vip_real/config/apb0.json"
     }
   },
   "response": {
@@ -21,17 +18,60 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
-      "name": "apb0",
+      "name": "if0",
       "status": "loaded"
     },
     "data": {
       "config": {
-        "name": "apb0",
-        "clk": "ai_complex_top.clk",
-        "reset": {"signal": "ai_complex_top.rst_n", "polarity": "active_low"}
-      }
+        "name": "if0",
+        "sampling_mode": "clock_edge",
+        "clock": "apb_vip_fixture_top.clk",
+        "reset": {
+          "signal": "apb_vip_fixture_top.rst_n",
+          "polarity": "active_low"
+        },
+        "edge": "posedge",
+        "sample_point": "before",
+        "paddr": "apb_vip_fixture_top.apb_if.paddr",
+        "psel": "apb_vip_fixture_top.apb_if.psel[0]",
+        "penable": "apb_vip_fixture_top.apb_if.penable",
+        "pwrite": "apb_vip_fixture_top.apb_if.pwrite",
+        "pwdata": "apb_vip_fixture_top.apb_if.pwdata",
+        "prdata": "apb_vip_fixture_top.apb_if.prdata[0]",
+        "pready": "apb_vip_fixture_top.apb_if.pready[0]",
+        "pslverr": "apb_vip_fixture_top.apb_if.pslverr[0]"
+      },
+      "recommended_actions": [
+        {
+          "action": "value.at",
+          "purpose": "按一个或多个指定时间读取单信号、命名信号列表或接口配置维护的值。"
+        },
+        {
+          "action": "apb.query",
+          "purpose": "查询 APB transfer。"
+        },
+        {
+          "action": "apb.transaction.cursor",
+          "purpose": "在 APB transfer 间移动游标。"
+        },
+        {
+          "action": "apb.statistics",
+          "purpose": "按方向和地址过滤统计已完成 APB 事务。"
+        },
+        {
+          "action": "apb.transfer_window",
+          "purpose": "实验性 APB 窗口分析。"
+        }
+      ]
     },
     "error": null
   },

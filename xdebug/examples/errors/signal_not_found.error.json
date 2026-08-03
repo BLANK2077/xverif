@@ -2,19 +2,20 @@
   "api_version": "xdebug.v1",
   "ok": false,
   "action": "trace.driver",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
   "summary": {
-    "signal": "top.u.missing"
+    "status": "error",
+    "error_code": "SIGNAL_NOT_FOUND"
   },
   "data": null,
   "error": {
     "code": "SIGNAL_NOT_FOUND",
     "message": "signal not found: top.u.missing",
     "recoverable": true,
-    "error_layer": "handler",
-    "candidates": [],
-    "suggested_actions": []
-  },
-  "meta": {
-    "truncated": false
+    "error_layer": "handler"
   }
 }

@@ -4,5 +4,7 @@
   "target": {
     "session_id": "case_a"
   },
-  "args": {}
+  "args": {
+    "name": "evt0"
+  }
 }

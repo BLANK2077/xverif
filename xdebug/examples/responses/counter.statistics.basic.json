@@ -2,31 +2,68 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "counter.statistics",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "wave0",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/wave0.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
   "summary": {
     "sample_count": 10,
     "valid_count": 6,
-    "min_value": "3",
-    "max_value": "9",
-    "average_value": "5.5"
-  },
-  "data": {
+    "sampling_mode": "clock_edge",
     "clock": "top.clk",
-    "edge": "posedge",
+    "sample_time_semantics": "time is sample_time",
     "begin": "100ns",
     "end": "200ns",
     "valid_false_count": 3,
     "unknown_count": 1,
+    "min_value": {"value": "8'h03", "known": true, "width": 8, "bits": "00000011"},
+    "max_value": {"value": "8'h09", "known": true, "width": 8, "bits": "00001001"},
+    "average_value": "5.5",
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 3,
+    "returned_count": 3,
+    "truncation_scopes": []
+  },
+  "data": {
     "cnt": "{top.cnt_hi,top.cnt_lo}",
     "vld": {
-      "expr": "valid && ready",
+      "expr": "gate_a && permit_b",
       "signals": {
-        "valid": "top.valid",
-        "ready": "top.ready"
+        "gate_a": "top.valid",
+        "permit_b": "top.ready"
       }
     },
+    "evidence": [
+      {"time": "100ns", "kind": "initial", "value": {"value": "8'h03", "known": true, "width": 8, "bits": "00000011"}},
+      {"time": "140ns", "kind": "value_change", "value": {"value": "8'h05", "known": true, "width": 8, "bits": "00000101"}},
+      {"time": "180ns", "kind": "value_change", "value": {"value": "8'h09", "known": true, "width": 8, "bits": "00001001"}}
+    ],
     "min_count": 2,
     "max_count": 1,
     "min_first_time": "120ns",
-    "max_first_time": "180ns"
-  }
+    "max_first_time": "180ns",
+    "sampling": {
+      "requested": {
+        "edge": "posedge",
+        "sample_point": null
+      },
+      "effective": {
+        "edge": "posedge",
+        "sample_point": "before"
+      },
+      "sample_point_applied": true,
+      "sample_point_ignored_for_negedge": false
+    }
+  },
+  "error": null
 }

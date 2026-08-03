@@ -3,8 +3,9 @@
     "api_version": "xdebug.v1",
     "action": "session.doctor",
     "target": {
-      "session_id": "json_after_missing_wave"
-    }
+      "session_id": "case_a"
+    },
+    "args": {}
   },
   "response": {
     "api_version": "xdebug.v1",
@@ -15,78 +16,21 @@
       "version": "0.1.0"
     },
     "session": {
-      "id": "json_after_missing_wave",
-      "session_id": "json_after_missing_wave",
-      "mode": "waveform",
-      "fsdb": "<xverif-repo>/xdebug/testdata/waveform/ai_complex_wave/out/waves.fsdb",
-      "socket_path": "~/.xdebug/engine/sessions/json_after_missi_684029234a189b91/socket",
-      "transport": "uds",
-      "file_dir": "~/.xdebug/engine/sessions/json_after_missi_684029234a189b91/transport",
-      "server_host": "localhost.localdomain"
+      "session_id": "case_a",
+      "mode": "combined",
+      "daidir": "simv.daidir",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "server_host": "localhost",
+      "transport": "uds"
     },
     "summary": {
-      "session_id": "json_after_missing_wave",
-      "mode": "waveform",
       "healthy": true
     },
     "data": {
-      "health": {
-        "api_version": "xdebug.v1",
-        "request_id": "",
-        "ok": true,
-        "action": "session.doctor",
-        "tool": {
-          "name": "xdebug",
-          "version": "0.1.0"
-        },
-        "session": {
-          "id": "json_after_missing_wave",
-          "session_id": "json_after_missing_wave",
-          "dbdir": "",
-          "dbdir_path": "",
-          "design_file": "",
-          "fsdb": "<xverif-repo>/xdebug/testdata/waveform/ai_complex_wave/out/waves.fsdb",
-          "fsdb_file": "<xverif-repo>/xdebug/testdata/waveform/ai_complex_wave/out/waves.fsdb",
-          "pid": 2168003,
-          "transport": "uds",
-          "socket_path": "~/.xdebug/engine/sessions/json_after_missi_684029234a189b91/socket",
-          "file_dir": "~/.xdebug/engine/sessions/json_after_missi_684029234a189b91/transport",
-          "host": "",
-          "bind_host": "",
-          "port": 0,
-          "server_host": "localhost.localdomain",
-          "created_at": 1782530258,
-          "last_active": 1782530258,
-          "dbdir_mtime": 0,
-          "dbdir_size": 0,
-          "dbdir_dev": 0,
-          "dbdir_inode": 0,
-          "fsdb_mtime": 1782489529,
-          "fsdb_size": 9138,
-          "fsdb_dev": 66307,
-          "fsdb_inode": 541233090
-        },
-        "summary": {
-          "id": "json_after_missing_wave",
-          "session_id": "json_after_missing_wave",
-          "healthy": true,
-          "status": "healthy",
-          "message": "Session is healthy"
-        },
-        "data": {
-          "health": {
-            "id": "json_after_missing_wave",
-            "session_id": "json_after_missing_wave",
-            "healthy": true,
-            "status": "healthy",
-            "message": "Session is healthy"
-          }
-        },
-        "error": null
-      }
+      "message": "Session is healthy"
     },
     "error": null
   },
-  "returncode": 0,
-  "stderr_tail": ""
+  "stderr": ""
 }

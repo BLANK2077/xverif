@@ -15,7 +15,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -24,10 +25,13 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [],
       "properties": {
         "filter": {
           "type": "object",
@@ -45,9 +49,9 @@
                   "combined",
                   "session"
                 ],
-                "description": "Action-specific category input. Its type and accepted values are defined by this schema."
+                "description": "Action catalog 分类过滤值；用于筛选 action 所属的 builtin、design、waveform、protocol 或 combined 业务域。"
               },
-              "description": "Ordered category entries. Each item must satisfy the declared item contract."
+              "description": "Action catalog 分类过滤值；用于筛选 action 所属的 builtin、design、waveform、protocol 或 combined 业务域。"
             },
             "requires": {
               "type": "array",
@@ -63,9 +67,9 @@
                   "any",
                   "session"
                 ],
-                "description": "Action-specific requires input. Its type and accepted values are defined by this schema."
+                "description": "Action catalog 资源需求过滤值；用于筛选 none、design、waveform、combined 或 session action。"
               },
-              "description": "Ordered requires entries. Each item must satisfy the declared item contract."
+              "description": "Action catalog 资源需求过滤值；用于筛选 none、design、waveform、combined 或 session action。"
             },
             "purposes": {
               "type": "array",
@@ -86,65 +90,44 @@
                   "transform",
                   "orchestrate"
                 ],
-                "description": "Action-specific purposes input. Its type and accepted values are defined by this schema."
+                "description": "Action catalog purpose 过滤值；用于筛选 discover、query、validate、trace、export 等使用意图。"
               },
-              "description": "Ordered purposes entries. Each item must satisfy the declared item contract."
+              "description": "Action catalog purpose 过滤值；用于筛选 discover、query、validate、trace、export 等使用意图。"
             },
             "keyword": {
               "type": "string",
               "pattern": ".*\\S.*",
-              "description": "Action-specific keyword input. Its type and accepted values are defined by this schema."
+              "description": "Action catalog 关键词过滤文本；在 action 名称和已发布的语义描述中匹配。"
             }
           },
           "additionalProperties": false,
-          "description": "Structured filter configuration. Only the declared properties are accepted."
+          "description": "筛选对象；同级字段通常取 AND，数组候选值取 OR，具体组合由 constraints 说明。"
         },
         "output": {
           "type": "object",
           "properties": {
-            "path": {
-              "type": "string",
-              "description": "Action-specific path input. Its type and accepted values are defined by this schema."
-            },
-            "file_format": {
-              "type": "string",
-              "description": "Action-specific file_format input. Its type and accepted values are defined by this schema."
-            },
             "verbose": {
               "type": "boolean",
-              "description": "Action-specific verbose input. Its type and accepted values are defined by this schema."
+              "default": false,
+              "description": "Return full action descriptors instead of the compact action-name list."
             }
           },
           "additionalProperties": false,
           "description": "Export destination and rendering controls. path, file_format, and verbose are supported only where this action declares them."
         }
       },
-      "additionalProperties": false,
-      "required": []
+      "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
   "description": "List the public xdebug action catalog.",
   "x-purpose": "列出当前运行时公开 action catalog。",
-  "x-how_it_works": "默认返回 compact action names；args.output.verbose=true 时返回 descriptors，并同时返回 removed/modes。",
+  "x-how_it_works": "默认返回 compact action names；args.output.verbose=true 时返回 descriptors，并同时返回按资源类别划分的 modes。",
   "x-when_to_use": "让 agent 在调用前发现真实可用能力。",
   "x-arg_contract_notes": "no required args",
   "x-description-zh": "列出当前运行时公开 action catalog。",

@@ -1,0 +1,17 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "counter.statistics",
+  "target": {
+    "session_id": "wave0"
+  },
+  "args": {
+    "clock": "top.clk",
+    "time_range": {
+      "begin": "100ns",
+      "end": "200ns"
+    },
+    "vld": "top.valid",
+    "cnt": "top.count",
+    "line_limit": 1000
+  }
+}

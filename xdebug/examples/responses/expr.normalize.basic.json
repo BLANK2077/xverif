@@ -2,6 +2,29 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "expr.normalize",
-  "summary": {"expr": "valid && !ready", "source": "string_fallback", "confidence": "low"},
-  "data": {"expr": {"kind": "binary", "op": "&&"}, "confidence_reason": "parsed from raw string without NPI handle"}
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
+  "summary": {
+    "status": "parsed",
+    "source": "deterministic_syntax_parser",
+    "confidence": "syntax_validated"
+  },
+  "data": {
+    "expr": {
+      "op": "and",
+      "args": [
+        {"type": "signal", "name": "valid"},
+        {
+          "op": "not",
+          "args": [{"type": "signal", "name": "ready"}]
+        }
+      ]
+    },
+    "parsed": true,
+    "confidence_reason": "expression syntax was validated and parsed without design-resource semantics"
+  },
+  "error": null
 }

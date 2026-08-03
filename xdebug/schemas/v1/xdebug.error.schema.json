@@ -2,45 +2,469 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "xdebug.error.v1",
   "title": "xdebug error response",
-  "type": "object",
-  "required": ["api_version", "ok", "action", "error"],
-  "properties": {
-    "api_version": {"type": "string", "enum": ["xdebug.v1"]},
-    "ok": {"type": "boolean"},
-    "action": {"type": "string"},
+  "description": "Strict public error envelope used before an action-specific response contract can be selected.",
+  "$defs": {
+    "jsonValue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        },
+        {
+          "$ref": "#/$defs/jsonObject"
+        }
+      ]
+    },
+    "jsonObject": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/jsonValue"
+      },
+      "x-dynamic-map": true,
+      "description": "显式动态键 JSON 对象；每个 value 仍受 jsonValue 递归合同约束。"
+    },
+    "errorSummary": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "error"
+        },
+        "error_code": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "error_code",
+        "status"
+      ]
+    },
+    "validationIssue": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "message",
+        "path"
+      ]
+    },
     "error": {
       "type": "object",
-      "required": ["code", "message", "recoverable", "error_layer"],
       "properties": {
-        "code": {"type": "string"},
-        "message": {"type": "string"},
-        "recoverable": {"type": "boolean"},
-        "error_layer": {
-          "type": "string",
-          "enum": ["schema", "handler", "wrapper", "transport", "internal"]
+        "code": {
+          "type": "string"
         },
-        "invalid_arg": {"type": "string"},
-        "expected": {"type": "string"},
-        "received": {},
-        "received_type": {"type": "string"},
-        "allowed_values": {"type": "array"},
-        "available_values": {"type": "array"},
-        "missing_name": {"type": "string"},
-        "missing_resource": {"type": "string"},
-        "schema_path": {"type": "string"},
-        "required_any_of": {"type": "array"},
-        "did_you_mean": {"type": "string"},
-        "example_note": {"type": "string"},
-        "correct_example": {"type": "object"},
-        "next_actions": {"type": "array"},
-        "cause_code": {"type": "string"}
+        "message": {
+          "type": "string"
+        },
+        "recoverable": {
+          "type": "boolean"
+        },
+        "error_layer": {
+          "enum": [
+            "schema",
+            "handler",
+            "wrapper",
+            "session_manager",
+            "transport",
+            "internal"
+          ]
+        },
+        "invalid_arg": {
+          "type": "string"
+        },
+        "expected": {
+          "type": "string"
+        },
+        "received": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "received_type": {
+          "type": "string"
+        },
+        "received_redacted": {
+          "type": "boolean"
+        },
+        "available_values": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "schema_path": {
+          "type": "string"
+        },
+        "required_any_of": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "missing_name": {
+          "type": "string"
+        },
+        "missing_resource": {
+          "type": "string"
+        },
+        "next_actions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "example_note": {
+          "type": "string"
+        },
+        "correct_example": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "cause_code": {
+          "type": "string"
+        },
+        "validation": {
+          "$ref": "#/$defs/jsonValue"
+        },
+        "current_estimated_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hard_max_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "protocol": {
+          "enum": [
+            "apb",
+            "axi",
+            "stream"
+          ]
+        },
+        "key_summary": {
+          "type": "string"
+        },
+        "manifest_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resource": {
+          "enum": [
+            "daidir",
+            "fsdb"
+          ]
+        },
+        "expected_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "actual_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "actual_size_bytes": {
+          "type": [
+            "null",
+            "integer"
+          ],
+          "minimum": 0
+        },
+        "expected_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "actual_sha256": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{64}$"
+            }
+          ]
+        },
+        "manifest_schema_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "manifest_state": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_mode": {
+          "enum": [
+            "design",
+            "waveform",
+            "combined"
+          ]
+        },
+        "session_transport": {
+          "enum": [
+            "uds",
+            "tcp",
+            "file"
+          ]
+        },
+        "idle_sec": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "idle_timeout_sec": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cleanup_succeeded": {
+          "type": "boolean"
+        },
+        "lifecycle_state": {
+          "enum": [
+            "cleanup_failed"
+          ]
+        },
+        "compensation_status": {
+          "enum": [
+            "cleaned",
+            "not_created",
+            "token_mismatch",
+            "cleanup_failed"
+          ]
+        },
+        "backend_error_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "exit_status": {
+          "type": "integer"
+        },
+        "health_status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resource_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requested_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "removed_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed_session_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "failure_kind": {
+          "type": "string"
+        },
+        "failure_phase": {
+          "enum": [
+            "npi_init",
+            "npi_load_design",
+            "npi_fsdb_open"
+          ]
+        },
+        "startup_reason": {
+          "type": "string"
+        },
+        "native_error_summary": {
+          "type": "string"
+        },
+        "diagnostic_log": {
+          "type": "string"
+        },
+        "advisories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "severity": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "message",
+              "severity"
+            ]
+          }
+        },
+        "validation_issues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/validationIssue"
+          },
+          "minItems": 1
+        }
       },
-      "additionalProperties": true
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "error_layer",
+        "message",
+        "recoverable"
+      ]
     },
-    "summary": {"type": "object"},
-    "data": {},
-    "warnings": {"type": "array"},
-    "meta": {"type": "object"}
+    "tool": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "build_id": {
+          "type": "string"
+        },
+        "git_revision": {
+          "type": "string"
+        },
+        "schema_revision": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version"
+      ]
+    },
+    "warning": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "signal": {
+              "type": "string"
+            },
+            "time": {
+              "type": "string"
+            },
+            "details": {
+              "$ref": "#/$defs/jsonValue"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "code",
+            "message"
+          ]
+        }
+      ]
+    }
   },
-  "additionalProperties": true
+  "type": "object",
+  "properties": {
+    "api_version": {
+      "const": "xdebug.v1"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "ok": {
+      "const": false
+    },
+    "action": {
+      "type": "string"
+    },
+    "tool": {
+      "$ref": "#/$defs/tool"
+    },
+    "session": {
+      "type": "null"
+    },
+    "schema_version": {
+      "const": "xdebug.error.v1"
+    },
+    "summary": {
+      "$ref": "#/$defs/errorSummary"
+    },
+    "data": {
+      "type": "null"
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/warning"
+      }
+    },
+    "error": {
+      "$ref": "#/$defs/error"
+    }
+  },
+  "required": [
+    "api_version",
+    "ok",
+    "action",
+    "tool",
+    "session",
+    "summary",
+    "data",
+    "error"
+  ],
+  "additionalProperties": false
 }

@@ -2,6 +2,11 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "batch",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
   "summary": {
     "count": 1,
     "all_ok": true,
@@ -15,8 +20,32 @@
       {
         "api_version": "xdebug.v1",
         "ok": true,
-        "action": "schema"
+        "action": "session.list",
+        "tool": {
+          "name": "xdebug",
+          "version": "0.1.0"
+        },
+        "session": null,
+        "summary": {
+          "session_count": 1,
+          "expired_removed_count": 0
+        },
+        "data": {
+          "sessions": [
+            {
+              "session_id": "case_a",
+              "mode": "combined",
+              "daidir": "simv.daidir",
+              "fsdb": "waves.fsdb",
+              "socket_path": "session-endpoints/case_a.sock",
+              "server_host": "localhost",
+              "transport": "uds"
+            }
+          ]
+        },
+        "error": null
       }
     ]
-  }
+  },
+  "error": null
 }

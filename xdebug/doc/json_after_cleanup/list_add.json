@@ -2,15 +2,12 @@
   "request": {
     "api_version": "xdebug.v1",
     "action": "list.add",
-    "output": {
-      "verbosity": "compact"
-    },
     "target": {
-      "session_id": "fix_wave"
+      "session_id": "case_a"
     },
     "args": {
-      "name": "basic",
-      "signal": "ai_complex_top.sig_a"
+      "name": "if0",
+      "signal": "top.u.valid"
     }
   },
   "response": {
@@ -21,10 +18,17 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
-      "name": "basic",
-      "signal": "ai_complex_top.sig_a",
+      "name": "if0",
+      "signal": "top.u.valid",
       "status": "added",
       "added": true
     },

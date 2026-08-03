@@ -1,12 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "xdebug.stream.config.list.request.v1",
-  "title": "stream.config.list request",
+  "$id": "xdebug.stream.config.get.request.v1",
+  "title": "stream.config.get request",
   "type": "object",
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -22,82 +23,97 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "name"
+      ],
       "properties": {
         "name": {
           "type": "string",
           "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "name"
-      ]
-    },
-    "limits": {
-      "type": "object"
+      "additionalProperties": false
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+    "limits": {
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
-  "description": "List saved stream configurations.",
-  "x-purpose": "列出 stream 配置。",
-  "x-how_it_works": "读取已保存 stream 定义；args:{} 列全部，args.name 显示单个配置详情。",
-  "x-when_to_use": "查看可查询的 stream。",
-  "x-arg_contract_notes": "args:{} list all; optional name shows one config",
-  "x-description-zh": "列出 stream 配置。",
+  "description": "Read one saved stream configuration without resolving waveform metadata.",
+  "x-description-zh": "读取一个已保存的原始 stream 配置，不解析波形元数据。",
+  "x-purpose": "读取一个原始 stream 配置。",
+  "x-how_it_works": "按 name 返回保存时的原始配置，不做解析或活动语义投影。",
+  "x-when_to_use": "精确读取已保存配置内容。",
+  "x-arg_contract_notes": "required: name",
   "x-agent": {
     "use_when": [
-      "列出 stream 配置。"
+      "Read the persisted definition for one exact stream configuration name."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 stream.config.load、stream.show 的业务目标；请改用列出的同域 action。"
+      "Listing all stream names or resolving the configuration against the active waveform."
     ],
     "alternatives": [
       {
-        "action": "stream.config.load",
-        "when": "加载 stream 配置。"
-      },
-      {
         "action": "stream.describe",
-        "when": "显示 stream 定义和摘要。"
+        "when": "Resolved signals and static validation against the active waveform are required."
       }
     ],
     "constraints": [
-      "args:{} list all; optional name shows one config"
+      "required: name"
     ]
   }
 }

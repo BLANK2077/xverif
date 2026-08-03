@@ -2,6 +2,11 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "schema",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
   "summary": {
     "action": "signal.statistics",
     "kind": "request"
@@ -20,5 +25,6 @@
         "args"
       ]
     }
-  }
+  },
+  "error": null
 }

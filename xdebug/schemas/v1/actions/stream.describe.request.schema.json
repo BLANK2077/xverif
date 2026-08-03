@@ -1,12 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "xdebug.stream.show.request.v1",
-  "title": "stream.show request",
+  "$id": "xdebug.stream.describe.request.v1",
+  "title": "stream.describe request",
   "type": "object",
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -22,7 +23,44 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
@@ -32,68 +70,50 @@
       "properties": {
         "stream": {
           "type": "string",
-          "description": "Action-specific stream input. Its type and accepted values are defined by this schema."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
+          "description": "已加载的 stream 配置名称。"
         }
       },
       "additionalProperties": false
     },
     "limits": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     },
     "request_id": {
-      "type": "string"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     }
   },
   "additionalProperties": false,
   "description": "Show a stream definition and its resolved signal metadata.",
-  "x-purpose": "显示 stream 定义和摘要。",
-  "x-how_it_works": "按 stream 名读取配置并返回字段。",
-  "x-when_to_use": "确认 stream 绑定了哪些信号。",
+  "x-purpose": "描述 stream 的解析结果和活动语义。",
+  "x-how_it_works": "按 stream 名解析信号、静态验证、采样与 packet 规则，并返回活动语义。",
+  "x-when_to_use": "查询前确认 stream 的可执行定义。",
   "x-arg_contract_notes": "required: stream",
   "x-description-zh": "显示 stream 定义和摘要。",
   "x-agent": {
     "use_when": [
-      "显示 stream 定义和摘要。"
+      "Know a saved stream name and need its signals resolved against the active waveform with static and activity metadata."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 stream.config.load、stream.config.list 的业务目标；请改用列出的同域 action。"
+      "Do not use it to return the untouched persisted object or analyze dynamic transfers."
     ],
     "alternatives": [
       {
-        "action": "stream.config.load",
-        "when": "加载 stream 配置。"
+        "action": "stream.config.get",
+        "when": "Read the raw persisted configuration."
       },
       {
-        "action": "stream.config.list",
-        "when": "列出 stream 配置。"
+        "action": "stream.query",
+        "when": "Analyze observed transfers, stalls, or packets."
       }
     ],
     "constraints": [

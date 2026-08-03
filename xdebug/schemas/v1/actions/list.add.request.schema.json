@@ -6,7 +6,8 @@
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -16,7 +17,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -25,10 +27,51 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "name",
+        "signal"
+      ],
       "properties": {
         "name": {
           "type": "string",
@@ -37,44 +80,21 @@
         "signal": {
           "type": "string",
           "description": "Final leaf signal path. Aggregate, array, and struct roots are not expanded automatically."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "name",
-        "signal"
-      ]
+      "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
@@ -86,19 +106,23 @@
   "x-description-zh": "向信号列表追加一个信号。",
   "x-agent": {
     "use_when": [
-      "向信号列表追加一个信号。"
+      "Have an existing named waveform list and need to append one specific signal path."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 list.create、list.load 的业务目标；请改用列出的同域 action。"
+      "Do not use it to create the list, delete entries, or inspect waveform values."
     ],
     "alternatives": [
       {
         "action": "list.create",
-        "when": "创建命名信号列表。"
+        "when": "Create the named list first."
       },
       {
-        "action": "list.load",
-        "when": "从 JSON 配置加载并验证一个或多个命名波形信号列表。"
+        "action": "list.delete",
+        "when": "Remove an entry."
+      },
+      {
+        "action": "value.at",
+        "when": "Sample all list signals at one or more times."
       }
     ],
     "constraints": [

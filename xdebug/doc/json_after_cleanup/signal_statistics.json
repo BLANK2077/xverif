@@ -3,22 +3,15 @@
     "api_version": "xdebug.v1",
     "action": "signal.statistics",
     "target": {
-      "session_id": "sample_wave"
+      "session_id": "case_a"
     },
     "args": {
-      "signal": "ai_complex_top.counter_inc",
-      "clock": "ai_complex_top.clk",
+      "signal": "top.u.ready",
+      "clock": "top.clk",
       "time_range": {
-        "begin": "55ns",
-        "end": "95ns"
-      },
-      "max_samples": 1000
-    },
-    "limits": {
-      "timeout_ms": 120000
-    },
-    "output": {
-      "verbosity": "compact"
+        "begin": "100ns",
+        "end": "200ns"
+      }
     }
   },
   "response": {
@@ -29,52 +22,102 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
-      "signal": "ai_complex_top.counter_inc",
-      "clock": "ai_complex_top.clk",
-      "sampling": "posedge",
-      "sampling_mode": "clock",
-      "begin": "55ns",
-      "end": "95ns",
-      "sample_count": 5,
-      "known_count": 5,
+      "signal": "top.u.count",
+      "sampling_mode": "clock_edge",
+      "clock": "top.clk",
+      "sample_time_semantics": "time is sample_time",
+      "sample_count": 10,
+      "known_count": 10,
       "unknown_count": 0,
-      "transition_count": 4,
-      "truncated": false,
+      "begin": "100ns",
+      "end": "200ns",
+      "scan_complete": true,
+      "analysis_complete": true,
+      "response_truncated": false,
+      "total_count": 2,
+      "returned_count": 2,
+      "truncation_scopes": []
+    },
+    "data": {
+      "evidence": [
+        {
+          "time": "140ns",
+          "kind": "value_change",
+          "value": {
+            "value": "4'h5",
+            "known": true,
+            "width": 4,
+            "bits": "0101"
+          }
+        },
+        {
+          "time": "180ns",
+          "kind": "value_change",
+          "value": {
+            "value": "4'h9",
+            "known": true,
+            "width": 4,
+            "bits": "1001"
+          }
+        }
+      ],
+      "transition_count": 2,
+      "first": {
+        "value": "4'h3",
+        "known": true,
+        "width": 4,
+        "bits": "0011"
+      },
+      "final": {
+        "value": "4'h9",
+        "known": true,
+        "width": 4,
+        "bits": "1001"
+      },
+      "min": {
+        "value": "4'h3",
+        "known": true,
+        "width": 4,
+        "bits": "0011"
+      },
+      "max": {
+        "value": "4'h9",
+        "known": true,
+        "width": 4,
+        "bits": "1001"
+      },
       "low_cycles": 0,
       "high_cycles": 0,
       "high_ratio": 0.0,
-      "first_change_time": "65ns",
-      "last_change_time": "95ns"
-    },
-    "data": {
-      "first": {
-        "value": "'b00000001",
-        "known": true,
-        "width": 8
-      },
-      "final": {
-        "value": "'b00000101",
-        "known": true,
-        "width": 8
-      },
-      "min": {
-        "value": "'b00000001",
-        "known": true,
-        "width": 8
-      },
-      "max": {
-        "value": "'b00000101",
-        "known": true,
-        "width": 8
-      },
+      "first_change_time": "140ns",
+      "last_change_time": "180ns",
       "activity": {
         "high_burst_count": 0,
         "first_high_time": null,
         "last_high_time": null,
         "last_fall_time": null,
         "max_high_cycles": 0
+      },
+      "sampling": {
+        "requested": {
+          "edge": "negedge",
+          "sample_point": null
+        },
+        "effective": {
+          "edge": "negedge",
+          "sample_point": null
+        },
+        "sample_point_applied": false,
+        "sample_point_ignored_for_negedge": false
       }
     },
     "error": null

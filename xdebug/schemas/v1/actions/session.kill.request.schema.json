@@ -16,7 +16,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -26,73 +27,60 @@
     },
     "target": {
       "type": "object",
-      "required": [
-        "session_id"
-      ],
       "properties": {
         "session_id": {
           "type": "string",
-          "description": "目标 xdebug session 标识。"
+          "minLength": 1
         }
       },
+      "required": [
+        "session_id"
+      ],
       "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [],
       "properties": {
-        "session_id": {
+        "ownership_token": {
           "type": "string",
-          "description": "Action-specific session_id input. Its type and accepted values are defined by this schema."
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Opaque 256-bit conditional-cleanup token encoded as exactly 64 lowercase hexadecimal characters. A managed wrapper may supply it at session.open and provide it to session.kill as an optional match precondition, not as authorization. When session.open omits it, the frontend binds a fail-closed internally generated token; never log or publish either form."
         }
       },
-      "additionalProperties": false,
-      "required": []
+      "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
   "description": "Force removal of a debug session.",
   "x-purpose": "强制移除指定 session。",
-  "x-how_it_works": "按 target.session_id 清理记录和关联资源。",
+  "x-how_it_works": "按 target.session_id 清理记录和关联资源；可选 ownership_token 提供时必须匹配，否则不执行，省略时保留既有显式/admin 清理语义。",
   "x-when_to_use": "处理异常残留 session。",
-  "x-arg_contract_notes": "required: target.session_id",
+  "x-arg_contract_notes": "required: target.session_id；ownership_token 是 managed wrapper 的可选 conditional-cleanup precondition，不是授权",
   "x-description-zh": "强制移除指定 session。",
   "x-agent": {
     "use_when": [
-      "强制移除指定 session。"
+      "Know a stale or unhealthy session that cannot complete the graceful close lifecycle."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 session.close、session.doctor 的业务目标；请改用列出的同域 action。"
+      "Do not use it for a healthy session that can be closed gracefully.",
+      "Do not treat args.ownership_token as authorization or dynamically require it for explicit administration; a managed wrapper supplies its own opaque key only as an ambiguous-open cleanup match precondition, and the key must never be invented, exposed, or logged."
     ],
     "alternatives": [
       {
         "action": "session.close",
-        "when": "关闭指定 session。"
-      },
-      {
-        "action": "session.doctor",
-        "when": "诊断当前 session。"
+        "when": "Release a healthy session through its normal lifecycle."
       }
     ],
     "constraints": [
-      "required: target.session_id"
+      "required: target.session_id；ownership_token 是 managed wrapper 的可选 conditional-cleanup precondition，不是授权"
     ]
   }
 }

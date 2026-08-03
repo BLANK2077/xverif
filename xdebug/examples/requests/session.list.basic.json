@@ -1,8 +1,5 @@
 {
   "api_version": "xdebug.v1",
   "action": "session.list",
-  "target": {
-    "session_id": "case_a"
-  },
   "args": {}
 }

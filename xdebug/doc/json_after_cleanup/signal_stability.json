@@ -3,20 +3,10 @@
     "api_version": "xdebug.v1",
     "action": "signal.stability",
     "target": {
-      "session_id": "sample_wave"
+      "session_id": "case_a"
     },
     "args": {
-      "signal": "ai_complex_top.rst_n",
-      "time_range": {
-        "begin": "80ns",
-        "end": "120ns"
-      }
-    },
-    "limits": {
-      "timeout_ms": 120000
-    },
-    "output": {
-      "verbosity": "compact"
+      "signal": "top.u.ready"
     }
   },
   "response": {
@@ -27,48 +17,40 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
-      "signal": "ai_complex_top.rst_n",
-      "begin": "80ns",
-      "end": "120ns",
-      "transition_count": 1,
-      "truncated": false,
-      "first_change": "80ns",
-      "last_change": "80ns",
-      "stable": true
+      "stable": true,
+      "change_row_count": 1,
+      "actual_transition_count": 0,
+      "scan_stopped_on_first_transition": false,
+      "scan_complete": true,
+      "analysis_complete": true,
+      "response_truncated": false,
+      "total_count": 1,
+      "returned_count": 1,
+      "truncation_scopes": []
     },
     "data": {
+      "signal": "top.stable_sig",
+      "begin": "0ns",
+      "end": "200ns",
       "changes": [
         {
-          "time": "80ns",
-          "time_ps": 80000,
+          "time": "0ns",
           "value": {
             "value": "1'h1",
-            "known": true,
-            "width": 1,
-            "bits": "1"
+            "known": true
           }
         }
       ],
-      "initial_value": {
-        "value": "1'h1",
-        "known": true,
-        "width": 1,
-        "bits": "1"
-      },
-      "final_value": {
-        "value": "1'h1",
-        "known": true,
-        "width": 1,
-        "bits": "1"
-      },
-      "value": {
-        "value": "1'h1",
-        "known": true,
-        "width": 1,
-        "bits": "1"
-      }
+      "includes_initial_value": true
     },
     "error": null
   },

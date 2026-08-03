@@ -5,7 +5,9 @@
   "type": "object",
   "required": [
     "api_version",
-    "action"
+    "action",
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -15,7 +17,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -24,49 +27,69 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "name"
+      ],
       "properties": {
         "name": {
           "type": "string",
           "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
         }
       },
-      "additionalProperties": false,
-      "required": []
+      "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
@@ -74,27 +97,27 @@
   "x-purpose": "显示信号列表内容。",
   "x-how_it_works": "读取 ListManager 存储并返回 index/signal。",
   "x-when_to_use": "确认 list 当前包含哪些信号。",
-  "x-arg_contract_notes": "none",
+  "x-arg_contract_notes": "required: name",
   "x-description-zh": "显示信号列表内容。",
   "x-agent": {
     "use_when": [
-      "显示信号列表内容。"
+      "Know the list name and need its stored one-based entries without waveform validation or sampling."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 list.add、list.create 的业务目标；请改用列出的同域 action。"
+      "Do not use it to validate design existence or sample waveform values."
     ],
     "alternatives": [
       {
-        "action": "list.add",
-        "when": "向信号列表追加一个信号。"
+        "action": "list.validate",
+        "when": "Check every stored path against the active waveform."
       },
       {
-        "action": "list.create",
-        "when": "创建命名信号列表。"
+        "action": "value.at",
+        "when": "Sample the list at one or more times."
       }
     ],
     "constraints": [
-      "none"
+      "required: name"
     ]
   }
 }

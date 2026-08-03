@@ -2,23 +2,60 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "axi.request_response_pair",
-  "summary": {"name": "if0", "transaction_count": 1, "begin": "0ns", "end": "200ns"},
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
+  "summary": {
+    "name": "if0",
+    "begin": "0ns",
+    "end": "200ns",
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 1,
+    "returned_count": 1,
+    "truncation_scopes": []
+  },
   "data": {
-    "matched_transaction_count": 1, "returned_transaction_count": 1,
-    "pairing_rule": {"write_data": "AXI4 W bursts bind in AW acceptance order"},
-    "diagnostics": {"full_scan_count": 1, "incomplete_write_count": 0},
+    "pairing_rule": {
+      "write_data": "AXI4 W bursts bind in AW acceptance order",
+      "write_response": "BID binds to the oldest data-complete AW with the same ID",
+      "read_response": "RID binds to the oldest AR with the same ID"
+    },
+    "diagnostics": {
+      "full_scan_count": 1,
+      "incomplete_write_count": 0,
+      "incomplete_read_count": 0,
+      "buffered_w_beat_count": 0,
+      "buffered_w_burst_count": 0,
+      "orphan_w_beat_count": 0,
+      "orphan_b_count": 0,
+      "orphan_r_beat_count": 0,
+      "response_dependency_violation_count": 0
+    },
     "transactions": [{
       "direction": "write", "latency": "40ns", "phase_order": "w_before_aw",
       "response_dependency_violation": false, "match_time": "100ns",
       "address": {
-        "channel": "aw", "handshake_time": "100ns", "addr": "f0",
-        "id": "1", "len": 0, "size": 2, "burst": 1
+        "channel": "aw", "handshake_time": "100ns",
+        "addr": "32'h000000f0", "id": "4'h1",
+        "len": "8'h00", "size": "3'h2", "burst": "2'h1"
       },
       "data": {
         "channel": "w", "first_handshake_time": "90ns", "last_handshake_time": "110ns",
         "beat_count": 1, "expected_beat_count": 1
       },
-      "response": {"channel": "b", "handshake_time": "140ns", "resp": 0}
+      "response": {"channel": "b", "handshake_time": "140ns", "resp": "2'h0"}
     }]
-  }
+  },
+  "error": null
 }

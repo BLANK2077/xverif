@@ -1,0 +1,85 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "signal.statistics",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
+  "summary": {
+    "signal": "top.u.stable",
+    "sampling_mode": "clock_edge",
+    "clock": "top.clk",
+    "sample_time_semantics": "time is sample_time",
+    "sample_count": 4,
+    "known_count": 4,
+    "unknown_count": 0,
+    "begin": "100ns",
+    "end": "200ns",
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 0,
+    "returned_count": 0,
+    "truncation_scopes": []
+  },
+  "data": {
+    "evidence": [],
+    "transition_count": 0,
+    "first": {
+      "value": "1'h0",
+      "known": true,
+      "width": 1,
+      "bits": "0"
+    },
+    "final": {
+      "value": "1'h0",
+      "known": true,
+      "width": 1,
+      "bits": "0"
+    },
+    "min": {
+      "value": "1'h0",
+      "known": true,
+      "width": 1,
+      "bits": "0"
+    },
+    "max": {
+      "value": "1'h0",
+      "known": true,
+      "width": 1,
+      "bits": "0"
+    },
+    "low_cycles": 4,
+    "high_cycles": 0,
+    "high_ratio": 0.0,
+    "activity": {
+      "high_burst_count": 0,
+      "first_high_time": null,
+      "last_high_time": null,
+      "last_fall_time": null,
+      "max_high_cycles": 0
+    },
+    "sampling": {
+      "requested": {
+        "edge": "posedge",
+        "sample_point": null
+      },
+      "effective": {
+        "edge": "posedge",
+        "sample_point": "before"
+      },
+      "sample_point_applied": true,
+      "sample_point_ignored_for_negedge": false
+    }
+  },
+  "error": null
+}

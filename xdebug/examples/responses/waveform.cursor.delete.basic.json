@@ -2,9 +2,19 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "waveform.cursor.delete",
-  "summary": {
-    "name": "mark0",
-    "status": "deleted"
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
   },
-  "data": {}
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
+  "summary": {"name": "if0", "status": "deleted", "deleted": true},
+  "data": {},
+  "error": null
 }

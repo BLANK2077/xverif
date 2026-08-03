@@ -6,7 +6,8 @@
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -16,7 +17,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -25,10 +27,50 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "name"
+      ],
       "properties": {
         "channel": {
           "type": "string",
@@ -50,70 +92,61 @@
           "type": "string",
           "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
         },
+        "render_time_unit": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "ps",
+            "ns",
+            "us"
+          ],
+          "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
+        },
         "rules": {
-          "description": "Protocol or check-rule object. Nested fields define each rule default and applicability.",
+          "description": "AXI channel stall 阈值规则。",
           "type": "object",
           "properties": {
             "max_wait_cycles": {
               "type": "integer",
               "minimum": 0,
               "default": 100,
-              "description": "Action-specific max_wait_cycles input. Its type and accepted values are defined by this schema."
+              "description": "超过该连续 valid&&!ready sample 数才返回 long_stall finding。"
             }
           },
           "additionalProperties": false
         },
         "time_range": {
           "type": "object",
+          "minProperties": 1,
           "properties": {
             "begin": {
               "type": "string",
-              "description": "Action-specific begin input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "闭区间起点；省略时使用可用波形窗口起点。"
             },
             "end": {
               "type": "string",
-              "description": "Action-specific end input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "闭区间终点；省略时使用可用波形窗口终点。"
             }
           },
           "additionalProperties": false,
           "description": "Closed analysis interval. begin and end may be omitted independently to use the available waveform bounds."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "name"
-      ]
+      "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
@@ -125,19 +158,19 @@
   "x-description-zh": "实验性 AXI stall 分析。",
   "x-agent": {
     "use_when": [
-      "实验性 AXI stall 分析。"
+      "Need intervals and counts where one AXI channel keeps VALID asserted while READY is deasserted."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 axi.analysis、axi.export 的业务目标；请改用列出的同域 action。"
+      "Do not use it for generic non-AXI valid-ready interfaces or whole-transaction latency analysis."
     ],
     "alternatives": [
       {
-        "action": "axi.analysis",
-        "when": "汇总 AXI 行为。"
+        "action": "protocol.handshake.inspect",
+        "when": "Inspect a generic valid-ready handshake."
       },
       {
-        "action": "axi.export",
-        "when": "导出 AXI 数据。"
+        "action": "axi.latency_outlier",
+        "when": "Find end-to-end AXI transaction latency outliers."
       }
     ],
     "constraints": [

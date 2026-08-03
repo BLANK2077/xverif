@@ -2,20 +2,8 @@
   "request": {
     "api_version": "xdebug.v1",
     "action": "expr.normalize",
-    "output": {
-      "verbosity": "compact"
-    },
-    "target": {
-      "session_id": "fix_uart"
-    },
     "args": {
-      "signal": "uart_16550.RXDin"
-    },
-    "limits": {
-      "max_depth": 2,
-      "max_nodes": 20,
-      "max_edges": 50,
-      "max_results": 10
+      "expr": "valid && !ready"
     }
   },
   "response": {
@@ -28,88 +16,31 @@
     },
     "session": null,
     "summary": {
-      "signal": "uart_16550.RXDin",
-      "source": "npi_trace_assignment",
-      "confidence": "high"
+      "status": "parsed",
+      "source": "deterministic_syntax_parser",
+      "confidence": "syntax_validated"
     },
     "data": {
       "expr": {
+        "op": "and",
         "args": [
           {
-            "kind": "signal",
-            "name": "uart_16550.loopback",
-            "npi_type": 36,
-            "text": "uart_16550.loopback"
+            "type": "signal",
+            "name": "valid"
           },
           {
-            "kind": "signal",
-            "name": "uart_16550.TXD",
-            "npi_type": 36,
-            "text": "uart_16550.TXD"
-          },
-          {
-            "kind": "signal",
-            "name": "uart_16550.RXD",
-            "npi_type": 36,
-            "text": "uart_16550.RXD"
+            "op": "not",
+            "args": [
+              {
+                "type": "signal",
+                "name": "ready"
+              }
+            ]
           }
-        ],
-        "kind": "operation",
-        "op": "ternary",
-        "op_type": 32,
-        "text": "(uart_16550.loopback ? uart_16550.TXD : uart_16550.RXD)"
+        ]
       },
-      "assignment": {
-        "kind": "continuous_assignment",
-        "lhs": {
-          "kind": "signal",
-          "name": "uart_16550.RXDin",
-          "npi_type": 36,
-          "text": "uart_16550.RXDin"
-        },
-        "location": {
-          "file": "<xverif-repo>/xdebug/testdata/design/uart/uart_16550.sv",
-          "line": 164
-        },
-        "npi_type": 8,
-        "rhs": {
-          "args": [
-            {
-              "kind": "signal",
-              "name": "uart_16550.loopback",
-              "npi_type": 36,
-              "text": "uart_16550.loopback"
-            },
-            {
-              "kind": "signal",
-              "name": "uart_16550.TXD",
-              "npi_type": 36,
-              "text": "uart_16550.TXD"
-            },
-            {
-              "kind": "signal",
-              "name": "uart_16550.RXD",
-              "npi_type": 36,
-              "text": "uart_16550.RXD"
-            }
-          ],
-          "kind": "operation",
-          "op": "ternary",
-          "op_type": 32,
-          "text": "(uart_16550.loopback ? uart_16550.TXD : uart_16550.RXD)"
-        },
-        "rhs_signals": [
-          "uart_16550.RXD",
-          "uart_16550.TXD",
-          "uart_16550.loopback"
-        ],
-        "source": "assign uart_16550.RXDin = (uart_16550.loopback ? uart_16550.TXD : uart_16550.RXD)"
-      },
-      "rhs_signals": [
-        "uart_16550.RXD",
-        "uart_16550.TXD",
-        "uart_16550.loopback"
-      ]
+      "parsed": true,
+      "confidence_reason": "expression syntax was validated and parsed without design-resource semantics"
     },
     "error": null
   },

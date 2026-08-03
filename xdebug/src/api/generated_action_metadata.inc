@@ -511,8 +511,8 @@
     spec.handler_kind = "engine_forward";
     spec.request_schema = "schemas/v1/actions/counter.statistics.request.schema.json";
     spec.response_schema = "schemas/v1/actions/counter.statistics.response.schema.json";
-    spec.request_examples = {"examples/requests/counter.statistics.basic.json"};
-    spec.response_examples = {"examples/responses/counter.statistics.basic.json"};
+    spec.request_examples = {"examples/requests/counter.statistics.basic.json", "examples/requests/counter.statistics.no_value.json"};
+    spec.response_examples = {"examples/responses/counter.statistics.basic.json", "examples/responses/counter.statistics.no_value.json"};
     spec.args.required = {"clock", "time_range", "vld", "cnt"};
     spec.description_en = "Analyze sampled counter behavior and statistics.";
     spec.description_zh = "统计计数器行为。";
@@ -666,8 +666,8 @@
     spec.handler_kind = "engine_forward";
     spec.request_schema = "schemas/v1/actions/event.config.list.request.schema.json";
     spec.response_schema = "schemas/v1/actions/event.config.list.response.schema.json";
-    spec.request_examples = {"examples/requests/event.config.list.basic.json"};
-    spec.response_examples = {"examples/responses/event.config.list.basic.json"};
+    spec.request_examples = {"examples/requests/event.config.list.basic.json", "examples/requests/event.config.list.all.json"};
+    spec.response_examples = {"examples/responses/event.config.list.basic.json", "examples/responses/event.config.list.all.json"};
     spec.args.required = {};
     spec.description_en = "List saved event-query configurations.";
     spec.description_zh = "列出事件配置。";
@@ -688,11 +688,11 @@
     spec.handler_kind = "engine_forward";
     spec.request_schema = "schemas/v1/actions/event.config.load.request.schema.json";
     spec.response_schema = "schemas/v1/actions/event.config.load.response.schema.json";
-    spec.request_examples = {"examples/requests/event.config.load.basic.json"};
-    spec.response_examples = {"examples/responses/event.config.load.basic.json"};
-    spec.args.required = {"name"};
+    spec.request_examples = {"examples/requests/event.config.load.basic.json", "examples/requests/event.config.load.negedge_sample_point.json"};
+    spec.response_examples = {"examples/responses/event.config.load.basic.json", "examples/responses/event.config.load.negedge_sample_point.json"};
+    spec.args.required = {"name", "config_path"};
     spec.description_en = "Load an event-query configuration.";
-    spec.description_zh = "保存事件查询配置。";
+    spec.description_zh = "加载事件查询配置。";
     spec.purposes = {"configure"};
     spec.use_when = {"Have a persisted event-query configuration that must be read and registered before event search or export."};
     spec.do_not_use_when = {"Do not use it to enumerate configuration names or execute the configured event search."};
@@ -710,8 +710,8 @@
     spec.handler_kind = "engine_forward";
     spec.request_schema = "schemas/v1/actions/event.export.request.schema.json";
     spec.response_schema = "schemas/v1/actions/event.export.response.schema.json";
-    spec.request_examples = {"examples/requests/event.export.basic.json"};
-    spec.response_examples = {"examples/responses/event.export.basic.json"};
+    spec.request_examples = {"examples/requests/event.export.basic.json", "examples/requests/event.export.zero.json", "examples/requests/event.export.aggregate_only.json", "examples/requests/event.export.artifact.json"};
+    spec.response_examples = {"examples/responses/event.export.basic.json", "examples/responses/event.export.zero.json", "examples/responses/event.export.aggregate_only.json", "examples/responses/event.export.artifact.json"};
     spec.args.required = {"expr"};
     spec.description_en = "Export sampled events that match an expression.";
     spec.description_zh = "导出满足表达式的事件。";
@@ -731,8 +731,8 @@
     spec.handler_kind = "engine_forward";
     spec.request_schema = "schemas/v1/actions/event.find.request.schema.json";
     spec.response_schema = "schemas/v1/actions/event.find.response.schema.json";
-    spec.request_examples = {"examples/requests/event.find.basic.json"};
-    spec.response_examples = {"examples/responses/event.find.basic.json"};
+    spec.request_examples = {"examples/requests/event.find.basic.json", "examples/requests/event.find.zero.json"};
+    spec.response_examples = {"examples/responses/event.find.basic.json", "examples/responses/event.find.zero.json"};
     spec.args.required = {"expr"};
     spec.description_en = "Find sampled events that match an expression.";
     spec.description_zh = "查找满足表达式的事件样例。";
@@ -752,8 +752,8 @@
     spec.handler_kind = "engine_forward";
     spec.request_schema = "schemas/v1/actions/expr.eval_at.request.schema.json";
     spec.response_schema = "schemas/v1/actions/expr.eval_at.response.schema.json";
-    spec.request_examples = {"examples/requests/expr.eval_at.basic.json"};
-    spec.response_examples = {"examples/responses/expr.eval_at.basic.json"};
+    spec.request_examples = {"examples/requests/expr.eval_at.basic.json", "examples/requests/expr.eval_at.false.json", "examples/requests/expr.eval_at.unknown.json"};
+    spec.response_examples = {"examples/responses/expr.eval_at.basic.json", "examples/responses/expr.eval_at.false.json", "examples/responses/expr.eval_at.unknown.json"};
     spec.args.required = {"expr", "time", "signals", "clock"};
     spec.description_en = "Evaluate an expression at a sampled waveform time.";
     spec.description_zh = "在指定时间求布尔/表达式值。";
@@ -776,7 +776,7 @@
     spec.response_schema = "schemas/v1/actions/expr.normalize.response.schema.json";
     spec.request_examples = {"examples/requests/expr.normalize.basic.json"};
     spec.response_examples = {"examples/responses/expr.normalize.basic.json"};
-    spec.args.required = {"expr"};
+    spec.args.required = {};
     spec.description_en = "Normalize an expression for deterministic processing.";
     spec.description_zh = "规范化表达式。";
     spec.purposes = {"transform"};
@@ -812,8 +812,8 @@
     spec.handler_kind = "engine_forward";
     spec.request_schema = "schemas/v1/actions/protocol.handshake.inspect.request.schema.json";
     spec.response_schema = "schemas/v1/actions/protocol.handshake.inspect.response.schema.json";
-    spec.request_examples = {"examples/requests/protocol.handshake.inspect.basic.json"};
-    spec.response_examples = {"examples/responses/protocol.handshake.inspect.basic.json"};
+    spec.request_examples = {"examples/requests/protocol.handshake.inspect.basic.json", "examples/requests/protocol.handshake.inspect.intervals.json", "examples/requests/protocol.handshake.inspect.all.json"};
+    spec.response_examples = {"examples/responses/protocol.handshake.inspect.basic.json", "examples/responses/protocol.handshake.inspect.intervals.json", "examples/responses/protocol.handshake.inspect.all.json"};
     spec.args.required = {"clock", "valid", "ready"};
     spec.description_en = "Inspect valid-ready transfers, stalls, and stability violations.";
     spec.description_zh = "检查 valid/ready 握手。";
@@ -998,7 +998,7 @@
     spec.response_schema = "schemas/v1/actions/list.show.response.schema.json";
     spec.request_examples = {"examples/requests/list.show.basic.json"};
     spec.response_examples = {"examples/responses/list.show.basic.json"};
-    spec.args.required = {};
+    spec.args.required = {"name"};
     spec.description_en = "Show the contents of a waveform signal list.";
     spec.description_zh = "显示信号列表内容。";
     spec.purposes = {"query"};
@@ -1040,8 +1040,8 @@
     spec.handler_kind = "engine_forward";
     spec.request_schema = "schemas/v1/actions/signal.sampled_pulse.inspect.request.schema.json";
     spec.response_schema = "schemas/v1/actions/signal.sampled_pulse.inspect.response.schema.json";
-    spec.request_examples = {"examples/requests/signal.sampled_pulse.inspect.basic.json"};
-    spec.response_examples = {"examples/responses/signal.sampled_pulse.inspect.basic.json"};
+    spec.request_examples = {"examples/requests/signal.sampled_pulse.inspect.basic.json", "examples/requests/signal.sampled_pulse.inspect.boundary_payload.json", "examples/requests/signal.sampled_pulse.inspect.sampled_high.json"};
+    spec.response_examples = {"examples/responses/signal.sampled_pulse.inspect.basic.json", "examples/responses/signal.sampled_pulse.inspect.boundary_payload.json", "examples/responses/signal.sampled_pulse.inspect.sampled_high.json"};
     spec.args.required = {"clock", "valid"};
     spec.description_en = "Inspect valid pulses that were not observed at sampling edges.";
     spec.description_zh = "检查未被 clock 采到的 valid 短脉冲。";
@@ -1127,7 +1127,7 @@
     spec.request_schema = "schemas/v1/actions/session.close.request.schema.json";
     spec.response_schema = "schemas/v1/actions/session.close.response.schema.json";
     spec.request_examples = {"examples/requests/session.close.basic.json"};
-    spec.response_examples = {"examples/responses/session.close.basic.json"};
+    spec.response_examples = {"examples/responses/session.close.basic.json", "examples/responses/session.close.all.json"};
     spec.args.required = {};
     spec.description_en = "Close a debug session and release its runtime resources.";
     spec.description_zh = "关闭指定 session。";
@@ -1192,8 +1192,8 @@
     spec.handler_kind = "session";
     spec.request_schema = "schemas/v1/actions/session.kill.request.schema.json";
     spec.response_schema = "schemas/v1/actions/session.kill.response.schema.json";
-    spec.request_examples = {"examples/requests/session.kill.basic.json"};
-    spec.response_examples = {"examples/responses/session.kill.basic.json"};
+    spec.request_examples = {"examples/requests/session.kill.basic.json", "examples/requests/session.kill.managed.json"};
+    spec.response_examples = {"examples/responses/session.kill.basic.json", "examples/responses/session.kill.all.json"};
     spec.args.required = {};
     spec.description_en = "Force removal of a debug session.";
     spec.description_zh = "强制移除指定 session。";
@@ -1209,12 +1209,12 @@
     spec.name = "session.list";
     spec.category = "session";
     spec.status = action_status_from_string("stable");
-    spec.resource = resource_requirement_from_string("session");
+    spec.resource = resource_requirement_from_string("none");
     spec.handler_kind = "session";
     spec.request_schema = "schemas/v1/actions/session.list.request.schema.json";
     spec.response_schema = "schemas/v1/actions/session.list.response.schema.json";
     spec.request_examples = {"examples/requests/session.list.basic.json"};
-    spec.response_examples = {"examples/responses/session.list.basic.json"};
+    spec.response_examples = {"examples/responses/session.list.basic.json", "examples/responses/session.list.expired_removed.json"};
     spec.args.required = {};
     spec.description_en = "List active debug sessions.";
     spec.description_zh = "列出当前 session。";
@@ -1235,8 +1235,8 @@
     spec.handler_kind = "session";
     spec.request_schema = "schemas/v1/actions/session.open.request.schema.json";
     spec.response_schema = "schemas/v1/actions/session.open.response.schema.json";
-    spec.request_examples = {"examples/requests/session.open.basic.json"};
-    spec.response_examples = {"examples/responses/session.open.basic.json"};
+    spec.request_examples = {"examples/requests/session.open.basic.json", "examples/requests/session.open.managed.json"};
+    spec.response_examples = {"examples/responses/session.open.basic.json", "examples/responses/session.open.duplicate_resource.json"};
     spec.args.required = {"name"};
     spec.description_en = "Open a design, waveform, or combined debug session.";
     spec.description_zh = "打开 design/waveform session。";
@@ -1258,7 +1258,7 @@
     spec.request_schema = "schemas/v1/actions/signal.canonicalize.request.schema.json";
     spec.response_schema = "schemas/v1/actions/signal.canonicalize.response.schema.json";
     spec.request_examples = {"examples/requests/signal.canonicalize.basic.json"};
-    spec.response_examples = {"examples/responses/signal.canonicalize.basic.json"};
+    spec.response_examples = {"examples/responses/signal.canonicalize.basic.json", "examples/responses/signal.canonicalize.ambiguous.json"};
     spec.args.required = {"signal"};
     spec.description_en = "Return the canonical design path for a signal.";
     spec.description_zh = "返回信号 canonical 名称。";
@@ -1344,8 +1344,8 @@
     spec.handler_kind = "engine_forward";
     spec.request_schema = "schemas/v1/actions/signal.statistics.request.schema.json";
     spec.response_schema = "schemas/v1/actions/signal.statistics.response.schema.json";
-    spec.request_examples = {"examples/requests/signal.statistics.basic.json"};
-    spec.response_examples = {"examples/responses/signal.statistics.basic.json"};
+    spec.request_examples = {"examples/requests/signal.statistics.basic.json", "examples/requests/signal.statistics.raw.json", "examples/requests/signal.statistics.clock_unknown.json", "examples/requests/signal.statistics.clock_no_transition.json", "examples/requests/signal.statistics.raw_empty.json"};
+    spec.response_examples = {"examples/responses/signal.statistics.basic.json", "examples/responses/signal.statistics.raw.json", "examples/responses/signal.statistics.clock_unknown.json", "examples/responses/signal.statistics.clock_no_transition.json", "examples/responses/signal.statistics.raw_empty.json"};
     spec.args.required = {"signal"};
     spec.description_en = "Measure waveform signal activity and sampled values.";
     spec.description_zh = "统计信号活动。";
@@ -1389,7 +1389,7 @@
     spec.request_schema = "schemas/v1/actions/trace.active_driver.request.schema.json";
     spec.response_schema = "schemas/v1/actions/trace.active_driver.response.schema.json";
     spec.request_examples = {"examples/requests/trace.active_driver.basic.json"};
-    spec.response_examples = {"examples/responses/trace.active_driver.basic.json"};
+    spec.response_examples = {"examples/responses/trace.active_driver.basic.json", "examples/responses/trace.active_driver.exact_assignment.json", "examples/responses/trace.active_driver.control_only.json"};
     spec.args.required = {"signal", "time"};
     spec.description_en = "Find active driver evidence at a specific waveform time.";
     spec.description_zh = "在指定时间找 active driver。";
@@ -1541,8 +1541,8 @@
     spec.handler_kind = "engine_forward";
     spec.request_schema = "schemas/v1/actions/verify.conditions.request.schema.json";
     spec.response_schema = "schemas/v1/actions/verify.conditions.response.schema.json";
-    spec.request_examples = {"examples/requests/verify.conditions.basic.json"};
-    spec.response_examples = {"examples/responses/verify.conditions.basic.json"};
+    spec.request_examples = {"examples/requests/verify.conditions.basic.json", "examples/requests/verify.conditions.unknown.json"};
+    spec.response_examples = {"examples/responses/verify.conditions.basic.json", "examples/responses/verify.conditions.unknown.json"};
     spec.args.required = {"conditions", "time", "clock", "signals"};
     spec.description_en = "Verify multiple conditions at one sampled time.";
     spec.description_zh = "在单个时间验证条件集合。";
@@ -1563,8 +1563,8 @@
     spec.handler_kind = "engine_forward";
     spec.request_schema = "schemas/v1/actions/window.verify.request.schema.json";
     spec.response_schema = "schemas/v1/actions/window.verify.response.schema.json";
-    spec.request_examples = {"examples/requests/window.verify.basic.json"};
-    spec.response_examples = {"examples/responses/window.verify.basic.json"};
+    spec.request_examples = {"examples/requests/window.verify.basic.json", "examples/requests/window.verify.incomplete.json", "examples/requests/window.verify.empty.json"};
+    spec.response_examples = {"examples/responses/window.verify.basic.json", "examples/responses/window.verify.incomplete.json", "examples/responses/window.verify.empty.json"};
     spec.args.required = {"clock", "conditions", "signals"};
     spec.description_en = "Verify conditions across a clock-sampled time window.";
     spec.description_zh = "按 clock 在窗口内验证条件。";
@@ -1653,27 +1653,6 @@
 }
 {
     ActionSpec spec;
-    spec.name = "stream.config.get";
-    spec.category = "waveform";
-    spec.status = action_status_from_string("stable");
-    spec.resource = resource_requirement_from_string("waveform");
-    spec.handler_kind = "engine_forward";
-    spec.request_schema = "schemas/v1/actions/stream.config.get.request.schema.json";
-    spec.response_schema = "schemas/v1/actions/stream.config.get.response.schema.json";
-    spec.request_examples = {"examples/requests/stream.config.get.basic.json"};
-    spec.response_examples = {"examples/responses/stream.config.get.basic.json"};
-    spec.args.required = {"name"};
-    spec.description_en = "Read one saved stream configuration without resolving waveform metadata.";
-    spec.description_zh = "读取一个已保存的原始 stream 配置，不解析波形元数据。";
-    spec.purposes = {"query"};
-    spec.use_when = {"Read the persisted definition for one exact stream configuration name."};
-    spec.do_not_use_when = {"Listing all stream names or resolving the configuration against the active waveform."};
-    spec.alternatives = Json::array();
-    spec.alternatives.push_back({{"action", "stream.describe" }, {"when", "Resolved signals and static validation against the active waveform are required." }});
-    registry.register_spec(spec);
-}
-{
-    ActionSpec spec;
     spec.name = "stream.describe";
     spec.category = "waveform";
     spec.status = action_status_from_string("stable");
@@ -1692,6 +1671,27 @@
     spec.alternatives = Json::array();
     spec.alternatives.push_back({{"action", "stream.config.get" }, {"when", "Read the raw persisted configuration." }});
     spec.alternatives.push_back({{"action", "stream.query" }, {"when", "Analyze observed transfers, stalls, or packets." }});
+    registry.register_spec(spec);
+}
+{
+    ActionSpec spec;
+    spec.name = "stream.config.get";
+    spec.category = "waveform";
+    spec.status = action_status_from_string("stable");
+    spec.resource = resource_requirement_from_string("waveform");
+    spec.handler_kind = "engine_forward";
+    spec.request_schema = "schemas/v1/actions/stream.config.get.request.schema.json";
+    spec.response_schema = "schemas/v1/actions/stream.config.get.response.schema.json";
+    spec.request_examples = {"examples/requests/stream.config.get.basic.json"};
+    spec.response_examples = {"examples/responses/stream.config.get.basic.json"};
+    spec.args.required = {"name"};
+    spec.description_en = "Read one saved stream configuration without resolving waveform metadata.";
+    spec.description_zh = "读取一个已保存的原始 stream 配置，不解析波形元数据。";
+    spec.purposes = {"query"};
+    spec.use_when = {"Read the persisted definition for one exact stream configuration name."};
+    spec.do_not_use_when = {"Listing all stream names or resolving the configuration against the active waveform."};
+    spec.alternatives = Json::array();
+    spec.alternatives.push_back({{"action", "stream.describe" }, {"when", "Resolved signals and static validation against the active waveform are required." }});
     registry.register_spec(spec);
 }
 {

@@ -2,20 +2,19 @@
   "request": {
     "api_version": "xdebug.v1",
     "action": "list.export",
-    "output": {
-      "verbosity": "compact"
-    },
     "target": {
-      "session_id": "fix_wave"
+      "session_id": "case_a"
     },
     "args": {
-      "name": "basic",
+      "name": "if0",
       "time_range": {
         "begin": "0ns",
         "end": "1us"
       },
-      "format": "u64bin",
-      "output_dir": "<repo>/tmp/xdebug_action_sampling2/list_export"
+      "output": {
+        "path": "artifacts/if0_list_export",
+        "file_format": "u64bin"
+      }
     }
   },
   "response": {
@@ -26,50 +25,34 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
-      "name": "basic",
-      "output_dir": "<repo>/tmp/xdebug_action_sampling2/list_export",
-      "manifest_file": "<repo>/tmp/xdebug_action_sampling2/list_export/manifest.json",
+      "name": "if0",
+      "row_count": 16,
       "format": "u64bin.v1",
-      "signal_count": 3,
-      "row_count": 103,
-      "begin": "0ps",
-      "end": "1us",
-      "begin_ps": 0,
-      "end_ps": 1000000
+      "status": "written",
+      "output_written": true,
+      "begin": "0ns",
+      "end": "1000ns",
+      "output": {
+        "path": "artifacts/if0_list_export",
+        "manifest_path": "artifacts/if0_list_export/manifest.json"
+      },
+      "scan_complete": true,
+      "analysis_complete": true,
+      "response_truncated": false,
+      "total_count": 2,
+      "returned_count": 2,
+      "truncation_scopes": []
     },
-    "data": {
-      "signals": [
-        {
-          "index": 0,
-          "signal": "ai_complex_top.clk",
-          "file": "0001_ai_complex_top_clk.u64bin",
-          "row_count": 98,
-          "width": 1,
-          "word_count": 1,
-          "columns": 3
-        },
-        {
-          "index": 1,
-          "signal": "ai_complex_top.rst_n",
-          "file": "0002_ai_complex_top_rst_n.u64bin",
-          "row_count": 2,
-          "width": 1,
-          "word_count": 1,
-          "columns": 3
-        },
-        {
-          "index": 2,
-          "signal": "ai_complex_top.sig_a",
-          "file": "0003_ai_complex_top_sig_a.u64bin",
-          "row_count": 3,
-          "width": 8,
-          "word_count": 1,
-          "columns": 3
-        }
-      ]
-    },
+    "data": {},
     "error": null
   },
   "stderr": ""

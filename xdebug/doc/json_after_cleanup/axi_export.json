@@ -1,12 +1,21 @@
 {
-  "request_args": {
-    "name": "if0",
-    "time_range": {
-      "begin": "0ns",
-      "end": "20us"
+  "request": {
+    "api_version": "xdebug.v1",
+    "action": "axi.export",
+    "target": {
+      "session_id": "case_a"
     },
-    "format": "tsv",
-    "output_prefix": "<repo>/tmp/xdebug_action_sampling5/axi"
+    "args": {
+      "name": "if0",
+      "time_range": {
+        "begin": "0ns",
+        "end": "1us"
+      },
+      "output": {
+        "path": "artifacts/if0_axi",
+        "file_format": "tsv"
+      }
+    }
   },
   "response": {
     "api_version": "xdebug.v1",
@@ -16,23 +25,55 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
       "name": "if0",
-      "write_count": 20,
-      "read_count": 2,
-      "total_count": 22,
-      "format": "tsv"
+      "write_count": 12,
+      "read_count": 12,
+      "total_count": 24,
+      "returned_count": 24,
+      "row_count": 24,
+      "format": "tsv",
+      "status": "written",
+      "output_written": true,
+      "sample_count": 200,
+      "full_scan_count": 1,
+      "incomplete_write_count": 0,
+      "incomplete_read_count": 0,
+      "buffered_w_beat_count": 0,
+      "buffered_w_burst_count": 0,
+      "orphan_w_beat_count": 0,
+      "orphan_b_count": 0,
+      "orphan_r_beat_count": 0,
+      "response_dependency_violation_count": 0,
+      "requested_range": {
+        "begin": "0ns",
+        "end": "200ns"
+      },
+      "scanned_range": {
+        "begin": "0ns",
+        "end": "200ns"
+      },
+      "scan_complete": true,
+      "analysis_complete": true,
+      "response_truncated": false,
+      "truncation_scopes": [],
+      "output": {
+        "path": "artifacts/if0_axi",
+        "write_path": "artifacts/if0_axi.write.tsv",
+        "read_path": "artifacts/if0_axi.read.tsv",
+        "meta_path": "artifacts/if0_axi.meta.json",
+        "file_format": "tsv"
+      }
     },
-    "data": {
-      "begin": "0ps",
-      "end": "20us",
-      "scan_begin": "0ps",
-      "scan_end": "13973275ns",
-      "write_file": "<repo>/tmp/xdebug_action_sampling5/axi.write.tsv",
-      "read_file": "<repo>/tmp/xdebug_action_sampling5/axi.read.tsv",
-      "meta_file": "<repo>/tmp/xdebug_action_sampling5/axi.meta.json"
-    },
+    "data": {},
     "error": null
   },
   "stderr": ""

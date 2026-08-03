@@ -2,17 +2,20 @@
   "api_version": "xdebug.v1",
   "ok": false,
   "action": "value.at",
-  "summary": {},
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
+  "summary": {
+    "status": "error",
+    "error_code": "RESOURCE_REQUIRED"
+  },
   "data": null,
   "error": {
     "code": "RESOURCE_REQUIRED",
     "message": "waveform action requires target.fsdb or a waveform session",
     "recoverable": true,
-    "error_layer": "handler",
-    "candidates": [],
-    "suggested_actions": []
-  },
-  "meta": {
-    "truncated": false
+    "error_layer": "handler"
   }
 }

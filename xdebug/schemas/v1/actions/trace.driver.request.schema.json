@@ -6,7 +6,8 @@
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -16,7 +17,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -25,64 +27,83 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "daidir": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "daidir"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "daidir"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "signal"
+      ],
       "properties": {
-        "line_limit": {
-          "type": "integer",
-          "minimum": 1,
-          "description": "Limits returned evidence rows only, not scanning, aggregation, or the verdict; read completeness fields as well."
-        },
         "no_statement_only": {
           "type": "boolean",
-          "description": "Action-specific no_statement_only input. Its type and accepted values are defined by this schema."
+          "description": "为 true 时排除只代表 statement、没有结构化设计对象语义的 trace 结果。"
         },
         "role": {
           "type": "string",
-          "description": "Action-specific role input. Its type and accepted values are defined by this schema."
+          "description": "设计 trace 中节点的语义角色过滤。"
         },
         "signal": {
           "type": "string",
           "description": "Final leaf signal path. Aggregate, array, and struct roots are not expanded automatically."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "signal"
-      ]
+      "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "max_results": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Maximum static driver paths returned."
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
@@ -94,19 +115,19 @@
   "x-description-zh": "查找信号直接 driver。",
   "x-agent": {
     "use_when": [
-      "查找信号直接 driver。"
+      "Need all structural driver pins or assignments for a design signal without evaluating waveform activity."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 trace.active_driver、trace.active_driver_chain 的业务目标；请改用列出的同域 action。"
+      "Do not use it to decide which driver is active at a waveform time."
     ],
     "alternatives": [
       {
         "action": "trace.active_driver",
-        "when": "在指定时间找 active driver。"
+        "when": "Find active driver evidence at one time."
       },
       {
-        "action": "trace.active_driver_chain",
-        "when": "展开 active driver 链。"
+        "action": "trace.load",
+        "when": "Enumerate static consumers instead of drivers."
       }
     ],
     "constraints": [

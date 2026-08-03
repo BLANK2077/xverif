@@ -1,0 +1,224 @@
+{
+  "request": {
+    "api_version": "xdebug.v1",
+    "action": "trace.x_origin",
+    "target": {
+      "session_id": "xprop_debug"
+    },
+    "args": {
+      "signal": "trace_x_xprop_tb.observed",
+      "time": "18ns",
+      "value_format": "hex"
+    },
+    "limits": {
+      "max_depth": 8,
+      "max_nodes": 256,
+      "max_time_steps": 128,
+      "max_trace_signals": 128,
+      "max_chains": 8
+    }
+  },
+  "response": {
+    "api_version": "xdebug.v1",
+    "ok": true,
+    "action": "trace.x_origin",
+    "tool": {
+      "name": "xdebug",
+      "version": "0.1.0"
+    },
+    "session": {
+      "session_id": "xprop_debug",
+      "mode": "combined",
+      "daidir": "simv.daidir",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/xprop_debug.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
+    "summary": {
+      "signal": "trace_x_xprop_tb.multi_rhs_out",
+      "query_time": "12ns",
+      "termination": "origin_found",
+      "evidence_status": "best_effort",
+      "chain_count": 2,
+      "completed_chain_count": 2,
+      "limited_chain_count": 0,
+      "hop_count": 4,
+      "origin_count": 2,
+      "scan_complete": true,
+      "analysis_complete": true,
+      "response_truncated": false,
+      "total_count": 2,
+      "returned_count": 2,
+      "truncation_scopes": []
+    },
+    "data": {
+      "query": {
+        "signal": "trace_x_xprop_tb.multi_rhs_out",
+        "query_time": "12ns",
+        "value": {
+          "value": "8'hxx",
+          "known": false,
+          "width": 8,
+          "bits": "xxxxxxxx",
+          "has_x": true,
+          "has_z": false
+        },
+        "x_mask": "'b11111111"
+      },
+      "chains": [
+        {
+          "chain_id": "c0",
+          "status": "origin_found",
+          "termination_detail": "candidate_x_source",
+          "complete": true,
+          "current": {
+            "signal": "trace_x_xprop_tb.multi_rhs_a",
+            "x_onset_time": "10ns",
+            "value": {
+              "value": "8'hxx",
+              "known": false,
+              "width": 8,
+              "bits": "xxxxxxxx",
+              "has_x": true,
+              "has_z": false
+            },
+            "x_mask": "'b11111111"
+          },
+          "hops": [
+            {
+              "index": 0,
+              "chain_id": "c0",
+              "signal": "trace_x_xprop_tb.multi_rhs_out",
+              "x_onset_time": "10ns",
+              "active_time": "10ns",
+              "value": {
+                "value": "8'hxx",
+                "known": false,
+                "width": 8,
+                "bits": "xxxxxxxx",
+                "has_x": true,
+                "has_z": false
+              },
+              "x_mask": "'b11111111",
+              "relation": "root",
+              "file": "trace_x_xprop_tb.sv",
+              "line": 87,
+              "signal_path": [
+                "trace_x_xprop_tb.multi_rhs_out"
+              ]
+            },
+            {
+              "index": 1,
+              "chain_id": "c0",
+              "signal": "trace_x_xprop_tb.multi_rhs_a",
+              "x_onset_time": "10ns",
+              "active_time": "10ns",
+              "value": {
+                "value": "8'hxx",
+                "known": false,
+                "width": 8,
+                "bits": "xxxxxxxx",
+                "has_x": true,
+                "has_z": false
+              },
+              "x_mask": "'b11111111",
+              "relation": "rhs",
+              "file": "trace_x_xprop_tb.sv",
+              "line": 116,
+              "signal_path": [
+                "trace_x_xprop_tb.multi_rhs_a"
+              ]
+            }
+          ],
+          "origin": {
+            "signal": "trace_x_xprop_tb.multi_rhs_a",
+            "x_onset_time": "10ns",
+            "kind": "assignment",
+            "reason": "candidate_x_source",
+            "evidence_status": "best_effort",
+            "file": "trace_x_xprop_tb.sv",
+            "line": 116
+          }
+        },
+        {
+          "chain_id": "c1",
+          "status": "origin_found",
+          "termination_detail": "candidate_x_source",
+          "complete": true,
+          "current": {
+            "signal": "trace_x_xprop_tb.multi_rhs_b",
+            "x_onset_time": "10ns",
+            "value": {
+              "value": "8'hxx",
+              "known": false,
+              "width": 8,
+              "bits": "xxxxxxxx",
+              "has_x": true,
+              "has_z": false
+            },
+            "x_mask": "'b11111111"
+          },
+          "hops": [
+            {
+              "index": 0,
+              "chain_id": "c1",
+              "signal": "trace_x_xprop_tb.multi_rhs_out",
+              "x_onset_time": "10ns",
+              "active_time": "10ns",
+              "value": {
+                "value": "8'hxx",
+                "known": false,
+                "width": 8,
+                "bits": "xxxxxxxx",
+                "has_x": true,
+                "has_z": false
+              },
+              "x_mask": "'b11111111",
+              "relation": "root",
+              "file": "trace_x_xprop_tb.sv",
+              "line": 87,
+              "signal_path": [
+                "trace_x_xprop_tb.multi_rhs_out"
+              ]
+            },
+            {
+              "index": 1,
+              "chain_id": "c1",
+              "signal": "trace_x_xprop_tb.multi_rhs_b",
+              "x_onset_time": "10ns",
+              "active_time": "10ns",
+              "value": {
+                "value": "8'hxx",
+                "known": false,
+                "width": 8,
+                "bits": "xxxxxxxx",
+                "has_x": true,
+                "has_z": false
+              },
+              "x_mask": "'b11111111",
+              "relation": "rhs",
+              "file": "trace_x_xprop_tb.sv",
+              "line": 117,
+              "signal_path": [
+                "trace_x_xprop_tb.multi_rhs_b"
+              ]
+            }
+          ],
+          "origin": {
+            "signal": "trace_x_xprop_tb.multi_rhs_b",
+            "x_onset_time": "10ns",
+            "kind": "assignment",
+            "reason": "candidate_x_source",
+            "evidence_status": "best_effort",
+            "file": "trace_x_xprop_tb.sv",
+            "line": 117
+          }
+        }
+      ],
+      "limitations": []
+    },
+    "error": null
+  },
+  "stderr": ""
+}

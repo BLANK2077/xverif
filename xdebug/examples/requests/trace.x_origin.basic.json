@@ -1,9 +1,7 @@
 {
   "api_version": "xdebug.v1",
   "action": "trace.x_origin",
-  "target": {
-    "session_id": "xprop_debug"
-  },
+  "target": {"session_id": "xprop_debug"},
   "args": {
     "signal": "trace_x_xprop_tb.observed",
     "time": "18ns",

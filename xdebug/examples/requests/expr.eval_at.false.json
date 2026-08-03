@@ -1,0 +1,16 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "expr.eval_at",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {
+    "expr": "valid && ready",
+    "clock": "top.u.clk",
+    "time": "100ns",
+    "signals": {
+      "valid": "top.u.valid",
+      "ready": "top.u.ready"
+    }
+  }
+}

@@ -3,18 +3,12 @@
     "api_version": "xdebug.v1",
     "action": "value.at",
     "target": {
-      "session_id": "sample_wave"
+      "session_id": "case_a"
     },
     "args": {
-      "signal": "ai_complex_top.clk",
+      "signal": "top.u.ready",
       "time": "100ns",
-      "format": "hex"
-    },
-    "limits": {
-      "timeout_ms": 120000
-    },
-    "output": {
-      "verbosity": "compact"
+      "value_format": "hex"
     }
   },
   "response": {
@@ -25,18 +19,47 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
-      "signal": "ai_complex_top.clk",
-      "time": "100ns",
-      "known": true,
-      "status": "ok"
+      "source_kind": "signal",
+      "source_name": "top.u.ready",
+      "sampling_mode": "raw_time",
+      "time_count": 1,
+      "entry_count": 1
     },
     "data": {
-      "value": {
-        "value": "'h0",
-        "known": true
-      }
+      "entries": [
+        {
+          "key": "top.u.ready",
+          "kind": "signal",
+          "path": "top.u.ready"
+        }
+      ],
+      "samples": [
+        {
+          "time": "100ns",
+          "sampling_mode": "raw_time",
+          "values": [
+            {
+              "key": "top.u.ready",
+              "status": "ok",
+              "value": {
+                "value": "1'h1",
+                "known": true,
+                "width": 1,
+                "bits": "1"
+              }
+            }
+          ]
+        }
+      ]
     },
     "error": null
   },

@@ -10,6 +10,6 @@
       "begin": "100ns",
       "end": "200ns"
     },
-    "aggregate_only": true
+    "mode": "timeline"
   }
 }

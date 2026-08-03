@@ -6,7 +6,8 @@
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -16,7 +17,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -25,10 +27,50 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "name"
+      ],
       "properties": {
         "line_limit": {
           "type": "integer",
@@ -44,56 +86,66 @@
           "properties": {
             "path": {
               "type": "string",
-              "description": "Action-specific path input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "Artifact directory; omit it to return an in-response preview."
             },
             "file_format": {
               "type": "string",
               "enum": [
                 "u64bin"
               ],
-              "description": "list.export file format; response manifest uses versioned format u64bin.v1."
-            },
-            "verbose": {
-              "type": "boolean",
-              "description": "Action-specific verbose input. Its type and accepted values are defined by this schema."
+              "default": "u64bin",
+              "description": "Waveform-list artifact format; the manifest publishes u64bin.v1."
             }
           },
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "file_format"
+                ]
+              },
+              "then": {
+                "required": [
+                  "path"
+                ]
+              },
+              "description": "Export destination and rendering controls. path, file_format, and verbose are supported only where this action declares them."
+            }
+          ],
           "additionalProperties": false,
           "description": "Export destination and rendering controls. path, file_format, and verbose are supported only where this action declares them."
         },
+        "render_time_unit": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "ps",
+            "ns",
+            "us"
+          ],
+          "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
+        },
         "time_range": {
           "type": "object",
+          "minProperties": 1,
           "properties": {
             "begin": {
               "type": "string",
-              "description": "Action-specific begin input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "闭区间起点；省略时使用可用波形窗口起点。"
             },
             "end": {
               "type": "string",
-              "description": "Action-specific end input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "闭区间终点；省略时使用可用波形窗口终点。"
             }
           },
           "additionalProperties": false,
           "description": "Closed analysis interval. begin and end may be omitted independently to use the available waveform bounds."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
         }
       },
       "additionalProperties": false,
-      "required": [
-        "name"
-      ],
       "allOf": [
         {
           "if": {
@@ -125,22 +177,16 @@
       ]
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
@@ -152,19 +198,19 @@
   "x-description-zh": "导出 list 数据。",
   "x-agent": {
     "use_when": [
-      "导出 list 数据。"
+      "Need multi-signal values from a saved list written to a declared artifact or returned as an export preview."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 list.add、list.create 的业务目标；请改用列出的同域 action。"
+      "Do not use it when no file or multi-signal preview is needed, or for a single point read."
     ],
     "alternatives": [
       {
-        "action": "list.add",
-        "when": "向信号列表追加一个信号。"
+        "action": "value.at",
+        "when": "Read list values at one or more times."
       },
       {
-        "action": "list.create",
-        "when": "创建命名信号列表。"
+        "action": "list.load",
+        "when": "Load a reusable signal set from JSON configuration before point reads."
       }
     ],
     "constraints": [

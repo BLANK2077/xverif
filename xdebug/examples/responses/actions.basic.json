@@ -2,9 +2,14 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "actions",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
   "summary": {
     "action_count": 1,
-    "total_action_count": 73,
+    "total_action_count": 74,
     "verbose": false,
     "filtered": true
   },
@@ -22,5 +27,6 @@
     "filters": {
       "keyword": "schema"
     }
-  }
+  },
+  "error": null
 }

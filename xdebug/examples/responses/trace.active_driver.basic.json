@@ -2,22 +2,31 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "trace.active_driver",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "my_debug_session",
+    "mode": "combined",
+    "daidir": "simv.daidir",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/my_debug_session.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
   "summary": {
     "signal": "top.u.ready",
     "time": "100ns",
     "active_time": "95ns",
-    "requested_time": "100ns",
-    "driver_last_change_time": "95ns",
-    "time_semantics": {"requested_time": "query time", "active_time": "last driver change"},
-    "driver_status": "active",
-    "evidence_scope": "design_and_waveform",
-    "evidence_status": "supported",
-    "evidence_source": "assignment",
-    "static_candidate_count": 1,
-    "active_check_count": 1,
-    "trace_node_count": 2,
-    "path_count": 1,
-    "truncated": false
+    "termination": "assignment",
+    "termination_detail": "assignment",
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 1,
+    "returned_count": 1,
+    "truncation_scopes": []
   },
   "data": {
     "paths": [

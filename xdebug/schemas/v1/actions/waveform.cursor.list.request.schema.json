@@ -1,11 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "xdebug.cursor.list.request.v1",
-  "title": "cursor.list request",
+  "$id": "xdebug.waveform.cursor.list.request.v1",
+  "title": "waveform.cursor.list request",
   "type": "object",
   "required": [
     "api_version",
-    "action"
+    "action",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -15,7 +16,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -24,45 +26,73 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [],
       "properties": {
-        "time_unit": {
+        "render_time_unit": {
           "type": "string",
           "enum": [
             "auto",
-            "fs",
             "ps",
             "ns",
-            "us",
-            "ms",
-            "s"
+            "us"
           ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
+          "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
         }
       },
-      "additionalProperties": false,
-      "required": []
+      "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
@@ -74,19 +104,23 @@
   "x-description-zh": "列出游标。",
   "x-agent": {
     "use_when": [
-      "列出游标。"
+      "Need to discover available waveform time-bookmark names before reading or activating one."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 cursor.delete、cursor.get 的业务目标；请改用列出的同域 action。"
+      "Do not use it to read one cursor time or enumerate protocol transactions."
     ],
     "alternatives": [
       {
-        "action": "waveform.cursor.delete",
-        "when": "删除游标。"
+        "action": "waveform.cursor.get",
+        "when": "Read one saved waveform cursor."
       },
       {
-        "action": "waveform.cursor.get",
-        "when": "读取命名游标。"
+        "action": "apb.query",
+        "when": "Enumerate APB transactions."
+      },
+      {
+        "action": "axi.query",
+        "when": "Enumerate AXI transactions."
       }
     ],
     "constraints": [

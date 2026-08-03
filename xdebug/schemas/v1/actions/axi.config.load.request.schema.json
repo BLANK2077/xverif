@@ -6,7 +6,8 @@
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -16,7 +17,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -25,164 +27,204 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "name"
+      ],
       "properties": {
         "config": {
           "type": "object",
-          "description": "Structured config configuration. Only the declared properties are accepted.",
+          "description": "内联配置对象。",
           "properties": {
             "clock": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific clock input. Its type and accepted values are defined by this schema."
+              "description": "采样、统计或协议检查使用的 clock 信号路径。"
             },
             "awvalid": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific awvalid input. Its type and accepted values are defined by this schema."
+              "description": "AXI AWVALID 信号路径。"
             },
             "awready": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific awready input. Its type and accepted values are defined by this schema."
+              "description": "AXI AWREADY 信号路径。"
             },
             "awaddr": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific awaddr input. Its type and accepted values are defined by this schema."
+              "description": "AXI AWADDR 信号路径。"
             },
             "awid": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific awid input. Its type and accepted values are defined by this schema."
+              "description": "AXI AWID 信号路径；当前 AXI config schema 和 manager 要求显式提供。"
             },
             "awlen": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific awlen input. Its type and accepted values are defined by this schema."
+              "description": "AXI AWLEN burst-length 信号路径。"
             },
             "awsize": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific awsize input. Its type and accepted values are defined by this schema."
+              "description": "AXI AWSIZE beat-byte-size 信号路径。"
             },
             "awburst": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific awburst input. Its type and accepted values are defined by this schema."
+              "description": "AXI AWBURST burst-type 信号路径。"
             },
             "wvalid": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific wvalid input. Its type and accepted values are defined by this schema."
+              "description": "AXI WVALID 信号路径。"
             },
             "wready": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific wready input. Its type and accepted values are defined by this schema."
+              "description": "AXI WREADY 信号路径。"
             },
             "wdata": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific wdata input. Its type and accepted values are defined by this schema."
+              "description": "AXI WDATA 写数据总线信号路径。"
             },
             "wstrb": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific wstrb input. Its type and accepted values are defined by this schema."
+              "description": "AXI WSTRB 写字节使能信号路径。"
             },
             "wlast": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific wlast input. Its type and accepted values are defined by this schema."
+              "description": "AXI WLAST 最后一拍指示信号路径。"
             },
             "bvalid": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific bvalid input. Its type and accepted values are defined by this schema."
+              "description": "AXI BVALID 信号路径。"
             },
             "bready": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific bready input. Its type and accepted values are defined by this schema."
+              "description": "AXI BREADY 信号路径。"
             },
             "bid": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific bid input. Its type and accepted values are defined by this schema."
+              "description": "AXI BID 写响应 ID 信号路径。"
             },
             "bresp": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific bresp input. Its type and accepted values are defined by this schema."
+              "description": "AXI BRESP 写响应状态信号路径。"
             },
             "arvalid": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific arvalid input. Its type and accepted values are defined by this schema."
+              "description": "AXI ARVALID 信号路径。"
             },
             "arready": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific arready input. Its type and accepted values are defined by this schema."
+              "description": "AXI ARREADY 信号路径。"
             },
             "araddr": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific araddr input. Its type and accepted values are defined by this schema."
+              "description": "AXI ARADDR 信号路径。"
             },
             "arid": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific arid input. Its type and accepted values are defined by this schema."
+              "description": "AXI ARID 信号路径；当前 AXI config schema 和 manager 要求显式提供。"
             },
             "arlen": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific arlen input. Its type and accepted values are defined by this schema."
+              "description": "AXI ARLEN burst-length 信号路径。"
             },
             "arsize": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific arsize input. Its type and accepted values are defined by this schema."
+              "description": "AXI ARSIZE beat-byte-size 信号路径。"
             },
             "arburst": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific arburst input. Its type and accepted values are defined by this schema."
+              "description": "AXI ARBURST burst-type 信号路径。"
             },
             "rvalid": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific rvalid input. Its type and accepted values are defined by this schema."
+              "description": "AXI RVALID 信号路径。"
             },
             "rready": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific rready input. Its type and accepted values are defined by this schema."
+              "description": "AXI RREADY 信号路径。"
             },
             "rdata": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific rdata input. Its type and accepted values are defined by this schema."
+              "description": "AXI RDATA 读数据总线信号路径。"
             },
             "rid": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific rid input. Its type and accepted values are defined by this schema."
+              "description": "AXI RID 读数据 ID 信号路径。"
             },
             "rresp": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific rresp input. Its type and accepted values are defined by this schema."
+              "description": "AXI RRESP 读响应状态信号路径。"
             },
             "rlast": {
               "type": "string",
               "minLength": 1,
-              "description": "Action-specific rlast input. Its type and accepted values are defined by this schema."
+              "description": "AXI RLAST 最后一拍指示信号路径。"
             },
             "edge": {
               "type": "string",
@@ -263,31 +305,16 @@
         },
         "config_path": {
           "type": "string",
-          "description": "Action-specific config_path input. Its type and accepted values are defined by this schema."
+          "minLength": 1,
+          "description": "输入配置文件路径。"
         },
         "name": {
           "type": "string",
           "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
         }
       },
       "additionalProperties": false,
-      "required": [
-        "name"
-      ],
-      "anyOf": [
+      "oneOf": [
         {
           "required": [
             "config"
@@ -301,22 +328,16 @@
       ]
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
@@ -328,19 +349,19 @@
   "x-description-zh": "加载 AXI 配置。",
   "x-agent": {
     "use_when": [
-      "加载 AXI 配置。"
+      "Have an inline AXI channel mapping or config file that must be registered and validated before traffic analysis."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 axi.analysis、axi.export 的业务目标；请改用列出的同域 action。"
+      "Do not use it to enumerate saved names or query decoded AXI activity."
     ],
     "alternatives": [
       {
-        "action": "axi.analysis",
-        "when": "汇总 AXI 行为。"
+        "action": "axi.config.list",
+        "when": "Discover saved AXI configuration names."
       },
       {
-        "action": "axi.export",
-        "when": "导出 AXI 数据。"
+        "action": "axi.query",
+        "when": "Inspect traffic from a loaded interface."
       }
     ],
     "constraints": [

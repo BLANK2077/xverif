@@ -2,6 +2,18 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "apb.statistics",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
   "summary": {
     "name": "apb0",
     "scanned_transaction_count": 10,
@@ -10,7 +22,12 @@
     "matched_write_count": 2,
     "unresolved_transaction_count": 0,
     "filter_applied": true,
+    "scan_complete": true,
     "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 4,
+    "returned_count": 4,
+    "truncation_scopes": [],
     "analysis_quality": "complete",
     "full_scan_count": 1
   },
@@ -25,5 +42,6 @@
     "notes": {
       "unresolved_transaction_count": "因被引用的 address/ID 含 X/Z 或不可解析，导致无法判断是否匹配过滤条件的已完成事务数。"
     }
-  }
+  },
+  "error": null
 }
