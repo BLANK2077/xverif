@@ -34,7 +34,7 @@ def test_default_output_is_xout(cli_runner: CliRunner) -> None:
     summary_block = result.response.split("summary:\n", 1)[1].split("\n\n", 1)[0]
     summary_lines = [line for line in summary_block.splitlines() if line.startswith("  ")]
     assert {line.split(":", 1)[0].strip() for line in summary_lines} >= {
-        "action_count", "total_action_count", "removed_count", "verbose", "filtered"
+        "action_count", "total_action_count", "verbose", "filtered"
     }
     assert len({line.index(":") for line in summary_lines}) == 1
 

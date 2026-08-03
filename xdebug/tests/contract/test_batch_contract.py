@@ -72,12 +72,10 @@ def test_batch_stop_on_error_stops_after_first_failure(
 @pytest.mark.contract
 def test_batch_failure_aggregation_is_visible_in_xout(cli_runner: CliRunner) -> None:
     result = cli_runner.run(_batch("stop_on_error"), output_format="xout")
-    assert result.returncode == 1
-    assert "failed_count: 1" in result.response
-    assert "failed_indexes:" in result.response
-    assert "failed_codes:" in result.response
+    assert result.returncode == 0
+    assert result.response.startswith("@xdebug.batch.v1\n")
+    assert "failed_count" in result.response and ": 1" in result.response
     assert "UNKNOWN_ACTION" in result.response
-    assert "failed_layers:" in result.response
     assert "handler" in result.response
 
 

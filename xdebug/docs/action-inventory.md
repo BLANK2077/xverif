@@ -7,8 +7,9 @@ example 和 contract test 迁移使用。状态定义：
 | --- | --- |
 | `stable` | 已实现，默认可给 agent 使用，contract drift 必须被测试挡住 |
 | `experimental` | 已实现但字段或行为仍可能调整，agent 不应默认优先使用 |
-| `deprecated` | 仍可能存在兼容路径，但不建议新流程使用 |
-| `removed` | 已移除或明确不支持，仅保留迁移说明 |
+
+public catalog 只允许 `stable` 和 `experimental`。其它 status 都是 catalog
+contract error，不表示存在兼容入口。
 
 资源需求定义：
 
@@ -29,14 +30,14 @@ example 和 contract test 迁移使用。状态定义：
 | `actions` | builtin | stable | none | top-level catalog | regression |
 | `batch` | builtin | stable | none | top-level dispatcher | partial |
 | `session.open` | session | stable | any | dispatcher + backend session managers | regression |
-| `session.list` | session | stable | session | unified engine session registry | partial |
+| `session.list` | session | stable | none | unified engine session registry | partial |
 | `session.doctor` | session | stable | session | dispatcher + backend health | partial |
 | `session.kill` | session | stable | session | dispatcher + backend session managers | partial |
-| `session.close` | session | stable | session | alias-compatible close path | partial |
+| `session.close` | session | stable | session | strict `target.session_id` close path | partial |
 | `session.gc` | session | stable | none | dispatcher + waveform gc | partial |
 | `trace.active_driver` | combined | stable | combined | unified engine handler + combined helper | regression |
 | `trace.active_driver_chain` | combined | stable | combined | unified engine handler + combined helper | partial |
-| `trace.x` | combined | experimental | combined | unified engine handler + per-branch X-onset DFS | regression |
+| `trace.x_origin` | combined | experimental | combined | unified engine handler + per-branch X-onset DFS | regression |
 
 ## Design Actions
 
@@ -46,41 +47,39 @@ example 和 contract test 迁移使用。状态定义：
 | `trace.load` | design | stable | design | design engine forward | partial |
 | `signal.resolve` | design | stable | design | design engine forward | partial |
 | `signal.canonicalize` | design | stable | design | design engine forward | partial |
-| `source.context` | design | stable | none | design engine forward | regression |
 | `expr.normalize` | design | stable | none | design engine forward | partial |
 
 ## Waveform Actions
 
 | action | category | status | resource | implementation | test |
 | --- | --- | --- | --- | --- | --- |
-| `cursor.set` | waveform | stable | waveform | waveform engine forward | partial |
-| `cursor.get` | waveform | stable | waveform | waveform engine forward | partial |
-| `cursor.list` | waveform | stable | waveform | waveform engine forward | partial |
-| `cursor.delete` | waveform | stable | waveform | waveform engine forward | partial |
-| `cursor.use` | waveform | stable | waveform | waveform engine forward | partial |
+| `waveform.cursor.set` | waveform | stable | waveform | waveform engine forward | partial |
+| `waveform.cursor.get` | waveform | stable | waveform | waveform engine forward | partial |
+| `waveform.cursor.list` | waveform | stable | waveform | waveform engine forward | partial |
+| `waveform.cursor.delete` | waveform | stable | waveform | waveform engine forward | partial |
+| `waveform.cursor.use` | waveform | stable | waveform | waveform engine forward | partial |
 | `scope.list` | waveform | stable | waveform | waveform engine forward | regression |
 | `scope.roots` | waveform | stable | any | waveform engine forward | targeted |
-| `rc.generate` | waveform | stable | waveform | waveform engine forward | partial |
+| `nwave.rc.generate` | waveform | stable | waveform | waveform engine forward | partial |
 | `value.at` | waveform | stable | waveform | waveform engine forward | regression |
-| `value.batch_at` | waveform | stable | waveform | waveform engine forward | regression |
 | `list.create` | waveform | stable | waveform | waveform engine forward | partial |
+| `list.load` | waveform | stable | waveform | waveform engine forward | regression |
 | `list.add` | waveform | stable | waveform | waveform engine forward | partial |
 | `list.delete` | waveform | stable | waveform | waveform engine forward | partial |
 | `list.show` | waveform | stable | waveform | waveform engine forward | partial |
-| `list.value_at` | waveform | stable | waveform | waveform engine forward | partial |
 | `list.validate` | waveform | stable | waveform | waveform engine forward | partial |
-| `list.diff` | waveform | stable | waveform | waveform engine forward | partial |
+| `list.first_change` | waveform | stable | waveform | waveform engine forward | partial |
 | `list.export` | waveform | stable | waveform | waveform engine forward | targeted |
 | `apb.config.load` | waveform | stable | waveform | waveform engine forward | partial |
 | `apb.config.list` | waveform | stable | waveform | waveform engine forward | partial |
 | `apb.query` | waveform | stable | waveform | waveform engine forward | regression |
 | `apb.statistics` | waveform | stable | waveform | waveform engine forward | regression |
-| `apb.cursor` | waveform | stable | waveform | waveform engine forward | partial |
+| `apb.transaction.cursor` | waveform | stable | waveform | waveform engine forward | partial |
 | `axi.config.load` | waveform | stable | waveform | waveform engine forward | partial |
 | `axi.config.list` | waveform | stable | waveform | waveform engine forward | partial |
 | `axi.query` | waveform | stable | waveform | waveform engine forward | regression |
 | `axi.statistics` | waveform | stable | waveform | waveform engine forward | regression |
-| `axi.cursor` | waveform | stable | waveform | waveform engine forward | partial |
+| `axi.transaction.cursor` | waveform | stable | waveform | waveform engine forward | partial |
 | `axi.analysis` | waveform | stable | waveform | waveform engine forward | regression |
 | `axi.export` | waveform | stable | waveform | waveform engine forward | targeted |
 | `event.config.load` | waveform | stable | waveform | waveform engine forward | partial |
@@ -95,9 +94,9 @@ example 和 contract test 迁移使用。状态定义：
 | `signal.statistics` | waveform | stable | waveform | waveform engine forward | regression |
 | `signal.xz_verify` | waveform | experimental | waveform | waveform engine forward | regression |
 | `counter.statistics` | waveform | stable | waveform | waveform engine forward | targeted |
-| `sampled_pulse.inspect` | waveform | experimental | waveform | waveform engine forward | partial |
-| `detect_abnormal` | waveform | stable | waveform | waveform engine forward | partial |
-| `handshake.inspect` | waveform | stable | waveform | waveform engine forward | regression |
+| `signal.sampled_pulse.inspect` | waveform | experimental | waveform | waveform engine forward | partial |
+| `signal.anomaly.inspect` | waveform | stable | waveform | waveform engine forward | partial |
+| `protocol.handshake.inspect` | waveform | stable | waveform | waveform engine forward | regression |
 | `axi.channel_stall` | waveform | experimental | waveform | waveform engine forward | partial |
 | `axi.outstanding_timeline` | waveform | experimental | waveform | waveform engine forward | partial |
 | `axi.request_response_pair` | waveform | experimental | waveform | waveform engine forward | partial |
@@ -105,13 +104,8 @@ example 和 contract test 迁移使用。状态定义：
 | `apb.transfer_window` | waveform | experimental | waveform | waveform engine forward | partial |
 | `stream.config.load` | waveform | stable | waveform | waveform engine forward | synthetic |
 | `stream.config.list` | waveform | stable | waveform | waveform engine forward | synthetic |
-| `stream.show` | waveform | stable | waveform | waveform engine forward | synthetic |
+| `stream.describe` | waveform | stable | waveform | waveform engine forward | synthetic |
+| `stream.config.get` | waveform | stable | waveform | waveform engine forward | synthetic |
 | `stream.validate` | waveform | stable | waveform | waveform engine forward | synthetic |
 | `stream.query` | waveform | stable | waveform | waveform engine forward | synthetic |
 | `stream.export` | waveform | stable | waveform | waveform engine forward | synthetic |
-
-## Removed Actions
-
-| action | category | status | resource | implementation | test |
-| --- | --- | --- | --- | --- | --- |
-| `signal.search` | design | removed | design | removed from public catalog | regression |

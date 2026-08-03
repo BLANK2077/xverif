@@ -328,8 +328,7 @@ def test_scope_roots_supports_source_filters_and_xout(
         "summary:", "recommended: active_zero_evidence_tb", "source     : auto",
         "roots      : 1", "matched    : 1", "wave       : 1",
         "design     : 1", "roots:",
-        "path\tstatus\tsources\twave\tdesign",
-        "active_zero_evidence_tb\tmatched\tdesign,wave",
+        "active_zero_evidence_tb  matched  design,wave",
     ):
         assert evidence in xout
     for generic_key in (
@@ -337,6 +336,9 @@ def test_scope_roots_supports_source_filters_and_xout(
         "response_truncated", "scan_complete", "analysis_complete",
     ):
         assert generic_key not in xout
+    roots_block = xout.split("roots:\n", 1)[1]
+    header = roots_block.splitlines()[0].split()
+    assert header == ["path", "status", "sources", "wave", "design"]
 
 
 @pytest.mark.combined
