@@ -3,6 +3,7 @@
 
 #include "api/text_response_builder.h"
 #include "common/env_config.h"
+#include "core/output/completeness.h"
 #include "core/value/logic_value.h"
 
 #include "npi.h"
@@ -13,8 +14,10 @@
 #include <cstdlib>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 
 namespace xdebug_design {
 
@@ -237,6 +240,31 @@ std::string limit_hint(int max_results) {
 void add_limit_hint(Json& summary, bool truncated, int max_results) {
     if (!truncated || !summary.is_object()) return;
     summary["limit_hint"] = limit_hint(max_results);
+}
+
+std::vector<std::string> trace_analysis_truncation_scopes(const Json& raw,
+                                                          bool analysis_complete) {
+    const Json& scopes = raw.at("truncation_scopes");
+    if (!scopes.is_array()) {
+        throw std::logic_error("trace truncation_scopes must be an array");
+    }
+    std::vector<std::string> out;
+    for (const auto& scope : scopes) {
+        if (!scope.is_string()) {
+            throw std::logic_error("trace truncation_scopes entries must be strings");
+        }
+        append_unique(out, scope.get<std::string>());
+    }
+    const bool has_resolution_scope =
+        std::find(out.begin(), out.end(), "analysis_trace_resolution") != out.end();
+    if (analysis_complete && !out.empty()) {
+        throw std::logic_error("complete trace analysis cannot declare a truncation scope");
+    }
+    if (!analysis_complete && !has_resolution_scope) {
+        throw std::logic_error(
+            "incomplete trace analysis must declare analysis_trace_resolution");
+    }
+    return out;
 }
 
 Json source_lines_from_file(const std::string& file, int line, int context_lines) {
@@ -504,32 +532,37 @@ void append_chain_states_xout(std::string& text, const Json& chains) {
 
 } // namespace
 
-int trace_result_limit_from_request(const Json& request) {
-    Json args = request.value("args", Json::object());
-    if (args.is_object() && args.contains("line_limit") && args["line_limit"].is_number_integer()) {
-        int limit = args["line_limit"].get<int>();
-        if (limit > 0) return limit;
-    }
-    Json limits = request.value("limits", Json::object());
-    if (limits.is_object() && limits.contains("max_results") && limits["max_results"].is_number_integer()) {
-        int limit = limits["max_results"].get<int>();
-        if (limit > 0) return limit;
-    }
-    return kDefaultTraceResultLimit;
-}
-
 int trace_result_limit_from_request(ContractBoundRequest& request) {
-    const auto args = request.args();
-    if (args["line_limit"].exists()) {
-        const int limit = args.value("line_limit", 0);
-        if (limit > 0) return limit;
+    auto limits = request.limits();
+    ContractJsonView max_results = limits["max_results"];
+    if (!max_results.exists()) return kDefaultTraceResultLimit;
+
+    const Json value = max_results.consume_subtree(
+        "trace_result_limit_parser");
+    const Json::number_unsigned_t maximum =
+        static_cast<Json::number_unsigned_t>(
+            std::numeric_limits<int>::max());
+    if (value.is_number_unsigned()) {
+        const Json::number_unsigned_t parsed =
+            value.get<Json::number_unsigned_t>();
+        if (parsed == 0 || parsed > maximum) {
+            throw std::out_of_range(
+                "limits.max_results must be within the positive int range");
+        }
+        return static_cast<int>(parsed);
     }
-    const auto limits = request.limits();
-    if (limits["max_results"].exists()) {
-        const int limit = limits.value("max_results", 0);
-        if (limit > 0) return limit;
+    if (value.is_number_integer()) {
+        const Json::number_integer_t parsed =
+            value.get<Json::number_integer_t>();
+        if (parsed <= 0 ||
+            static_cast<Json::number_unsigned_t>(parsed) > maximum) {
+            throw std::out_of_range(
+                "limits.max_results must be within the positive int range");
+        }
+        return static_cast<int>(parsed);
     }
-    return kDefaultTraceResultLimit;
+    throw std::invalid_argument(
+        "limits.max_results must be a positive integer");
 }
 
 Json source_window_from_location(const std::string& file, int line, int context_lines) {
@@ -591,19 +624,29 @@ Json simplify_trace_driver_load_payload(const Json& raw,
         }
     }
 
-    bool limit_truncated = apply_result_limit(paths, max_results);
-    bool truncated = raw.value("truncated", false) || limit_truncated;
+    const std::size_t total_count = paths.size();
+    const bool response_truncated = apply_result_limit(paths, max_results);
+    const bool scan_complete = raw.at("scan_complete").get<bool>();
+    const bool analysis_complete = raw.at("analysis_complete").get<bool>();
 
     Json out;
     out["summary"] = {
         {"signal", signal},
-        {"mode", mode},
-        {"path_count", static_cast<int>(paths.size())},
-        {"truncated", truncated}
+        {"mode", mode}
     };
-    add_limit_hint(out["summary"], limit_truncated, max_results);
+    std::vector<std::string> truncation_scopes =
+        trace_analysis_truncation_scopes(raw, analysis_complete);
+    if (response_truncated) truncation_scopes.push_back("response_paths");
+    xdebug_core::set_completeness(
+        out["summary"],
+        scan_complete,
+        analysis_complete,
+        response_truncated,
+        total_count,
+        paths.size(),
+        truncation_scopes);
+    add_limit_hint(out["summary"], response_truncated, max_results);
     out["paths"] = paths;
-    out["truncated"] = truncated;
     (void)action;
     return out;
 }
@@ -647,8 +690,10 @@ Json simplify_active_driver_payload(const Json& raw,
         }
     }
 
-    bool limit_truncated = apply_result_limit(paths, max_results);
-    bool truncated = raw.value("truncated", false) || limit_truncated;
+    const std::size_t total_count = paths.size();
+    const bool response_truncated = apply_result_limit(paths, max_results);
+    const bool analysis_complete =
+        raw_summary.at("analysis_complete").get<bool>();
 
     Json out;
     out["summary"] = {
@@ -657,13 +702,21 @@ Json simplify_active_driver_payload(const Json& raw,
         {"active_time", active_time},
         {"termination", raw_summary.value("termination", std::string("unresolved"))},
         {"termination_detail", raw_summary.value(
-            "termination_detail", raw_summary.value("termination", std::string("unresolved")))},
-        {"path_count", static_cast<int>(paths.size())},
-        {"truncated", truncated}
+            "termination_detail", raw_summary.value("termination", std::string("unresolved")))}
     };
-    add_limit_hint(out["summary"], limit_truncated, max_results);
+    std::vector<std::string> truncation_scopes;
+    if (!analysis_complete) truncation_scopes.push_back("analysis_trace");
+    if (response_truncated) truncation_scopes.push_back("response_paths");
+    xdebug_core::set_completeness(
+        out["summary"],
+        analysis_complete,
+        analysis_complete,
+        response_truncated,
+        total_count,
+        paths.size(),
+        truncation_scopes);
+    add_limit_hint(out["summary"], response_truncated, max_results);
     out["paths"] = paths;
-    out["truncated"] = truncated;
     return out;
 }
 
@@ -700,24 +753,12 @@ Json simplify_active_driver_chain_payload(const Json& raw,
         }
     }
 
-    const size_t total_count = hops.size();
-    bool limit_truncated = apply_result_limit(hops, max_results);
-    const bool analysis_truncated = raw.value("truncated", false);
-    bool truncated = analysis_truncated || limit_truncated;
+    const std::size_t total_count = hops.size();
+    const bool response_truncated = apply_result_limit(hops, max_results);
 
     Json summary = raw.value("summary", Json::object());
-    Json truncation_scopes = summary.value("truncation_scopes", Json::array());
-    if (!truncation_scopes.is_array()) truncation_scopes = Json::array();
-    auto append_scope = [&](const char* scope) {
-        for (const auto& item : truncation_scopes) {
-            if (item.is_string() && item.get<std::string>() == scope) return;
-        }
-        truncation_scopes.push_back(scope);
-    };
-    if (analysis_truncated) append_scope("analysis_trace");
-    if (limit_truncated) append_scope("response_hops");
-    const bool scan_complete = summary.value("scan_complete", !analysis_truncated);
-    const bool analysis_complete = summary.value("analysis_complete", !analysis_truncated);
+    const bool analysis_complete =
+        summary.at("analysis_complete").get<bool>();
     Json out;
     out["summary"] = {
         {"signal", signal},
@@ -725,15 +766,20 @@ Json simplify_active_driver_chain_payload(const Json& raw,
         {"termination", summary.value("termination", raw.value("termination", std::string("unresolved")))},
         {"termination_detail", summary.value(
             "termination_detail",
-            summary.value("termination", raw.value("termination", std::string("unresolved"))))},
-        {"scan_complete", scan_complete},
-        {"analysis_complete", analysis_complete},
-        {"response_truncated", limit_truncated},
-        {"total_count", static_cast<int>(total_count)},
-        {"returned_count", static_cast<int>(hops.size())},
-        {"truncation_scopes", truncation_scopes}
+            summary.value("termination", raw.value("termination", std::string("unresolved"))))}
     };
-    add_limit_hint(out["summary"], limit_truncated, max_results);
+    std::vector<std::string> truncation_scopes;
+    if (!analysis_complete) truncation_scopes.push_back("analysis_trace");
+    if (response_truncated) truncation_scopes.push_back("response_hops");
+    xdebug_core::set_completeness(
+        out["summary"],
+        analysis_complete,
+        analysis_complete,
+        response_truncated,
+        total_count,
+        hops.size(),
+        truncation_scopes);
+    add_limit_hint(out["summary"], response_truncated, max_results);
     out["hops"] = hops;
     Json depth_frontiers = chain_object.value("depth_frontiers", Json::array());
     if (depth_frontiers.is_array() && !depth_frontiers.empty()) {
@@ -747,7 +793,6 @@ Json simplify_active_driver_chain_payload(const Json& raw,
     if (suggested_next_actions.is_array() && !suggested_next_actions.empty()) {
         out["suggested_next_actions"] = suggested_next_actions;
     }
-    out["truncated"] = truncated;
     return out;
 }
 
