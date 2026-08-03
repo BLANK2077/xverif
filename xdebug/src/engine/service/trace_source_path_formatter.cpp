@@ -1,8 +1,9 @@
 #include "service/trace_source_path_formatter.h"
+#include "service/contract_bound_request.h"
 
 #include "api/text_response_builder.h"
 #include "common/env_config.h"
-#include "waveform/value/logic_value.h"
+#include "core/value/logic_value.h"
 
 #include "npi.h"
 #include "npi_hdl.h"
@@ -59,8 +60,8 @@ std::string ambiguous_xout_value(const Json& value) {
         bits.push_back(lower);
     }
     if (bits.empty()) return text;
-    return xdebug_waveform::logic_value_compact_string(
-        xdebug_waveform::logic_value_from_bits(bits, static_cast<int>(bits.size())));
+    return xdebug_core::logic_value_compact_string(
+        xdebug_core::logic_value_from_bits(bits, static_cast<int>(bits.size())));
 }
 
 std::string render_ambiguous_rhs_xout(const Json& ambiguity) {
@@ -355,9 +356,9 @@ void append_source_context_text(std::string& text, const Json& context) {
         for (const auto& row : context) {
             if (!row.is_object()) continue;
             int row_line = scalar_int(row, "line");
-            bool active = row.value("active", false);
             std::ostringstream prefix;
-            prefix << (active ? ">" : " ") << std::setw(4) << row_line << " | ";
+            prefix << (row.value("active", false) ? ">" : " ")
+                   << std::setw(4) << row_line << " | ";
             text += prefix.str() + row.value("text", std::string()) + "\n";
         }
     }
@@ -512,6 +513,20 @@ int trace_result_limit_from_request(const Json& request) {
     Json limits = request.value("limits", Json::object());
     if (limits.is_object() && limits.contains("max_results") && limits["max_results"].is_number_integer()) {
         int limit = limits["max_results"].get<int>();
+        if (limit > 0) return limit;
+    }
+    return kDefaultTraceResultLimit;
+}
+
+int trace_result_limit_from_request(ContractBoundRequest& request) {
+    const auto args = request.args();
+    if (args["line_limit"].exists()) {
+        const int limit = args.value("line_limit", 0);
+        if (limit > 0) return limit;
+    }
+    const auto limits = request.limits();
+    if (limits["max_results"].exists()) {
+        const int limit = limits.value("max_results", 0);
         if (limit > 0) return limit;
     }
     return kDefaultTraceResultLimit;
@@ -679,26 +694,44 @@ Json simplify_active_driver_chain_payload(const Json& raw,
             hop["signal"] = scalar_text(node, "signal");
             hop["time"] = scalar_text(node, "time");
             hop["active_time"] = scalar_text(node, "active_time");
-            hop["value"] = scalar_text(node, "value");
+            if (node.contains("value")) hop["value"] = node["value"];
             hop["relation"] = hop["index"].get<int>() == 0 ? "root" : "driver";
             hops.push_back(hop);
         }
     }
 
+    const size_t total_count = hops.size();
     bool limit_truncated = apply_result_limit(hops, max_results);
-    bool truncated = raw.value("truncated", false) || limit_truncated;
+    const bool analysis_truncated = raw.value("truncated", false);
+    bool truncated = analysis_truncated || limit_truncated;
 
     Json summary = raw.value("summary", Json::object());
+    Json truncation_scopes = summary.value("truncation_scopes", Json::array());
+    if (!truncation_scopes.is_array()) truncation_scopes = Json::array();
+    auto append_scope = [&](const char* scope) {
+        for (const auto& item : truncation_scopes) {
+            if (item.is_string() && item.get<std::string>() == scope) return;
+        }
+        truncation_scopes.push_back(scope);
+    };
+    if (analysis_truncated) append_scope("analysis_trace");
+    if (limit_truncated) append_scope("response_hops");
+    const bool scan_complete = summary.value("scan_complete", !analysis_truncated);
+    const bool analysis_complete = summary.value("analysis_complete", !analysis_truncated);
     Json out;
     out["summary"] = {
         {"signal", signal},
         {"time", start_time},
-        {"hop_count", static_cast<int>(hops.size())},
         {"termination", summary.value("termination", raw.value("termination", std::string("unresolved")))},
         {"termination_detail", summary.value(
             "termination_detail",
             summary.value("termination", raw.value("termination", std::string("unresolved"))))},
-        {"truncated", truncated}
+        {"scan_complete", scan_complete},
+        {"analysis_complete", analysis_complete},
+        {"response_truncated", limit_truncated},
+        {"total_count", static_cast<int>(total_count)},
+        {"returned_count", static_cast<int>(hops.size())},
+        {"truncation_scopes", truncation_scopes}
     };
     add_limit_hint(out["summary"], limit_truncated, max_results);
     out["hops"] = hops;
@@ -726,6 +759,15 @@ std::string render_source_path_xout(const std::string& action, const Json& respo
         out.emit_section("summary");
         for (auto it = summary.begin(); it != summary.end(); ++it) {
             if (xdebug::is_xout_scalar_json(it.value())) out.emit_kv(it.key(), it.value());
+        }
+        const Json truncation_scopes = summary.value("truncation_scopes", Json());
+        if (truncation_scopes.is_array() && truncation_scopes.empty()) {
+            out.emit_kv("truncation_scopes", "[empty]");
+        } else if (truncation_scopes.is_array()) {
+            out.emit_section("truncation_scopes");
+            for (const auto& scope : truncation_scopes) {
+                if (scope.is_string()) out.emit_row({scope.get<std::string>()});
+            }
         }
     }
     const Json data = response.value("data", Json::object());

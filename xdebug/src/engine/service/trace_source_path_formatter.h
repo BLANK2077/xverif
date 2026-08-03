@@ -10,6 +10,7 @@
 namespace xdebug_design {
 
 using Json = nlohmann::ordered_json;
+class ContractBoundRequest;
 
 Json source_window_from_location(const std::string& file, int line, int context_lines = -1);
 Json source_window_from_npi_handle(npiHandle handle, int context_lines = -1);
@@ -22,6 +23,7 @@ Json make_source_path_item_from_npi_handle(npiHandle handle,
                                            int context_lines = -1);
 
 int trace_result_limit_from_request(const Json& request);
+int trace_result_limit_from_request(ContractBoundRequest& request);
 
 Json simplify_trace_driver_load_payload(const Json& raw,
                                         const std::string& action,
