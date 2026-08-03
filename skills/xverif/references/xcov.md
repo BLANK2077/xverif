@@ -9,7 +9,7 @@ xcov 查询 VCS/Verdi coverage database（`simv.vdb`、`merged.vdb`）。它负�
 - 按源码 file/line/window 反查 coverage item。
 - 输出源码窗口和 coverage annotation。
 - 输出 assert/cover property/cover sequence 的结构化 report。
-- 通过 `export.code_coverage`、`export.function_coverage`、`export.assert` 导出
+- 通过 `export.code_coverage`、`export.functional_coverage`、`export.assert` 导出
   Markdown 查看详细未覆盖项。
 
 ## CLI 入口
@@ -46,7 +46,7 @@ code holes glob filter：
 function holes：
 
 ```json
-{"api_version":"xcov.v1","action":"function_coverage.holes","target":{"session_id":"cov0"},"args":{"levels":["bin"],"query":{"include_patterns":["*APB_accesses_cg*"],"match_field":"full_name"}}}
+{"api_version":"xcov.v1","action":"functional_coverage.holes","target":{"session_id":"cov0"},"args":{"levels":["bin"],"query":{"include_patterns":["*APB_accesses_cg*"],"match_field":"full_name"}}}
 ```
 
 source map：
@@ -76,7 +76,7 @@ code coverage export：
 function coverage export：
 
 ```json
-{"api_version":"xcov.v1","action":"export.function_coverage","target":{"session_id":"cov0"},"args":{"covergroup":"*uart*","threshold_pct":100.0,"output":{"path":"function_coverage.md"}}}
+{"api_version":"xcov.v1","action":"export.functional_coverage","target":{"session_id":"cov0"},"args":{"covergroup":"*uart*","threshold_pct":100.0,"output":{"path":"function_coverage.md"}}}
 ```
 
 assert export：
@@ -102,15 +102,15 @@ assert export：
 - `code_coverage.holes` 只输出当前 hierarchy 与子模块覆盖率概览，只保留
   `name/full_name/coverage_pct/*_pct`，不展开具体未覆盖 signal、branch、condition 或
   bin，也不输出 parent/depth/type/def_name/covered/coverable/missing/file/line。
-- `code_coverage.holes` 和 `function_coverage.holes` 支持 `query.include_patterns` /
+- `code_coverage.holes` 和 `functional_coverage.holes` 支持 `query.include_patterns` /
   `query.exclude_patterns` 通配过滤；只支持 glob `*`、`?`，不要使用 regex。
-- `function_coverage.holes` 默认按 `full_name` 过滤，可用 `match_field` 切到
+- `functional_coverage.holes` 默认按 `full_name` 过滤，可用 `match_field` 切到
   `covergroup`、`coverpoint`、`cross`、`bin` 或 `name`。
-- `function_coverage.summary` 和 `function_coverage.holes` 不输出
+- `functional_coverage.summary` 和 `functional_coverage.holes` 不输出
   `metric/name/full_name/score_basis/score_item_count/raw_covered/raw_coverable/raw_missing`；
-  `function_coverage.summary` 也不输出 `raw_coverage_pct`。
+  `functional_coverage.summary` 也不输出 `raw_coverage_pct`。
 - xout 的 `items:` 是对齐纯文本表格，不是 Markdown 表格；JSON 响应结构不变。
-- 详细未覆盖项必须用 `export.code_coverage`、`export.function_coverage`、
+- 详细未覆盖项必须用 `export.code_coverage`、`export.functional_coverage`、
   `export.assert` 导出 Markdown 查看。
 - 三个 export action 只支持 Markdown；复杂二次统计、跨报告处理或自定义格式，转用
   `x-npi` 编写 `pynpi` coverage 脚本。

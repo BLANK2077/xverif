@@ -34,11 +34,47 @@ def test_links_and_all_references_are_reachable() -> None:
 
 def test_generated_action_inventory_matches_canonical_registry() -> None:
     specs = json.loads((ROOT / "xdebug/specs/actions/actions.yaml").read_text())
-    expected = {entry["name"] for entry in specs["actions"] if entry["status"] != "removed"}
+    assert {entry["status"] for entry in specs["actions"]} <= {
+        "stable", "experimental",
+    }
+    expected = {entry["name"] for entry in specs["actions"]}
     generated = (SKILL / "references/generated/xdebug-actions.md").read_text()
     documented = set(re.findall(r"^\| `([^`]+)` \|", generated, re.MULTILINE))
     assert documented == expected
-    assert len(expected) == 74
+    assert len(expected) == 73
+
+
+def test_canonical_discoverability_has_no_generated_fallback_contract() -> None:
+    specs = json.loads(
+        (ROOT / "xdebug/specs/actions/actions.yaml").read_text(encoding="utf-8")
+    )
+    filler = {
+        "Tasks outside this action's documented contract.",
+        "不要把本 action 用作不属于其已声明业务对象的查询；当前没有更近的公开替代 action。",
+    }
+    for entry in specs["actions"]:
+        assert {"use_for", "do_not_use_for", "preferred_alternative"}.isdisjoint(entry)
+        assert entry["use_when"], entry["name"]
+        assert entry["do_not_use_when"], entry["name"]
+        assert isinstance(entry["alternatives"], list), entry["name"]
+        assert not ((set(entry["use_when"]) | set(entry["do_not_use_when"])) & filler)
+
+
+def test_expr_normalize_resource_variants_are_canonical() -> None:
+    specs = json.loads(
+        (ROOT / "xdebug/specs/actions/actions.yaml").read_text(encoding="utf-8")
+    )
+    entry = next(item for item in specs["actions"] if item["name"] == "expr.normalize")
+    assert entry["resource_variants"] == [
+        {
+            "name": "expression", "requires": "none", "required_args": ["expr"],
+            "forbidden_args": ["signal", "line_limit", "no_statement_only", "role"],
+        },
+        {
+            "name": "design_signal", "requires": "design",
+            "required_args": ["signal"], "forbidden_args": ["expr"],
+        },
+    ]
 
 
 def test_generated_references_are_current() -> None:
@@ -54,8 +90,9 @@ def test_native_and_mcp_examples_validate() -> None:
     for path, payload in fenced_json(SKILL):
         if payload.get("api_version") == "xdebug.v1":
             action = payload["action"]
+            contract_kind = "response" if isinstance(payload.get("ok"), bool) else "request"
             schema = json.loads((ROOT / "xdebug/schemas/v1/actions" /
-                                 f"{action}.request.schema.json").read_text())
+                                 f"{action}.{contract_kind}.schema.json").read_text())
             jsonschema.Draft202012Validator(schema).validate(payload)
             validated += 1
         elif payload.get("api_version") == "xcov.v1":
@@ -76,11 +113,13 @@ def test_native_and_mcp_examples_validate() -> None:
 def test_xdebug_main_workflow_has_required_decisions_and_routes() -> None:
     text = (SKILL / "references/capabilities/xdebug.md").read_text()
     required = {
-        "scope.roots", "scope.list", "trace.driver", "trace.load", "source.context",
-        "trace.active_driver", "trace.active_driver_chain", "value.at", "value.batch_at",
+        "scope.roots", "scope.list", "trace.driver", "trace.load",
+        "trace.active_driver", "trace.active_driver_chain", "value.at",
+        "list.load", "value.at(list", "times=[",
         "signal.changes", "signal.statistics", "signal.xz_verify", "event.find", "verify.conditions",
-        "window.verify", "detect_abnormal", "sampled_pulse.inspect", "handshake.inspect",
-        "stream.config.load", "stream.query", "list.export", "xwaveform", "rc.generate",
+        "window.verify", "signal.anomaly.inspect", "signal.sampled_pulse.inspect", "protocol.handshake.inspect",
+        "stream.config.load", "stream.config.get", "stream.describe", "stream.query",
+        "axi.config.load", "apb.config.load", "list.export", "xwaveform", "nwave.rc.generate",
         "xdebug/configs/", "xdebug/signals.md", "全量 xdebug action 索引",
     }
     missing = sorted(item for item in required if item not in text)
@@ -89,11 +128,96 @@ def test_xdebug_main_workflow_has_required_decisions_and_routes() -> None:
     assert "图片不是唯一证据" in text
 
 
+def test_xdebug_discovery_and_loaded_config_workflow_are_mandatory() -> None:
+    main = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    mcp = (SKILL / "references/surfaces/mcp.md").read_text(encoding="utf-8")
+    combined = main + "\n" + mcp
+    for term in (
+        "先且只调用一次 `xverif_tools`", "完整读取", "list.load",
+        "stream.config.load", "axi.config.load", "apb.config.load",
+        "`signal`、`list`、`apb`、`stream`、`axi`", "recommended_actions",
+        "不为多个信号或多个时间点反复调用 `xverif_batch`",
+    ):
+        assert term in combined
+    assert "value.batch_at" not in "\n".join(
+        path.read_text(encoding="utf-8") for path in SKILL.rglob("*")
+        if path.is_file() and path.suffix in {".md", ".py", ".yaml", ".yml", ".json"}
+    )
+
+
+def test_xout_policy_is_token_first_and_has_no_transport_markers() -> None:
+    text = "\n".join(
+        (SKILL / relative).read_text(encoding="utf-8")
+        for relative in (
+            "SKILL.md", "references/core/output-formats.md",
+            "references/surfaces/cli.md", "references/surfaces/mcp.md",
+        )
+    )
+    assert "token-efficient XOUT" in text
+    assert "反解析" in text and "重编码" in text
+    assert "XOUT_BEGIN/XOUT_END" in text or (
+        "XOUT_BEGIN" in text and "XOUT_END" in text
+    )
+    assert "添加 `XOUT_BEGIN` / `XOUT_END`" in text
+
+
+def test_xverif_skill_contains_only_canonical_action_names() -> None:
+    text = "\n".join(
+        path.read_text(encoding="utf-8") for path in SKILL.rglob("*")
+        if path.is_file() and path.suffix in {".md", ".py", ".yaml", ".yml", ".json"}
+    )
+    removed = {
+        "cursor.set", "cursor.get", "cursor.list", "cursor.use", "cursor.delete",
+        "apb.cursor", "axi.cursor", "detect_abnormal", "handshake.inspect",
+        "sampled_pulse.inspect", "list.diff", "stream.show", "trace.x",
+        "rc.generate", "source.context", "function_coverage.summary",
+        "function_coverage.holes", "export.function_coverage",
+    }
+    found = sorted(name for name in removed if f"`{name}`" in text)
+    assert not found, found
+
+
+def test_expr_normalize_docs_publish_the_canonical_parser_contract() -> None:
+    text = "\n".join(path.read_text(encoding="utf-8") for path in SKILL.rglob("*.md"))
+    assert "string_fallback" not in text
+    assert "`deterministic_syntax_parser`" in text
+    assert "`syntax_validated`" in text
+
+
+def test_mcp_surface_documents_conditional_session_contract() -> None:
+    text = (SKILL / "references/surfaces/mcp.md").read_text(encoding="utf-8")
+    for term in ("session_contract", "requires:none", "禁止", "expr.normalize", "design session"):
+        assert term in text
+
+
 def test_only_xverif_is_generic_trigger() -> None:
     main = (SKILL / "SKILL.md").read_text()
     assert "唯一通用隐式入口" in main
     for name in ("xverif-admin", "x-npi", "xwiki"):
         assert name in main
+
+
+def test_xout_policy_is_token_first_and_forbids_transport_markers() -> None:
+    policy = (SKILL / "references/core/output-formats.md").read_text(
+        encoding="utf-8"
+    )
+    main = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    surfaces = "\n".join(
+        (SKILL / "references/surfaces" / name).read_text(encoding="utf-8")
+        for name in ("cli.md", "mcp.md")
+    )
+
+    for term in (
+        "AI/LLM 上下文效率",
+        "token-efficient XOUT",
+        "稳定字段编程",
+        "不反解析",
+        "不重编码",
+        "XOUT_BEGIN/XOUT_END",
+    ):
+        assert term in policy + "\n" + main + "\n" + surfaces
+    assert "便于人读只是附带收益" in policy
+    assert "统一 pointer" not in policy
 
 
 def test_routing_goldens_cover_capability_boundaries() -> None:

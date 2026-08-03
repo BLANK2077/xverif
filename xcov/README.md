@@ -325,8 +325,10 @@ items:
   top   95.0
 ```
 
-renderer 不使用隐藏行数上限，也不输出 `XOUT_BEGIN/XOUT_END`。XOUT 面向人阅读；
-需要完整机器合同时使用 JSON。stdio-loop 的 JSONL envelope 负责 framing。
+renderer 不使用隐藏行数上限，也不输出 `XOUT_BEGIN/XOUT_END`。XOUT 首先用于减少
+JSON 标点、键名和重复层级带来的 token 开销，易读性是附带收益；只有调用方确实
+需要完整结构、字段级程序访问或无损消费时才选择 JSON。stdio-loop 的 JSONL
+envelope 负责 framing。
 stdio-loop 外层承载 `request_id/api_version/action/ok`；内层 XOUT payload 不重复这些
 framing 字段，header 仍保留 action 合同标识。
 

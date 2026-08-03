@@ -7,18 +7,17 @@ Canonical source: `skills/xverif/specs/examples.yaml`。
 ```json
 {
   "api_version": "xdebug.v1",
-  "action": "value.batch_at",
+  "action": "value.at",
   "target": {
     "session_id": "case_a"
   },
   "args": {
-    "time": "100ns",
-    "clock": "top.clk",
-    "signals": [
-      "top.u.valid",
-      "top.u.ready",
-      "top.u.full"
-    ]
+    "list": "ready_path",
+    "times": [
+      "100ns",
+      "120ns"
+    ],
+    "clock": "top.clk"
   }
 }
 ```
@@ -30,15 +29,14 @@ Canonical source: `skills/xverif/specs/examples.yaml`。
   "tool": "xverif_debug_query",
   "args": {
     "session_id": "case_a",
-    "action": "value.batch_at",
+    "action": "value.at",
     "args": {
-      "time": "100ns",
-      "clock": "top.clk",
-      "signals": [
-        "top.u.valid",
-        "top.u.ready",
-        "top.u.full"
-      ]
+      "list": "ready_path",
+      "times": [
+        "100ns",
+        "120ns"
+      ],
+      "clock": "top.clk"
     }
   }
 }
@@ -50,16 +48,15 @@ Canonical source: `skills/xverif/specs/examples.yaml`。
 {
   "method": "debug.query",
   "params": {
-    "session": "case_a",
-    "action": "value.batch_at",
+    "session_id": "case_a",
+    "action": "value.at",
     "args": {
-      "time": "100ns",
-      "clock": "top.clk",
-      "signals": [
-        "top.u.valid",
-        "top.u.ready",
-        "top.u.full"
-      ]
+      "list": "ready_path",
+      "times": [
+        "100ns",
+        "120ns"
+      ],
+      "clock": "top.clk"
     }
   }
 }

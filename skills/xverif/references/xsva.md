@@ -20,9 +20,17 @@ xsva explain --file input.sva --property p_name --markdown
 3. 优先基于 `semantic_notes` 解释用户语义。
 4. local variable 看 captures 和 depends_on_captures。
 5. `first_match`、`throughout`、`intersect`、`within`、`[*]`、`[->]`、`[=]` 等高级 sequence 必须依赖 IR/semantic_notes。
+6. JSON/XOUT 响应先检查 `completeness`：路径返回数小于总数或
+   `path_enumeration_complete=false` 时，`response_truncated=true` 且
+   `truncation_scopes=["analysis.match_paths"]`；此时不能把返回路径当作全集。
+
+XSVA 的 XOUT 保留 command-specific 领域文本，`explain` 使用 timeline 解释；它不
+强制统一 header，也不是 JSON 的可逆编码。需要读取 `completeness` 等字段时请求 JSON。
 
 ## 排障和维护
 
 - 不支持的 SVA 构造应给 conservative diagnostic，不要补语义。
+- list/scan/lint/explain/parse 的成功与错误响应都使用 action-specific 封闭合同；
+  未声明字段或互相矛盾的完整性字段属于内部合同错误，不做客户端兼容。
 - 修改 parser/lowering 时先加失败语义测试，再修实现，最后更新 golden IR。
 - 回归入口在仓库根目录运行 `pytest --xverif-gate fast --xverif-suite xsva.core`；VCS 语义缓存消费使用 nightly 的 `xsva.vcs` suite。

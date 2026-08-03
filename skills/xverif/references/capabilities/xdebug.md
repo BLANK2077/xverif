@@ -15,7 +15,7 @@ xdebug 是 daidir/FSDB 确定性事实入口。本文件覆盖高频决策链，
 | 问题 | action | 使用边界 |
 | --- | --- | --- |
 | 已知时间，只查一个信号 | `value.at` | 默认无 clock 直接点读；需要采样上下文时再传 clock |
-| 已知时间，查一组相关信号 | `value.batch_at` | 默认无 clock 现场快照；检查每个 row 的 status/reason 和 missing summary |
+| 已知时间，查一组相关信号 | `list.load` → `value.at(list, times)` | list 承载信号组，times 承载一个或多个有序时间点 |
 | 查看单信号在受限窗口怎样变化 | `signal.changes` | 用于缩小范围，不先导出全量变化 |
 | 查看活动率、变化次数、持续特征 | `signal.statistics` | 用于宏观定量筛选 |
 | 不知道异常时间，找首次/下一次条件命中 | `event.find` | 边沿、组合条件、阈值、状态转换；X/Z 比较为 unknown |
@@ -23,9 +23,11 @@ xdebug 是 daidir/FSDB 确定性事实入口。本文件覆盖高频决策链，
 | 验证条件在 clock-edge 窗口持续成立 | `window.verify` | 输出 pass/fail/unknown；不代替事件搜索 |
 | 证明 raw 信号在窗口内持续为 X/Z | `signal.xz_verify` | 闭区间逐变化检查；`exact` 检查全位，`contains` 检查至少一位 |
 
-推荐递进：`signal.statistics/changes` → `event.find` → `value.batch_at` → `verify.conditions/window.verify`。更多 value/signal/event/list/verify action 见 [全量 action 索引](../generated/xdebug-actions.md)。
+推荐递进：`signal.statistics/changes` → `event.find` → `list.load` →
+`value.at(list="name", times=[...])` → `verify.conditions/window.verify`。更多
+value/signal/event/list/verify action 见 [全量 xdebug action 索引](../generated/xdebug-actions.md)。
 
-`value.at` / `value.batch_at` 省略 `clock` 时返回精确 `time` 的最终 FSDB 值和
+`value.at` 省略 `clock` 时返回精确 `time` / `times` 的最终 FSDB 值和
 `sampling_mode:"raw_time"`；传入 `clock` 时返回 `sampling_mode:"clock_sampled"` 及
 clock context。无 `clock` 时不要传 `edge` 或 `sample_point`。所有返回逻辑值的
 action 都用 `args.value_format:"hex"|"bin"|"dec"` 选择显示，默认 hex。已取得
@@ -40,22 +42,22 @@ canonical value 对象中区分 requested/effective format。不要用 `args.for
 
 ## 3. 解释异常、采样和握手
 
-- `detect_abnormal`：X/Z、glitch、异常短脉冲和 stuck 的 raw waveform smoke。合法 idle/backpressure 不能仅凭 stuck 判为 bug。
+- `signal.anomaly.inspect`：X/Z、glitch、异常短脉冲和 stuck 的 raw waveform smoke。合法 idle/backpressure 不能仅凭 stuck 判为 bug。
 - `signal.xz_verify`：对 raw waveform 闭区间给出持续 X/Z 的 pass/fail 证明；
   `match_mode=exact` 要求每一位均为目标态，`contains` 要求每个值至少含一位目标态。
-- `sampled_pulse.inspect`：解释 raw valid pulse 是否被指定 clock edge 采到，并保留 payload 在邻近边沿的现场。
-- `handshake.inspect`：解释 valid/ready、backpressure 和 stall；可复用接口的连续分析优先进入 stream workflow。
+- `signal.sampled_pulse.inspect`：解释 raw valid pulse 是否被指定 clock edge 采到，并保留 payload 在邻近边沿的现场。
+- `protocol.handshake.inspect`：解释 valid/ready、backpressure 和 stall；可复用接口的连续分析优先进入 stream workflow。
 - 其它 anomaly/handshake/protocol action 见 [全量 action 索引](../generated/xdebug-actions.md)。
 
 ## 4. 从信号追到 RTL 根因
 
 1. `trace.driver` 静态查可能驱动来源。
 2. `trace.load` 查消费位置和影响范围，决定下一批观察信号。
-3. `source.context` 获取候选 file:line 周围源码。
-4. `event.find` 定位异常时间，`value.batch_at` 保存控制现场。
+3. 从 driver/load 结果保留候选 file:line 和 source evidence。
+4. `event.find` 定位异常时间，已加载 list 的 `value.at` 保存控制现场。
 5. 有 daidir + fsdb + signal + time 时用 `trace.active_driver` 查当前真正生效 driver。
 6. 单级仍未到根因时用 `trace.active_driver_chain`；递归深度写顶层 `limits.max_depth`，默认 8，不能写 `args.depth`。本 action 不接受 `limits.max_alias_candidates`。若结果为 ambiguous，读取 `data.ambiguity_evidence`。若因深度停止，直接使用 `data.depth_frontiers` 和 `suggested_next_actions` 从 frontier 续查或提高深度重跑；不需要 `clk_period`。
-7. 查询点本身为 X 时可直接用 `trace.x`：它按 DFS 同等追踪含 X 的 RHS/control，
+7. 查询点本身为 X 时可直接用 `trace.x_origin`：它按 DFS 同等追踪含 X 的 RHS/control，
    穿过 module port、interface/modport，并在每一跳重新寻找该分支的 X onset。纯
    port/interface/modport/ref alias 路径会先归并，同一 RHS/control 语义路径只返回
    一个代表 chain。
@@ -64,7 +66,7 @@ canonical value 对象中区分 requested/effective format。不要用 `args.for
    `limits.max_chains` 默认 8，并在 alias 归并后应用；读取每个 chain 的
    status/current/pending，不能把 partial 当完整结果。深度停止时使用对应 chain 的
    frontier 继续。
-8. 回到 `value.at/batch_at` 验证链上的控制条件。
+8. 回到 `value.at` 验证链上的控制条件。
 
 保留 `resolved`、`control_only`、`unresolved`；control evidence 不能冒充最终 data driver。更多 trace/source/graph action 见 [全量 action 索引](../generated/xdebug-actions.md)。
 
@@ -72,14 +74,16 @@ canonical value 对象中区分 requested/effective format。不要用 `args.for
 
 `stream.*` 不限 AXI/APB。任何能表示为 `clock + vld + data`，可选 `rdy/bp/sop/eop/channel_id` 的 pipeline、FIFO、command/response、descriptor、packet、credit/backpressure 或自定义 valid-ready 都优先考虑 stream。
 
-流程：确认 leaf paths → `stream.config.load` → `stream.config.list` 验证 → `stream.query` 查 transfer/stall/packet 或用 `filter.fields` 多字段过滤 → finding 时间补 `value.batch_at` → `trace.active_driver` 解释 backpressure/control → `window.verify` 证明。
+流程：确认 leaf paths → `stream.config.load` → `stream.config.list` / `stream.config.get`
+验证 → `stream.describe` 确认字段 → `stream.query` 查 transfer/stall/packet → finding
+时间补 `value.at` → `trace.active_driver` 解释 backpressure/control → `window.verify` 证明。
 
 - packet 跨 beat 不变字段写 `packet_stable_fields`；过滤时它与 `data`、
   `beat_fields` 统一从 `filter.fields` 引用，但返回结构和稳定性检查仍保持独立。
 - packet 汇总读取 `complete_packet_count`、`partial_packet_count` 和
   `packet_count_status=exact|not_configured|ambiguous`，不要从窗口内 partial packet
   推断精确总数。
-- `stream.config.load/show` 返回静态预检：resolved signal path/width、sampling 和
+- `stream.config.load/get` 返回静态预检：resolved signal path/width、sampling 和
   packet rules；先看该结果，再启动大窗口扫描。
 
 APB/AXI action 只在需要协议专属 transaction、channel 或 violation 语义时使用。完整 stream/APB/AXI action 见 [全量 action 索引](../generated/xdebug-actions.md)。
@@ -95,13 +99,13 @@ zero-wait 或 no-error。
 
 ## 6. 宏观波形和多模态观察
 
-需要观察长时间趋势、多信号相对关系、burst、stall 分布或状态阶段时，使用 [waveform render workflow](../workflows/waveform-render.md)：`list.create/list.add` → `list.export` → `xwaveform render` → 查看 JPG 和 stats JSON → 形成假设 → 回到确定性 action 验证。
+需要观察长时间趋势、多信号相对关系、burst、stall 分布或状态阶段时，使用 [waveform render workflow](../workflows/waveform-render.md)：`list.load` → `list.export` → `xwaveform render` → 查看 JPG 和 stats JSON → 形成假设 → 回到确定性 action 验证。
 
-图片不是唯一证据。需要交付 nWave 可复查视图时使用 `rc.generate`，不要手写 RC。其它产物/export action 见 [全量 action 索引](../generated/xdebug-actions.md)。
+图片不是唯一证据。需要交付 nWave 可复查视图时使用 `nwave.rc.generate`，不要手写 RC。其它产物/export action 见 [全量 action 索引](../generated/xdebug-actions.md)。
 
 ## 7. 保存并复用 config
 
-- `stream/event/APB/AXI config.load` 的稳定映射必须优先从项目已有 config 加载。
+- `stream.config.load`、`axi.config.load`、`apb.config.load` 的稳定映射必须优先从项目已有 config 加载。
 - 首次推导的稳定配置不能只留在 session：优先保存到现有目录；无约定时建议 `xdebug/configs/`，并在 `xdebug/signals.md` 记录 clock/reset、leaf path、字段含义、采样和时间约定。
 - config 不保存临时 session id、一次性 finding 或临时输出路径。
 - 保存后用对应 `*.config.list` 验证，后续 workflow 复用配置。

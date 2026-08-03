@@ -1,6 +1,6 @@
-# xdebug rc.generate 参考
+# xdebug nwave.rc.generate 参考
 
-`rc.generate` 根据外部 JSON 配置生成 nWave `signal.rc`。xdebug 会使用 `target.fsdb` 或包含 fsdb 的 `session_id` 校验信号是否存在、marker 时间是否合法，然后写出 rc 文件。
+`nwave.rc.generate` 根据外部 JSON 配置生成 nWave `signal.rc`。xdebug 会使用包含 fsdb 的 `session_id` 校验信号是否存在、marker 时间是否合法，然后写出 rc 文件。
 
 第一版约束：
 
@@ -19,9 +19,8 @@
 ```json
 {
   "api_version": "xdebug.v1",
-  "action": "rc.generate",
+  "action": "nwave.rc.generate",
   "target": {
-    "fsdb": "waves.fsdb",
     "session_id": "case_a"
   },
   "args": {

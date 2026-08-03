@@ -1,10 +1,10 @@
 version: 1
 examples:
-  - id: ready-low-point-check
+  - id: key-signals-multi-time-check
     backend: xdebug
-    action: value.batch_at
+    action: value.at
     session: case_a
     args:
-      time: 100ns
+      list: ready_path
+      times: [100ns, 120ns]
       clock: top.clk
-      signals: [top.u.valid, top.u.ready, top.u.full]

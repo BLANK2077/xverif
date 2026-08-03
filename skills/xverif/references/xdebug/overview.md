@@ -7,7 +7,7 @@ xdebug 是 xverif 的 daidir/FSDB 事实查询入口，用 JSON request 查询�
 - 用户给出 `daidir`、`fsdb`、`session_id`、信号路径、时间点、APB/AXI/handshake/debug 现象。
 - 需要查某个 signal 的值、变化、driver、load、依赖路径、源码证据、协议 finding。
 - 需要把波形异常时间点连接到当前生效 RTL driver：优先用 `trace.active_driver`。
-- 需要生成 nWave `signal.rc` 证据视图：用 `rc.generate`。
+- 需要生成 nWave `signal.rc` 证据视图：用 `nwave.rc.generate`。
 
 不要用 xdebug 做 bit 计算、entry decode 或日志位置还原；分别用 xbit、xentry、xloc。
 
@@ -22,7 +22,7 @@ xdebug --json -
 tools/xdebug --json -
 ```
 
-默认优先使用 `xout`，它适合 AI 阅读和调试摘要。只有脚本需要稳定读取字段、校验 JSON response schema，或用户明确要求 JSON 时，才请求 JSON；机器字段比较必须请求 JSON。
+默认优先使用 token-efficient `xout`，首要目标是减少 AI/LLM 上下文开销；便于阅读是附带收益。只有脚本需要稳定读取字段、校验 JSON response schema、读取未投影嵌套字段，或用户明确要求 JSON 时，才请求 JSON；机器字段比较必须请求 JSON。XOUT 是 action-specific 领域文本，不反解析为 JSON，也不添加 `XOUT_BEGIN/XOUT_END`。
 
 如果需要 MCP tool 参数、MCP session 或 SDK-free loop wrapper，使用 `xverif-mcp`。
 
@@ -46,16 +46,15 @@ tools/xdebug --json -
 
 | 意图 | 首选 action | 备注 |
 | --- | --- | --- |
-| 多信号单点查值 | `value.batch_at` | 比多次 `value.at` 更合适 |
+| 多信号、多时间点查值 | `list.load` → `value.at(list, times)` | 一个 list 可含多个信号，一次请求可含多个时间点 |
 | 单信号查值 | `value.at` | 需要精确 time |
 | 找事件/边沿 | `event.find` | 不要先导出全量 changes |
 | 验证窗口条件 | `window.verify` | 保留 pass/fail/evidence |
 | 查 driver | `trace.driver` | 设计侧 |
 | 查当前生效 driver | `trace.active_driver` | 需要 daidir + fsdb + time |
-| 从 X 反向追到候选来源 | `trace.x` | 需要 daidir + fsdb + signal + time；best-effort 要保留证据等级 |
-| 查源码证据 | `source.context` | 控制上下文行数 |
+| 从 X 反向追到候选来源 | `trace.x_origin` | 需要 daidir + fsdb + signal + time；best-effort 要保留证据等级 |
 | APB/AXI 异常 | `apb.config.load` / `axi.config.load` 后 query/analysis | 先注册信号映射 |
-| 生成波形证据 | `rc.generate` | 见 rc reference |
+| 生成波形证据 | `nwave.rc.generate` | 见 rc reference |
 
-`value.at` / `value.batch_at` 默认不需要 clock，直接点读指定 time；只有需要
+`value.at` 默认不需要 clock，直接点读指定 time/times；只有需要
 clock-sampled context 时才传 `clock`。值默认十六进制并带 `'h` 前缀。

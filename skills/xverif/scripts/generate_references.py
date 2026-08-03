@@ -18,11 +18,52 @@ SURFACE_OUTPUT = SKILL / "references" / "generated" / "surface-examples.md"
 
 
 def _required(entry: dict) -> str:
+    variants = entry.get("resource_variants")
+    if variants is not None:
+        if not isinstance(variants, list) or not variants:
+            raise ValueError(
+                f"{entry.get('name', '<unknown>')} resource_variants must be non-empty"
+            )
+        return "; ".join(
+            "{} (requires {}; required {}; forbids {})".format(
+                variant["name"],
+                variant["requires"],
+                "/".join(variant["required_args"]),
+                "/".join(variant["forbidden_args"]),
+            )
+            for variant in variants
+        )
     parts = list(entry.get("required_args", []))
     groups = entry.get("required_arg_groups", [])
     if groups:
         parts.extend("one of " + "/".join(group) for group in groups)
     return ", ".join(parts) or "以 action schema 为准"
+
+
+def _requires(entry: dict) -> str:
+    variants = entry.get("resource_variants")
+    if variants is None:
+        return str(entry.get("requires", "-"))
+    return "conditional: " + "; ".join(
+        f"{variant['name']}={variant['requires']}" for variant in variants
+    )
+
+
+def _discoverability(entry: dict) -> tuple[list[str], list[str], list[dict]]:
+    use_when = entry.get("use_when")
+    do_not_use_when = entry.get("do_not_use_when")
+    alternatives = entry.get("alternatives")
+    if (
+        not isinstance(use_when, list)
+        or not use_when
+        or not isinstance(do_not_use_when, list)
+        or not do_not_use_when
+        or not isinstance(alternatives, list)
+    ):
+        raise ValueError(
+            f"{entry.get('name', '<unknown>')} has incomplete discoverability metadata"
+        )
+    return use_when, do_not_use_when, alternatives
 
 
 def action_reference() -> str:
@@ -33,21 +74,22 @@ def action_reference() -> str:
         "本文件由 `skills/xverif/scripts/generate_references.py` 从 canonical action specs 生成。",
         "用途是保证所有能力可发现；精确参数以 runtime catalog、action-specific schema 和 checked-in example 为准。",
         "",
-        "| Action | Status | Category | Requires | Purposes | Use for | Do not use for | Preferred alternative | Required inputs | 中文说明 | English description | Request schema | Example |",
+        "| Action | Status | Category | Requires | Purposes | Use when | Do not use when | Alternatives | Required inputs | 中文说明 | English description | Request schema | Example |",
         "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
-    entries = [entry for entry in payload["actions"] if entry.get("status") != "removed"]
+    entries = payload["actions"]
     for entry in entries:
+        use_when, do_not_use_when, alternatives = _discoverability(entry)
         request_schema = entry.get("schemas", {}).get("request")
         schema = "xdebug/" + request_schema if request_schema else "-"
         examples = entry.get("examples", {}).get("request", [])
         example = "xdebug/" + examples[0] if examples else "-"
         lines.append(
             f"| `{entry['name']}` | {entry.get('status', '-')} | {entry.get('category', '-')} | "
-            f"{entry.get('requires', '-')} | {', '.join(entry.get('purposes', [])) or '-'} | "
-            f"{'; '.join(entry.get('use_for', [])) or '-'} | "
-            f"{'; '.join(entry.get('do_not_use_for', [])) or '-'} | "
-            f"{json.dumps(entry.get('preferred_alternative', {}), ensure_ascii=False)} | "
+            f"{_requires(entry)} | {', '.join(entry.get('purposes', [])) or '-'} | "
+            f"{'; '.join(use_when)} | "
+            f"{'; '.join(do_not_use_when)} | "
+            f"{json.dumps(alternatives, ensure_ascii=False)} | "
             f"{_required(entry)} | {entry.get('description_zh', '-')} | {entry.get('description_en', '-')} | "
             f"`{schema}` | `{example}` |"
         )
@@ -75,7 +117,7 @@ def surface_examples() -> str:
     mcp = {"tool": "xverif_debug_query", "args": {
         "session_id": session, "action": action, "args": args}}
     loop = {"method": "debug.query", "params": {
-        "session": session, "action": action, "args": args}}
+        "session_id": session, "action": action, "args": args}}
     blocks = [
         "# 生成的 Surface 示例", "",
         f"Canonical source: `{EXAMPLES.relative_to(ROOT)}`。", "",

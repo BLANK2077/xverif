@@ -7,15 +7,15 @@ MCP 的 xdebug/xcov stateful session 通过同一套 stdio-loop session manager 
 - `xverif_debug_session_open(name, fsdb=None, daidir=None, run_manifest=None, queue=None, resource=None)`
 - `xverif_debug_query(session_id, action, args=None, limits=None, output_format="xout")`
 - `xverif_debug_session_list(include_tombstones=False, verbose=False)`
-- `xverif_debug_session_doctor(name=..., session_id=..., verbose=False)`
-- `xverif_debug_session_close(name=..., session_id=...)`
-- `xverif_debug_session_kill(name=..., session_id=...)`
+- `xverif_debug_session_doctor(session_id, verbose=False)`
+- `xverif_debug_session_close(session_id)`
+- `xverif_debug_session_kill(session_id)`
 - `xverif_debug_session_gc(verbose=False)`
 
 ## xcov
 
 - `xverif_cov_session_open(name, vdb, run_manifest=None, queue=None, resource=None)`
-- `xverif_cov_query(session_id, action, args=None, limits=None, output=None, output_format="xout")`
+- `xverif_cov_query(session_id, action, args=None, output_format="xout")`
 - `xverif_cov_session_list(include_tombstones=False, verbose=False)`
 - `xverif_cov_session_doctor(session_id=..., verbose=False)`
 - `xverif_cov_session_close(session_id=...)`
@@ -24,14 +24,16 @@ MCP 的 xdebug/xcov stateful session 通过同一套 stdio-loop session manager 
 
 ## 规则
 
-- xdebug open 后保存 alias 或 backend `session_id`，query 时传 `session_id`。
-- xcov open 后保存 alias 或 backend `session_id`，当前 query 参数名仍是 `session`。
+- xdebug/xcov open 的 `name` 是请求的 canonical `session_id`；backend 必须返回同一值，否则 open 失败并清理 backend。
+- open 后只保存返回 record 的 `session_id`；query 参数名固定为 `session_id`，不接受 `session`/`name`。
 - 同 session 请求串行；多 session 可并行。
-- `output_format="json"` 用于脚本字段读取，`envelope` 用于定位 wrapper/stdio-loop。
-- `xverif_cov_query(output_format="xout")` 返回给 MCP client 的文本直接从
-  `@xcov.v1` 开始；native xcov stdio stream 的 `XOUT_BEGIN/XOUT_END` 只用于后端
-  流式分帧，不进入单次 MCP tool result。
-- single-session doctor/close/kill 必须传精确 name 或 session_id；kill 不支持 `all`。
+- 默认 `output_format="xout"` 以减少 AI 上下文 token；稳定字段编程时使用
+  `json`，`envelope` 用于定位 wrapper/stdio-loop。
+- `xverif_cov_query(output_format="xout")` 原样返回 native 紧凑领域文本；首行使用
+  `@xcov.v1 ... action=<action> ...`，不包含 `XOUT_BEGIN/XOUT_END`。stdio-loop
+  外层 JSON envelope/sideband 单独负责机器 framing。
+- single-session doctor/close/kill 只接受精确 `session_id`；`session`/`name` 都不是兼容字段，
+  kill 不支持 `all`。
 - list 默认只列 active，`include_tombstones=true` 查看终止/未解决记录；`verbose=true` 才展开 PID、LSF job、完整资源路径和 cleanup 证据。
 - doctor 只读，不会自动 reconnect/restart/reopen。
 - xdebug detached engine 可能在 loop 死后存活，只使用固定 native admin path doctor/kill；无法确认清理时保留 `orphan_suspected` tombstone。
