@@ -113,6 +113,30 @@ def wrap_response(request: dict[str, Any], payload: dict) -> dict:
     return response
 
 
+def validate_wrapped_response(request: dict[str, Any], response: dict[str, Any]) -> None:
+    expected_wrapper_fields = set()
+    if (
+        "id" in request
+        and isinstance(request["id"], (str, int))
+        and not isinstance(request["id"], bool)
+    ):
+        expected_wrapper_fields.add("id")
+    if request.get("jsonrpc") == "2.0":
+        expected_wrapper_fields.add("jsonrpc")
+    actual_wrapper_fields = set(response) & {"id", "jsonrpc"}
+    if actual_wrapper_fields != expected_wrapper_fields:
+        raise EvalError("response correlation fields violate the stdio contract")
+    semantic = {
+        key: value for key, value in response.items()
+        if key not in actual_wrapper_fields
+    }
+    validate_response(semantic)
+    if "id" in actual_wrapper_fields and response["id"] != request["id"]:
+        raise EvalError("response id does not match request id")
+    if "jsonrpc" in actual_wrapper_fields and response["jsonrpc"] != "2.0":
+        raise EvalError("response jsonrpc must equal 2.0")
+
+
 def serve() -> int:
     for line in sys.stdin:
         if not line.strip():
@@ -125,5 +149,6 @@ def serve() -> int:
             request = request if isinstance(request, dict) else {}
             payload = failure(exc)
         response = wrap_response(request, payload)
+        validate_wrapped_response(request, response)
         print(json.dumps(response, ensure_ascii=False), flush=True)
     return 0

@@ -17,6 +17,7 @@ from xbit.check import run_check
 from xbit.errors import ParseError, ValueError2State, WidthError
 from xbit.eval import eval_expr, parse_vars
 from xbit.format import ResponseContractError, failure, success, to_xout, validate_response
+from xbit.agent.stdio import validate_wrapped_response, wrap_response
 from xbit.literal import parse_value
 from xbit import ops
 
@@ -173,6 +174,50 @@ class CliTests(unittest.TestCase):
         for mutated in (unknown, contradictory):
             with self.assertRaises(ResponseContractError):
                 validate_response(mutated)
+
+    def test_response_contract_rejects_cross_field_contradictions(self):
+        known = success("conv", result=parse_value("8'h5a"))
+        check = success(
+            "check",
+            result=parse_value("1'b1"),
+            matched=True,
+            evaluated={"ready": "1'b1"},
+        )
+        unknown = success("conv", result=parse_value("4'b10xz", state="4state"))
+        mutations = []
+        bad_signed = deepcopy(known)
+        bad_signed["result"]["signed_value"] = True
+        mutations.append(bad_signed)
+        too_wide = deepcopy(known)
+        too_wide["result"]["unsigned"] = 0x15A
+        mutations.append(too_wide)
+        mismatched = deepcopy(check)
+        mismatched["matched"] = False
+        mutations.append(mismatched)
+        oversized_mask = deepcopy(unknown)
+        oversized_mask["result"]["x_mask"] = "0x12"
+        mutations.append(oversized_mask)
+        for mutated in mutations:
+            with self.subTest(mutated=mutated):
+                with self.assertRaises(ResponseContractError):
+                    validate_response(mutated)
+
+    def test_error_expected_op_and_stdio_correlation_are_strict(self):
+        payload = failure(WidthError("bad width", width=8), op="slice")
+        with self.assertRaises(ResponseContractError):
+            validate_response(payload, expected_op="conv")
+
+        request = {"id": 7, "jsonrpc": "2.0"}
+        response = wrap_response(request, success("conv", result=parse_value("8'h5a")))
+        validate_wrapped_response(request, response)
+        wrong_id = deepcopy(response)
+        wrong_id["id"] = 8
+        with self.assertRaises(Exception):
+            validate_wrapped_response(request, wrong_id)
+        missing_jsonrpc = deepcopy(response)
+        del missing_jsonrpc["jsonrpc"]
+        with self.assertRaises(Exception):
+            validate_wrapped_response(request, missing_jsonrpc)
 
     def test_error_contract_rejects_unknown_detail_fields(self):
         payload = failure(

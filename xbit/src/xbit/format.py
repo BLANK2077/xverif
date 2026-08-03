@@ -63,6 +63,11 @@ def _validate_result(value: Any, op: str) -> None:
         unsigned = value["unsigned"]
         _require(isinstance(unsigned, int) and not isinstance(unsigned, bool),
                  "$.result.unsigned", "expected integer")
+        _require(isinstance(value["signed_value"], int)
+                 and not isinstance(value["signed_value"], bool),
+                 "$.result.signed_value", "expected integer")
+        _require(0 <= unsigned < (1 << width),
+                 "$.result.unsigned", "must fit within result width")
         canonical = BitVector(width, unsigned, signed=value["signed"]).to_result()
     else:
         _require(value["unsigned"] is None and value["signed_value"] is None,
@@ -76,6 +81,8 @@ def _validate_result(value: Any, op: str) -> None:
             _require(isinstance(text, str) and re.fullmatch(r"0x[0-9a-f]+", text) is not None,
                      f"$.result.{field}", "expected canonical hexadecimal mask")
             masks[field] = int(text, 16)
+            _require(masks[field] < (1 << width),
+                     f"$.result.{field}", "must fit within result width")
         _require(not (masks["x_mask"] & masks["z_mask"]),
                  "$.result", "x/z masks must be disjoint")
         unsigned = x_mask = z_mask = 0
@@ -85,6 +92,8 @@ def _validate_result(value: Any, op: str) -> None:
             elif char == "z": z_mask |= 1 << bit
         _require((x_mask, z_mask) == (masks["x_mask"], masks["z_mask"]),
                  "$.result", "masks contradict binary value")
+        _require(bool(x_mask | z_mask), "$.result.known",
+                 "unknown value must contain at least one x/z bit")
         canonical = BitVector(width, unsigned, signed=value["signed"],
                               state="4state", x_mask=x_mask, z_mask=z_mask).to_result()
     for field, expected in canonical.items():
@@ -119,11 +128,18 @@ def validate_response(response: Any, *, expected_op: str | None = None) -> None:
                      and all(isinstance(k, str) and k and isinstance(v, str)
                              for k, v in response["evaluated"].items()),
                      "$.evaluated", "expected string mapping")
+            _require(response["result"]["known"], "$.result.known",
+                     "check result must be known")
+            _require(response["matched"] is (response["result"]["unsigned"] != 0),
+                     "$.matched", "contradicts result value")
         return
     _exact(response, {"ok", "schema", "error"}, {"op"}, "$")
     _require(response["schema"] == SCHEMA_ERROR, "$.schema", "unexpected schema")
     if "op" in response:
         _require(response["op"] in OPS, "$.op", "unsupported operation")
+        if expected_op is not None:
+            _require(response["op"] == expected_op, "$.op",
+                     "does not match requested operation")
     error = response["error"]
     _exact(error, {"code", "message"}, {"details"}, "$.error")
     _require(all(isinstance(error[field], str) and error[field]
