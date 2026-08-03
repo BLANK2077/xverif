@@ -7,8 +7,6 @@ namespace xdebug_engine {
 
 using Json = nlohmann::json;
 
-int session_connect(const std::string& session_id);
-
 bool send_request_capture(const std::string& session_id,
                           const Json& request,
                           Json& data,

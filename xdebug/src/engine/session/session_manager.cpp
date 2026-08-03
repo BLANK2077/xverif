@@ -1,9 +1,11 @@
 #include "session_manager.h"
+#include "session_lifecycle_lease.h"
 #include "session_transport.h"
 #include "../server.h"
 #include "../../design/common/xdebug_design_paths.h"
 #include "../../design/protocol/protocol.h"
 #include "common/env_config.h"
+#include "common/path_utils.h"
 #include "logging/action_log.h"
 #include "session/session_timeout.h"
 #include "session/session_types.h"
@@ -21,6 +23,7 @@
 #include <limits.h>
 #include <fcntl.h>
 #include <cerrno>
+#include <algorithm>
 #include <fstream>
 
 namespace xdebug_engine {
@@ -58,6 +61,39 @@ std::string startup_failure_message(int exit_code,
     return "Server did not become ready: " + reason;
 }
 
+bool generate_session_generation(std::string& generation) {
+    generation.clear();
+    unsigned char bytes[32] = {};
+    int fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return false;
+    size_t offset = 0;
+    while (offset < sizeof(bytes)) {
+        const ssize_t count =
+            read(fd, bytes + offset, sizeof(bytes) - offset);
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) {
+            close(fd);
+            return false;
+        }
+        offset += static_cast<size_t>(count);
+    }
+    if (close(fd) != 0) return false;
+    static const char hex[] = "0123456789abcdef";
+    generation.reserve(sizeof(bytes) * 2);
+    for (const unsigned char byte : bytes) {
+        generation.push_back(hex[byte >> 4]);
+        generation.push_back(hex[byte & 0x0f]);
+    }
+    return true;
+}
+
+SessionCleanupStatus cleanup_status_from_registry(
+    SessionRegistryStatus status) {
+    if (status == SessionRegistryStatus::NotFound)
+        return SessionCleanupStatus::NotFound;
+    return SessionCleanupStatus::RegistryInvalid;
+}
+
 }  // namespace
 
 bool xdebug_engine_debug_enabled() {
@@ -81,6 +117,12 @@ const char* session_health_status_name(SessionHealthStatus status) {
             return "healthy";
         case SessionHealthStatus::RegistryMissing:
             return "registry_missing";
+        case SessionHealthStatus::RegistryInvalid:
+            return "registry_invalid";
+        case SessionHealthStatus::Opening:
+            return "opening";
+        case SessionHealthStatus::CleanupFailed:
+            return "cleanup_failed";
         case SessionHealthStatus::ProcessExited:
             return "process_exited";
         case SessionHealthStatus::SocketMissing:
@@ -105,10 +147,31 @@ SessionManager::SessionManager() : registry_(new SessionRegistry()) {
 }
 
 SessionManager::~SessionManager() {
+    // A non-detached server is scoped to this manager.  Normal direct-resource
+    // handling closes it explicitly; this path is the exception-safe ownership
+    // boundary for early returns and interrupted requests.
+    std::vector<std::pair<pid_t, std::string>> children(
+        owned_children_.begin(), owned_children_.end());
+    for (const auto& child : children) {
+        SessionInfo session;
+        SessionRegistryResult lookup =
+            registry_->get(child.second, session);
+        if (lookup.ok() && session.server_pid == child.first) {
+            SessionCleanupPrecondition precondition;
+            precondition.expected_generation =
+                session.generation;
+            if (kill_session(child.second, precondition).ok()) {
+                continue;
+            }
+        }
+        // Never mutate an alias record that no longer describes this owned
+        // child.  Process ownership alone is sufficient to reap it safely.
+        terminate_spawned_child(child.first, 1500);
+    }
 }
 
 pid_t SessionManager::spawn_server(const std::string& session_id, const std::vector<std::string>& args,
-                                   const SessionInfo& endpoint) {
+                                   const SessionInfo& endpoint, bool detached) {
     // Get path to current executable
     char self_path[1024] = {};
     ssize_t len = readlink("/proc/self/exe", self_path, sizeof(self_path) - 1);
@@ -126,7 +189,7 @@ pid_t SessionManager::spawn_server(const std::string& session_id, const std::vec
 
     std::vector<std::string> arg_storage = args;  // Keep strings alive
     arg_storage.push_back("--transport");
-    arg_storage.push_back(endpoint.transport.empty() ? "uds" : endpoint.transport);
+    arg_storage.push_back(endpoint.transport);
     arg_storage.push_back("--bind");
     arg_storage.push_back(endpoint.bind_host);
     arg_storage.push_back("--host");
@@ -146,12 +209,13 @@ pid_t SessionManager::spawn_server(const std::string& session_id, const std::vec
     }
 
     if (pid == 0) {
-        // Detach the session server from the short-lived CLI process so it
-        // survives after `session.open` exits.
-        if (setsid() < 0) {
-            _exit(1);
+        if (detached) {
+            // Managed named sessions survive the short-lived session.open CLI.
+            if (setsid() < 0) {
+                _exit(1);
+            }
+            signal(SIGHUP, SIG_IGN);
         }
-        signal(SIGHUP, SIG_IGN);
 
         // Close inherited file descriptors (fds > 2) to avoid leaking
         // pipe ends and other handles into the daemonised engine server.
@@ -189,7 +253,6 @@ bool SessionManager::populate_dbdir_metadata(const std::string& dbdir_path, Sess
     if (stat(dbdir_path.c_str(), &st) != 0) return false;
     if (!S_ISDIR(st.st_mode)) return false;
     session.dbdir_path = dbdir_path;
-    session.design_file = dbdir_path;
     session.dbdir_mtime = static_cast<long>(st.st_mtime);
     session.dbdir_size = static_cast<long long>(st.st_size);
     session.dbdir_dev = static_cast<unsigned long long>(st.st_dev);
@@ -262,6 +325,64 @@ bool SessionManager::wait_for_process_exit(pid_t pid, int timeout_ms) const {
     return !local_process_alive(pid);
 }
 
+bool SessionManager::wait_for_owned_child_exit(pid_t pid, int timeout_ms) {
+    auto owned = owned_children_.find(pid);
+    if (owned == owned_children_.end()) return false;
+
+    const int sleep_us = 10000;
+    const int loops =
+        timeout_ms > 0
+            ? (timeout_ms * 1000 + sleep_us - 1) / sleep_us
+            : 1;
+    for (int i = 0; i < loops; ++i) {
+        int status = 0;
+        pid_t waited = waitpid(pid, &status, WNOHANG);
+        if (waited == pid) {
+            owned_children_.erase(pid);
+            return true;
+        }
+        if (waited < 0) {
+            if (errno == EINTR) continue;
+            if (errno == ECHILD) {
+                owned_children_.erase(pid);
+                // The process is no longer our child.  Treat ownership as
+                // discharged and never signal a possibly reused PID.
+                return true;
+            }
+            return false;
+        }
+        usleep(sleep_us);
+    }
+
+    int status = 0;
+    pid_t waited = waitpid(pid, &status, WNOHANG);
+    if (waited == pid) {
+        owned_children_.erase(pid);
+        return true;
+    }
+    if (waited < 0 && errno == ECHILD) {
+        owned_children_.erase(pid);
+        return true;
+    }
+    return false;
+}
+
+bool SessionManager::wait_for_session_process_exit(pid_t pid, int timeout_ms) {
+    if (owned_children_.find(pid) != owned_children_.end()) {
+        return wait_for_owned_child_exit(pid, timeout_ms);
+    }
+    return wait_for_process_exit(pid, timeout_ms);
+}
+
+bool SessionManager::terminate_spawned_child(pid_t pid, int timeout_ms) {
+    if (pid <= 0) return true;
+    if (owned_children_.find(pid) == owned_children_.end()) return true;
+    if (kill(pid, SIGTERM) != 0 && errno != ESRCH) return false;
+    if (wait_for_session_process_exit(pid, timeout_ms)) return true;
+    if (kill(pid, SIGKILL) != 0 && errno != ESRCH) return false;
+    return wait_for_session_process_exit(pid, timeout_ms);
+}
+
 bool SessionManager::parse_open_args(const std::vector<std::string>& args,
                                      std::string& canonical_dbdir,
                                      std::string& canonical_fsdb,
@@ -324,13 +445,7 @@ WaitForServerResult SessionManager::wait_for_server(const std::string& session_i
 
         SessionInfo endpoint;
         bool endpoint_ready = read_endpoint_file(session_id, endpoint);
-        if (!endpoint_ready) {
-            endpoint.session_id = session_id;
-            endpoint.transport = "uds";
-            endpoint.socket_path = xdebug_design_socket_path(session_id);
-            endpoint_ready = access(endpoint.socket_path.c_str(), F_OK) == 0;
-        }
-        result.socket_exists = endpoint_ready;
+        result.endpoint_valid = endpoint_ready;
         if (endpoint_ready) {
             if (is_file_transport(endpoint)) {
                 result.connect_ok = true;
@@ -340,7 +455,7 @@ WaitForServerResult SessionManager::wait_for_server(const std::string& session_i
                     result.reason = "ready";
                     result.endpoint = endpoint;
                     xdebug_core::log_lifecycle_event("engine", session_id, "wait_for_server.ready", true,
-                                                     {{"elapsed_ms", result.elapsed_ms}, {"socket_exists", result.socket_exists},
+                                                     {{"elapsed_ms", result.elapsed_ms}, {"endpoint_valid", result.endpoint_valid},
                                                       {"connect_ok", result.connect_ok}, {"ping_ok", result.ping_ok},
                                                       {"transport", result.endpoint.transport},
                                                       {"file_dir", result.endpoint.file_dir}});
@@ -356,10 +471,10 @@ WaitForServerResult SessionManager::wait_for_server(const std::string& session_i
                     result.ok = true;
                     result.reason = "ready";
                     result.endpoint = endpoint;
-                    debug_log("wait_for_server: socket_exists=1 connect_ok=1 ping_ok=1 elapsed_ms=%ld",
+                    debug_log("wait_for_server: endpoint_valid=1 connect_ok=1 ping_ok=1 elapsed_ms=%ld",
                               result.elapsed_ms);
                     xdebug_core::log_lifecycle_event("engine", session_id, "wait_for_server.ready", true,
-                                                     {{"elapsed_ms", result.elapsed_ms}, {"socket_exists", result.socket_exists},
+                                                     {{"elapsed_ms", result.elapsed_ms}, {"endpoint_valid", result.endpoint_valid},
                                                       {"connect_ok", result.connect_ok}, {"ping_ok", result.ping_ok},
                                                       {"transport", result.endpoint.transport},
                                                       {"socket_path", result.endpoint.socket_path},
@@ -372,6 +487,7 @@ WaitForServerResult SessionManager::wait_for_server(const std::string& session_i
 
         int status;
         if (waitpid(pid, &status, WNOHANG) > 0) {
+            owned_children_.erase(pid);
             result.child_exited = true;
             result.child_status = status;
             if (WIFEXITED(status)) {
@@ -380,39 +496,52 @@ WaitForServerResult SessionManager::wait_for_server(const std::string& session_i
                     xdebug_design::engine_startup_failure_phase(result.child_exit_code);
             }
             result.reason = "child_exited";
-            debug_log("wait_for_server: child_exited status=%d elapsed_ms=%ld socket_exists=%d connect_ok=%d ping_ok=%d",
-                      status, result.elapsed_ms, result.socket_exists ? 1 : 0,
+            debug_log("wait_for_server: child_exited status=%d elapsed_ms=%ld endpoint_valid=%d connect_ok=%d ping_ok=%d",
+                      status, result.elapsed_ms, result.endpoint_valid ? 1 : 0,
                       result.connect_ok ? 1 : 0, result.ping_ok ? 1 : 0);
             xdebug_core::log_lifecycle_event("engine", session_id, "wait_for_server.child_exited", false,
                                              {{"elapsed_ms", result.elapsed_ms}, {"child_status", status},
                                               {"child_exit_code", result.child_exit_code},
                                               {"failure_phase", result.failure_phase},
-                                              {"socket_exists", result.socket_exists}, {"connect_ok", result.connect_ok},
+                                              {"endpoint_valid", result.endpoint_valid}, {"connect_ok", result.connect_ok},
                                               {"ping_ok", result.ping_ok}});
             return result;
         }
     }
 
-    result.reason = result.socket_exists ? (result.connect_ok ? "ping_failed" : "socket_connect_failed")
-                                         : "timeout_waiting_socket";
-    debug_log("wait_for_server: timeout reason=%s elapsed_ms=%ld socket_exists=%d connect_ok=%d ping_ok=%d",
-              result.reason.c_str(), result.elapsed_ms, result.socket_exists ? 1 : 0,
+    result.reason = result.endpoint_valid
+        ? (result.connect_ok ? "ping_failed" : "endpoint_connect_failed")
+        : "timeout_waiting_endpoint";
+    debug_log("wait_for_server: timeout reason=%s elapsed_ms=%ld endpoint_valid=%d connect_ok=%d ping_ok=%d",
+              result.reason.c_str(), result.elapsed_ms, result.endpoint_valid ? 1 : 0,
               result.connect_ok ? 1 : 0, result.ping_ok ? 1 : 0);
     xdebug_core::log_lifecycle_event("engine", session_id, "wait_for_server.timeout", false,
                                      {{"reason", result.reason}, {"elapsed_ms", result.elapsed_ms},
-                                      {"socket_exists", result.socket_exists}, {"connect_ok", result.connect_ok},
+                                      {"endpoint_valid", result.endpoint_valid}, {"connect_ok", result.connect_ok},
                                       {"ping_ok", result.ping_ok}});
     return result;
 }
 
 SessionEnsureResult SessionManager::ensure_session(const std::vector<std::string>& design_args, const std::string& session_name) {
     SessionTransportOptions transport;
-    return ensure_session(design_args, session_name, transport);
+    return ensure_session(design_args, session_name, transport, "");
 }
 
 SessionEnsureResult SessionManager::ensure_session(const std::vector<std::string>& design_args,
                                                    const std::string& session_name,
                                                    const SessionTransportOptions& transport_options) {
+    return ensure_session(
+        design_args,
+        session_name,
+        transport_options,
+        "");
+}
+
+SessionEnsureResult SessionManager::ensure_session(
+    const std::vector<std::string>& design_args,
+    const std::string& session_name,
+    const SessionTransportOptions& transport_options,
+    const std::string& ownership_token_hash) {
     SessionEnsureResult result;
 
     std::string canonical_dbdir;
@@ -432,7 +561,7 @@ SessionEnsureResult SessionManager::ensure_session(const std::vector<std::string
 
     if (!SessionRegistry::is_valid_session_name(session_name)) {
         result.status = "invalid_session_id";
-        result.message = "Session name is required and must be 1-256 chars using [A-Za-z0-9_.-]";
+        result.message = xdebug_core::session_name_rule();
         debug_log("ensure_session: reason=invalid_session_id name=%s", session_name.c_str());
         xdebug_core::log_lifecycle_event("engine", session_name, "ensure_session.invalid_session_id", false);
         return result;
@@ -446,146 +575,245 @@ SessionEnsureResult SessionManager::ensure_session(const std::vector<std::string
         return result;
     }
 
-    // Clean up stale sessions first
-    debug_log("ensure_session: cleanup_stale_begin");
-    xdebug_core::log_lifecycle_event("engine", session_name, "cleanup.begin", true);
-    cleanup();
-    debug_log("ensure_session: cleanup_stale_done");
-    xdebug_core::log_lifecycle_event("engine", session_name, "cleanup.end", true);
-
-    if (registry_->exists(session_name)) {
-        result.status = "session_id_exists";
-        result.message = "Session id already exists: " + session_name;
-        debug_log("ensure_session: reason=session_id_exists name=%s", session_name.c_str());
-        xdebug_core::log_lifecycle_event("engine", session_name, "ensure_session.session_id_exists", false);
+    SessionLifecycleLease lease(session_name);
+    if (!lease.locked()) {
+        result.status = "lifecycle_lock_failed";
+        result.message = "Failed to acquire the session lifecycle lease";
         return result;
     }
 
-    std::string session_id = session_name;
-    if (!xdebug_design_ensure_session_dir(session_id)) {
-        result.status = "session_dir_failed";
-        result.message = "Failed to create session directory";
-        debug_log("ensure_session: reason=session_dir_failed session=%s", session_id.c_str());
-        xdebug_core::log_lifecycle_event("engine", session_id, "ensure_session.session_dir_failed", false);
-        return result;
-    }
-    debug_log("ensure_session: session_id=%s", session_id.c_str());
-    xdebug_core::log_lifecycle_event("engine", session_id, "ensure_session.session_dir_ready", true,
-                                     {{"session_dir", xdebug_design_session_dir(session_id)}});
-
-    SessionInfo endpoint;
-    endpoint.session_id = session_id;
-    endpoint.transport = requested_transport;
-    endpoint.socket_path = xdebug_design_socket_path(session_id);
-    endpoint.file_dir = xdebug_core::file_transport_dir(xdebug_design_session_dir(session_id));
-    endpoint.bind_host = transport_options.bind_host.empty()
-        ? (endpoint.transport == "tcp" ? "127.0.0.1" : "")
-        : transport_options.bind_host;
-    endpoint.host = transport_options.host.empty()
-        ? (endpoint.bind_host == "0.0.0.0" || endpoint.bind_host == "::" ? current_host_name() : endpoint.bind_host)
-        : transport_options.host;
-    endpoint.port = endpoint.transport == "tcp" ? transport_options.port : 0;
-    endpoint.server_host = current_host_name();
-    endpoint.auth_token = endpoint.transport == "tcp" ? generate_auth_token() : "";
-
-    // Spawn server process
-    pid_t pid = spawn_server(session_id, canonical_args, endpoint);
-    if (pid < 0) {
-        result.status = "spawn_failed";
-        result.message = "Failed to spawn xdebug engine server";
-        xdebug_design_remove_session_dir(session_id);
-        debug_log("ensure_session: reason=spawn_failed session=%s", session_id.c_str());
-        xdebug_core::log_lifecycle_event("engine", session_id, "ensure_session.spawn_failed", false);
-        return result;
-    }
-    debug_log("ensure_session: spawned_server session=%s pid=%d", session_id.c_str(), pid);
-    xdebug_core::log_lifecycle_event("engine", session_id, "ensure_session.spawned_server", true,
-                                     {{"pid", static_cast<int>(pid)}, {"transport", endpoint.transport},
-                                      {"socket_path", endpoint.socket_path}, {"host", endpoint.host},
-                                      {"port", endpoint.port}});
-
-    // Get socket path
-    char sock_path[SOCK_PATH_LEN];
-    get_sock_path(sock_path, session_id);
-    char dbg_path[SOCK_PATH_LEN];
-    get_debug_log_path(dbg_path, session_id);
-    debug_log("ensure_session: socket_path=%s debug_log=%s", sock_path, dbg_path);
-
-    WaitForServerResult wait = wait_for_server(session_id, pid);
-    if (!wait.ok) {
-        // Kill the server process if it didn't start properly
-        kill(pid, SIGTERM);
-        unlink(sock_path);
-        xdebug_design_remove_session_dir(session_id);
-        result.status = startup_failure_status(wait.child_exit_code);
-        result.message = startup_failure_message(wait.child_exit_code, wait.reason);
-        result.startup_reason = wait.reason;
-        result.failure_phase = wait.failure_phase;
-        if (!wait.failure_phase.empty()) result.diagnostic_log = "engine_npi_startup";
-        debug_log("ensure_session: reason=%s elapsed_ms=%ld child_exited=%d child_status=%d socket_exists=%d connect_ok=%d ping_ok=%d",
-                  wait.reason.c_str(), wait.elapsed_ms, wait.child_exited ? 1 : 0,
-                  wait.child_status, wait.socket_exists ? 1 : 0,
-                  wait.connect_ok ? 1 : 0, wait.ping_ok ? 1 : 0);
-        xdebug_core::log_lifecycle_event("engine", session_id, "ensure_session.startup_failed", false,
-                                         {{"reason", wait.reason}, {"elapsed_ms", wait.elapsed_ms},
-                                          {"child_exited", wait.child_exited}, {"child_status", wait.child_status},
-                                          {"child_exit_code", wait.child_exit_code},
-                                          {"failure_phase", wait.failure_phase},
-                                          {"diagnostic_log", result.diagnostic_log},
-                                          {"socket_exists", wait.socket_exists}, {"connect_ok", wait.connect_ok},
-                                          {"ping_ok", wait.ping_ok}});
-        return result;
-    }
-
-    // Create session info
     SessionInfo session;
-    session.session_id = session_id;
-    session.transport = wait.endpoint.transport.empty() ? endpoint.transport : wait.endpoint.transport;
-    session.socket_path = wait.endpoint.socket_path.empty() ? sock_path : wait.endpoint.socket_path;
-    session.file_dir = wait.endpoint.file_dir.empty() ? endpoint.file_dir : wait.endpoint.file_dir;
-    session.host = wait.endpoint.host.empty() ? endpoint.host : wait.endpoint.host;
-    session.bind_host = wait.endpoint.bind_host.empty() ? endpoint.bind_host : wait.endpoint.bind_host;
-    session.port = wait.endpoint.port ? wait.endpoint.port : endpoint.port;
-    session.server_host = wait.endpoint.server_host.empty() ? endpoint.server_host : wait.endpoint.server_host;
-    session.auth_token = wait.endpoint.auth_token.empty() ? endpoint.auth_token : wait.endpoint.auth_token;
-    session.server_pid = pid;
+    session.session_id = session_name;
+    session.lifecycle_state = "opening";
+    session.transport = requested_transport;
+    session.server_host = current_host_name();
+    session.ownership_token_hash = ownership_token_hash;
     session.created_at = time(nullptr);
     session.last_active = session.created_at;
-    if (!canonical_dbdir.empty() && !populate_dbdir_metadata(canonical_dbdir, session)) {
-        kill(pid, SIGTERM);
-        xdebug_design_remove_session_dir(session_id);
-        result.status = "resource_changed";
-        result.message = "Daidir became unavailable while opening the session";
+    if (!generate_session_generation(session.generation)) {
+        result.status = "generation_failed";
+        result.message = "Failed to create a session lifecycle generation";
         return result;
     }
-    if (!canonical_fsdb.empty() && !populate_fsdb_metadata(canonical_fsdb, session)) {
-        kill(pid, SIGTERM);
-        xdebug_design_remove_session_dir(session_id);
+    if (requested_transport == "uds") {
+        session.socket_path =
+            xdebug_design_socket_path(session_name);
+    } else if (requested_transport == "file") {
+        session.file_dir = xdebug_core::file_transport_dir(
+            xdebug_design_session_dir(session_name));
+    } else {
+        session.bind_host = transport_options.bind_host.empty()
+            ? "127.0.0.1"
+            : transport_options.bind_host;
+        session.host = transport_options.host.empty()
+            ? (session.bind_host == "0.0.0.0" ||
+                       session.bind_host == "::"
+                   ? current_host_name()
+                   : session.bind_host)
+            : transport_options.host;
+        session.port = transport_options.port;
+        session.auth_token = generate_auth_token();
+    }
+    if (!canonical_dbdir.empty() &&
+        !populate_dbdir_metadata(canonical_dbdir, session)) {
         result.status = "resource_changed";
-        result.message = "FSDB became unavailable while opening the session";
+        result.message =
+            "Daidir became unavailable before session reservation";
+        return result;
+    }
+    if (!canonical_fsdb.empty() &&
+        !populate_fsdb_metadata(canonical_fsdb, session)) {
+        result.status = "resource_changed";
+        result.message =
+            "FSDB became unavailable before session reservation";
         return result;
     }
 
-    // Add to registry
-    if (!registry_->add(session)) {
-        kill(pid, SIGTERM);
-        unlink(sock_path);
-        xdebug_design_remove_session_dir(session_id);
-        result.status = "registry_failed";
-        result.message = "Failed to update session registry";
-        debug_log("ensure_session: reason=registry_failed session=%s", session_id.c_str());
-        xdebug_core::log_lifecycle_event("engine", session_id, "ensure_session.registry_failed", false);
+    SessionRegistryResult reserved =
+        registry_->reserve_opening(session);
+    if (!reserved.ok()) {
+        result.status =
+            reserved.status == SessionRegistryStatus::Conflict
+                ? "session_id_exists"
+                : "registry_failed";
+        result.message =
+            reserved.status == SessionRegistryStatus::Conflict
+                ? "Session id already exists: " + session_name
+                : reserved.message;
         return result;
+    }
+
+    bool marker_committed =
+        xdebug_design_write_generation_marker(
+            session_name, session.generation);
+    if (!marker_committed) {
+        marker_committed =
+            xdebug_design_generation_matches(
+                session_name, session.generation);
+    }
+    if (!marker_committed) {
+        SessionRegistryResult removed =
+            registry_->remove_if_generation(
+                session_name, session.generation);
+        result.status = "generation_marker_failed";
+        result.message =
+            "Failed to persist the session generation marker";
+        result.cleanup_succeeded = removed.ok();
+        result.compensation_status =
+            removed.ok() ? "cleaned" : "cleanup_failed";
+        if (!removed.ok()) {
+            session.lifecycle_state = "cleanup_failed";
+            const SessionRegistryResult retained =
+                registry_->mark_cleanup_failed(
+                    session, session.generation);
+            if (retained.ok()) {
+                result.lifecycle_state =
+                    "cleanup_failed";
+            } else {
+                result.message +=
+                    "; failed to persist cleanup_failed lifecycle state";
+            }
+            result.info = session;
+        }
+        return result;
+    }
+
+    const auto compensate =
+        [&](const std::string& failure_status,
+            const std::string& failure_message) {
+            result.status = failure_status;
+            result.message = failure_message;
+            SessionCleanupResult cleanup =
+                cleanup_session_locked(session);
+            result.cleanup_succeeded =
+                cleanup.cleanup_succeeded;
+            result.compensation_status =
+                cleanup.ok() ? "cleaned" : "cleanup_failed";
+            result.lifecycle_state =
+                cleanup.ok()
+                    ? std::string()
+                    : "cleanup_failed";
+            result.info = cleanup.info;
+        };
+
+    pid_t pid = spawn_server(
+        session_name,
+        canonical_args,
+        session,
+        transport_options.detached);
+    if (pid < 0) {
+        compensate(
+            "spawn_failed",
+            "Failed to spawn xdebug engine server");
+        return result;
+    }
+    owned_children_[pid] = session_name;
+    session.server_pid = pid;
+    xdebug_core::log_lifecycle_event(
+        "engine",
+        session_name,
+        "ensure_session.spawned_server",
+        true,
+        {{"pid", static_cast<int>(pid)}});
+    SessionRegistryResult opening_updated =
+        registry_->update_opening(
+            session, session.generation);
+    if (!opening_updated.ok()) {
+        compensate(
+            "registry_failed",
+            "Failed to persist opening process evidence");
+        return result;
+    }
+
+    debug_log(
+        "ensure_session: spawned_server session=%s pid=%d",
+        session_name.c_str(),
+        pid);
+    WaitForServerResult wait =
+        wait_for_server(session_name, pid);
+    if (!wait.ok) {
+        result.startup_reason = wait.reason;
+        result.failure_phase = wait.failure_phase;
+        if (!wait.failure_phase.empty()) {
+            result.diagnostic_log = "engine_npi_startup";
+        }
+        compensate(
+            startup_failure_status(wait.child_exit_code),
+            startup_failure_message(
+                wait.child_exit_code, wait.reason));
+        return result;
+    }
+
+    if (wait.endpoint.session_id != session_name ||
+        wait.endpoint.transport != requested_transport) {
+        compensate(
+            "endpoint_mismatch",
+            "Server endpoint does not match the reserved session generation");
+        return result;
+    }
+    session.socket_path = wait.endpoint.socket_path;
+    session.file_dir = wait.endpoint.file_dir;
+    session.host = wait.endpoint.host;
+    session.bind_host = wait.endpoint.bind_host;
+    session.port = wait.endpoint.port;
+    session.server_host = wait.endpoint.server_host;
+    session.auth_token = wait.endpoint.auth_token;
+    opening_updated =
+        registry_->update_opening(
+            session, session.generation);
+    if (!opening_updated.ok()) {
+        compensate(
+            "registry_failed",
+            "Failed to persist ready endpoint evidence");
+        return result;
+    }
+
+    SessionInfo current = session;
+    if (!canonical_dbdir.empty() &&
+        (!populate_dbdir_metadata(canonical_dbdir, current) ||
+         !dbdir_metadata_matches(session, current))) {
+        compensate(
+            "resource_changed",
+            "Daidir changed while opening the session");
+        return result;
+    }
+    if (!canonical_fsdb.empty() &&
+        (!populate_fsdb_metadata(canonical_fsdb, current) ||
+         !fsdb_metadata_matches(session, current))) {
+        compensate(
+            "resource_changed",
+            "FSDB changed while opening the session");
+        return result;
+    }
+    session = current;
+    session.lifecycle_state = "active";
+    session.last_active = time(nullptr);
+    SessionRegistryResult finalized =
+        registry_->finalize_opening(
+            session, session.generation);
+    if (!finalized.ok()) {
+        session.lifecycle_state = "opening";
+        compensate(
+            "registry_failed",
+            "Failed to finalize the session generation");
+        return result;
+    }
+    if (transport_options.detached) {
+        owned_children_.erase(pid);
     }
 
     result.ok = true;
     result.reused = false;
-    result.session_id = session_id;
+    result.session_id = session_name;
     result.status = "healthy";
     result.message = "Created healthy session";
+    result.lifecycle_state = "active";
     result.info = session;
-    debug_log("ensure_session: success session=%s pid=%d socket=%s", session_id.c_str(), pid, sock_path);
-    xdebug_core::log_lifecycle_event("engine", session_id, "ensure_session.success", true,
+    debug_log(
+        "ensure_session: success session=%s pid=%d",
+        session_name.c_str(),
+        pid);
+    xdebug_core::log_lifecycle_event("engine", session_name, "ensure_session.success", true,
                                      {{"pid", static_cast<int>(pid)}, {"socket_path", session.socket_path},
                                       {"dbdir", session.dbdir_path}, {"fsdb", session.fsdb_file}});
     return result;
@@ -601,50 +829,56 @@ SessionEnsureResult SessionManager::create_session(const std::vector<std::string
     return ensure_session(design_args, session_name, transport);
 }
 
-bool SessionManager::kill_session(const std::string& session_id) {
-    SessionInfo session;
-    if (!registry_->get(session_id, session)) {
-        debug_log("kill_session: registry_missing session=%s", session_id.c_str());
-        xdebug_core::log_lifecycle_event("engine", session_id, "kill_session.registry_missing", false);
-        return false;
+SessionCleanupResult SessionManager::cleanup_session_locked(
+    SessionInfo session) {
+    SessionCleanupResult result;
+    result.info = session;
+
+    session.lifecycle_state = "cleanup_failed";
+    SessionRegistryResult preserved =
+        registry_->mark_cleanup_failed(
+            session, session.generation);
+    if (!preserved.ok()) {
+        result.status =
+            cleanup_status_from_registry(preserved.status);
+        result.message = preserved.message;
+        return result;
     }
-    debug_log("kill_session: begin session=%s pid=%d socket=%s",
-              session.session_id.c_str(), session.server_pid, session.socket_path.c_str());
-    xdebug_core::log_lifecycle_event("engine", session_id, "kill_session.begin", true,
-                                     {{"pid", session.server_pid}, {"socket_path", session.socket_path}});
+    result.info = session;
 
-    const bool quit_sent = send_quit_to_endpoint(session);
-    bool stopped = false;
+    const bool has_process = session.server_pid > 0;
+    const bool quit_sent =
+        has_process && send_quit_to_endpoint(session);
+    const bool owned_child =
+        owned_children_.find(session.server_pid) !=
+        owned_children_.end();
+    bool stopped = !has_process;
 
-    if (is_local_session_host(session)) {
-        stopped = wait_for_process_exit(session.server_pid, quit_sent ? 1500 : 100);
-        if (!stopped) {
-            if (!process_matches_session(session)) {
-                debug_log("kill_session: pid=%d no longer matches session=%s",
-                          session.server_pid, session.session_id.c_str());
-                xdebug_core::log_lifecycle_event("engine", session_id,
-                                                 "kill_session.pid_mismatch", false,
-                                                 {{"pid", session.server_pid}});
-                return false;
-            }
-            if (kill(session.server_pid, SIGTERM) != 0 && errno != ESRCH) {
-                xdebug_core::log_lifecycle_event("engine", session_id,
-                                                 "kill_session.sigterm_failed", false,
-                                                 {{"pid", session.server_pid}, {"errno", errno}});
-                return false;
-            }
-            stopped = wait_for_process_exit(session.server_pid, 1500);
+    if (has_process && is_local_session_host(session)) {
+        stopped = wait_for_session_process_exit(
+            session.server_pid,
+            quit_sent ? 1500 : 100);
+        if (!stopped && !owned_child &&
+            !process_matches_session(session)) {
+            // The recorded process is gone or the PID was reused.  Never
+            // signal an unrelated process; the recorded generation is stale.
+            stopped = true;
         }
         if (!stopped) {
-            if (kill(session.server_pid, SIGKILL) != 0 && errno != ESRCH) {
-                xdebug_core::log_lifecycle_event("engine", session_id,
-                                                 "kill_session.sigkill_failed", false,
-                                                 {{"pid", session.server_pid}, {"errno", errno}});
-                return false;
+            if (kill(session.server_pid, SIGTERM) == 0 ||
+                errno == ESRCH) {
+                stopped = wait_for_session_process_exit(
+                    session.server_pid, 1500);
             }
-            stopped = wait_for_process_exit(session.server_pid, 1500);
         }
-    } else if (quit_sent) {
+        if (!stopped) {
+            if (kill(session.server_pid, SIGKILL) == 0 ||
+                errno == ESRCH) {
+                stopped = wait_for_session_process_exit(
+                    session.server_pid, 1500);
+            }
+        }
+    } else if (has_process && quit_sent) {
         for (int i = 0; i < 15; ++i) {
             if (!ping_session_endpoint(session)) {
                 stopped = true;
@@ -655,66 +889,231 @@ bool SessionManager::kill_session(const std::string& session_id) {
     }
 
     if (!stopped) {
-        xdebug_core::log_lifecycle_event("engine", session_id,
-                                         "kill_session.process_still_alive", false,
-                                         {{"pid", session.server_pid}, {"quit_sent", quit_sent}});
-        return false;
+        result.status = SessionCleanupStatus::CleanupFailed;
+        result.message =
+            "session process could not be proven stopped";
+        return result;
+    }
+    if (!xdebug_design_remove_session_generation(
+            session.session_id,
+            session.generation)) {
+        result.status = SessionCleanupStatus::CleanupFailed;
+        result.message =
+            "session artifacts do not match or could not be removed";
+        return result;
     }
 
-    if (!registry_->remove(session_id)) {
-        xdebug_core::log_lifecycle_event("engine", session_id,
-                                         "kill_session.registry_remove_failed", false);
-        return false;
+    SessionRegistryResult removed =
+        registry_->remove_if_generation(
+            session.session_id,
+            session.generation);
+    if (!removed.ok()) {
+        result.status =
+            cleanup_status_from_registry(removed.status);
+        result.message = removed.message;
+        return result;
     }
-    xdebug_core::log_lifecycle_event("engine", session_id, "kill_session.end", true,
-                                     {{"pid", session.server_pid}, {"quit_sent", quit_sent}});
-    return true;
+
+    result.status = SessionCleanupStatus::Cleaned;
+    result.cleanup_succeeded = true;
+    result.message = "session generation cleaned";
+    return result;
+}
+
+SessionCleanupResult SessionManager::kill_session(
+    const std::string& session_id,
+    const SessionCleanupPrecondition& precondition) {
+    SessionCleanupResult result;
+    SessionLifecycleLease lease(session_id);
+    if (!lease.locked()) {
+        result.status = SessionCleanupStatus::CleanupFailed;
+        result.message =
+            "failed to acquire the session lifecycle lease";
+        return result;
+    }
+
+    SessionInfo session;
+    SessionRegistryResult lookup =
+        registry_->get(session_id, session);
+    if (!lookup.ok()) {
+        result.status =
+            cleanup_status_from_registry(lookup.status);
+        result.message = lookup.message;
+        return result;
+    }
+    result.info = session;
+
+    if (!precondition.expected_generation.empty() &&
+        session.generation !=
+            precondition.expected_generation) {
+        result.status =
+            SessionCleanupStatus::NotFound;
+        result.message =
+            "session generation no longer matches cleanup precondition";
+        return result;
+    }
+    if (!precondition.expected_lifecycle_state.empty() &&
+        session.lifecycle_state !=
+            precondition.expected_lifecycle_state) {
+        result.status =
+            SessionCleanupStatus::NotFound;
+        result.message =
+            "session lifecycle state no longer matches cleanup precondition";
+        return result;
+    }
+    if (precondition.require_ownership_match &&
+        (precondition.ownership_token_hash.empty() ||
+         session.ownership_token_hash.empty() ||
+         session.ownership_token_hash !=
+             precondition.ownership_token_hash)) {
+        result.status =
+            SessionCleanupStatus::OwnershipMismatch;
+        result.message =
+            "the supplied ownership token does not match this session generation";
+        return result;
+    }
+
+    xdebug_core::log_lifecycle_event(
+        "engine",
+        session_id,
+        "kill_session.begin",
+        true,
+        {{"pid", session.server_pid},
+         {"lifecycle_state", session.lifecycle_state}});
+    result = cleanup_session_locked(session);
+    xdebug_core::log_lifecycle_event(
+        "engine",
+        session_id,
+        "kill_session.end",
+        result.ok(),
+        {{"pid", session.server_pid},
+         {"cleanup_succeeded", result.cleanup_succeeded},
+         {"lifecycle_state",
+          result.ok() ? "removed" : "cleanup_failed"}});
+    return result;
 }
 
 bool SessionManager::kill_all_sessions() {
-    std::vector<SessionInfo> sessions = list_sessions();
+    std::vector<SessionInfo> sessions;
+    if (!registry_->load_all(sessions).ok()) return false;
+    std::sort(
+        sessions.begin(),
+        sessions.end(),
+        [](const SessionInfo& lhs, const SessionInfo& rhs) {
+            return lhs.session_id < rhs.session_id;
+        });
     xdebug_core::log_lifecycle_event("engine", "adhoc", "kill_all.begin", true,
                                      {{"count", sessions.size()}});
     bool all_ok = true;
     for (const auto& session : sessions) {
-        if (!kill_session(session.session_id)) all_ok = false;
+        SessionCleanupPrecondition precondition;
+        precondition.expected_generation =
+            session.generation;
+        if (!kill_session(
+                 session.session_id,
+                 precondition)
+                 .ok()) {
+            all_ok = false;
+        }
     }
     xdebug_core::log_lifecycle_event("engine", "adhoc", "kill_all.end", all_ok);
     return all_ok;
 }
 
 bool SessionManager::get_session(const std::string& session_id, SessionInfo& info) {
+    return lookup_session(session_id, info).ok();
+}
+
+SessionRegistryResult SessionManager::lookup_session(
+    const std::string& session_id,
+    SessionInfo& info) {
     return registry_->get(session_id, info);
 }
 
 bool SessionManager::get_latest_session(SessionInfo& info) {
-    return registry_->get_latest(info);
+    return registry_->get_latest(info).ok();
 }
 
-bool SessionManager::touch_session(const std::string& session_id) {
-    return registry_->touch(session_id, time(nullptr));
+bool SessionManager::touch_session(
+    const std::string& session_id,
+    const std::string& expected_generation) {
+    return registry_->touch_if_generation(
+        session_id,
+        expected_generation,
+        time(nullptr))
+        .ok();
 }
 
 std::vector<SessionInfo> SessionManager::list_sessions() {
     cleanup();
     std::vector<SessionInfo> sessions;
-    registry_->load_all(sessions);
+    if (!list_sessions_checked(sessions).ok()) {
+        sessions.clear();
+    }
     return sessions;
+}
+
+SessionRegistryResult SessionManager::list_sessions_checked(
+    std::vector<SessionInfo>& sessions) {
+    return registry_->load_all(sessions);
 }
 
 SessionHealth SessionManager::diagnose_session(const std::string& session_id) {
     SessionHealth health;
     health.session_id = session_id;
 
+    SessionLifecycleLease lease(session_id);
+    if (!lease.locked()) {
+        health.status = SessionHealthStatus::RegistryInvalid;
+        health.message =
+            "Session lifecycle lease could not be acquired";
+        return health;
+    }
     SessionInfo session;
-    if (!registry_->get(session_id, session)) {
-        health.status = SessionHealthStatus::RegistryMissing;
-        health.message = "Session is not present in the registry";
+    SessionRegistryResult lookup =
+        registry_->get(session_id, session);
+    if (!lookup.ok()) {
+        health.status =
+            lookup.status == SessionRegistryStatus::NotFound
+                ? SessionHealthStatus::RegistryMissing
+                : SessionHealthStatus::RegistryInvalid;
+        health.message =
+            lookup.status == SessionRegistryStatus::NotFound
+                ? "Session is not present in the registry"
+                : lookup.message;
         xdebug_core::log_lifecycle_event("engine", session_id, "diagnose.registry_missing", false);
         return health;
     }
+    return diagnose_session_locked(session);
+}
 
+SessionHealth SessionManager::diagnose_session_locked(
+    const SessionInfo& session) {
+    SessionHealth health;
+    const std::string& session_id = session.session_id;
+    health.session_id = session.session_id;
     health.info = session;
+
+    if (session.lifecycle_state == "opening") {
+        health.status = SessionHealthStatus::Opening;
+        health.message = "Session generation is still opening";
+        return health;
+    }
+    if (session.lifecycle_state == "cleanup_failed") {
+        health.status = SessionHealthStatus::CleanupFailed;
+        health.message =
+            "Session generation retained evidence after cleanup failure";
+        return health;
+    }
+    if (session.lifecycle_state != "active" ||
+        !xdebug_design_generation_matches(
+            session.session_id,
+            session.generation)) {
+        health.status = SessionHealthStatus::RegistryInvalid;
+        health.message =
+            "Session registry and generation marker do not match";
+        return health;
+    }
 
     SessionInfo current;
     if (!session.dbdir_path.empty()) {
@@ -784,7 +1183,8 @@ SessionHealth SessionManager::diagnose_session(const std::string& session_id) {
         }
     }
 
-    if (is_local_session_host(session) && kill(session.server_pid, 0) != 0) {
+    if (is_local_session_host(session) &&
+        !local_process_alive(session.server_pid)) {
         health.status = SessionHealthStatus::ProcessExited;
         health.message = "Server process is not running";
         xdebug_core::log_lifecycle_event("engine", session_id, "diagnose.process_exited", false,
@@ -801,16 +1201,16 @@ SessionHealth SessionManager::diagnose_session(const std::string& session_id) {
     }
 
     if (!is_file_transport(session)) {
-    int fd = connect_session_endpoint(session);
-    if (fd < 0) {
-        health.status = SessionHealthStatus::ConnectFailed;
-        health.message = "Server socket exists but cannot be connected";
-        xdebug_core::log_lifecycle_event("engine", session_id, "diagnose.connect_failed", false,
-                                         {{"transport", session.transport}, {"socket_path", session.socket_path},
-                                          {"host", session.host}, {"port", session.port}});
-        return health;
-    }
-    close(fd);
+        int fd = connect_session_endpoint(session);
+        if (fd < 0) {
+            health.status = SessionHealthStatus::ConnectFailed;
+            health.message = "Server socket exists but cannot be connected";
+            xdebug_core::log_lifecycle_event("engine", session_id, "diagnose.connect_failed", false,
+                                             {{"transport", session.transport}, {"socket_path", session.socket_path},
+                                              {"host", session.host}, {"port", session.port}});
+            return health;
+        }
+        close(fd);
     }
 
     if (!ping_session_endpoint(session)) {
@@ -842,9 +1242,76 @@ std::string SessionManager::get_socket_path(const std::string& session_id) {
 void SessionManager::cleanup() {
     debug_log("cleanup: begin");
     xdebug_core::log_lifecycle_event("engine", "adhoc", "cleanup.begin", true);
-    registry_->cleanup_stale();
+    std::vector<SessionInfo> sessions;
+    SessionRegistryResult loaded =
+        registry_->load_all(sessions);
+    if (!loaded.ok()) {
+        xdebug_core::log_lifecycle_event(
+            "engine",
+            "adhoc",
+            "cleanup.registry_invalid",
+            false,
+            {{"message", loaded.message}});
+        xdebug_core::log_lifecycle_event(
+            "engine",
+            "adhoc",
+            "cleanup.end",
+            false);
+        return;
+    }
+    std::sort(
+        sessions.begin(),
+        sessions.end(),
+        [](const SessionInfo& lhs, const SessionInfo& rhs) {
+            return lhs.session_id < rhs.session_id;
+        });
+    bool all_ok = true;
+    for (const auto& snapshot : sessions) {
+        bool stale =
+            snapshot.lifecycle_state != "active";
+        if (!stale && is_local_session_host(snapshot)) {
+            stale =
+                !local_process_alive(snapshot.server_pid) ||
+                !process_matches_session(snapshot);
+        }
+        if (!stale && !is_tcp_transport(snapshot) &&
+            !is_file_transport(snapshot)) {
+            stale =
+                access(snapshot.socket_path.c_str(), F_OK) != 0;
+        }
+        if (!stale &&
+            (is_tcp_transport(snapshot) ||
+             is_file_transport(snapshot))) {
+            stale =
+                access(
+                    xdebug_design_endpoint_path(
+                        snapshot.session_id)
+                        .c_str(),
+                    F_OK) != 0;
+        }
+        if (!stale) continue;
+
+        SessionCleanupPrecondition precondition;
+        precondition.expected_generation =
+            snapshot.generation;
+        precondition.expected_lifecycle_state =
+            snapshot.lifecycle_state;
+        SessionCleanupResult cleanup_result =
+            kill_session(
+                snapshot.session_id,
+                precondition);
+        if (!cleanup_result.ok() &&
+            cleanup_result.status !=
+                SessionCleanupStatus::NotFound) {
+            all_ok = false;
+        }
+    }
     debug_log("cleanup: done");
-    xdebug_core::log_lifecycle_event("engine", "adhoc", "cleanup.end", true);
+    xdebug_core::log_lifecycle_event(
+        "engine",
+        "adhoc",
+        "cleanup.end",
+        all_ok);
 }
 
 } // namespace xdebug_engine

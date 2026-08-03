@@ -62,7 +62,7 @@ inline bool is_file_transport(const std::string& transport) {
 }
 
 inline bool is_local_session_host(const std::string& server_host) {
-    return server_host.empty() || server_host == current_host_name() ||
+    return server_host == current_host_name() ||
            server_host == "localhost" || server_host == "127.0.0.1";
 }
 

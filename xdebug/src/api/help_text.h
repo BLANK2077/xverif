@@ -4,7 +4,6 @@
 
 namespace xdebug {
 
-std::string help_text(const std::string& executable_dir);
+std::string help_text();
 
 } // namespace xdebug
-

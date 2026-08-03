@@ -1,21 +1,46 @@
 #include "session_registry.h"
 #include "../../design/common/xdebug_design_paths.h"
 #include "common/path_utils.h"
+#include "session/session_registry_contract.h"
 #include "json.hpp"
 
 #include <fcntl.h>
 #include <unistd.h>
-#include <cstring>
 #include <cstdio>
+#include <cerrno>
 #include <cstdlib>
 #include <signal.h>
 #include <sys/file.h>
-#include <sstream>
+#include <sys/stat.h>
 
 namespace xdebug_engine {
 
 using json = nlohmann::json;
 using namespace xdebug_design;
+
+namespace {
+
+const SessionInfo* find_generation(
+    const std::vector<SessionInfo>& sessions,
+    const std::string& session_id,
+    const std::string& generation) {
+    for (const auto& session : sessions) {
+        if (session.session_id == session_id &&
+            session.generation == generation) {
+            return &session;
+        }
+    }
+    return nullptr;
+}
+
+bool same_registry_record(
+    const SessionInfo& lhs,
+    const SessionInfo& rhs) {
+    return xdebug_core::session_registry_record_to_json(lhs) ==
+           xdebug_core::session_registry_record_to_json(rhs);
+}
+
+} // namespace
 
 SessionRegistry::SessionRegistry() {
     xdebug_design_ensure_home();
@@ -25,327 +50,551 @@ SessionRegistry::SessionRegistry() {
 SessionRegistry::~SessionRegistry() {
 }
 
-bool SessionRegistry::lock_file(int fd) {
-    return flock(fd, LOCK_EX) == 0;
-}
-
-bool SessionRegistry::unlock_file(int fd) {
-    return flock(fd, LOCK_UN) == 0;
-}
-
-static json session_to_json(const SessionInfo& session) {
-    return json{
-        {"session_id", session.session_id},
-        {"transport", session.transport.empty() ? "uds" : session.transport},
-        {"socket_path", session.socket_path},
-        {"file_dir", session.file_dir},
-        {"host", session.host},
-        {"bind_host", session.bind_host},
-        {"port", session.port},
-        {"server_host", session.server_host},
-        {"auth_token", session.auth_token},
-        {"design_file", session.design_file},
-        {"dbdir_path", session.dbdir_path},
-        {"fsdb_file", session.fsdb_file},
-        {"server_pid", session.server_pid},
-        {"created_at", static_cast<long long>(session.created_at)},
-        {"last_active", static_cast<long long>(session.last_active)},
-        {"dbdir_mtime", session.dbdir_mtime},
-        {"dbdir_size", session.dbdir_size},
-        {"dbdir_dev", session.dbdir_dev},
-        {"dbdir_inode", session.dbdir_inode},
-        {"fsdb_mtime", session.fsdb_mtime},
-        {"fsdb_size", session.fsdb_size},
-        {"fsdb_dev", session.fsdb_dev},
-        {"fsdb_inode", session.fsdb_inode}
-    };
-}
-
-static bool json_to_session(const json& j, SessionInfo& session) {
-    if (!j.is_object()) return false;
-    if (j.contains("session_id")) {
-        if (j["session_id"].is_string()) session.session_id = j["session_id"].get<std::string>();
-        else if (j["session_id"].is_number_integer()) session.session_id = std::to_string(j["session_id"].get<int>());
-    } else {
-        session.session_id.clear();
-    }
-    session.transport = j.value("transport", std::string("uds"));
-    session.socket_path = j.value("socket_path", "");
-    session.file_dir = j.value("file_dir", std::string());
-    session.host = j.value("host", std::string());
-    session.bind_host = j.value("bind_host", std::string());
-    session.port = j.value("port", 0);
-    session.server_host = j.value("server_host", std::string());
-    session.auth_token = j.value("auth_token", std::string());
-    session.design_file = j.value("design_file", "");
-    session.dbdir_path = j.value("dbdir_path", "");
-    session.fsdb_file = j.value("fsdb_file", "");
-    session.server_pid = static_cast<pid_t>(j.value("server_pid", 0));
-    session.created_at = static_cast<time_t>(j.value("created_at", 0LL));
-    session.last_active = static_cast<time_t>(j.value("last_active", 0LL));
-    session.dbdir_mtime = j.value("dbdir_mtime", 0L);
-    session.dbdir_size = j.value("dbdir_size", 0LL);
-    session.dbdir_dev = j.value("dbdir_dev", 0ULL);
-    session.dbdir_inode = j.value("dbdir_inode", 0ULL);
-    session.fsdb_mtime = j.value("fsdb_mtime", 0L);
-    session.fsdb_size = j.value("fsdb_size", 0LL);
-    session.fsdb_dev = j.value("fsdb_dev", 0ULL);
-    session.fsdb_inode = j.value("fsdb_inode", 0ULL);
-    if (session.socket_path.empty() && !session.session_id.empty()) {
-        session.socket_path = xdebug_design_socket_path(session.session_id);
-    }
-    if (session.dbdir_path.empty()) session.dbdir_path = session.design_file;
-    if (session.design_file.empty()) session.design_file = session.dbdir_path;
-    return !session.session_id.empty() &&
-           (!session.dbdir_path.empty() || !session.fsdb_file.empty());
-}
-
-bool SessionRegistry::parse_legacy_line(const char* line, SessionInfo& session) {
-    std::vector<std::string> fields;
-    std::stringstream ss(line ? line : "");
-    std::string field;
-    while (std::getline(ss, field, '|')) {
-        if (!field.empty() && field.back() == '\n') field.pop_back();
-        if (!field.empty() && field.back() == '\r') field.pop_back();
-        fields.push_back(field);
-    }
-
-    if (fields.size() != 5 && fields.size() != 6 && fields.size() != 11) return false;
-
-    session.session_id = fields[0];
-    session.transport = "uds";
-    char* end = nullptr;
-    session.socket_path = xdebug_design_socket_path(session.session_id);
-    session.design_file = fields[2];
-    session.server_pid = strtol(fields[3].c_str(), &end, 10);
-    if (!end || *end != '\0') return false;
-    session.created_at = strtol(fields[4].c_str(), &end, 10);
-    if (!end || *end != '\0') return false;
-    session.last_active = session.created_at;
-
-    if (fields.size() >= 6) {
-        session.last_active = strtol(fields[5].c_str(), &end, 10);
-        if (!end || *end != '\0') return false;
-    }
-
-    if (fields.size() == 11) {
-        session.dbdir_path = fields[6];
-        session.dbdir_mtime = strtol(fields[7].c_str(), &end, 10);
-        if (!end || *end != '\0') return false;
-        session.dbdir_size = strtoll(fields[8].c_str(), &end, 10);
-        if (!end || *end != '\0') return false;
-        session.dbdir_dev = strtoull(fields[9].c_str(), &end, 10);
-        if (!end || *end != '\0') return false;
-        session.dbdir_inode = strtoull(fields[10].c_str(), &end, 10);
-        if (!end || *end != '\0') return false;
-    } else {
-        session.dbdir_path = session.design_file;
-    }
-
-    if (session.design_file.empty()) session.design_file = session.dbdir_path;
-    return !session.session_id.empty();
-}
-
-bool SessionRegistry::load_legacy(std::vector<SessionInfo>& sessions) {
-    sessions.clear();
-    int fd = open(xdebug_design_legacy_registry_path().c_str(), O_RDONLY);
-    if (fd < 0) return false;
-    FILE* fp = fdopen(fd, "r");
-    if (!fp) {
+int SessionRegistry::acquire_registry_lock() {
+    int fd = open(xdebug_design_registry_lock_path().c_str(),
+                  O_RDWR | O_CREAT | O_CLOEXEC, 0600);
+    if (fd < 0) return -1;
+    if (flock(fd, LOCK_EX) != 0) {
         close(fd);
-        return false;
+        return -1;
     }
-
-    char line[2048];
-    while (fgets(line, sizeof(line), fp)) {
-        SessionInfo session;
-        if (parse_legacy_line(line, session)) sessions.push_back(session);
-    }
-    fclose(fp);
-    return true;
+    return fd;
 }
 
-bool SessionRegistry::load_all(std::vector<SessionInfo>& sessions) {
+bool SessionRegistry::release_registry_lock(int fd) {
+    const bool unlocked = flock(fd, LOCK_UN) == 0;
+    const bool closed = close(fd) == 0;
+    return unlocked && closed;
+}
+
+static bool write_atomic_file(const std::string& path,
+                              const std::string& data) {
+    std::string pattern = path + ".tmp.XXXXXX";
+    std::vector<char> writable(pattern.begin(), pattern.end());
+    writable.push_back('\0');
+    int fd = mkstemp(writable.data());
+    if (fd < 0) return false;
+    bool ok = fchmod(fd, 0600) == 0;
+    size_t offset = 0;
+    while (ok && offset < data.size()) {
+        ssize_t count = write(fd, data.data() + offset, data.size() - offset);
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) {
+            ok = false;
+            break;
+        }
+        offset += static_cast<size_t>(count);
+    }
+    if (ok) ok = fsync(fd) == 0;
+    if (close(fd) != 0) ok = false;
+    if (ok) ok = rename(writable.data(), path.c_str()) == 0;
+    if (!ok) unlink(writable.data());
+    if (!ok) return false;
+
+    const size_t slash = path.rfind('/');
+    const std::string directory =
+        slash == std::string::npos ? "." : path.substr(0, slash);
+    int dir_fd = open(directory.c_str(), O_RDONLY | O_DIRECTORY);
+    if (dir_fd < 0) return false;
+    const bool synced = fsync(dir_fd) == 0;
+    const bool closed = close(dir_fd) == 0;
+    return synced && closed;
+}
+
+SessionRegistryResult SessionRegistry::load_all_unlocked(
+    std::vector<SessionInfo>& sessions) {
     sessions.clear();
-    xdebug_design_ensure_home();
+    if (!xdebug_design_ensure_home()) {
+        return {
+            SessionRegistryStatus::IoError,
+            "cannot prepare canonical session registry directory"};
+    }
 
     int fd = open(registry_path_.c_str(), O_RDONLY);
     if (fd < 0) {
-        if (load_legacy(sessions)) save_all(sessions);
-        return true;
-    }
-
-    if (!lock_file(fd)) {
-        close(fd);
-        return false;
-    }
-
-    FILE* fp = fdopen(fd, "r");
-    if (!fp) {
-        unlock_file(fd);
-        close(fd);
-        return false;
+        return errno == ENOENT
+            ? SessionRegistryResult()
+            : SessionRegistryResult(
+                  SessionRegistryStatus::IoError,
+                  "cannot open canonical session registry");
     }
 
     std::string text;
     char buf[4096];
-    while (fgets(buf, sizeof(buf), fp)) text += buf;
-    fclose(fp);
-
-    if (text.empty()) return true;
-    try {
-        json root = json::parse(text);
-        if (!root.is_object() || !root.value("sessions", json::array()).is_array()) return true;
-        for (const auto& item : root["sessions"]) {
-            SessionInfo session;
-            if (json_to_session(item, session)) sessions.push_back(session);
-        }
-    } catch (...) {
-        return false;
-    }
-    return true;
-}
-
-bool SessionRegistry::write_session_file(const SessionInfo& session) {
-    if (!xdebug_design_ensure_session_dir(session.session_id)) return false;
-    int fd = open(xdebug_design_session_json_path(session.session_id).c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
-    if (fd < 0) return false;
-    json root = {{"version", 1}, {"session", session_to_json(session)}};
-    std::string data = root.dump(2) + "\n";
-    bool ok = write(fd, data.c_str(), data.size()) == static_cast<ssize_t>(data.size());
-    close(fd);
-    return ok;
-}
-
-bool SessionRegistry::save_all(const std::vector<SessionInfo>& sessions) {
-    xdebug_design_ensure_home();
-    int fd = open(registry_path_.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
-    if (fd < 0) return false;
-    if (!lock_file(fd)) {
-        close(fd);
-        return false;
-    }
-
-    json root;
-    root["version"] = 1;
-    root["sessions"] = json::array();
-    for (const auto& session : sessions) root["sessions"].push_back(session_to_json(session));
-    std::string data = root.dump(2) + "\n";
-    bool ok = write(fd, data.c_str(), data.size()) == static_cast<ssize_t>(data.size());
-    unlock_file(fd);
-    close(fd);
-    if (!ok) return false;
-    for (const auto& session : sessions) write_session_file(session);
-    return true;
-}
-
-bool SessionRegistry::add(const SessionInfo& session) {
-    std::vector<SessionInfo> sessions;
-    load_all(sessions);
-    for (const auto& s : sessions) {
-        if (s.session_id == session.session_id) return false;
-    }
-    sessions.push_back(session);
-    return save_all(sessions);
-}
-
-bool SessionRegistry::upsert(const SessionInfo& session) {
-    std::vector<SessionInfo> sessions;
-    load_all(sessions);
-    bool replaced = false;
-    for (auto& s : sessions) {
-        if (s.session_id == session.session_id) {
-            s = session;
-            replaced = true;
+    bool read_ok = true;
+    while (true) {
+        const ssize_t count = read(fd, buf, sizeof(buf));
+        if (count < 0 && errno == EINTR) continue;
+        if (count < 0) {
+            read_ok = false;
             break;
         }
+        if (count == 0) break;
+        text.append(buf, static_cast<size_t>(count));
     }
-    if (!replaced) sessions.push_back(session);
-    return save_all(sessions);
+    if (close(fd) != 0) read_ok = false;
+    if (!read_ok) {
+        return {
+            SessionRegistryStatus::IoError,
+            "cannot read canonical session registry"};
+    }
+
+    if (text.empty()) {
+        return {
+            SessionRegistryStatus::Invalid,
+            "canonical session registry is empty"};
+    }
+    try {
+        json root = json::parse(text);
+        std::string contract_error;
+        if (!xdebug_core::session_registry_document_from_json(
+                root, sessions, contract_error)) {
+            sessions.clear();
+            return {
+                SessionRegistryStatus::Invalid,
+                "canonical session registry is invalid: " +
+                    contract_error};
+        }
+        return {};
+    } catch (...) {
+        sessions.clear();
+        return {
+            SessionRegistryStatus::Invalid,
+            "canonical session registry is not strict JSON"};
+    }
 }
 
-bool SessionRegistry::touch(const std::string& session_id, time_t last_active) {
-    SessionInfo session;
-    if (!get(session_id, session)) return false;
-    session.last_active = last_active;
-    return upsert(session);
+SessionRegistryResult SessionRegistry::load_all(
+    std::vector<SessionInfo>& sessions) {
+    int lock_fd = acquire_registry_lock();
+    if (lock_fd < 0) {
+        return {
+            SessionRegistryStatus::IoError,
+            "cannot acquire canonical session registry lock"};
+    }
+    SessionRegistryResult result = load_all_unlocked(sessions);
+    if (!release_registry_lock(lock_fd) && result.ok()) {
+        return {
+            SessionRegistryStatus::IoError,
+            "cannot release canonical session registry lock"};
+    }
+    return result;
 }
 
-bool SessionRegistry::remove(const std::string& session_id) {
+bool SessionRegistry::save_all_unlocked(
+    const std::vector<SessionInfo>& sessions) {
+    if (!xdebug_design_ensure_home()) return false;
+    json root;
+    std::string contract_error;
+    if (!xdebug_core::session_registry_document_to_json(
+            sessions, root, contract_error)) return false;
+    std::string data = root.dump(2) + "\n";
+    return write_atomic_file(registry_path_, data);
+}
+
+SessionRegistryResult SessionRegistry::reserve_opening(
+    const SessionInfo& session) {
+    if (session.lifecycle_state != "opening") {
+        return {
+            SessionRegistryStatus::Invalid,
+            "new session reservation must use lifecycle_state=opening"};
+    }
+    int lock_fd = acquire_registry_lock();
+    if (lock_fd < 0) {
+        return {
+            SessionRegistryStatus::IoError,
+            "cannot acquire canonical session registry lock"};
+    }
     std::vector<SessionInfo> sessions;
-    if (!load_all(sessions)) return false;
+    SessionRegistryResult loaded = load_all_unlocked(sessions);
+    if (!loaded.ok()) {
+        release_registry_lock(lock_fd);
+        return loaded;
+    }
+    for (const auto& s : sessions) {
+        if (s.session_id == session.session_id) {
+            release_registry_lock(lock_fd);
+            return {
+                SessionRegistryStatus::Conflict,
+                "session id already has a lifecycle generation"};
+        }
+    }
+    sessions.push_back(session);
+    bool saved = save_all_unlocked(sessions);
+    if (!saved) {
+        std::vector<SessionInfo> current;
+        SessionRegistryResult confirmed =
+            load_all_unlocked(current);
+        const SessionInfo* persisted =
+            confirmed.ok()
+                ? find_generation(
+                      current,
+                      session.session_id,
+                      session.generation)
+                : nullptr;
+        saved =
+            persisted != nullptr &&
+            same_registry_record(*persisted, session);
+    }
+    release_registry_lock(lock_fd);
+    return saved
+        ? SessionRegistryResult()
+        : SessionRegistryResult(
+              SessionRegistryStatus::IoError,
+              "failed to persist opening session reservation");
+}
+
+SessionRegistryResult SessionRegistry::finalize_opening(
+    const SessionInfo& session,
+    const std::string& expected_generation) {
+    if (session.lifecycle_state != "active" ||
+        session.generation != expected_generation) {
+        return {
+            SessionRegistryStatus::Invalid,
+            "session finalization requires the expected generation in active state"};
+    }
+    int lock_fd = acquire_registry_lock();
+    if (lock_fd < 0) {
+        return {
+            SessionRegistryStatus::IoError,
+            "cannot acquire canonical session registry lock"};
+    }
+    std::vector<SessionInfo> sessions;
+    SessionRegistryResult loaded = load_all_unlocked(sessions);
+    if (!loaded.ok()) {
+        release_registry_lock(lock_fd);
+        return loaded;
+    }
+    SessionRegistryStatus mismatch =
+        SessionRegistryStatus::NotFound;
+    bool replaced = false;
+    for (auto& s : sessions) {
+        if (s.session_id != session.session_id) continue;
+        if (s.generation != expected_generation) {
+            mismatch = SessionRegistryStatus::GenerationMismatch;
+            break;
+        }
+        if (s.lifecycle_state != "opening") {
+            mismatch = SessionRegistryStatus::Conflict;
+            break;
+        }
+        s = session;
+        replaced = true;
+        break;
+    }
+    if (!replaced) {
+        release_registry_lock(lock_fd);
+        return {
+            mismatch,
+            "opening reservation no longer matches expected generation"};
+    }
+    bool saved = save_all_unlocked(sessions);
+    if (!saved) {
+        std::vector<SessionInfo> current;
+        const SessionRegistryResult confirmed =
+            load_all_unlocked(current);
+        const SessionInfo* persisted =
+            confirmed.ok()
+                ? find_generation(
+                      current,
+                      session.session_id,
+                      expected_generation)
+                : nullptr;
+        saved =
+            persisted != nullptr &&
+            same_registry_record(*persisted, session);
+    }
+    release_registry_lock(lock_fd);
+    return saved
+        ? SessionRegistryResult()
+        : SessionRegistryResult(
+              SessionRegistryStatus::IoError,
+              "failed to finalize opening session generation");
+}
+
+SessionRegistryResult SessionRegistry::update_opening(
+    const SessionInfo& session,
+    const std::string& expected_generation) {
+    if (session.lifecycle_state != "opening" ||
+        session.generation != expected_generation) {
+        return {
+            SessionRegistryStatus::Invalid,
+            "opening update requires the expected generation in opening state"};
+    }
+    int lock_fd = acquire_registry_lock();
+    if (lock_fd < 0) {
+        return {
+            SessionRegistryStatus::IoError,
+            "cannot acquire canonical session registry lock"};
+    }
+    std::vector<SessionInfo> sessions;
+    SessionRegistryResult loaded = load_all_unlocked(sessions);
+    if (!loaded.ok()) {
+        release_registry_lock(lock_fd);
+        return loaded;
+    }
+    SessionRegistryStatus mismatch = SessionRegistryStatus::NotFound;
+    bool replaced = false;
+    for (auto& current : sessions) {
+        if (current.session_id != session.session_id) continue;
+        if (current.generation != expected_generation) {
+            mismatch = SessionRegistryStatus::GenerationMismatch;
+            break;
+        }
+        if (current.lifecycle_state != "opening") {
+            mismatch = SessionRegistryStatus::Conflict;
+            break;
+        }
+        current = session;
+        replaced = true;
+        break;
+    }
+    if (!replaced) {
+        release_registry_lock(lock_fd);
+        return {
+            mismatch,
+            "opening update no longer matches expected generation"};
+    }
+    bool saved = save_all_unlocked(sessions);
+    if (!saved) {
+        std::vector<SessionInfo> current;
+        const SessionRegistryResult confirmed =
+            load_all_unlocked(current);
+        const SessionInfo* persisted =
+            confirmed.ok()
+                ? find_generation(
+                      current,
+                      session.session_id,
+                      expected_generation)
+                : nullptr;
+        saved =
+            persisted != nullptr &&
+            same_registry_record(*persisted, session);
+    }
+    release_registry_lock(lock_fd);
+    return saved
+        ? SessionRegistryResult()
+        : SessionRegistryResult(
+              SessionRegistryStatus::IoError,
+              "failed to persist opening session evidence");
+}
+
+SessionRegistryResult SessionRegistry::mark_cleanup_failed(
+    const SessionInfo& session,
+    const std::string& expected_generation) {
+    if (session.lifecycle_state != "cleanup_failed" ||
+        session.generation != expected_generation) {
+        return {
+            SessionRegistryStatus::Invalid,
+            "cleanup failure must preserve the expected generation"};
+    }
+    int lock_fd = acquire_registry_lock();
+    if (lock_fd < 0) {
+        return {
+            SessionRegistryStatus::IoError,
+            "cannot acquire canonical session registry lock"};
+    }
+    std::vector<SessionInfo> sessions;
+    SessionRegistryResult loaded = load_all_unlocked(sessions);
+    if (!loaded.ok()) {
+        release_registry_lock(lock_fd);
+        return loaded;
+    }
+    bool found = false;
+    for (auto& current : sessions) {
+        if (current.session_id != session.session_id) continue;
+        if (current.generation != expected_generation) {
+            release_registry_lock(lock_fd);
+            return {
+                SessionRegistryStatus::GenerationMismatch,
+                "cleanup failure generation no longer matches registry"};
+        }
+        current = session;
+        found = true;
+        break;
+    }
+    if (!found) {
+        release_registry_lock(lock_fd);
+        return {
+            SessionRegistryStatus::NotFound,
+            "cleanup failure generation is not in registry"};
+    }
+    bool saved = save_all_unlocked(sessions);
+    if (!saved) {
+        std::vector<SessionInfo> current;
+        const SessionRegistryResult confirmed =
+            load_all_unlocked(current);
+        const SessionInfo* persisted =
+            confirmed.ok()
+                ? find_generation(
+                      current,
+                      session.session_id,
+                      expected_generation)
+                : nullptr;
+        saved =
+            persisted != nullptr &&
+            same_registry_record(*persisted, session);
+    }
+    release_registry_lock(lock_fd);
+    return saved
+        ? SessionRegistryResult()
+        : SessionRegistryResult(
+              SessionRegistryStatus::IoError,
+              "failed to preserve cleanup failure generation");
+}
+
+SessionRegistryResult SessionRegistry::touch_if_generation(
+    const std::string& session_id,
+    const std::string& expected_generation,
+    time_t last_active) {
+    int lock_fd = acquire_registry_lock();
+    if (lock_fd < 0) {
+        return {
+            SessionRegistryStatus::IoError,
+            "cannot acquire canonical session registry lock"};
+    }
+    std::vector<SessionInfo> sessions;
+    SessionRegistryResult loaded = load_all_unlocked(sessions);
+    if (!loaded.ok()) {
+        release_registry_lock(lock_fd);
+        return loaded;
+    }
+    bool found = false;
+    for (auto& session : sessions) {
+        if (session.session_id != session_id) continue;
+        if (session.generation != expected_generation) {
+            release_registry_lock(lock_fd);
+            return {
+                SessionRegistryStatus::GenerationMismatch,
+                "touch generation no longer matches registry"};
+        }
+        session.last_active = last_active;
+        found = true;
+        break;
+    }
+    if (!found) {
+        release_registry_lock(lock_fd);
+        return {
+            SessionRegistryStatus::NotFound,
+            "touch generation is not in registry"};
+    }
+    bool saved = save_all_unlocked(sessions);
+    if (!saved) {
+        std::vector<SessionInfo> current;
+        const SessionRegistryResult confirmed =
+            load_all_unlocked(current);
+        const SessionInfo* persisted =
+            confirmed.ok()
+                ? find_generation(
+                      current,
+                      session_id,
+                      expected_generation)
+                : nullptr;
+        saved = persisted != nullptr &&
+                persisted->last_active == last_active;
+    }
+    release_registry_lock(lock_fd);
+    return saved
+        ? SessionRegistryResult()
+        : SessionRegistryResult(
+              SessionRegistryStatus::IoError,
+              "failed to persist session activity");
+}
+
+SessionRegistryResult SessionRegistry::remove_if_generation(
+    const std::string& session_id,
+    const std::string& expected_generation) {
+    int lock_fd = acquire_registry_lock();
+    if (lock_fd < 0) {
+        return {
+            SessionRegistryStatus::IoError,
+            "cannot acquire canonical session registry lock"};
+    }
+    std::vector<SessionInfo> sessions;
+    SessionRegistryResult loaded = load_all_unlocked(sessions);
+    if (!loaded.ok()) {
+        release_registry_lock(lock_fd);
+        return loaded;
+    }
     std::vector<SessionInfo> kept;
     bool found = false;
     for (const auto& session : sessions) {
-        if (session.session_id == session_id) {
-            found = true;
+        if (session.session_id != session_id) {
+            kept.push_back(session);
             continue;
         }
-        kept.push_back(session);
+        if (session.generation != expected_generation) {
+            release_registry_lock(lock_fd);
+            return {
+                SessionRegistryStatus::GenerationMismatch,
+                "remove generation no longer matches registry"};
+        }
+        found = true;
     }
-    if (!found) return false;
-    bool ok = save_all(kept);
-    xdebug_design_remove_session_dir(session_id);
-    return ok;
+    if (!found) {
+        release_registry_lock(lock_fd);
+        return {
+            SessionRegistryStatus::NotFound,
+            "remove generation is not in registry"};
+    }
+    bool saved = save_all_unlocked(kept);
+    if (!saved) {
+        std::vector<SessionInfo> current;
+        SessionRegistryResult confirmed =
+            load_all_unlocked(current);
+        saved = confirmed.ok();
+        for (const auto& item : current) {
+            if (item.session_id == session_id &&
+                item.generation == expected_generation) {
+                saved = false;
+                break;
+            }
+        }
+    }
+    release_registry_lock(lock_fd);
+    return saved
+        ? SessionRegistryResult()
+        : SessionRegistryResult(
+              SessionRegistryStatus::IoError,
+              "failed to remove expected session generation");
 }
 
-bool SessionRegistry::get(const std::string& session_id, SessionInfo& session) {
+SessionRegistryResult SessionRegistry::get(
+    const std::string& session_id,
+    SessionInfo& session) {
     std::vector<SessionInfo> sessions;
-    if (!load_all(sessions)) return false;
+    SessionRegistryResult loaded = load_all(sessions);
+    if (!loaded.ok()) return loaded;
     for (const auto& s : sessions) {
         if (s.session_id == session_id) {
             session = s;
-            return true;
+            return {};
         }
     }
-    return false;
+    return {
+        SessionRegistryStatus::NotFound,
+        "session generation is not in registry"};
 }
 
-bool SessionRegistry::get_latest(SessionInfo& session) {
+SessionRegistryResult SessionRegistry::get_latest(SessionInfo& session) {
     std::vector<SessionInfo> sessions;
-    if (!load_all(sessions) || sessions.empty()) return false;
+    SessionRegistryResult loaded = load_all(sessions);
+    if (!loaded.ok()) return loaded;
+    if (sessions.empty()) {
+        return {
+            SessionRegistryStatus::NotFound,
+            "canonical session registry is empty"};
+    }
     size_t latest_idx = 0;
     for (size_t i = 1; i < sessions.size(); ++i) {
         if (sessions[i].created_at > sessions[latest_idx].created_at) latest_idx = i;
     }
     session = sessions[latest_idx];
-    return true;
-}
-
-bool SessionRegistry::exists(const std::string& session_id) {
-    SessionInfo session;
-    return get(session_id, session);
+    return {};
 }
 
 bool SessionRegistry::is_valid_session_name(const std::string& name) {
     return xdebug_core::is_valid_session_name(name);
-}
-
-bool SessionRegistry::cleanup_stale() {
-    std::vector<SessionInfo> sessions;
-    if (!load_all(sessions)) return false;
-    std::vector<SessionInfo> valid_sessions;
-    for (const auto& session : sessions) {
-        bool is_alive = (kill(session.server_pid, 0) == 0);
-        bool endpoint_exists = (session.transport == "tcp" || session.transport == "file")
-            ? (access(xdebug_design_endpoint_path(session.session_id).c_str(), F_OK) == 0)
-            : (access(session.socket_path.c_str(), F_OK) == 0);
-        if (is_alive && endpoint_exists) {
-            valid_sessions.push_back(session);
-        } else {
-            xdebug_design_remove_session_dir(session.session_id);
-        }
-    }
-    return save_all(valid_sessions);
-}
-
-bool SessionRegistry::clear_all() {
-    std::vector<SessionInfo> sessions;
-    if (load_all(sessions)) {
-        for (const auto& session : sessions) xdebug_design_remove_session_dir(session.session_id);
-    }
-    std::vector<SessionInfo> empty;
-    return save_all(empty);
 }
 
 } // namespace xdebug_engine

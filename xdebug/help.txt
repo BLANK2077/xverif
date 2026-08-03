@@ -20,16 +20,37 @@ Request / output contract
 -------------------------
   All xdebug capabilities are requested through JSON:
 
-    api_version / action / target / args / limits / output
+    api_version / request_id / action / target / args / limits
 
-  Default output is XOUT structured text:
+  Default output is token-efficient XOUT structured text. It reduces JSON
+  punctuation and repeated structure; readability is a secondary benefit:
 
     @xdebug.<action>.v1
-    summary:
-      key: value
 
-  Use --json or output.format=json for machine parsing, schema tests,
-  scripts, and full field access.
+    summary:
+      signal         : top.u.ready
+      analysis_complete: true
+
+  The handler base class renders ordinary summary/data blocks. Trace, value,
+  scope and protocol handlers add source windows or domain tables. XOUT is a
+  compact projection and is not parsed back into JSON. This does not make JSON
+  the preferred AI/MCP format. Use --json only for stable-field programming,
+  schema validation, structured persistence, deterministic machine comparison,
+  exact unprojected nested fields, or an explicit user request. The renderer does not hide
+  returned rows: limits and truncation are expressed by the action contract.
+
+  Successful value.at responses use a compact matrix instead:
+
+    @xdebug.value.at.v1
+
+    name         100ns  120ns
+    top.u.valid  1'h1   1'h0
+    top.u.ready  1'h0   missing_value
+
+  The first column is the signal or semantic alias; subsequent columns follow
+  requested time order. Request JSON only when its structured fields are needed.
+
+  Use --json to obtain the JSON object for the structured use cases above.
 
   Machine-readable help remains available through JSON actions:
 
@@ -71,14 +92,10 @@ Request envelope
       "api_version": "xdebug.v1",
       "action": "trace.driver",
       "target": {
-        "daidir": "simv.daidir",
-        "fsdb": "waves.fsdb"
+        "daidir": "simv.daidir"
       },
-      "args": {},
-      "limits": {},
-      "output": {
-        "verbosity": "compact",
-        "pretty": false
+      "args": {
+        "signal": "top.u.ready"
       }
     }
 
@@ -98,14 +115,19 @@ Target modes
 
   target.session_id
       Required for all stateful debug queries after session.open.
-      session.close also accepts args.session_id and args.id for script
-      compatibility; target.session_id remains the recommended form.
+      session.close accepts only target.session_id; session selection inside
+      args is rejected by the strict request schema.
+
+  xdebug never silently switches action, surface, transport, backend, or data
+  source after a failure. Obsolete or non-canonical action names return
+  UNKNOWN_ACTION. Choose any different route explicitly in a new request.
 
 Session transport
 -----------------
   Default transport is UDS. Keep the default for normal same-host debug.
   Set XDEBUG_TRANSPORT=uds|tcp|file to choose the default transport for newly
-  opened sessions; explicit args.transport or target.transport takes priority.
+  opened sessions; explicit session.open args.transport takes priority.
+  A transport failure does not trigger automatic switching.
 
   Use TCP only when UDS sockets are not reachable, for example container or
   namespace boundaries, inaccessible socket paths, or explicitly requested
@@ -169,6 +191,11 @@ Output control
   line_limit, or export actions when details are needed. Trace XOUT source windows use
   XDEBUG_TRACE_SOURCE_CONTEXT_LINES (default 3) and merge same-file nearby
   source hits with XDEBUG_TRACE_SOURCE_MERGE_THRESHOLD_LINES (default 10).
+  Time-rendering actions use args.render_time_unit=ns|ps|us|auto; the default
+  is ns. This parameter changes only canonical response string rendering, not
+  parsing, sampling, filtering, ordering, ranges, or active-trace decisions.
+  It is available only when the action-specific request schema declares it;
+  no synonymous public field is accepted.
 
 Common actions
 --------------
@@ -180,13 +207,13 @@ Common actions
       session.kill, session.close, session.gc
 
   Design:
-      trace.driver, trace.load, source.context, expr.normalize
+      trace.driver, trace.load, expr.normalize
 
   Waveform:
-      scope.list, rc.generate, value.at, value.batch_at, list.value_at,
+      scope.list, nwave.rc.generate, value.at, list.load,
       event.find, event.export, verify.conditions, expr.eval_at,
       window.verify, signal.changes, signal.statistics, counter.statistics,
-      signal.stability, handshake.inspect, detect_abnormal
+      signal.stability, protocol.handshake.inspect, signal.anomaly.inspect
 
   Protocol:
       apb.query, axi.query, axi.analysis
@@ -206,19 +233,20 @@ Action choice guidance
       single signal or a restricted {hi,lo} concat up to 64 bits.
 
   transition timeline:
-      Use signal.changes. Use line_limit to bound data.changes rows, or
-      aggregate_only:true for summary only. Use mode:"head" or mode:"tail".
+      Use signal.changes with mode:"timeline" (the default). line_limit bounds
+      data.changes rows. Use mode:"summary" for aggregate facts only; summary
+      mode rejects line_limit.
 
   window holds 0/1:
       Use window.verify, or signal.statistics for sampled activity. Do not use
       signal.changes row counts as cycle counts.
 
   first/last occurrence:
-      Use event.find, or signal.changes with mode:"head"/"tail".
+      Use event.find, or signal.changes with mode:"summary".
       event.find expressions support !, &&, ||, ==, !=, <, <=, > and >=.
       For valid/ready protocols, legal idle/backpressure is not automatically
       a stuck bug; prefer valid-qualified event.find, signal.changes and
-      window.verify before using detect_abnormal as a smoke scan.
+      window.verify before using signal.anomaly.inspect as a smoke scan.
 
 Output control
 --------------

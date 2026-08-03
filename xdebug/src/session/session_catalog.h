@@ -3,6 +3,7 @@
 #include "api/json_types.h"
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace xdebug {
@@ -19,6 +20,9 @@ struct SessionRecord {
     std::string bind_host;
     int port = 0;
     std::string server_host;
+    // Internal-only conditional-cleanup match digest.  It is not an
+    // authorization secret, and public session JSON must never expose it.
+    std::string ownership_token_hash;
     int server_pid = 0;
     long long created_at = 0;
     long long last_active = 0;
@@ -32,19 +36,45 @@ struct SessionRecord {
     unsigned long long fsdb_inode = 0;
 };
 
+enum class SessionCatalogStatus {
+    Ok,
+    NotFound,
+    Invalid
+};
+
+struct SessionCatalogResult {
+    SessionCatalogStatus status = SessionCatalogStatus::Ok;
+    std::string code;
+    std::string message;
+
+    SessionCatalogResult() = default;
+    SessionCatalogResult(
+        SessionCatalogStatus result_status,
+        std::string result_code,
+        std::string result_message)
+        : status(result_status),
+          code(std::move(result_code)),
+          message(std::move(result_message)) {}
+
+    bool ok() const { return status == SessionCatalogStatus::Ok; }
+};
+
 // Read-only view of the canonical engine registry.
 // Session lifecycle mutations are owned by the engine SessionRegistry.
 class SessionCatalog {
 public:
     SessionCatalog();
 
-    bool get(const std::string& id, SessionRecord& record) const;
-    std::vector<SessionRecord> list() const;
+    SessionCatalogResult get(
+        const std::string& id,
+        SessionRecord& record) const;
+    SessionCatalogResult list(
+        std::vector<SessionRecord>& records) const;
 
 private:
     std::string path_;
-    Json read_all() const;
-    static bool parse_record(const Json& item, SessionRecord& record);
+    SessionCatalogResult read_all(
+        std::vector<SessionRecord>& records) const;
 };
 
 Json session_record_json(const SessionRecord& record);

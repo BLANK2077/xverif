@@ -132,8 +132,8 @@ def test_apb_vip_real_wait_state_and_error_actions(
         artifact_root=artifact_root,
         manifest=manifest,
     )
-    session = open_response.get("session") or open_response["data"]["session"]
-    session_id = session["id"]
+    session = open_response["session"]
+    session_id = session["session_id"]
     target = {"session_id": session_id}
     prefix = manifest["interface"]
     config = {
@@ -257,7 +257,7 @@ def test_apb_vip_real_wait_state_and_error_actions(
                     "name": "apb0",
                     "filter": {
                         "direction": "write",
-                        "address": {"mode": "exact", "values": ["0x4"]},
+                        "address": {"mode": "exact", "values": ["'h4"]},
                     },
                 },
             },
@@ -279,7 +279,7 @@ def test_apb_vip_real_wait_state_and_error_actions(
                 "args": {
                     "name": "apb0",
                     "filter": {"address": {"mode": "range",
-                                           "begin": "0x4", "end": "0xc"}},
+                                           "begin": "'h4", "end": "'hc"}},
                 },
             },
             case_name="apb-vip-statistics-range",
@@ -298,7 +298,7 @@ def test_apb_vip_real_wait_state_and_error_actions(
                 "args": {
                     "name": "apb0",
                     "filter": {"address": {"mode": "mask",
-                                           "value": "0x8", "mask": "0x8"}},
+                                           "value": "'h8", "mask": "'h8"}},
                 },
             },
             case_name="apb-vip-statistics-mask",
@@ -436,7 +436,10 @@ def test_apb_vip_real_wait_state_and_error_actions(
             manifest=manifest,
             extra={"apb_config": config},
         )
-        assert window["summary"]["transaction_count"] == 10
+        assert window["summary"]["total_count"] == 10
+        assert window["summary"]["returned_count"] == 10
+        assert window["summary"]["analysis_complete"] is True
+        assert window["summary"]["response_truncated"] is False
         assert sum(
             1
             for transaction in window["data"]["transactions"]
@@ -448,7 +451,7 @@ def test_apb_vip_real_wait_state_and_error_actions(
                 cli_runner,
                 {
                     "api_version": "xdebug.v1",
-                    "action": "apb.cursor",
+                    "action": "apb.transaction.cursor",
                     "target": target,
                     "args": {
                         "name": "apb0",
@@ -492,8 +495,8 @@ def test_apb_vip_real_wait_state_and_error_actions(
         artifact_root=artifact_root,
         manifest=manifest,
     )
-    lru_session = lru_open.get("session") or lru_open["data"]["session"]
-    lru_target = {"session_id": lru_session["id"]}
+    lru_session = lru_open["session"]
+    lru_target = {"session_id": lru_session["session_id"]}
     try:
         before_config = dict(config)
         before_config["sample_point"] = "before"
@@ -517,7 +520,7 @@ def test_apb_vip_real_wait_state_and_error_actions(
             cli_runner,
             {
                 "api_version": "xdebug.v1",
-                "action": "apb.cursor",
+                "action": "apb.transaction.cursor",
                 "target": lru_target,
                 "args": {"name": "apb_before", "op": "begin",
                          "direction": "all"},
@@ -530,7 +533,7 @@ def test_apb_vip_real_wait_state_and_error_actions(
             cli_runner,
             {
                 "api_version": "xdebug.v1",
-                "action": "apb.cursor",
+                "action": "apb.transaction.cursor",
                 "target": lru_target,
                 "args": {"name": "apb_before", "op": "next",
                          "direction": "all"},
@@ -557,7 +560,7 @@ def test_apb_vip_real_wait_state_and_error_actions(
             cli_runner,
             {
                 "api_version": "xdebug.v1",
-                "action": "apb.cursor",
+                "action": "apb.transaction.cursor",
                 "target": lru_target,
                 "args": {"name": "apb_before", "op": "next",
                          "direction": "all"},
@@ -596,8 +599,8 @@ def test_apb_vip_real_wait_state_and_error_actions(
         artifact_root=artifact_root,
         manifest=manifest,
     )
-    hard_session = hard_open.get("session") or hard_open["data"]["session"]
-    hard_target = {"session_id": hard_session["id"]}
+    hard_session = hard_open["session"]
+    hard_target = {"session_id": hard_session["session_id"]}
     try:
         _query(
             cli_runner,
@@ -628,7 +631,7 @@ def test_apb_vip_real_wait_state_and_error_actions(
         assert cache_error["recoverable"] is True
         assert cache_error["hard_max_bytes"] == 1
         assert cache_error["protocol"] == "apb"
-        assert len(cache_error["suggestions"]) == 2
+        assert len(cache_error["next_actions"]) == 2
     finally:
         cli_runner.run(
             {

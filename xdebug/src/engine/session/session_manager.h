@@ -1,8 +1,10 @@
 #pragma once
 
 #include "session_registry.h"
+#include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace xdebug_engine {
 
@@ -16,6 +18,9 @@ enum class EngineStartupExitCode {
 enum class SessionHealthStatus {
     Healthy,
     RegistryMissing,
+    RegistryInvalid,
+    Opening,
+    CleanupFailed,
     ProcessExited,
     SocketMissing,
     ConnectFailed,
@@ -43,7 +48,39 @@ struct SessionEnsureResult {
     std::string startup_reason;
     std::string failure_phase;
     std::string diagnostic_log;
+    bool cleanup_succeeded = true;
+    std::string lifecycle_state;
+    std::string compensation_status;
     SessionInfo info;
+};
+
+struct SessionCleanupPrecondition {
+    bool require_ownership_match = false;
+    std::string ownership_token_hash;
+    // Internal generation/state preconditions used by GC and manager-owned
+    // child cleanup.  They are never public request fields.
+    std::string expected_generation;
+    std::string expected_lifecycle_state;
+};
+
+enum class SessionCleanupStatus {
+    Cleaned,
+    NotFound,
+    OwnershipMismatch,
+    RegistryInvalid,
+    CleanupFailed
+};
+
+struct SessionCleanupResult {
+    SessionCleanupStatus status = SessionCleanupStatus::CleanupFailed;
+    bool cleanup_succeeded = false;
+    std::string message;
+    SessionInfo info;
+
+    bool ok() const {
+        return status == SessionCleanupStatus::Cleaned &&
+               cleanup_succeeded;
+    }
 };
 
 struct SessionTransportOptions {
@@ -51,6 +88,7 @@ struct SessionTransportOptions {
     std::string bind_host;
     std::string host;
     int port = 0;
+    bool detached = true;
 };
 
 struct WaitForServerResult {
@@ -61,7 +99,7 @@ struct WaitForServerResult {
     int child_status = 0;
     int child_exit_code = -1;
     std::string failure_phase;
-    bool socket_exists = false;
+    bool endpoint_valid = false;
     bool connect_ok = false;
     bool ping_ok = false;
     SessionInfo endpoint;
@@ -87,24 +125,39 @@ public:
     SessionEnsureResult ensure_session(const std::vector<std::string>& design_args, const std::string& session_name);
     SessionEnsureResult ensure_session(const std::vector<std::string>& design_args, const std::string& session_name,
                                        const SessionTransportOptions& transport);
+    SessionEnsureResult ensure_session(
+        const std::vector<std::string>& design_args,
+        const std::string& session_name,
+        const SessionTransportOptions& transport,
+        const std::string& ownership_token_hash);
 
     // Kill a specific session through the unified engine server.
-    bool kill_session(const std::string& session_id);
+    SessionCleanupResult kill_session(
+        const std::string& session_id,
+        const SessionCleanupPrecondition& precondition =
+            SessionCleanupPrecondition());
 
     // Kill all sessions
     bool kill_all_sessions();
 
     // Get session info by ID
     bool get_session(const std::string& session_id, SessionInfo& info);
+    SessionRegistryResult lookup_session(
+        const std::string& session_id,
+        SessionInfo& info);
 
     // Get the latest (most recent) session
     bool get_latest_session(SessionInfo& info);
 
     // Update activity timestamp
-    bool touch_session(const std::string& session_id);
+    bool touch_session(
+        const std::string& session_id,
+        const std::string& expected_generation);
 
     // List all active sessions
     std::vector<SessionInfo> list_sessions();
+    SessionRegistryResult list_sessions_checked(
+        std::vector<SessionInfo>& sessions);
 
     // Diagnose a session without mutating the registry
     SessionHealth diagnose_session(const std::string& session_id);
@@ -120,10 +173,14 @@ public:
 
 private:
     std::unique_ptr<SessionRegistry> registry_;
+    // Non-detached servers are children owned by this process.  Keep the
+    // ownership relation explicit so their exit status is reaped with
+    // waitpid(2), rather than mistaking a zombie for a live server.
+    std::map<pid_t, std::string> owned_children_;
 
     // Fork and exec server process
     pid_t spawn_server(const std::string& session_id, const std::vector<std::string>& args,
-                       const SessionInfo& endpoint);
+                       const SessionInfo& endpoint, bool detached);
 
     // Wait until the server responds to PING
     WaitForServerResult wait_for_server(const std::string& session_id, pid_t pid);
@@ -144,6 +201,13 @@ private:
     bool local_process_alive(pid_t pid) const;
     bool process_matches_session(const SessionInfo& session) const;
     bool wait_for_process_exit(pid_t pid, int timeout_ms) const;
+    bool wait_for_owned_child_exit(pid_t pid, int timeout_ms);
+    bool wait_for_session_process_exit(pid_t pid, int timeout_ms);
+    bool terminate_spawned_child(pid_t pid, int timeout_ms);
+    SessionCleanupResult cleanup_session_locked(
+        SessionInfo session);
+    SessionHealth diagnose_session_locked(
+        const SessionInfo& session);
 };
 
 } // namespace xdebug_engine

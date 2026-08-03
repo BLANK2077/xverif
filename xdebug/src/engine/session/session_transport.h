@@ -2,6 +2,7 @@
 
 #include "session_registry.h"
 #include "json.hpp"
+#include "session/transport_timeout.h"
 
 #include <string>
 
@@ -20,7 +21,10 @@ int connect_session_endpoint(const SessionInfo& session);
 bool send_file_request_to_endpoint(const SessionInfo& session,
                                    const nlohmann::json& request,
                                    nlohmann::json& response,
-                                   int timeout_ms = 0);
+                                   const xdebug_core::TransportTimeoutOverrideMs&
+                                       timeout_override_ms =
+                                           xdebug_core::
+                                               TransportTimeoutOverrideMs());
 bool ping_session_endpoint(const SessionInfo& session);
 bool protocol_version_matches_endpoint(const SessionInfo& session);
 bool send_quit_to_endpoint(const SessionInfo& session);

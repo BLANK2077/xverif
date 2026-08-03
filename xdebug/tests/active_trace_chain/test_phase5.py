@@ -31,8 +31,8 @@ def test_phase5_public_chain_reports_exact_ambiguous_rhs(
     )
     assert opened.returncode == 0, opened.stdout_raw + opened.stderr_raw
     assert isinstance(opened.response, dict) and opened.response.get("ok") is True
-    session = opened.response.get("session") or opened.response["data"]["session"]
-    session_id = session["id"]
+    session = opened.response["session"]
+    session_id = session["session_id"]
     try:
         queried = cli_runner.run(
             {
