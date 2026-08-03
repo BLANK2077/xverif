@@ -4,7 +4,7 @@ from pathlib import Path
 import json
 import re
 
-from xcov.schemas import schema_actions
+from xcov.schemas import schema_actions, stdio_control_actions
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -21,7 +21,7 @@ def test_removed_recommendations_do_not_appear_in_public_docs() -> None:
     forbidden = {
         "cov.holes", "xverif_cov_raw_request", "xverif_cov_session_use",
         "xverif_wave_value_at", "xverif_design_trace_driver", "按需 include",
-        "skills/xverif-cli", "skills/xverif-mcp",
+        "skills/xverif-cli", "skills/xverif-mcp", "trace.drivers",
     }
     text = "\n".join(path.read_text(encoding="utf-8") for path in PUBLIC)
     found = sorted(term for term in forbidden if term in text)
@@ -42,7 +42,7 @@ def test_component_readme_action_names_exist_in_current_catalogs() -> None:
     ))
     assert xdebug_documented <= xdebug_actions
 
-    xcov_actions = set(schema_actions())
+    xcov_actions = set(schema_actions()) | set(stdio_control_actions())
     xcov_documented = set(re.findall(
         r'"action"\s*:\s*"([^"]+)"', (ROOT / "xcov/README.md").read_text()
     ))

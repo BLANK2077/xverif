@@ -5,9 +5,9 @@
 默认根目录：`~/.xverif/mcp`，可用 `XVERIF_MCP_LOG_DIR` 覆盖。
 
 - server：`logs/server.ndjson`
-- session：`sessions/<alias>/session.ndjson`
-- stdio-loop：`sessions/<alias>/stdio.ndjson`
-- LSF：`sessions/<alias>/lsf.ndjson`
+- session：`sessions/<session_id>/session.ndjson`
+- stdio-loop：`sessions/<session_id>/stdio.ndjson`
+- LSF：`sessions/<session_id>/lsf.ndjson`
 
 ## 定位顺序
 

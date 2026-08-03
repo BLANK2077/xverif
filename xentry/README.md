@@ -12,7 +12,7 @@
 
 ## Quick Start
 
-JSON request 是推荐入口；默认输出为 `xout` 结构化文本：
+JSON request 是唯一入口；默认输出为 `xout` 结构化文本：
 
 ```bash
 printf '%s\n' '{
@@ -29,20 +29,14 @@ printf '%s\n' '{
 tools/xentry '{"api_version":"xentry.v1","action":"explain","config_path":"xentry/examples/entry.yaml"}'
 ```
 
-或使用兼容的人类 CLI：
-
-```bash
-tools/xentry decode --config xentry/examples/entry.yaml --input xentry/examples/fragments.jsonl
-tools/xentry explain --config xentry/examples/entry.yaml
-tools/xentry validate --config xentry/examples/entry.yaml --input xentry/examples/fragments.jsonl
-```
-
 需要完整 JSON response 时加 `--json`：
 
 ```bash
 tools/xentry --json '{"api_version":"xentry.v1","action":"explain","config_path":"xentry/examples/entry.yaml"}'
-tools/xentry decode --config xentry/examples/entry.yaml --input xentry/examples/fragments.jsonl --json
 ```
+
+不提供 `decode/explain/validate` argparse 子命令、`--text` 或 `--xout`；action
+只来自严格校验的 `xentry.v1` JSON request。
 
 默认 xout 示例：
 
@@ -63,10 +57,7 @@ fields:
   "request_id": "optional-id",
   "action": "decode",
   "config": {},
-  "fragments": [],
-  "output": {
-    "pretty": true
-  }
+  "fragments": []
 }
 ```
 
@@ -150,14 +141,13 @@ fields:
       ]
     }
   },
-  "warnings": [],
-  "errors": []
+  "warnings": []
 }
 ```
 
 ## Agent 使用原则
 
-当你需要解释 entry、descriptor、context、metadata、table entry、WQE、CQE 或 header field 时，不要手工拼接 bit，也不要自己做 hex slicing。构造 JSON request 调用 `xentry`，只基于 `fields/raw_hex/raw_bin/source/errors/warnings` 做分析。
+当你需要解释 entry、descriptor、context、metadata、table entry、WQE、CQE 或 header field 时，不要手工拼接 bit，也不要自己做 hex slicing。构造 JSON request 调用 `xentry`；成功时只基于 `fields/raw_hex/raw_bin/source/warnings` 做分析，失败时读取唯一的 `error` 对象。
 
 ## Shell 命令入口
 
@@ -167,8 +157,6 @@ fields:
 export XVERIF_HOME=<xverif-root>
 export PATH="$XVERIF_HOME/tools:$PATH"
 ```
-
-兼容入口 `xentry/xentry` 仍保留为转发 wrapper，但新文档和 skill 推荐 `tools/xentry` 或 `PATH` 中的 `xentry`。
 
 ## 构建与测试
 

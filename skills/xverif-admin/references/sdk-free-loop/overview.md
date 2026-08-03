@@ -49,4 +49,4 @@ client -> UDS socket -> xverif-loop-server -> tools/xdebug --stdio-loop
 client -> UDS socket -> xverif-loop-server -> tools/xcov --stdio-loop
 ```
 
-wrapper 负责 alias、session manager、tombstone、stdio-loop 进程和 LSF job cleanup。query 禁止 native lifecycle action；doctor 只读，kill 只接受一个精确 session，partial cleanup 保留诊断证据且不切换 transport/backend。
+wrapper 负责 canonical `session_id`、session manager、tombstone、stdio-loop 进程和 LSF job cleanup。open 的 backend `session_id` 必须与请求 `name` 完全一致；query/doctor/close/kill 都只接受精确 `session_id`，旧 `session`/`name` 字段严格拒绝。query 禁止 native lifecycle action；doctor 只读，partial cleanup 保留诊断证据且不切换 transport/backend。

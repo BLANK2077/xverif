@@ -40,7 +40,8 @@
 export XDEBUG_TRANSPORT=file
 ```
 
-JSON 中显式的 `args.transport` 或 `target.transport` 优先级高于环境变量。
+JSON 中显式的 `session.open.args.transport` 优先级高于环境变量；
+`target.transport` 不属于公开合同，会被严格 schema 拒绝。
 
 ## 状态目录
 

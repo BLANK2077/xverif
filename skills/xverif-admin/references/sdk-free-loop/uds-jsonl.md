@@ -18,7 +18,7 @@ tools/xverif-loop-client --socket <repo>/tmp/xverif-loop.sock --json \
 ## 请求格式
 
 ```json
-{"id":"1","method":"debug.query","params":{"session":"s0","action":"value.at","args":{"signal":"top.data","time":"10ns","clock":"top.clk"}}}
+{"id":"1","method":"debug.query","params":{"session_id":"s0","action":"value.at","args":{"signal":"top.data","time":"10ns","clock":"top.clk"}}}
 ```
 
 成功：
@@ -52,7 +52,7 @@ tools/xverif-loop-client --socket <repo>/tmp/xverif-loop.sock --json \
 - `cov.session.gc`
 - `cov.query`
 
-`debug.query` 会把 `action/args/limits/output_format` 转给当前 managed session；`cov.query` 还接受 coverage backend 的 `output`。两者都固定 target 为 managed session。xdebug action 专用输出配置只放在 schema 允许的 `args.output`。不要用 query 发送 lifecycle raw request（coverage 的 `session.status` 使用 `cov.session.doctor`）。list 接受 `include_tombstones`/`verbose`，doctor 接受精确 `session|session_id|name` 和 `verbose`，close/kill 接受精确 session key，gc 接受 `verbose`；kill 的 `all` 明确拒绝。
+`debug.query` 会把 `action/args/limits/output_format` 转给当前 managed session；`cov.query` 会把 `action/args/output_format` 转给 coverage backend。两者都要求并只接受 canonical `session_id`，固定 target 为该 managed session；旧 `session`/`name` 字段作为未知参数拒绝。xdebug action 专用输出配置只放在 schema 允许的 `args.output`。不要用 query 发送 lifecycle raw request（coverage 的 `session.status` 使用 `cov.session.doctor`）。list 接受 `include_tombstones`/`verbose`，doctor 接受精确 `session_id` 和 `verbose`，close/kill 只接受精确 `session_id`，gc 接受 `verbose`；kill 的 `all` 明确拒绝。
 
 脚本化拉起 server 时，Unix socket 文件在 `bind()` 后已经存在，但只有 `listen()` 成功后才真正可连接。编排程序必须等待明确的 server ready 信号或一次成功的 `server.ping`；不要把路径存在、固定 sleep 或静默 connect 重试当作 readiness 合同。
 
