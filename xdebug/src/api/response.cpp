@@ -1,7 +1,15 @@
 #include "api/response.h"
+#include "build_info.h"
 #include "core/diagnostic_error.h"
 
 namespace xdebug {
+
+Json tool_metadata() {
+    return {{"name", "xdebug"}, {"version", kToolVersion},
+            {"build_id", XDEBUG_BUILD_ID},
+            {"git_revision", XDEBUG_GIT_REVISION},
+            {"schema_revision", XDEBUG_SCHEMA_REVISION}};
+}
 
 Json make_response(const Json& request, const std::string& action, bool ok) {
     Json response;
