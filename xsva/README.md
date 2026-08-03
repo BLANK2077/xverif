@@ -3,25 +3,56 @@
 SystemVerilog Assertion 语义编译工具。
 
 把 SVA 从文本语法编译为结构化 IR（Surface → Sequence → Timeline），所有解释从 IR 生成。
-`explain` 默认展示面向用户的英文语义摘要。内部仍保留精确
-`match_paths` / `obligations`，但范围 delay、range suffix、repeat 和高级 sequence
-不会在用户解释里展开成多条候选 path。
+所有 one-shot 命令默认输出 token-efficient XOUT；`explain --markdown` 可显式生成
+面向用户的英文语义摘要。结构化响应保留 `match_paths` / `obligations`、范围
+delay、range suffix、repeat 和高级 sequence 的 semantic notes；若路径枚举受到
+`max_paths` 限制，响应会同时发布精确候选总数和明确的不完整状态。
 
 ## 命令
 
 ```bash
-xsva list    --file <file>                       # 列出所有 property/assertion
-xsva scan    --file <file>                       # 语法构造分布统计
-xsva explain --file <file> --property <name>      # 文本解释
+xsva list    --file <file>                       # 默认 XOUT
+xsva scan    --file <file>                       # 默认 XOUT
+xsva lint    --file <file> [--property <name>]   # 默认 XOUT
+xsva explain --file <file> --property <name>     # 默认 XOUT
 xsva parse   --file <file> --property <name> --emit surface-ir|sequence-ir|timeline-ir
 ```
+
+五个命令都支持显式 `--json`。`explain` 额外支持与 `--json` 互斥的
+`--markdown`。
+
+默认文本恢复各命令原有的领域格式：`list` 列出 property/assertion，`scan` 列出
+计数，`lint` 列出 diagnostics，`explain` 生成 timeline 解释，`parse` 输出所选 IR。
+
+```text
+Properties:
+  p_req_ack
+Assertions:
+  a_req_ack: assert property (p_req_ack)
+```
+
+需要稳定字段编程、schema 校验、结构化持久化或用户明确要求时使用 `--json`；
+普通 AI 分析默认保留 XOUT。
+
+## 精度与完整性合同
+
+每个 JSON/XOUT 成功或错误响应都包含 `lowering_status`、`precision`、
+`diagnostics` 与 `completeness`。有限范围 delay 的候选总数由 lowering 精确计算；
+达到 `max_paths` 后发布 `partial`、`XSVA-L001`、精确的
+`total_path_count`/`returned_path_count`，以及
+`truncation_scopes=["analysis.match_paths"]`，不会把部分枚举伪装成完整结果。
+
+Sequence IR 使用单一 canonical 结构：property 关系存于 `implication`，两侧分别
+存于 `antecedent` 与 `consequent`。Timeline IR 使用 `trigger`、`match_paths` 和
+显式 `disable_obligation`；`match_paths[].obligations` 只引用同一 Timeline IR 中
+`obligations[].id` 的 canonical ID。
 
 ## 示例
 
 ```bash
 python -m xsva list --file tests/golden_ir/simple_impl/input.sva
-python -m xsva explain --file tests/golden_ir/simple_impl/input.sva --property p_test
-python -m xsva parse --file tests/golden_ir/simple_impl/input.sva --property p_test --emit timeline-ir
+python -m xsva explain --file tests/golden_ir/simple_impl/input.sva --property p_simple --markdown
+python -m xsva parse --file tests/golden_ir/simple_impl/input.sva --property p_simple --emit timeline-ir --json
 ```
 
 范围和高级语法示例：

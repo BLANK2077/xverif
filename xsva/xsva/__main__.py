@@ -1,4 +1,6 @@
-"""使 `python -m xsva` 可用."""
+"""使 ``python -m xsva`` 可用。"""
+import sys
+
 from xsva.cli import main
 
-main()
+sys.exit(main())
