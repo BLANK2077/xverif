@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .config import EntryConfig, normalize_config
+from .contracts import validate_response
 from .errors import FragmentError
 from .fragments import Fragment, normalize_fragments
 
@@ -33,7 +34,7 @@ def decode_entry(config_data: dict, fragment_data: list[dict]) -> dict:
         }
         if field.description is not None:
             fields[field.name]["description"] = field.description
-    return {
+    payload = {
         "ok": True,
         "api_version": "xentry.v1",
         "action": "decode",
@@ -42,8 +43,9 @@ def decode_entry(config_data: dict, fragment_data: list[dict]) -> dict:
         "entry_raw": bits_to_hex(entry_bits),
         "fields": fields,
         "warnings": warnings,
-        "errors": [],
     }
+    validate_response(payload, expected_action="decode")
+    return payload
 
 
 def validate_entry(config_data: dict, fragment_data: list[dict] | None = None) -> dict:
@@ -51,15 +53,16 @@ def validate_entry(config_data: dict, fragment_data: list[dict] | None = None) -
     if fragment_data is not None:
         fragments = normalize_fragments(fragment_data, config)
         build_entry_bits(config, fragments)
-    return {
+    payload = {
         "ok": True,
         "api_version": "xentry.v1",
         "action": "validate",
         "schema": config.schema_result(),
         "total_bits": config.total_bits,
         "warnings": warnings,
-        "errors": [],
     }
+    validate_response(payload, expected_action="validate")
+    return payload
 
 
 def explain_config(config_data: dict) -> dict:
@@ -75,7 +78,7 @@ def explain_config(config_data: dict) -> dict:
         }
         for field in config.fields
     ]
-    return {
+    payload = {
         "ok": True,
         "api_version": "xentry.v1",
         "action": "explain",
@@ -85,8 +88,9 @@ def explain_config(config_data: dict) -> dict:
         "bit_numbering": config.bit_numbering,
         "fields": fields,
         "warnings": warnings,
-        "errors": [],
     }
+    validate_response(payload, expected_action="explain")
+    return payload
 
 
 def build_entry_bits(config: EntryConfig, fragments: list[Fragment]) -> tuple[list[int], list[EntryBitSource]]:
@@ -117,7 +121,7 @@ def provenance_for_field(lsb: int, msb: int, sources: list[EntryBitSource]) -> l
             and entry_bit == prev_entry + 1
         )
         if prev_source is not None and not contiguous:
-            segments.append(_source_segment(start_entry, prev_entry, prev_source, sources[prev_entry]))
+            segments.append(_source_segment(start_entry, prev_entry, sources[start_entry], sources[prev_entry]))
             start_entry = entry_bit
         prev_entry = entry_bit
         prev_source = source

@@ -80,11 +80,17 @@ def normalize_config(data: dict) -> tuple[EntryConfig, list[dict]]:
     for key in required:
         if key not in data:
             raise ConfigError("missing required config field", field=key)
-    name = str(data["name"])
+    name = data["name"]
+    if not isinstance(name, str) or not name:
+        raise ConfigError("name must be a non-empty string", field="name")
     version = _positive_int(data["version"], "version")
     total_bits = _positive_int(data["total_bits"], "total_bits")
-    fragment_byte_order = str(data["fragment_byte_order"])
-    bit_numbering = str(data["bit_numbering"])
+    fragment_byte_order = data["fragment_byte_order"]
+    bit_numbering = data["bit_numbering"]
+    if not isinstance(fragment_byte_order, str):
+        raise ConfigError("fragment_byte_order must be a string", field="fragment_byte_order")
+    if not isinstance(bit_numbering, str):
+        raise ConfigError("bit_numbering must be a string", field="bit_numbering")
     if fragment_byte_order not in {"msb_first", "lsb_first"}:
         raise ConfigError("fragment_byte_order must be msb_first or lsb_first", value=fragment_byte_order)
     if bit_numbering not in {"byte_lsb0", "byte_msb0"}:
@@ -104,14 +110,19 @@ def normalize_config(data: dict) -> tuple[EntryConfig, list[dict]]:
                 raise UnsupportedConfigField("unsupported field config key", field=raw.get("name", ""), key=key)
         if "name" not in raw or "bits" not in raw:
             raise ConfigError("field requires name and bits")
-        fname = str(raw["name"])
+        fname = raw["name"]
+        if not isinstance(fname, str) or not fname:
+            raise ConfigError("field name must be a non-empty string", field="name")
         if fname in names:
             raise ConfigError("duplicate field name", field=fname)
         names.add(fname)
         msb, lsb, width = parse_bits(raw["bits"])
         if msb >= total_bits:
             raise ConfigError("field range exceeds total_bits", field=fname, bits=raw["bits"], total_bits=total_bits)
-        field = FieldConfig(fname, str(raw["bits"]), msb, lsb, width, raw.get("description"))
+        description = raw.get("description")
+        if description is not None and not isinstance(description, str):
+            raise ConfigError("field description must be a string", field=fname)
+        field = FieldConfig(fname, raw["bits"], msb, lsb, width, description)
         fields.append(field)
         overlaps = sorted({occupied[bit] for bit in range(lsb, msb + 1) if bit in occupied})
         if overlaps:
@@ -127,15 +138,11 @@ def normalize_config(data: dict) -> tuple[EntryConfig, list[dict]]:
 
 
 def _positive_int(value: Any, field: str) -> int:
-    if isinstance(value, bool):
+    if not isinstance(value, int) or isinstance(value, bool):
         raise ConfigError(f"{field} must be a positive integer")
-    try:
-        out = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ConfigError(f"{field} must be a positive integer") from exc
-    if out <= 0:
+    if value <= 0:
         raise ConfigError(f"{field} must be positive", value=value)
-    return out
+    return value
 
 
 def parse_yaml_subset(text: str) -> dict:

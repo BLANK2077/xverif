@@ -11,6 +11,8 @@ from .errors import FragmentError
 
 HEX_RE = re.compile(r"^(?:0x)?[0-9a-fA-F_ ]+$")
 META_KEYS = ("entry_id", "time", "source", "line", "tag")
+REQUIRED_FRAGMENT_KEYS = ("seq", "data", "valid_lsb", "valid_width")
+ALLOWED_FRAGMENT_KEYS = set(REQUIRED_FRAGMENT_KEYS) | set(META_KEYS)
 
 
 @dataclass(frozen=True)
@@ -49,14 +51,21 @@ def normalize_fragments(raw_fragments: list[dict], config: EntryConfig) -> list[
     for raw in raw_fragments:
         if not isinstance(raw, dict):
             raise FragmentError("each fragment must be an object")
-        for key in ("seq", "data", "valid_lsb", "valid_width"):
+        unknown = sorted(set(raw) - ALLOWED_FRAGMENT_KEYS)
+        if unknown:
+            raise FragmentError("fragment contains unsupported fields", field=unknown[0])
+        for key in REQUIRED_FRAGMENT_KEYS:
             if key not in raw:
                 raise FragmentError("fragment missing required field", field=key)
         seq = _int(raw["seq"], "seq")
+        if seq < 0:
+            raise FragmentError("seq must be non-negative", seq=seq)
         if seq in seen:
             raise FragmentError("duplicate fragment seq", seq=seq)
         seen.add(seq)
-        data = str(raw["data"])
+        data = raw["data"]
+        if not isinstance(data, str):
+            raise FragmentError("data must be a string")
         bytes_value = parse_hex_bytes(data)
         bits = bytes_to_bits(bytes_value, config.fragment_byte_order, config.bit_numbering)
         valid_lsb = _int(raw["valid_lsb"], "valid_lsb")
@@ -104,9 +113,6 @@ def bytes_to_bits(data: bytes, byte_order: str, bit_numbering: str) -> list[int]
 
 
 def _int(value: Any, field: str) -> int:
-    if isinstance(value, bool):
+    if not isinstance(value, int) or isinstance(value, bool):
         raise FragmentError(f"{field} must be an integer")
-    try:
-        return int(value)
-    except (TypeError, ValueError) as exc:
-        raise FragmentError(f"{field} must be an integer", value=value) from exc
+    return value

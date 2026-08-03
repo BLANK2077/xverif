@@ -4,11 +4,13 @@ import json
 import re
 from typing import Any
 
+from .contracts import ACTIONS, validate_response
 from .errors import XentryError
 
 
 def dumps(payload: dict, *, pretty: bool = False) -> str:
-    return json.dumps(payload, indent=2 if pretty else None, sort_keys=False)
+    validate_response(payload)
+    return json.dumps(payload, ensure_ascii=False, indent=2 if pretty else None, sort_keys=False)
 
 
 def _sanitize_key(key: str) -> str:
@@ -100,12 +102,13 @@ class TextResponseBuilder:
 
 
 def to_xout(payload: dict) -> str:
-    action = payload.get("action") if payload.get("ok") else "error"
+    validate_response(payload)
+    action = payload["action"]
     out = TextResponseBuilder("xentry")
     out.emit_header(str(action or "unknown"))
     if not payload.get("ok"):
-        out.emit_kv("action", payload.get("action"))
-        out.emit_error(payload.get("error", {}))
+        out.emit_kv("action", action)
+        out.emit_error(payload["error"])
         return out.render()
     if payload.get("action") == "decode":
         out.emit_section("target")
@@ -138,7 +141,6 @@ def to_xout(payload: dict) -> str:
         out.emit_kv("schema", payload.get("schema"))
         out.emit_kv("total_bits", payload.get("total_bits"))
         out.emit_kv("warnings", len(payload.get("warnings", [])))
-        out.emit_kv("errors", len(payload.get("errors", [])))
     for warning in payload.get("warnings", []):
         if isinstance(warning, dict):
             out.emit_warning(str(warning.get("code", "warning")), str(warning.get("message", warning)))
@@ -154,14 +156,15 @@ def error_response(exc: Exception, *, action: str = "", request_id: Any = None) 
             error["details"] = exc.details
     else:
         error = {"code": "INTERNAL_ERROR", "message": str(exc)}
+    canonical_action = action if action in ACTIONS else "error"
     payload = {
         "ok": False,
         "api_version": "xentry.v1",
-        "action": action,
+        "action": canonical_action,
         "error": error,
         "warnings": [],
-        "errors": [error],
     }
-    if request_id is not None:
+    if isinstance(request_id, str) and request_id:
         payload["request_id"] = request_id
+    validate_response(payload, expected_action=canonical_action)
     return payload
