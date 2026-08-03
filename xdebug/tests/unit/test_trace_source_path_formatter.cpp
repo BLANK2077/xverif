@@ -257,7 +257,8 @@ int main() {
 
     Json canonical_raw = {
         {"summary", Json{{"termination", "control_only"},
-            {"termination_detail", "control_only"}}},
+            {"termination_detail", "control_only"},
+            {"analysis_complete", true}}},
         {"chain", Json{{"chain", Json::array({Json{
             {"index", 0}, {"signal", "top.a"}, {"next", "top.b"},
             {"time", "20ns"}, {"active_time", "20ns"},
@@ -277,6 +278,16 @@ int main() {
     assert(!canonical["summary"].contains("truncated"));
     assert(canonical["hops"][0]["value"].is_object());
     assert(canonical["hops"][0]["value"]["value"] == "'h1");
+
+    Json incomplete_chain_raw = canonical_raw;
+    incomplete_chain_raw["summary"]["analysis_complete"] = false;
+    Json incomplete_chain = xdebug_design::simplify_active_driver_chain_payload(
+        incomplete_chain_raw, "top.b", "20ns", 10);
+    assert(incomplete_chain["summary"]["scan_complete"] == false);
+    assert(incomplete_chain["summary"]["analysis_complete"] == false);
+    assert(incomplete_chain["summary"]["response_truncated"] == false);
+    assert(incomplete_chain["summary"]["truncation_scopes"] ==
+           Json::array({"analysis_trace"}));
 
     Json default_limited = xdebug_design::simplify_trace_driver_load_payload(
         trace_raw_with_edges(file, 12), "trace.load", "top.out", "load");
