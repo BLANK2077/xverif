@@ -111,7 +111,14 @@ int main() {
         {"suggested_next_actions", Json::array({next_action})}
     };
     Json chain_response = {
-        {"summary", Json{{"signal", "top.out"}, {"hop_count", 2}}},
+        {"summary", Json{{"signal", "top.out"}, {"time", "20ns"},
+            {"termination", "control_only"}, {"termination_detail", "control_only"},
+            {"scan_complete", true}, {"analysis_complete", true},
+            {"response_truncated", false}, {"total_count", 2},
+            {"returned_count", 2}, {"truncation_scopes", Json::array()},
+            {"value_width_complete", false},
+            {"width_diagnostics", Json::array({Json{{"signal", "top.out"},
+                {"role", "hops[0].value"}, {"reason", "width unavailable"}}})}}},
         {"data", chain_data},
     };
     std::string chain_text = xdebug_design::render_source_path_xout("trace.active_driver_chain", chain_response);
@@ -122,6 +129,13 @@ int main() {
     assert(chain_text.find("top.c   10ns  8'hxx") != std::string::npos);
     assert(chain_text.find("\nnext:\n") != std::string::npos);
     assert(chain_text.find("trace.active_driver_chain  top.c   10ns  2") != std::string::npos);
+    assert(chain_text.find("truncation_scopes") != std::string::npos);
+    assert(chain_text.find("[empty]") != std::string::npos);
+    assert(chain_text.find("width_diagnostics") == std::string::npos);
+    assert(chain_text.find("width unavailable") == std::string::npos);
+    assert(chain_text.find("{") == std::string::npos);
+    assert(chain_text.find("XOUT_BEGIN") == std::string::npos);
+    assert(!chain_text.empty() && chain_text.back() == '\n');
 
     Json ambiguous_response = {
         {"summary", Json{{"signal", "top.out"}, {"termination", "ambiguous"}}},
@@ -194,6 +208,29 @@ int main() {
     assert(ambiguous_text.find("statement", ambiguity_pos) == std::string::npos);
     assert(ambiguous_text.find("changed", ambiguity_pos) == std::string::npos);
     assert(ambiguous_text.find("status", ambiguity_pos) == std::string::npos);
+
+    Json canonical_raw = {
+        {"summary", Json{{"termination", "control_only"},
+            {"termination_detail", "control_only"}}},
+        {"chain", Json{{"chain", Json::array({Json{
+            {"index", 0}, {"signal", "top.a"}, {"next", "top.b"},
+            {"time", "20ns"}, {"active_time", "20ns"},
+            {"value", Json{{"value", "'h1"}, {"known", true}}},
+            {"file", file}, {"line", 5}
+        }})}}}
+    };
+    Json canonical = xdebug_design::simplify_active_driver_chain_payload(
+        canonical_raw, "top.b", "20ns", 10);
+    assert(canonical["summary"]["scan_complete"] == true);
+    assert(canonical["summary"]["analysis_complete"] == true);
+    assert(canonical["summary"]["response_truncated"] == false);
+    assert(canonical["summary"]["total_count"] == 1);
+    assert(canonical["summary"]["returned_count"] == 1);
+    assert(canonical["summary"]["truncation_scopes"].empty());
+    assert(!canonical["summary"].contains("hop_count"));
+    assert(!canonical["summary"].contains("truncated"));
+    assert(canonical["hops"][0]["value"].is_object());
+    assert(canonical["hops"][0]["value"]["value"] == "'h1");
 
     Json default_limited = xdebug_design::simplify_trace_driver_load_payload(
         trace_raw_with_edges(file, 12), "trace.load", "top.out", "load");

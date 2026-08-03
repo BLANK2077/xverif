@@ -37,9 +37,9 @@ STREAM_PACKET_GOLDEN = {
 }
 STREAM_XOUT_GOLDEN_LINES = [
     "packet_stable_fields    : opcode=8'ha3",
-    "18     185ns  0           data=32'h4000000c seq=16'h000c",
-    "first_fields: data=32'h4000000c seq=16'h000c",
-    "last_fields : data=32'h4000000f seq=16'h000f",
+    "18     185ns  0           data=32'h4000000c seq=16'hc",
+    "first_fields: data=32'h4000000c seq=16'hc",
+    "last_fields : data=32'h4000000f seq=16'hf",
 ]
 
 
@@ -95,13 +95,13 @@ def _open_session(
         args={"name": name},
     )
     response = result.response
-    session = response.get("session") or response["data"]["session"]
+    session = response["session"]
     initialized = [
         row for row in _all_probe_rows(probe_path)
         if row["event"] == "engine_initialized"
     ]
     assert initialized, "engine did not publish the test-only initialized probe"
-    return {"session_id": session["id"]}, int(initialized[-1]["pid"])
+    return {"session_id": session["session_id"]}, int(initialized[-1]["pid"])
 
 
 def _kill_session(runner: CliRunner, target: dict[str, str]) -> None:

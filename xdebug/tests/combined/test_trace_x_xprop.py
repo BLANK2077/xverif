@@ -50,8 +50,8 @@ def test_trace_x_xprop_and_clockless_point_reads(
         "trace_x_session_open",
         artifact_root,
     )
-    session = opened.get("session") or opened["data"]["session"]
-    session_id = session["id"]
+    session = opened["session"]
+    session_id = session["session_id"]
 
     def run(
         action: str,
@@ -81,27 +81,47 @@ def test_trace_x_xprop_and_clockless_point_reads(
             artifact_root,
         )
         assert raw["summary"]["sampling_mode"] == "raw_time"
-        assert "'h" in raw["data"]["value"]["value"]
-        assert raw["data"]["value"]["has_x"] is True
-        assert "clock_context" not in raw["data"]
+        raw_cell = raw["data"]["samples"][0]["values"][0]
+        assert "'h" in raw_cell["value"]["value"]
+        assert raw_cell["value"]["has_x"] is True
+        assert "clock_context" not in raw["data"]["samples"][0]
 
-        batch = _success(
+        _success(
             run(
-                "value.batch_at",
+                "list.load",
                 {
-                    "signals": [
-                        "trace_x_xprop_tb.observed",
-                        "trace_x_xprop_tb.direct_x_out",
-                    ],
-                    "time": "18ns",
+                    "config": {
+                        "lists": [{
+                            "name": "x_context",
+                            "signals": [
+                                "trace_x_xprop_tb.observed",
+                                "trace_x_xprop_tb.direct_x_out",
+                            ],
+                        }],
+                    },
                 },
             ),
-            "clockless_value_batch_at",
+            "list_load_x_context",
             artifact_root,
         )
-        assert batch["summary"]["sampling_mode"] == "raw_time"
-        assert len(batch["data"]["values"]) == 2
-        assert all("'h" in row["value"]["value"] for row in batch["data"]["values"])
+        batch = _success(
+            run(
+                "value.at",
+                {
+                    "list": "x_context",
+                    "times": ["18ns"],
+                },
+            ),
+            "clockless_value_at_list",
+            artifact_root,
+        )
+        sample = batch["data"]["samples"][0]
+        assert sample["sampling_mode"] == "raw_time"
+        assert len(sample["values"]) == 2
+        assert all(
+            "'h" in cell["value"]["value"]
+            for cell in sample["values"]
+        )
 
         invalid = run(
             "value.at",
@@ -113,8 +133,9 @@ def test_trace_x_xprop_and_clockless_point_reads(
         )
         assert isinstance(invalid.response, dict)
         assert invalid.response["ok"] is False
-        assert invalid.response["error"]["code"] == "INVALID_ARGUMENT"
-        assert invalid.response["error"]["invalid_arg"] == "args.edge"
+        assert invalid.response["error"]["code"] == "INVALID_REQUEST"
+        assert invalid.response["error"]["error_layer"] == "schema"
+        assert invalid.response["error"]["invalid_arg"] == "args"
 
         clocked = _success(
             run(
@@ -129,10 +150,13 @@ def test_trace_x_xprop_and_clockless_point_reads(
             artifact_root,
         )
         assert clocked["summary"]["sampling_mode"] == "clock_sampled"
-        assert clocked["data"]["clock_context"]["clock"] == "trace_x_xprop_tb.clk"
+        assert (
+            clocked["data"]["samples"][0]["clock_context"]["clock"]
+            == "trace_x_xprop_tb.clk"
+        )
 
         non_x = _success(
-            run("trace.x", {"signal": "trace_x_xprop_tb.direct_x_out", "time": "18ns"}),
+            run("trace.x_origin", {"signal": "trace_x_xprop_tb.direct_x_out", "time": "18ns"}),
             "trace_x_non_x",
             artifact_root,
         )
@@ -142,10 +166,12 @@ def test_trace_x_xprop_and_clockless_point_reads(
         assert non_x["data"]["query"]["query_time"] == "18ns"
 
         control_x = _success(
-            run("trace.x", {"signal": "trace_x_xprop_tb.observed", "time": "18ns"}),
+            run("trace.x_origin", {"signal": "trace_x_xprop_tb.observed", "time": "18ns"}),
             "trace_x_control_module_interface",
             artifact_root,
         )
+        assert control_x["data"]["query"]["value"]["value"] == "8'hxx"
+        assert control_x["data"]["query"]["value"]["width"] == 8
         assert control_x["data"]["query"]["x_mask"] == "8'b10011001"
         control_hops = [hop for chain in control_x["data"]["chains"] for hop in chain["hops"]]
         assert {"port", "rhs", "control"} <= {hop["relation"] for hop in control_hops}
@@ -157,7 +183,7 @@ def test_trace_x_xprop_and_clockless_point_reads(
             cli_runner.run(
                 {
                     "api_version": "xdebug.v1",
-                    "action": "trace.x",
+                    "action": "trace.x_origin",
                     "target": {"session_id": session_id},
                     "args": {"signal": "trace_x_xprop_tb.observed", "time": "18ns"},
                     "limits": {"max_time_steps": 1},
@@ -171,7 +197,7 @@ def test_trace_x_xprop_and_clockless_point_reads(
         assert "trace truncated by limits.max_time_steps" in time_limited["data"]["limitations"]
 
         multi_rhs = _success(
-            run("trace.x", {"signal": "trace_x_xprop_tb.multi_rhs_out", "time": "12ns"}),
+            run("trace.x_origin", {"signal": "trace_x_xprop_tb.multi_rhs_out", "time": "12ns"}),
             "trace_x_multiple_rhs_x",
             artifact_root,
         )
@@ -184,7 +210,7 @@ def test_trace_x_xprop_and_clockless_point_reads(
 
         alias_effective = _success(
             run(
-                "trace.x",
+                "trace.x_origin",
                 {"signal": "trace_x_xprop_tb.alias_effective_out", "time": "12ns"},
                 limits={"max_chains": 2},
             ),
@@ -208,7 +234,7 @@ def test_trace_x_xprop_and_clockless_point_reads(
 
         alias_limited = _success(
             run(
-                "trace.x",
+                "trace.x_origin",
                 {"signal": "trace_x_xprop_tb.alias_effective_out", "time": "12ns"},
                 limits={"max_chains": 1},
             ),
@@ -229,7 +255,7 @@ def test_trace_x_xprop_and_clockless_point_reads(
         assert alias_branch_event["omitted_x_dependency_count"] == 1
 
         control_and_rhs = _success(
-            run("trace.x", {"signal": "trace_x_xprop_tb.ctrl_rhs_out", "time": "12ns"}),
+            run("trace.x_origin", {"signal": "trace_x_xprop_tb.ctrl_rhs_out", "time": "12ns"}),
             "trace_x_control_and_rhs_x",
             artifact_root,
         )
@@ -240,7 +266,7 @@ def test_trace_x_xprop_and_clockless_point_reads(
 
         branch_limited = _success(
             run(
-                "trace.x",
+                "trace.x_origin",
                 {"signal": "trace_x_xprop_tb.multi_rhs_out", "time": "12ns"},
                 limits={"max_depth": 1, "max_chains": 1},
             ),
@@ -256,8 +282,8 @@ def test_trace_x_xprop_and_clockless_point_reads(
         assert frontier["signal"] == limited_chain["current"]["signal"]
         assert frontier["continue_time"] == limited_chain["current"]["x_onset_time"]
         assert "'h" in frontier["value"]["value"]
-        assert branch_limited["suggested_next_actions"][0]["args"]["signal"] == frontier["signal"]
-        assert branch_limited["suggested_next_actions"][0]["args"]["time"] == frontier["continue_time"]
+        assert branch_limited["data"]["suggested_next_actions"][0]["args"]["signal"] == frontier["signal"]
+        assert branch_limited["data"]["suggested_next_actions"][0]["args"]["time"] == frontier["continue_time"]
 
         active_chain_limited = _success(
             run(
@@ -273,7 +299,7 @@ def test_trace_x_xprop_and_clockless_point_reads(
         assert active_frontier["signal"] == "trace_x_xprop_tb.u_sink.bus.data"
         assert active_frontier["time"] == "15ns"
         assert "'h" in active_frontier["value"]
-        assert active_chain_limited["suggested_next_actions"][0]["args"] == {
+        assert active_chain_limited["data"]["suggested_next_actions"][0]["args"] == {
             "signal": active_frontier["signal"],
             "time": active_frontier["time"],
         }
@@ -287,7 +313,7 @@ def test_trace_x_xprop_and_clockless_point_reads(
             artifact_root,
         )
         assert active_chain_default["summary"]["termination_detail"] == "max_depth"
-        assert active_chain_default["summary"]["hop_count"] == 9
+        assert active_chain_default["summary"]["returned_count"] == 9
         assert active_chain_default["data"]["depth_frontiers"][0][
             "stopped_after_depth"
         ] == 8
@@ -303,12 +329,12 @@ def test_trace_x_xprop_and_clockless_point_reads(
         )
         assert active_chain_deeper["summary"]["termination_detail"] != "max_depth"
         assert (
-            active_chain_deeper["summary"]["hop_count"]
-            > active_chain_default["summary"]["hop_count"]
+            active_chain_deeper["summary"]["returned_count"]
+            > active_chain_default["summary"]["returned_count"]
         )
 
         driver_x = _success(
-            run("trace.x", {"signal": "trace_x_xprop_tb.direct_x_out", "time": "22ns"}),
+            run("trace.x_origin", {"signal": "trace_x_xprop_tb.direct_x_out", "time": "22ns"}),
             "trace_x_driver_x",
             artifact_root,
         )
@@ -320,7 +346,7 @@ def test_trace_x_xprop_and_clockless_point_reads(
         assert driver_x["summary"]["termination"] != "not_x_at_query_time"
 
         indexed_x = _success(
-            run("trace.x", {"signal": "trace_x_xprop_tb.indexed_out", "time": "35ns"}),
+            run("trace.x_origin", {"signal": "trace_x_xprop_tb.indexed_out", "time": "35ns"}),
             "trace_x_index_out_of_range",
             artifact_root,
         )
@@ -333,20 +359,22 @@ def test_trace_x_xprop_and_clockless_point_reads(
         }
 
         xout = run(
-            "trace.x",
+            "trace.x_origin",
             {"signal": "trace_x_xprop_tb.observed", "time": "18ns"},
             output_format="xout",
         )
         assert xout.returncode == 0 and isinstance(xout.response, str)
-        assert xout.response.startswith("@xdebug.trace.x.v1")
-        assert "8'hxx" in xout.response
-        assert "x_mask" in xout.response
-        assert "active_signals:" in xout.response
-        assert "query_time: 18ns" in xout.response
-        assert "x_onset_time" in xout.response
-        assert "active_time" in xout.response
-        assert "current_x_onset_time" in xout.response
-        assert "chains:" in xout.response
+        assert xout.response.startswith("@xdebug.trace.x_origin.v1\n")
+        assert "pointer\tkind\tvalue" not in xout.response
+        for evidence in (
+            "summary:", "query_time", "18ns", "query:", "8'hxx",
+            "x_mask", "source:", "active_signals:", "chains:",
+            "x_onset_time", "active_time", "signal_path",
+        ):
+            assert evidence in xout.response
+        assert "source__" not in xout.response
+        assert "trace_hops:" not in xout.response
+        assert "source_context" not in xout.response
     finally:
         cli_runner.run(
             {

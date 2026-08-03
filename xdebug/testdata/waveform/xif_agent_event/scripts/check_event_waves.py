@@ -43,6 +43,30 @@ def query(binary, home, action, args=None, target=None, expect_ok=True):
     return result
 
 
+def query_xout(binary, home, action, args=None, target=None):
+    request = {"api_version": "xdebug.v1", "action": action, "args": args or {}}
+    if target is not None:
+        request["target"] = target
+    env = os.environ.copy()
+    env["HOME"] = str(home)
+    proc = subprocess.run(
+        [binary, "-"],
+        input=json.dumps(request) + "\n",
+        universal_newlines=True,
+        cwd=str(REPO_ROOT),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if proc.returncode != 0:
+        raise AssertionError(
+            "{} XOUT failed: stdout={!r}; stderr={!r}".format(
+                action, proc.stdout[:1000], proc.stderr[:1000]
+            )
+        )
+    return proc.stdout
+
+
 def value_text(value):
     if isinstance(value, dict):
         value = value.get("value", "")
@@ -130,7 +154,43 @@ def main():
         xz_events = export("xz", "vld && data != 0")
         require(not xz_events, "X/Z data expression should not become a known match")
 
-        abnormal = query(args.xdebug, home, "detect_abnormal", {
+        find_response = query(
+            args.xdebug,
+            home,
+            "event.find",
+            {"name": "rdy", "expr": "vld && rdy", "mode": "all", "line_limit": 2},
+            {"session_id": session},
+        )
+        summary = find_response["summary"]
+        for key in (
+            "scan_complete", "analysis_complete", "response_truncated",
+            "total_count", "returned_count", "truncation_scopes",
+        ):
+            require(key in summary, "event.find summary missing {}".format(key))
+        for legacy in ("event_count", "returned_event_count", "truncated", "edge", "sample_point"):
+            require(legacy not in summary, "event.find summary leaked legacy {}".format(legacy))
+
+        find_xout = query_xout(
+            args.xdebug,
+            home,
+            "event.find",
+            {"name": "rdy", "expr": "vld && rdy", "mode": "all", "line_limit": 2},
+            {"session_id": session},
+        )
+        require(find_xout.startswith("@xdebug.event.find.v1\n"), "event.find XOUT header")
+        require("\nevents:\n" in find_xout, "event.find XOUT events table")
+        require("time" in find_xout and "vld" in find_xout and "rdy" in find_xout,
+                "event.find XOUT lost event columns")
+        for forbidden in (
+            "{", "}", '"', "known=true", "width_diagnostics",
+            "XOUT_BEGIN", "XOUT_END", "pointer\tkind\tvalue",
+        ):
+            require(forbidden not in find_xout,
+                    "event.find XOUT leaked {!r}".format(forbidden))
+        require(find_xout.endswith("\n") and not find_xout.endswith("\n\n"),
+                "event.find XOUT must end with exactly one newline")
+
+        abnormal = query(args.xdebug, home, "signal.anomaly.inspect", {
             "signals": [
                 "xif_event_top.if_rdy.pd.opcode",
                 "xif_event_top.if_rdy.pd.data",
@@ -146,9 +206,9 @@ def main():
         }, {"session_id": session})
         findings = abnormal["data"].get("findings", [])
         require(any(f.get("type") == "unknown_xz" and f.get("signal") == "xif_event_top.xz_data"
-                    for f in findings), "detect_abnormal did not find xz_data unknown_xz")
+                    for f in findings), "signal.anomaly.inspect did not find xz_data unknown_xz")
         require(any(f.get("type") == "stuck" and f.get("signal") == "xif_event_top.if_rdy.pd.opcode"
-                    for f in findings), "detect_abnormal did not scan direct struct member path")
+                    for f in findings), "signal.anomaly.inspect did not scan direct struct member path")
 
         query(args.xdebug, home, "event.find",
               {"name": "rdy", "expr": "vld && missing_alias"},

@@ -698,11 +698,34 @@ class AiRunner(object):
             require(rc != 0 or not ok, "{} expected failure but passed".format(action))
         return data
 
+    def query_xout(self, action, args=None, target=None, limits=None, timeout=60):
+        req = {
+            "api_version": "xdebug.v1",
+            "action": action,
+            "args": args or {},
+        }
+        if target is not None:
+            req["target"] = target
+        elif self.sid is not None:
+            req["target"] = {"session_id": self.sid}
+        else:
+            raise AssertionError("session must be opened before stateful XOUT query")
+        request_limits = dict(limits or {})
+        request_limits.setdefault("timeout_ms", DEFAULT_QUERY_TIMEOUT_MS)
+        req["limits"] = request_limits
+        process_timeout = max(timeout, int(request_limits["timeout_ms"] / 1000) + 30)
+        rc, out, err, _ = run_cmd(
+            [self.xdebug, "-"], cwd=REPO_ROOT, env=self.env,
+            timeout=process_timeout, input_text=json.dumps(req) + "\n",
+        )
+        require(rc == 0, "{} XOUT failed rc={} stdout={} stderr={}".format(
+            action, rc, out, err))
+        return out
+
     def open(self):
         self.query("session.open", target={"fsdb": self.fsdb}, expect_ok=False, allow_no_sid=True)
         data = self.query("session.open", target={"fsdb": self.fsdb}, args={"name": self.name}, expect_ok=True, allow_no_sid=True)
-        session = data.get("session") or data.get("data", {}).get("session", {})
-        self.sid = session["id"]
+        self.sid = data["session"]["session_id"]
         self.query("session.open", target={"fsdb": self.fsdb}, args={"name": self.name}, expect_ok=False, allow_no_sid=True)
         return data
 
@@ -1293,6 +1316,34 @@ def run_axi(xdebug, fsdb, sim_log=AXI_SIM_LOG, handshake_oracle_path=AXI_HANDSHA
         wr = r.query("axi.query", args={"name": "axi0", "direction": "write"})
         rd = r.query("axi.query", args={"name": "axi0", "direction": "read"})
         require(wr["summary"].get("count", 0) > 0 and rd["summary"].get("count", 0) > 0, "AXI query count is empty")
+        axi_xout = r.query_xout("axi.query", args={
+            "name": "axi0",
+            "direction": "write",
+            "query": {"index": 1},
+            "output": {"include_data": True},
+        })
+        require(axi_xout.startswith("@xdebug.axi.query.v1\n"), "AXI XOUT header mismatch")
+        for section in (
+            "transaction:", "transaction_address:", "transaction_data:",
+            "transaction_beats:", "transaction_response:",
+        ):
+            require("\n{}\n".format(section) in axi_xout,
+                    "AXI XOUT missing {}".format(section))
+        for field in (
+            "direction", "phase_order", "latency", "response_dependency_violation",
+            "valid_begin_time", "handshake_time", "addr", "id", "len", "size",
+            "burst", "beat_count", "expected_beat_count", "data", "wstrb", "last",
+            "resp",
+        ):
+            require(field in axi_xout, "AXI XOUT lost {}".format(field))
+        for forbidden in (
+            "{", "}", '"', "known=true", "XOUT_BEGIN", "XOUT_END",
+            "pointer\tkind\tvalue",
+        ):
+            require(forbidden not in axi_xout,
+                    "AXI XOUT leaked {!r}".format(forbidden))
+        require(axi_xout.endswith("\n") and not axi_xout.endswith("\n\n"),
+                "AXI XOUT must end with exactly one newline")
         expected_log = parse_axi_expected_log(sim_log)
         expected_records = expected_log["WR"] + expected_log["RD"]
 

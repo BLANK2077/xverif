@@ -18,7 +18,7 @@ int main() {
             spec, "args.filter.fields.data", wide_options, wide_filter, wide_error));
         assert(xdebug_waveform::match_value_filter(
             wide_filter,
-            xdebug_waveform::logic_value_from_bits(
+            xdebug_core::logic_value_from_bits(
                 "00011000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
                 128)) == xdebug_waveform::ValueFilterMatch::Yes);
 
@@ -26,20 +26,26 @@ int main() {
         assert(xdebug_waveform::parse_value_filter(
             mask_spec, "args.filter.fields.data", wide_options, wide_filter, wide_error));
         assert(xdebug_waveform::match_value_filter(
-            wide_filter, xdebug_waveform::logic_value_from_bits("1010xxxx", 8)) ==
+            wide_filter, xdebug_core::logic_value_from_bits("1010xxxx", 8)) ==
             xdebug_waveform::ValueFilterMatch::Yes);
         assert(xdebug_waveform::match_value_filter(
-            wide_filter, xdebug_waveform::logic_value_from_bits("x0100000", 8)) ==
+            wide_filter, xdebug_core::logic_value_from_bits("x0100000", 8)) ==
             xdebug_waveform::ValueFilterMatch::Unresolved);
     }
 
     StatisticsFilter filter;
     StatisticsFilterError error;
 
+    Json c_hex_args = {{"filter", {{"address", {
+        {"mode", "exact"}, {"values", Json::array({"0x10"})},
+    }}}}};
+    assert(!parse_statistics_filter(c_hex_args, false, filter, error));
+    assert(error.invalid_arg == "args.filter.address.values[0]");
+
     Json exact_args = {{"filter", {
         {"direction", "all"},
         {"address", {{"mode", "exact"},
-                     {"values", Json::array({"0x10", "'h20"})}}},
+                     {"values", Json::array({"'h10", "'h20"})}}},
     }}};
     assert(parse_statistics_filter(exact_args, false, filter, error));
     assert(filter.address_mode == StatisticsAddressMode::Exact);
@@ -52,7 +58,7 @@ int main() {
            StatisticsMatch::Unresolved);
 
     Json duplicate_args = {{"filter", {{"address", {
-        {"mode", "exact"}, {"values", Json::array({"16", "0x10"})},
+        {"mode", "exact"}, {"values", Json::array({"16", "'h10"})},
     }}}}};
     assert(!parse_statistics_filter(duplicate_args, false, filter, error));
     assert(error.invalid_arg == "args.filter.address.values");
@@ -60,8 +66,8 @@ int main() {
     Json range_args = {{"filter", {
         {"direction", "read"},
         {"ids", Json::array({"1", "3"})},
-        {"address", {{"mode", "range"}, {"begin", "0x1000"},
-                     {"end", "0x1fff"}}},
+        {"address", {{"mode", "range"}, {"begin", "'h1000"},
+                     {"end", "'h1fff"}}},
     }}};
     assert(parse_statistics_filter(range_args, true, filter, error));
     assert(match_statistics_transaction(filter, {false, "1004", "1"}) ==
@@ -74,7 +80,7 @@ int main() {
            StatisticsMatch::Unresolved);
 
     Json mask_args = {{"filter", {{"address", {
-        {"mode", "mask"}, {"value", "0x1200"}, {"mask", "0xff00"},
+        {"mode", "mask"}, {"value", "'h1200"}, {"mask", "'hff00"},
     }}}}};
     assert(parse_statistics_filter(mask_args, false, filter, error));
     assert(match_statistics_transaction(filter, {true, "12ab", ""}) ==
@@ -98,6 +104,8 @@ int main() {
     assert(match_statistics_transaction(filter, {false, "x", "x"}) ==
            StatisticsMatch::Yes);
 
+    assert(std::string(statistics_unresolved_note()).find("X/Z") != std::string::npos);
+
     Json response = {
         {"summary", {
             {"name", "axi0"},
@@ -107,19 +115,17 @@ int main() {
             {"matched_write_count", 4},
             {"unresolved_transaction_count", 0},
             {"filter_applied", true},
+            {"scan_complete", true},
             {"analysis_complete", true},
-            {"analysis_quality", "complete"},
-            {"full_scan_count", 1},
+            {"response_truncated", false},
         }},
         {"data", {
             {"filter", {
                 {"direction", "all"},
-                {"ids", Json::array({"1", "3"})},
-                {"address", {{"mode", "range"}, {"begin", "0x1000"},
-                             {"end", "0x1fff"}}},
+                {"ids", Json::array({"4'h1", "4'h3"})},
+                {"address", {{"mode", "range"}, {"begin", "16'h1000"},
+                             {"end", "16'h1fff"}}},
             }},
-            {"notes", {{"unresolved_transaction_count",
-                        statistics_unresolved_note()}}},
         }},
     };
     const std::string xout = render_statistics_xout("axi.statistics", response);
@@ -127,8 +133,12 @@ int main() {
     assert(xout.find("scanned_transaction_count   : 64") != std::string::npos);
     assert(xout.find("unresolved_transaction_count: 0") != std::string::npos);
     assert(xout.find("direction    : all") != std::string::npos);
-    assert(xout.find("address_begin: 0x1000") != std::string::npos);
+    assert(xout.find("ids          : [4'h1, 4'h3]") != std::string::npos);
+    assert(xout.find("address_begin: 16'h1000") != std::string::npos);
     assert(xout.find(std::string("notes:\n  unresolved_transaction_count: ") +
                      statistics_unresolved_note()) != std::string::npos);
+    assert(xout.find("pointer\tkind\tvalue") == std::string::npos);
+    assert(xout.find("XOUT_BEGIN") == std::string::npos);
+    assert(xout.find("XOUT_END") == std::string::npos);
     return 0;
 }

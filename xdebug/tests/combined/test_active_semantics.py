@@ -10,6 +10,9 @@ import pytest
 from runner import ArtifactWriter, CliRunner, RunResult
 
 
+DATA_POINTER = "/data"
+
+
 def _require_success(
     result: RunResult,
     *,
@@ -131,8 +134,8 @@ def test_active_trace_semantic_branches_and_gates(
         case_name="active_semantics_session_open",
         artifact_root=artifact_root,
     )
-    session = open_response.get("session") or open_response["data"]["session"]
-    session_id = session["id"]
+    session = open_response["session"]
+    session_id = session["session_id"]
 
     def active_driver(
         signal: str,
@@ -140,23 +143,23 @@ def test_active_trace_semantic_branches_and_gates(
         *,
         limits: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        args: dict[str, Any] = {
-            "signal": signal,
-            "time": requested_time,
+        request: dict[str, Any] = {
+            "api_version": "xdebug.v1",
+            "action": "trace.active_driver",
+            "target": {"session_id": session_id},
+            "args": {
+                "signal": signal,
+                "time": requested_time,
+            },
         }
         if limits is not None:
-            args["limits"] = limits
+            request["limits"] = limits
         return _query(
             cli_runner,
-            {
-                "api_version": "xdebug.v1",
-                "action": "trace.active_driver",
-                "target": {"session_id": session_id},
-                "args": args,
-            },
+            request,
             case_name="active-semantics-" + signal.rsplit(".", 1)[-1],
             artifact_root=artifact_root,
-            extra={"marker_lines": marker_lines, "args": args},
+            extra={"marker_lines": marker_lines, "request": request},
         )
 
     def active_driver_chain(
@@ -237,7 +240,8 @@ def test_active_trace_semantic_branches_and_gates(
         paths = response.get("data", {}).get("paths", [])
         assert isinstance(paths, list)
         assert len(paths) >= min_count
-        assert response["summary"]["path_count"] == len(paths)
+        assert response["summary"]["returned_count"] == len(paths)
+        assert response["summary"]["total_count"] >= len(paths)
         for item in paths:
             assert item.get("signal_path")
             assert _active_lines(item)
@@ -275,12 +279,14 @@ def test_active_trace_semantic_branches_and_gates(
         arbiter_idle = active_driver("active_semantics_tb.u_dut.arb_q", "36ns")
         _assert_path_line(arbiter_idle, "ARB_IDLE")
 
-        truncated = active_driver(
+        analysis_limited = active_driver(
             "active_semantics_tb.u_dut.q_en",
             "16ns",
             limits={"max_nodes": 1},
         )
-        assert truncated["meta"]["truncated"] is True
+        assert analysis_limited["summary"]["analysis_complete"] is False
+        assert analysis_limited["summary"]["response_truncated"] is False
+        assert "analysis_trace" in analysis_limited["summary"]["truncation_scopes"]
 
         chain = active_driver_chain(
             "active_semantics_tb.u_dut.chain_out",
@@ -288,7 +294,8 @@ def test_active_trace_semantic_branches_and_gates(
         )
         assert "text" not in chain["data"]
         assert "chain" not in chain["data"]
-        assert chain["summary"]["hop_count"] == 4
+        assert chain["summary"]["total_count"] == 4
+        assert chain["summary"]["returned_count"] == 4
         assert chain["summary"]["termination"] == "assignment"
         assert chain["summary"]["termination_detail"] == "constant_or_no_rhs_signal"
         hops = chain["data"]["hops"]
@@ -311,7 +318,7 @@ def test_active_trace_semantic_branches_and_gates(
         rhs_evidence = ambiguous_rhs["data"]["ambiguity_evidence"]
         assert rhs_evidence["kind"] == "multiple_rhs_sources"
         assert rhs_evidence["active_time"] == "22ns"
-        assert rhs_evidence["complete"] is True
+        assert rhs_evidence["analysis_complete"] is True
         assert rhs_evidence["statement_count"] == 1
         assert rhs_evidence["rhs_signal_count"] == 2
         rhs_samples = rhs_evidence["statements"][0]["rhs_samples"]
@@ -319,6 +326,22 @@ def test_active_trace_semantic_branches_and_gates(
             "active_semantics_tb.u_dut.data_a",
             "active_semantics_tb.u_dut.data_b",
         }
+        rhs_samples_by_signal = {
+            sample["signal"]: sample
+            for sample in rhs_samples
+        }
+        assert rhs_samples_by_signal[
+            "active_semantics_tb.u_dut.data_a"
+        ]["before"]["value"] == "8'ha0"
+        assert rhs_samples_by_signal[
+            "active_semantics_tb.u_dut.data_a"
+        ]["after"]["value"] == "8'ha1"
+        assert rhs_samples_by_signal[
+            "active_semantics_tb.u_dut.data_b"
+        ]["before"]["value"] == "8'hb0"
+        assert rhs_samples_by_signal[
+            "active_semantics_tb.u_dut.data_b"
+        ]["after"]["value"] == "8'hb2"
         for sample in rhs_samples:
             assert sample["before"]["value_time"] == "0ns"
             assert sample["after"]["value_time"] == "22ns"
@@ -368,11 +391,13 @@ def test_active_trace_semantic_branches_and_gates(
         )
         limited_evidence = ambiguous_limited["data"]["ambiguity_evidence"]
         assert ambiguous_limited["summary"]["termination"] == "ambiguous"
-        assert limited_evidence["complete"] is False
+        assert limited_evidence["analysis_complete"] is False
         assert limited_evidence["returned_rhs_signal_count"] == 1
         assert limited_evidence["omitted_rhs_signal_count"] == 1
-        assert limited_evidence["truncation_scope"] == "ambiguity_rhs_samples"
-        assert ambiguous_limited["meta"]["truncated"] is True
+        assert limited_evidence["truncation_scopes"] == ["ambiguity_rhs_samples"]
+        assert ambiguous_limited["summary"]["analysis_complete"] is False
+        assert ambiguous_limited["summary"]["response_truncated"] is False
+        assert "analysis_trace" in ambiguous_limited["summary"]["truncation_scopes"]
 
         multiple_active = active_driver_chain(
             "active_semantics_tb.u_dut.multiple_driver_out",
@@ -392,6 +417,7 @@ def test_active_trace_semantic_branches_and_gates(
         assert "\nactive_signals:\n" in active_xout
         assert "line  signal_path" in active_xout
         assert "\n>" in active_xout
+        assert "pointer\tkind\tvalue" not in active_xout
         for removed_section in ("\ndriver:\n", "\ncontrols:\n", "\nevents:\n", "\nroot_cause:\n"):
             assert removed_section not in active_xout
 
@@ -401,51 +427,36 @@ def test_active_trace_semantic_branches_and_gates(
         )
         assert chain_xout.startswith("@xdebug.trace.active_driver_chain.v1")
         assert "\nsummary:\n" in chain_xout
-        chain_summary_block = chain_xout.split(
-            "\nsummary:\n",
-            1,
-        )[1].split("\n\n", 1)[0]
-        chain_summary_lines = [
-            line
-            for line in chain_summary_block.splitlines()
-            if line.startswith("  ") and ":" in line
-        ]
-        assert chain_summary_lines
-        assert len({line.index(":") for line in chain_summary_lines}) == 1
         assert "\nsource: " in chain_xout
         assert "\nactive_signals:\n" in chain_xout
         assert "chain  hop  time" in chain_xout
         assert "relation  line  signal_path" in chain_xout
-        assert re.search(
-            r"^  termination\s+: assignment$",
-            chain_xout,
-            re.MULTILINE,
-        )
+        assert "pointer\tkind\tvalue" not in chain_xout
+        assert re.search(r"^  termination\s+: assignment$", chain_xout, re.MULTILINE)
         assert re.search(
             r"^  termination_detail\s+: constant_or_no_rhs_signal$",
             chain_xout,
             re.MULTILINE,
         )
         assert "\n>" in chain_xout
-        for removed_section in ("\nchain:\n", "\nstats:\n", "\nchain_path:\n"):
-            assert removed_section not in chain_xout
-        assert "\ntarget:\n" not in chain_xout
-        assert "text:" not in chain_xout
-        for expected_signal in [
+        for expected_signal in (
             "active_semantics_tb.u_dut.chain_out",
             "active_semantics_tb.u_dut.chain_mid",
             "active_semantics_tb.u_dut.chain_src",
             "active_semantics_tb.chain_src",
-        ]:
+        ):
             assert expected_signal in chain_xout
+        for removed_section in ("\nchain:\n", "\nstats:\n", "\nchain_path:\n"):
+            assert removed_section not in chain_xout
+        assert "\ntarget:\n" not in chain_xout
+        assert "text:" not in chain_xout
 
         ambiguous_xout = active_driver_chain_xout(
             "active_semantics_tb.u_dut.ambiguous_rhs_out",
             "26ns",
         )
-        active_signals_pos = ambiguous_xout.index("\nactive_signals:\n")
+        assert "pointer\tkind\tvalue" not in ambiguous_xout
         ambiguity_pos = ambiguous_xout.index("\nambiguous_rhs_samples:\n")
-        assert ambiguity_pos > active_signals_pos
         ambiguity_section = ambiguous_xout[ambiguity_pos:]
         assert "signal                            time  before" in ambiguity_section
         assert re.search(
@@ -456,15 +467,12 @@ def test_active_trace_semantic_branches_and_gates(
             r"active_semantics_tb\.u_dut\.data_b\s+22ns\s+8'hb0\s+8'hb2",
             ambiguity_section,
         )
+        assert "\nambiguity:\n" not in ambiguous_xout
         for removed_column in ("statement", "changed", "status"):
             assert removed_column not in ambiguity_section
         for removed_metadata in (
-            "kind",
-            "complete",
-            "rhs_signal_count",
-            "returned_rhs_signal_count",
-            "omitted_rhs_signal_count",
-            "truncation_scope",
+            "kind", "complete", "rhs_signal_count", "returned_rhs_signal_count",
+            "omitted_rhs_signal_count", "truncation_scope",
         ):
             assert removed_metadata not in ambiguity_section
 
@@ -475,7 +483,9 @@ def test_active_trace_semantic_branches_and_gates(
         )
         assert chain_limited["summary"]["termination"] == "limit"
         assert chain_limited["summary"]["termination_detail"] == "max_nodes"
-        assert chain_limited["meta"]["truncated"] is True
+        assert chain_limited["summary"]["analysis_complete"] is False
+        assert chain_limited["summary"]["response_truncated"] is False
+        assert "analysis_trace" in chain_limited["summary"]["truncation_scopes"]
 
         canonical = _query(
             cli_runner,
@@ -488,9 +498,24 @@ def test_active_trace_semantic_branches_and_gates(
             case_name="active-semantics-canonical-port",
             artifact_root=artifact_root,
         )
-        assert canonical["data"]["canonical"] == "active_semantics_tb.chain_src"
-        assert canonical["data"]["port_mappings"]
-        assert canonical["data"]["port_mappings"][0]["evidence"] == "npi_static_port_connection"
+        canonical_data = canonical["data"]
+        assert (
+            canonical_data["resolved_path"]
+            == "active_semantics_tb.u_dut.chain_src"
+        )
+        assert (
+            canonical_data["canonical_path"]
+            == canonical_data["connected_path"]
+            == "active_semantics_tb.chain_src"
+        )
+        assert canonical_data["mapping_kind"] == "static_port_connection"
+        assert canonical_data["selection_basis"] == "unique_exact_design_match"
+        assert (
+            canonical_data["connection"]["evidence"]
+            == "npi_static_port_connection"
+        )
+        assert "canonical" not in canonical_data
+        assert "port_mappings" not in canonical_data
     finally:
         cli_runner.run(
             {

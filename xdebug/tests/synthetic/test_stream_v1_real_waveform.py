@@ -7,7 +7,16 @@ from typing import Any
 
 import pytest
 
-from runner import ArtifactWriter, CliRunner, RunResult
+from runner import (
+    ArtifactWriter,
+    CliRunner,
+    RunResult,
+)
+
+
+@pytest.fixture
+def cli_runner(persistent_cli_runner: CliRunner) -> CliRunner:
+    return persistent_cli_runner
 
 
 def _require_success(
@@ -16,7 +25,7 @@ def _require_success(
     case_name: str,
     artifact_root: Path,
     extra: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+) -> str:
     response = result.response
     if (
         result.returncode == 0
@@ -61,16 +70,24 @@ def _query(
     )
 
 
-def _query_xout(
+def _query_xout_equivalent(
     cli_runner: CliRunner,
     request: dict[str, Any],
+    expected_json: dict[str, Any],
     *,
     case_name: str,
     artifact_root: Path,
     timeout_sec: float = 180.0,
-) -> str:
+) -> dict[str, Any]:
     result = cli_runner.run(request, output_format="xout", timeout_sec=timeout_sec)
     if result.returncode == 0 and not result.timed_out and isinstance(result.response, str):
+        assert result.response.startswith(
+            "@xdebug.%s.v1\n" % request["action"]
+        )
+        assert "pointer\tkind\tvalue" not in result.response
+        for key, expected in expected_json["summary"].items():
+            if isinstance(expected, (str, int, float, bool)):
+                assert key in result.response
         return result.response
     artifact_dir = ArtifactWriter(artifact_root).write(case_name, result)
     pytest.fail(
@@ -135,8 +152,8 @@ def test_stream_v1_real_waveform_actions(
         case_name="stream-v1-session-open",
         artifact_root=artifact_root,
     )
-    session = open_response.get("session") or open_response["data"]["session"]
-    target = {"session_id": session["id"]}
+    session = open_response["session"]
+    target = {"session_id": session["session_id"]}
 
     try:
         loaded = _query(
@@ -227,7 +244,8 @@ def test_stream_v1_real_waveform_actions(
                 "target": target,
                 "args": {
                     "mode": "append",
-                    "streams": [
+                    "config": {
+                        "streams": [
                             {
                                 "name": "bad_interleave_channel_valid",
                                 "signals": {
@@ -248,8 +266,9 @@ def test_stream_v1_real_waveform_actions(
                                 "channel_id_valid": "sop",
                                 "allow_interleaving": True,
                                 "beat_fields": {"data": "data"},
-                        }
-                    ],
+                            }
+                        ]
+                    },
                 },
             },
             timeout_sec=120,
@@ -259,7 +278,7 @@ def test_stream_v1_real_waveform_actions(
         invalid_error = invalid_interleaving.response["error"]
         assert invalid_error["code"] == "INVALID_ARGUMENT"
         assert invalid_error["error_layer"] == "handler"
-        assert invalid_error["invalid_arg"] == "args.streams"
+        assert invalid_error["invalid_arg"] == "args.config.streams"
         assert "allow_interleaving requires channel_id_valid=every_beat" in invalid_error["message"]
 
         for stream_name, counts in expected.items():
@@ -267,7 +286,7 @@ def test_stream_v1_real_waveform_actions(
                 cli_runner,
                 {
                     "api_version": "xdebug.v1",
-                    "action": "stream.show",
+                    "action": "stream.describe",
                     "target": target,
                     "args": {"stream": stream_name},
                 },
@@ -304,7 +323,6 @@ def test_stream_v1_real_waveform_actions(
                         "stream": stream_name,
                         "query": "summary",
                     "time_range": {"begin": "0ns", "end": "250us"},
-                        "line_limit": 64,
                     },
                 },
                 case_name="stream-v1-summary-" + stream_name,
@@ -312,8 +330,14 @@ def test_stream_v1_real_waveform_actions(
             )["summary"]
             assert summary["transfer_count"] == counts["transfer_count"]
             assert summary["transfer_count"] >= 10000
-            assert summary["retained_transfer_count"] == 64
-            assert summary["response_truncated"] is True
+            assert summary["analysis_complete"] is True
+            assert summary["response_truncated"] is False
+            assert summary["returned_count"] == 0
+            assert summary["total_count"] == counts.get(
+                "packet_count",
+                counts["transfer_count"],
+            )
+            assert summary["truncation_scopes"] == []
             if "stall_cycles" in counts:
                 assert summary["stall_cycles"] == counts["stall_cycles"]
                 assert summary["stall_windows"] > 0
@@ -384,7 +408,11 @@ def test_stream_v1_real_waveform_actions(
                 artifact_root=artifact_root,
             )
             assert len(window["data"]["rows"]) == 8
-            assert window["meta"]["truncated"] is True
+            assert window["summary"]["analysis_complete"] is True
+            assert window["summary"]["response_truncated"] is True
+            assert window["summary"]["returned_count"] == 8
+            assert window["summary"]["total_count"] > 8
+            assert window["summary"]["truncation_scopes"] == ["response_transfers"]
 
         partial_packet = _query(
             cli_runner,
@@ -396,7 +424,6 @@ def test_stream_v1_real_waveform_actions(
                     "stream": "ready_packet",
                     "query": "summary",
                     "time_range": {"begin": "65ns", "end": "75ns"},
-                    "line_limit": 8,
                 },
             },
             case_name="stream-v1-partial-packet-count",
@@ -424,51 +451,50 @@ def test_stream_v1_real_waveform_actions(
         assert first_packet["data"]["found"] is True
         assert first_packet["data"]["packet"]["packet_index"] == 0
         assert first_packet["data"]["packet"]["packet_stable_fields"]["opcode"]["value"] == "8'ha0"
-        assert first_packet["data"]["packet"]["beat_fields_preview"]["total_beats"] == 4
-        assert first_packet["data"]["packet"]["beat_fields_preview"]["head"][0]["fields"]["data"]["value"] == "32'h40000000"
+        beat_preview = first_packet["data"]["packet"]["beat_fields_preview"]
+        assert beat_preview["total_count"] == 4
+        assert beat_preview["returned_count"] == 4
+        assert beat_preview["response_truncated"] is False
+        assert "total_beats" not in beat_preview
+        assert beat_preview["head"][0]["fields"]["data"]["value"] == "32'h40000000"
 
+        packet_at_request = {
+            "request_id": "stream-v1-packet-at-xout-roundtrip",
+            "api_version": "xdebug.v1",
+            "action": "stream.query",
+            "target": target,
+            "args": {
+                "stream": "ready_packet",
+                "query": "packet_at",
+                "packet_index": 3,
+                "time_range": {"begin": "0ns", "end": "250us"},
+                "line_limit": 1,
+            },
+        }
         packet_at = _query(
             cli_runner,
-            {
-                "api_version": "xdebug.v1",
-                "action": "stream.query",
-                "target": target,
-                "args": {
-                    "stream": "ready_packet",
-                    "query": "packet_at",
-                    "packet_index": 3,
-                    "time_range": {"begin": "0ns", "end": "250us"},
-                },
-            },
+            packet_at_request,
             case_name="stream-v1-packet-at",
             artifact_root=artifact_root,
         )
         assert packet_at["data"]["found"] is True
         assert packet_at["data"]["packet"]["packet_index"] == 3
         assert packet_at["data"]["packet"]["packet_stable_fields"]["opcode"]["value"] == "8'ha3"
-        packet_at_xout = _query_xout(
+        packet_at_xout = _query_xout_equivalent(
             cli_runner,
-            {
-                "api_version": "xdebug.v1",
-                "action": "stream.query",
-                "target": target,
-                "args": {
-                    "stream": "ready_packet",
-                    "query": "packet_at",
-                    "packet_index": 3,
-                    "time_range": {"begin": "0ns", "end": "250us"},
-                    "line_limit": 1,
-                },
-            },
+            packet_at_request,
+            packet_at,
             case_name="stream-v1-packet-at-xout",
             artifact_root=artifact_root,
         )
-        assert "packet_stable_fields    : opcode=8'ha3" in packet_at_xout
-        assert "18     185ns  0           data=32'h4000000c seq=16'h000c" in packet_at_xout
-        assert "first_fields: data=32'h4000000c seq=16'h000c" in packet_at_xout
-        assert "last_fields : data=32'h4000000f seq=16'h000f" in packet_at_xout
-        assert "bits:" not in packet_at_xout
-        assert "known: true" not in packet_at_xout
+        for evidence in (
+            "packet:", "3", "data=32'h4000000c",
+            "seq=16'hc", "data=32'h4000000f", "seq=16'hf",
+        ):
+            assert evidence in packet_at_xout
+        assert "\npackets:\n" not in packet_at_xout
+        assert '{"data":{"value"' not in packet_at_xout
+        assert '"bits":' not in packet_at_xout
 
         packet_oob = _query(
             cli_runner,
@@ -544,26 +570,38 @@ def test_stream_v1_real_waveform_actions(
         )
         assert len(packets["data"]["packets"]) == 4
         assert packets["summary"]["edge"] == "negedge"
-        packets_xout = _query_xout(
-            cli_runner,
-            {
-                "api_version": "xdebug.v1",
-                "action": "stream.query",
-                "target": target,
-                "args": {
-                    "stream": "ready_bp_packet_negedge",
-                    "query": "packet_window",
-                    "time_range": {"begin": "0ns", "end": "250us"},
-                    "line_limit": 2,
-                },
+        packets_xout_request = {
+            "request_id": "stream-v1-packet-window-xout-roundtrip",
+            "api_version": "xdebug.v1",
+            "action": "stream.query",
+            "target": target,
+            "args": {
+                "stream": "ready_bp_packet_negedge",
+                "query": "packet_window",
+                "time_range": {"begin": "0ns", "end": "250us"},
+                "line_limit": 2,
             },
+        }
+        packets_xout_json = _query(
+            cli_runner,
+            packets_xout_request,
+            case_name="stream-v1-packet-window-json",
+            artifact_root=artifact_root,
+        )
+        packets_xout = _query_xout_equivalent(
+            cli_runner,
+            packets_xout_request,
+            packets_xout_json,
             case_name="stream-v1-packet-window-xout",
             artifact_root=artifact_root,
         )
-        assert "data=32'h60000000 seq=16'h0000" in packets_xout
-        assert "data=32'h60000003 seq=16'h0003" in packets_xout
-        assert "2'h0" in packets_xout
-        assert "bits:" not in packets_xout
+        for evidence in (
+            "packets:", "data=32'h60000000", "seq=16'h0",
+            "data=32'h60000003", "seq=16'h3", "2'h0",
+        ):
+            assert evidence in packets_xout
+        assert '{"data":{"value"' not in packets_xout
+        assert '"bits":' not in packets_xout
 
         interleaved = _query(
             cli_runner,
@@ -611,30 +649,41 @@ def test_stream_v1_real_waveform_actions(
         assert match["summary"]["unresolved_filter_count"] == 0
         assert len(match["data"]["rows"]) == 8
         assert match["data"]["rows"][0]["fields"]["low8"]["value"] == "8'h5a"
-        match_xout = _query_xout(
-            cli_runner,
-            {
-                "api_version": "xdebug.v1",
-                "action": "stream.query",
-                "target": target,
-                "args": {
-                    "stream": "ready_stream",
-                    "query": "transfer_window",
-                    "time_range": {"begin": "0ns", "end": "250us"},
-                    "line_limit": 2,
-                    "filter": {"fields": {
-                        "low8": {"mode": "exact", "values": ["8'h5a"]},
-                    }},
-                },
+        match_xout_request = {
+            "request_id": "stream-v1-filter-beat-fields-xout-roundtrip",
+            "api_version": "xdebug.v1",
+            "action": "stream.query",
+            "target": target,
+            "args": {
+                "stream": "ready_stream",
+                "query": "transfer_window",
+                "time_range": {"begin": "0ns", "end": "250us"},
+                "line_limit": 2,
+                "filter": {"fields": {
+                    "low8": {"mode": "exact", "values": ["8'h5a"]},
+                }},
             },
+        }
+        match_xout_json = _query(
+            cli_runner,
+            match_xout_request,
+            case_name="stream-v1-filter-beat-fields-json",
+            artifact_root=artifact_root,
+        )
+        match_xout = _query_xout_equivalent(
+            cli_runner,
+            match_xout_request,
+            match_xout_json,
             case_name="stream-v1-filter-beat-fields-xout",
             artifact_root=artifact_root,
         )
-        assert "low8=8'h5a" in match_xout
-        assert "data=32'h2000015a" in match_xout
-        assert "channel_id" in match_xout
-        assert "bits:" not in match_xout
-        assert "unresolved_filter_count: 因所选 SOP/EOP 边界" in match_xout
+        for evidence in (
+            "rows:", "low8", "8'h5a", "data", "32'h2000015a",
+            "channel",
+        ):
+            assert evidence in match_xout
+        assert '{"addr":{"value"' not in match_xout
+        assert '"bits":' not in match_xout
 
         scalar_data_filter = _query(
             cli_runner,
@@ -877,14 +926,14 @@ def test_stream_v1_cache_scope_repository_contract(
         case_name="stream-cache-scope-open",
         artifact_root=artifact_root,
     )
-    session = opened.get("session") or opened["data"]["session"]
-    target = {"session_id": session["id"]}
+    session = opened["session"]
+    target = {"session_id": session["session_id"]}
     try:
         _query(
             cli_runner,
             {"api_version": "xdebug.v1", "action": "stream.config.load",
              "target": target,
-             "args": {"streams": [ready_packet], "mode": "replace"}},
+             "args": {"config": {"streams": [ready_packet]}, "mode": "replace"}},
             case_name="stream-cache-scope-load",
             artifact_root=artifact_root,
         )
@@ -962,11 +1011,11 @@ def test_stream_v1_cache_scope_repository_contract(
              "target": target,
              "args": {"stream": "ready_packet", "query": "summary",
                       "cache_scope": "range", "time_range": range_b}},
-            case_name="stream-cache-scope-range-from-full",
+            case_name="stream-cache-scope-range-rebuild-after-full",
             artifact_root=artifact_root,
         )
         assert derived_range["summary"] == second_range["summary"]
-        assert _stream_probe_rows(probe_path)[-1]["scanner_invocations"] == 3
+        assert _stream_probe_rows(probe_path)[-1]["scanner_invocations"] == 4
 
         same_semantics = copy.deepcopy(ready_packet)
         same_semantics["description"] = "description-only replacement"
@@ -974,7 +1023,7 @@ def test_stream_v1_cache_scope_repository_contract(
             cli_runner,
             {"api_version": "xdebug.v1", "action": "stream.config.load",
              "target": target,
-             "args": {"streams": [same_semantics], "mode": "replace"}},
+             "args": {"config": {"streams": [same_semantics]}, "mode": "replace"}},
             case_name="stream-cache-scope-description-replace",
             artifact_root=artifact_root,
         )
@@ -987,7 +1036,7 @@ def test_stream_v1_cache_scope_repository_contract(
             case_name="stream-cache-scope-description-hit",
             artifact_root=artifact_root,
         )
-        assert _stream_probe_rows(probe_path)[-1]["scanner_invocations"] == 3
+        assert _stream_probe_rows(probe_path)[-1]["scanner_invocations"] == 4
 
         changed_semantics = copy.deepcopy(same_semantics)
         changed_semantics["sample_point"] = "after"
@@ -995,7 +1044,7 @@ def test_stream_v1_cache_scope_repository_contract(
             cli_runner,
             {"api_version": "xdebug.v1", "action": "stream.config.load",
              "target": target,
-             "args": {"streams": [changed_semantics], "mode": "replace"}},
+             "args": {"config": {"streams": [changed_semantics]}, "mode": "replace"}},
             case_name="stream-cache-scope-semantic-replace",
             artifact_root=artifact_root,
         )
@@ -1008,17 +1057,18 @@ def test_stream_v1_cache_scope_repository_contract(
             case_name="stream-cache-scope-semantic-rebuild",
             artifact_root=artifact_root,
         )
-        assert _stream_probe_rows(probe_path)[-1]["scanner_invocations"] == 4
-        _query(
-            cli_runner,
+        assert _stream_probe_rows(probe_path)[-1]["scanner_invocations"] == 5
+        invalid_range = cli_runner.run(
             {"api_version": "xdebug.v1", "action": "stream.query",
              "target": target,
              "args": {"stream": "ready_packet", "query": "summary",
                       "cache_scope": "range"}},
-            case_name="stream-cache-scope-range-without-time-is-full",
-            artifact_root=artifact_root,
+            timeout_sec=120,
         )
-        assert _stream_probe_rows(probe_path)[-1]["scanner_invocations"] == 4
+        assert invalid_range.returncode != 0
+        assert invalid_range.response["error"]["code"] == "INVALID_REQUEST"
+        assert invalid_range.response["error"]["error_layer"] == "schema"
+        assert _stream_probe_rows(probe_path)[-1]["scanner_invocations"] == 5
 
         invalid_static = cli_runner.run(
             {"api_version": "xdebug.v1", "action": "stream.validate",
@@ -1036,9 +1086,10 @@ def test_stream_v1_cache_scope_repository_contract(
              "target": target}, timeout_sec=60,
         )
 
-    batch_probe = tmp_path / "stream-batch-cache-probe.jsonl"
-    cli_runner.base_env["XDEBUG_TEST_ANALYSIS_PROBE_PATH"] = str(batch_probe)
-    batch_open = _query(
+        batch_probe = tmp_path / "stream-batch-cache-probe.jsonl"
+        cli_runner.base_env["XDEBUG_TEST_ANALYSIS_PROBE_PATH"] = str(batch_probe)
+        cli_runner.restart()
+        batch_open = _query(
         cli_runner,
         {"api_version": "xdebug.v1", "action": "session.open",
          "target": {"fsdb": str(fsdb)},
@@ -1046,14 +1097,14 @@ def test_stream_v1_cache_scope_repository_contract(
         case_name="stream-cache-batch-open",
         artifact_root=artifact_root,
     )
-    batch_session = batch_open.get("session") or batch_open["data"]["session"]
-    batch_target = {"session_id": batch_session["id"]}
+    batch_session = batch_open["session"]
+    batch_target = {"session_id": batch_session["session_id"]}
     try:
         _query(
             cli_runner,
             {"api_version": "xdebug.v1", "action": "stream.config.load",
              "target": batch_target,
-             "args": {"streams": [ready_packet], "mode": "replace"}},
+             "args": {"config": {"streams": [ready_packet]}, "mode": "replace"}},
             case_name="stream-cache-batch-load", artifact_root=artifact_root,
         )
         batch_requests = [
@@ -1102,8 +1153,8 @@ def test_stream_v1_cache_scope_repository_contract(
             child["ok"] for child in batch_result.response["data"]["results"]
         )
         batch_rows = _stream_probe_rows(batch_probe)
-        assert batch_rows[-1]["scanner_invocations"] == 3
-        assert sum(row["event"] == "build" for row in batch_rows) == 3
+        assert batch_rows[-1]["scanner_invocations"] == 4
+        assert sum(row["event"] == "build" for row in batch_rows) == 4
         assert sum(row["event"] == "invalidate" for row in batch_rows) == 2
     finally:
         cli_runner.run(
@@ -1115,6 +1166,7 @@ def test_stream_v1_cache_scope_repository_contract(
     cli_runner.base_env["XDEBUG_ANALYSIS_CACHE_MAX_BYTES"] = "1"
     cli_runner.base_env["XDEBUG_ANALYSIS_CACHE_HARD_MAX_BYTES"] = "2147483648"
     cli_runner.base_env["XDEBUG_TEST_ANALYSIS_PROBE_PATH"] = str(soft_probe)
+    cli_runner.restart()
     soft_open = _query(
         cli_runner,
         {"api_version": "xdebug.v1", "action": "session.open",
@@ -1123,14 +1175,14 @@ def test_stream_v1_cache_scope_repository_contract(
         case_name="stream-cache-soft-open",
         artifact_root=artifact_root,
     )
-    soft_session = soft_open.get("session") or soft_open["data"]["session"]
-    soft_target = {"session_id": soft_session["id"]}
+    soft_session = soft_open["session"]
+    soft_target = {"session_id": soft_session["session_id"]}
     try:
         _query(
             cli_runner,
             {"api_version": "xdebug.v1", "action": "stream.config.load",
              "target": soft_target,
-             "args": {"streams": [ready_packet], "mode": "replace"}},
+             "args": {"config": {"streams": [ready_packet]}, "mode": "replace"}},
             case_name="stream-cache-soft-load", artifact_root=artifact_root,
         )
         for index, time_range in enumerate((range_a, range_b, range_a)):
@@ -1157,6 +1209,7 @@ def test_stream_v1_cache_scope_repository_contract(
     cli_runner.base_env["XDEBUG_ANALYSIS_CACHE_MAX_BYTES"] = "1"
     cli_runner.base_env["XDEBUG_ANALYSIS_CACHE_HARD_MAX_BYTES"] = "1"
     cli_runner.base_env["XDEBUG_TEST_ANALYSIS_PROBE_PATH"] = str(hard_probe)
+    cli_runner.restart()
     hard_open = _query(
         cli_runner,
         {"api_version": "xdebug.v1", "action": "session.open",
@@ -1165,14 +1218,14 @@ def test_stream_v1_cache_scope_repository_contract(
         case_name="stream-cache-hard-open",
         artifact_root=artifact_root,
     )
-    hard_session = hard_open.get("session") or hard_open["data"]["session"]
-    hard_target = {"session_id": hard_session["id"]}
+    hard_session = hard_open["session"]
+    hard_target = {"session_id": hard_session["session_id"]}
     try:
         _query(
             cli_runner,
             {"api_version": "xdebug.v1", "action": "stream.config.load",
              "target": hard_target,
-             "args": {"streams": [ready_packet], "mode": "replace"}},
+             "args": {"config": {"streams": [ready_packet]}, "mode": "replace"}},
             case_name="stream-cache-hard-load", artifact_root=artifact_root,
         )
         hard_request = {
@@ -1187,8 +1240,10 @@ def test_stream_v1_cache_scope_repository_contract(
                       "requests": [hard_request, copy.deepcopy(hard_request)]}},
             timeout_sec=120,
         )
-        assert rejected.returncode != 0
-        assert rejected.response["error"]["code"] == "BATCH_PARTIAL_FAILURE"
+        assert rejected.returncode == 0
+        assert rejected.response["ok"] is True
+        assert rejected.response["error"] is None
+        assert rejected.response["summary"]["all_ok"] is False
         child_results = rejected.response["data"]["results"]
         assert len(child_results) == 2
         for child in child_results:
@@ -1197,7 +1252,7 @@ def test_stream_v1_cache_scope_repository_contract(
             assert cache_error["protocol"] == "stream"
             assert cache_error["hard_max_bytes"] == 1
             assert cache_error["recoverable"] is True
-            assert len(cache_error["suggestions"]) == 2
+            assert len(cache_error["next_actions"]) == 2
         hard_rows = _stream_probe_rows(hard_probe)
         assert hard_rows[-1]["scanner_invocations"] == 0
         assert sum(row["event"] == "build_failed" for row in hard_rows) == 2

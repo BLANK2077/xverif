@@ -8,6 +8,11 @@ import pytest
 from runner import ArtifactWriter, CliRunner, RunResult
 
 
+@pytest.fixture
+def cli_runner(persistent_cli_runner: CliRunner) -> CliRunner:
+    return persistent_cli_runner
+
+
 def _require_success(
     result: RunResult,
     *,
@@ -69,8 +74,8 @@ def active_zero_evidence_session(
         case_name="active-zero-evidence-session-open",
         artifact_root=artifact_root,
     )
-    session = response.get("session") or response["data"]["session"]
-    session_id = session.get("session_id") or session.get("id")
+    session = response["session"]
+    session_id = session.get("session_id")
     assert isinstance(session_id, str) and session_id
     try:
         yield session_id
@@ -198,16 +203,51 @@ def test_scope_roots_discovers_combined_top(
     assert root["sources"] == ["design", "wave"]
     assert root["wave"]["queryable"] is True
     assert root["design"]["traceable"] is True
+    assert root["design"]["discovery"] in {"npi_top", "verified_wave_root"}
 
     scope_response = _simple_query(
         cli_runner,
         active_zero_evidence_session,
         "scope.list",
-        {"path": response["summary"]["recommended_root"], "recursive": False},
+        {"path": response["summary"]["recommended_root"], "level": 0},
         artifact_root=artifact_root,
     )
     assert isinstance(scope_response, dict)
     assert scope_response["data"]["signals"]
+    modules = {item["name"]: item for item in scope_response["data"]["modules"]}
+    assert modules["u_primitive"]["module_name"] == "primitive_output_dut"
+    assert modules["u_input_child"]["module_name"] == "input_trace_child"
+    assert {
+        (item["name"], item["direction"], item["width"])
+        for item in scope_response["data"]["ports"]
+    } >= {("top_input_i", "input", 1)}
+    assert all(
+        not item["name"].startswith("active_zero_evidence_tb.")
+        for section in ("modules", "ports", "signals")
+        for item in scope_response["data"][section]
+    )
+
+    child_ports = _simple_query(
+        cli_runner,
+        active_zero_evidence_session,
+        "scope.list",
+        {
+            "path": response["summary"]["recommended_root"],
+            "level": 1,
+            "kind": "port",
+            "include_patterns": ["u_input_child.*"],
+            "exclude_patterns": ["*data_q"],
+        },
+        artifact_root=artifact_root,
+    )
+    assert {
+        (item["name"], item["direction"], item["width"])
+        for item in child_ports["data"]["ports"]
+    } == {
+        ("u_input_child.clk", "input", 1),
+        ("u_input_child.data_i", "input", 1),
+        ("u_input_child.rst_n", "input", 1),
+    }
 
 
 @pytest.mark.combined
@@ -228,7 +268,7 @@ def test_trace_driver_runs_in_combined_session(
     )
     assert isinstance(response, dict)
     assert response["data"]["paths"]
-    assert response["summary"]["path_count"] == len(response["data"]["paths"])
+    assert response["summary"]["returned_count"] == len(response["data"]["paths"])
 
 
 @pytest.mark.combined
@@ -268,19 +308,35 @@ def test_scope_roots_supports_source_filters_and_xout(
     assert wave["summary"]["design_count"] == 0
     assert wave["summary"]["recommended_root"] == "active_zero_evidence_tb"
     assert wave["data"]["roots"][0]["status"] == "wave_only"
+    assert wave["data"]["roots"][0]["design"] is None
 
     assert isinstance(design, dict)
     assert design["summary"]["design_count"] == 1
     assert design["summary"]["wave_count"] == 0
     assert design["summary"]["recommended_root"] == "active_zero_evidence_tb"
     assert design["data"]["roots"][0]["status"] == "design_only"
+    assert design["data"]["roots"][0]["wave"] is None
+    assert design["data"]["roots"][0]["design"]["discovery"] in {
+        "npi_top",
+        "verified_wave_root",
+    }
 
     assert isinstance(xout, str)
-    assert "@xdebug.scope.roots.v1" in xout
-    assert "recommended: active_zero_evidence_tb" in xout
-    assert "path" in xout and "status" in xout and "sources" in xout
-    assert "active_zero_evidence_tb  matched  design,wave" in xout
-    assert "limitations:" not in xout
+    assert xout.startswith("@xdebug.scope.roots.v1")
+    assert "pointer\tkind\tvalue" not in xout
+    for evidence in (
+        "summary:", "recommended: active_zero_evidence_tb", "source     : auto",
+        "roots      : 1", "matched    : 1", "wave       : 1",
+        "design     : 1", "roots:",
+        "path\tstatus\tsources\twave\tdesign",
+        "active_zero_evidence_tb\tmatched\tdesign,wave",
+    ):
+        assert evidence in xout
+    for generic_key in (
+        "recommended_root", "recommended_reason", "matched_count",
+        "response_truncated", "scan_complete", "analysis_complete",
+    ):
+        assert generic_key not in xout
 
 
 @pytest.mark.combined
@@ -335,7 +391,7 @@ def test_active_driver_reports_precise_active_time_for_delayed_query(
     )
 
     assert response["summary"]["active_time"] == "10ns"
-    assert response["summary"]["path_count"] == len(response["data"]["paths"])
+    assert response["summary"]["returned_count"] == len(response["data"]["paths"])
     assert {50, 74, 77}.issubset(_path_lines(response))
     assert "driver" not in response["data"]
     assert "trace" not in response["data"]
@@ -361,7 +417,7 @@ def test_active_driver_uses_precise_fsdb_time_for_us_scale_reduction_output(
     )
 
     assert response["summary"]["active_time"] == "9995ns"
-    assert response["summary"]["path_count"] == len(response["data"]["paths"])
+    assert response["summary"]["returned_count"] == len(response["data"]["paths"])
     assert {142, 167}.issubset(_path_lines(response))
     assert "driver" not in response["data"]
     assert "root_driver" not in response["data"]
@@ -388,8 +444,8 @@ def test_active_driver_chain_uses_precise_fsdb_time_for_us_scale_reduction_outpu
 
     assert response["summary"]["termination"] == "assignment"
     assert response["summary"]["termination_detail"] == "non_direct_rhs_expression"
-    assert response["summary"]["hop_count"] == len(response["data"]["hops"])
-    assert response["summary"]["hop_count"] == 2
+    assert response["summary"]["returned_count"] == len(response["data"]["hops"])
+    assert response["summary"]["returned_count"] == 2
     assert _hop_lines(response) == [167, 142]
     assert "chain" not in response["data"]
 
@@ -413,7 +469,8 @@ def test_active_driver_reduction_output_zero_evidence_is_unresolved(
         artifact_root=artifact_root,
     )
 
-    assert response["summary"]["path_count"] == 0
+    assert response["summary"]["total_count"] == 0
+    assert response["summary"]["returned_count"] == 0
     assert response["data"]["paths"] == []
     assert "driver" not in response["data"]
     assert "root_driver" not in response["data"]
@@ -441,7 +498,7 @@ def test_active_driver_chain_reduction_output_zero_evidence_is_unresolved(
 
     assert response["summary"]["termination"] == "unresolved"
     assert "chain" not in response["data"]
-    assert response["summary"]["hop_count"] == len(response["data"]["hops"])
+    assert response["summary"]["returned_count"] == len(response["data"]["hops"])
 
 
 @pytest.mark.combined
@@ -468,7 +525,7 @@ def test_active_driver_chain_primitive_output_uses_real_evidence_not_fake_primar
         response["summary"]["termination"] == "primary_input"
         and len(hops) <= 1
     )
-    assert response["summary"]["hop_count"] == len(hops)
+    assert response["summary"]["returned_count"] == len(hops)
     assert response["summary"]["termination"] != "unresolved"
 
 
@@ -491,8 +548,8 @@ def test_active_driver_direct_module_input_follows_parent_connection(
         artifact_root=artifact_root,
     )
 
-    assert response["summary"]["path_count"] == len(response["data"]["paths"])
-    assert response["summary"]["path_count"] >= 1
+    assert response["summary"]["returned_count"] == len(response["data"]["paths"])
+    assert response["summary"]["returned_count"] >= 1
     assert any(
         "active_zero_evidence_tb.parent_src" in path
         for path in _signal_paths(response)
@@ -547,7 +604,7 @@ def test_active_driver_top_input_without_parent_connection_is_primary_input(
         artifact_root=artifact_root,
     )
 
-    assert response["summary"]["path_count"] == len(response["data"]["paths"])
+    assert response["summary"]["returned_count"] == len(response["data"]["paths"])
     if response["data"]["paths"]:
         assert any(
             "active_zero_evidence_tb.top_input_i" in path.get("signal_path", [])
@@ -577,7 +634,7 @@ def test_active_driver_chain_top_input_without_parent_connection_is_primary_inpu
     )
 
     assert response["summary"]["termination"] == "primary_input"
-    assert response["summary"]["hop_count"] == len(response["data"]["hops"])
+    assert response["summary"]["returned_count"] == len(response["data"]["hops"])
     if response["data"]["hops"]:
         assert "active_zero_evidence_tb.top_input_i" in response["data"]["hops"][0]["signal_path"]
 
@@ -625,7 +682,8 @@ def test_active_driver_expr_output_zero_evidence_is_unresolved(
             artifact_root=artifact_root,
         )
         checks = [
-            response["summary"]["path_count"] == 0,
+            response["summary"]["total_count"] == 0,
+            response["summary"]["returned_count"] == 0,
             response["data"]["paths"] == [],
             "driver" not in response["data"],
             "root_driver" not in response["data"],
@@ -633,10 +691,11 @@ def test_active_driver_expr_output_zero_evidence_is_unresolved(
         ]
         if not all(checks):
             failures.append(
-                "%s: path_count=%s paths=%s data_keys=%s"
+                "%s: total_count=%s returned_count=%s paths=%s data_keys=%s"
                 % (
                     output_name,
-                    response["summary"]["path_count"],
+                    response["summary"]["total_count"],
+                    response["summary"]["returned_count"],
                     response["data"]["paths"],
                     sorted(response["data"].keys()),
                 )
@@ -667,7 +726,7 @@ def test_active_driver_chain_expr_output_zero_evidence_is_unresolved(
         checks = [
             response["summary"]["termination"] == "unresolved",
             "chain" not in response["data"],
-            response["summary"]["hop_count"] == len(response["data"]["hops"]),
+            response["summary"]["returned_count"] == len(response["data"]["hops"]),
         ]
         if not all(checks):
             failures.append(
