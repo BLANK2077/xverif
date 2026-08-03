@@ -6,7 +6,7 @@ local config = {
 }
 
 local record_cache = {}
-local loc_id_pattern = "L_" .. string.rep("[A-Za-z0-9]", 6) .. "[A-Za-z0-9]*"
+local loc_id_pattern = "L_" .. string.rep("[0-9A-F]", 8)
 
 local function notify(message)
   vim.notify("xloc: " .. message, vim.log.levels.WARN)
@@ -14,11 +14,22 @@ end
 
 local function location_id_under_cursor()
   local line = vim.api.nvim_get_current_line()
-  local id = line:match(loc_id_pattern)
-  if not id then
-    return nil, nil
+  local offset = 1
+  while offset <= #line do
+    local first, last = line:find(loc_id_pattern, offset)
+    if not first then
+      return nil, nil
+    end
+    local before = first > 1 and line:sub(first - 1, first - 1) or ""
+    local after = last < #line and line:sub(last + 1, last + 1) or ""
+    if not before:match("[A-Za-z0-9_]")
+        and not after:match("[A-Za-z0-9_]") then
+      local id = line:sub(first, last)
+      return id, tonumber(line:match(id .. "%((%d+)%)"))
+    end
+    offset = last + 1
   end
-  return id, tonumber(line:match(id .. "%((%d+)%)"))
+  return nil, nil
 end
 
 local function map_file()
@@ -45,23 +56,77 @@ local function cache_entry(path)
   return entry
 end
 
+local function valid_record(record)
+  if type(record) ~= "table" then
+    return false, "record must be a JSON object"
+  end
+  local key_count = 0
+  for key, _ in pairs(record) do
+    key_count = key_count + 1
+    if key ~= "loc_id" and key ~= "file" then
+      return false, "record contains unknown field: " .. tostring(key)
+    end
+  end
+  if key_count ~= 2 then
+    return false, "record must contain exactly loc_id and file"
+  end
+  if type(record.loc_id) ~= "string"
+      or not record.loc_id:match("^" .. loc_id_pattern .. "$") then
+    return false, "loc_id must match L_[0-9A-F]{8}"
+  end
+  if type(record.file) ~= "string" or record.file == ""
+      or record.file:find("[\r\n]") then
+    return false, "file must be a non-empty single-line string"
+  end
+  return true, nil
+end
+
+local function load_records(path)
+  local records = {}
+  local line_number = 0
+  local ok, error_message = pcall(function()
+    for line in io.lines(path) do
+      line_number = line_number + 1
+      if line:match("^%s*$") then
+        error("blank JSONL record")
+      end
+      local record = vim.json.decode(line)
+      local valid, reason = valid_record(record)
+      if not valid then
+        error(reason)
+      end
+      if records[record.loc_id] then
+        error("duplicate loc_id " .. record.loc_id)
+      end
+      records[record.loc_id] = record
+    end
+  end)
+  if not ok then
+    return nil, string.format(
+      "invalid map %s:%d: %s",
+      path,
+      line_number,
+      error_message
+    )
+  end
+  return records, nil
+end
+
 local function lookup_record(path, id)
   local entry = cache_entry(path)
   if not entry then
-    return nil
-  end
-  if entry.records[id] then
-    return entry.records[id]
+    return nil, "sidecar map is not readable: " .. path
   end
 
-  for line in io.lines(path) do
-    local ok, record = pcall(vim.json.decode, line)
-    if ok and type(record) == "table" and record.loc_id == id then
-      entry.records[id] = record
-      return record
+  if not entry.loaded then
+    local records, error_message = load_records(path)
+    if not records then
+      return nil, error_message
     end
+    entry.records = records
+    entry.loaded = true
   end
-  return nil
+  return entry.records[id], nil
 end
 
 local function record_file(record)
@@ -120,11 +185,15 @@ function M.gf()
 
   local sidecar = map_file()
   if not sidecar then
-    native_gf()
+    notify("canonical sidecar map not found for " .. vim.api.nvim_buf_get_name(0))
     return
   end
 
-  local record = lookup_record(sidecar, id)
+  local record, map_error = lookup_record(sidecar, id)
+  if map_error then
+    notify(map_error)
+    return
+  end
   if not record then
     notify("loc_id not found: " .. id .. " in " .. sidecar)
     return

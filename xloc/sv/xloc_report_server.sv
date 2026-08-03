@@ -9,6 +9,31 @@ class xloc_report_server extends uvm_default_report_server;
 
   protected string map_path = "sim.log.xloc.jsonl";
 
+  protected function string json_escape(string value);
+    string escaped = "";
+    int ch;
+
+    for (int i = 0; i < value.len(); i++) begin
+      ch = value.getc(i);
+      case (ch)
+        8'h22: escaped = {escaped, "\\\""};
+        8'h5c: escaped = {escaped, "\\\\"};
+        8'h08: escaped = {escaped, "\\b"};
+        8'h0c: escaped = {escaped, "\\f"};
+        8'h0a: escaped = {escaped, "\\n"};
+        8'h0d: escaped = {escaped, "\\r"};
+        8'h09: escaped = {escaped, "\\t"};
+        default: begin
+          if (ch < 8'h20)
+            escaped = {escaped, $sformatf("\\u%04x", ch)};
+          else
+            escaped = {escaped, value.substr(i, i)};
+        end
+      endcase
+    end
+    return escaped;
+  endfunction
+
   function string get_loc_id(string file);
     if (!loc_cache.exists(file)) begin
       loc_cache[file] = $sformatf("L_%08X", next_id);
@@ -20,9 +45,14 @@ class xloc_report_server extends uvm_default_report_server;
 
   function void write_jsonl_entry(string loc_id, string file);
     if (map_fd == 0) begin
-      map_fd = $fopen(map_path, "a");
+      // Each simulation owns a complete sidecar.  Append mode could retain
+      // stale records from an earlier run and violate loc_id uniqueness.
+      map_fd = $fopen(map_path, "w");
+      if (map_fd == 0)
+        $fatal(1, "xloc cannot open sidecar map: %s", map_path);
     end
-    $fwrite(map_fd, "{\"loc_id\":\"%s\",\"file\":\"%s\"}\n", loc_id, file);
+    $fwrite(map_fd, "{\"loc_id\":\"%s\",\"file\":\"%s\"}\n",
+            loc_id, json_escape(file));
     $fflush(map_fd);
   endfunction
 

@@ -22,13 +22,13 @@ let s:xloc_record_cache = {}
 
 function! s:XlocIdUnderCursor() abort
   let l:word = expand('<cWORD>')
-  let l:id = matchstr(l:word, 'L_[A-Za-z0-9]\{6,32}')
+  let l:id = matchstr(l:word, '\C\<L_[0-9A-F]\{8\}\>')
 
   if l:id !=# ''
     return l:id
   endif
 
-  return matchstr(getline('.'), 'L_[A-Za-z0-9]\{6,32}')
+  return matchstr(getline('.'), '\C\<L_[0-9A-F]\{8\}\>')
 endfunction
 
 function! s:XlocFindMapFile() abort
@@ -48,138 +48,62 @@ endfunction
 
 function! s:XlocParseJsonLine(line) abort
   if a:line =~# '^\s*$'
-    return {}
+    throw 'blank JSONL record'
   endif
 
-  if exists('*json_decode')
-    try
-      let l:obj = json_decode(a:line)
-      if type(l:obj) == type({})
-        return l:obj
-      endif
-    catch
-    endtry
+  if !exists('*json_decode')
+    throw 'json_decode() is required'
   endif
 
-  let l:obj = {}
-
-  let l:id = matchstr(a:line, '"loc_id"\s*:\s*"\zs[^"]\+\ze"')
-  if l:id !=# ''
-    let l:obj.loc_id = l:id
+  let l:obj = json_decode(a:line)
+  if type(l:obj) != type({})
+    throw 'record must be a JSON object'
   endif
-
-  let l:file = matchstr(a:line, '"file"\s*:\s*"\zs[^"]\+\ze"')
-  if l:file !=# ''
-    let l:obj.file = l:file
+  if sort(keys(l:obj)) !=# ['file', 'loc_id']
+    throw 'record must contain exactly loc_id and file'
   endif
-
+  if type(l:obj.loc_id) != type('')
+        \ || l:obj.loc_id !~# '\C^L_[0-9A-F]\{8\}$'
+    throw 'loc_id must match L_[0-9A-F]{8}'
+  endif
+  if type(l:obj.file) != type('') || l:obj.file ==# ''
+        \ || l:obj.file =~# "[\r\n]"
+    throw 'file must be a non-empty single-line string'
+  endif
   return l:obj
-endfunction
-
-function! s:XlocStripGrepPrefix(line) abort
-  return substitute(a:line, '^\d\+:\ze.', '', '')
-endfunction
-
-function! s:XlocSystemList(argv) abort
-  return systemlist(join(map(copy(a:argv), 'shellescape(v:val)'), ' '))
-endfunction
-
-function! s:XlocSearchLineByRg(mapfile, id) abort
-  if !executable('rg')
-    return ''
-  endif
-
-  let l:pattern = '"loc_id"[[:space:]]*:[[:space:]]*"' . a:id . '"'
-  let l:cmd = [
-        \ 'rg',
-        \ '--color=never',
-        \ '--no-heading',
-        \ '--no-filename',
-        \ '--line-number',
-        \ '--max-count', '1',
-        \ '--regexp', l:pattern,
-        \ a:mapfile
-        \ ]
-
-  let l:out = s:XlocSystemList(l:cmd)
-  if v:shell_error != 0 || empty(l:out)
-    return ''
-  endif
-
-  return s:XlocStripGrepPrefix(l:out[0])
-endfunction
-
-function! s:XlocSearchLineByGrep(mapfile, id) abort
-  if !executable('grep')
-    return ''
-  endif
-
-  let l:pattern = '"loc_id"[[:space:]]*:[[:space:]]*"' . a:id . '"'
-  let l:cmd = [
-        \ 'grep',
-        \ '-n',
-        \ '-m', '1',
-        \ '-E',
-        \ l:pattern,
-        \ a:mapfile
-        \ ]
-
-  let l:out = s:XlocSystemList(l:cmd)
-  if v:shell_error != 0 || empty(l:out)
-    return ''
-  endif
-
-  return s:XlocStripGrepPrefix(l:out[0])
-endfunction
-
-function! s:XlocSearchLineByReadfile(mapfile, id) abort
-  let l:pattern = '"loc_id"\s*:\s*"' . a:id . '"'
-
-  for l:line in readfile(a:mapfile)
-    if l:line =~# l:pattern
-      return l:line
-    endif
-  endfor
-
-  return ''
 endfunction
 
 function! s:XlocLookupRecord(mapfile, id) abort
   let l:mapfile = fnamemodify(a:mapfile, ':p')
   let l:mtime = getftime(l:mapfile)
-  let l:old = get(s:xloc_record_cache, l:mapfile, {'records': {}})
-
   if !has_key(s:xloc_record_cache, l:mapfile)
         \ || get(s:xloc_record_cache[l:mapfile], 'mtime', -1) != l:mtime
+    let l:records = {}
+    let l:line_number = 0
+    try
+      for l:line in readfile(l:mapfile)
+        let l:line_number += 1
+        let l:record = s:XlocParseJsonLine(l:line)
+        if has_key(l:records, l:record.loc_id)
+          throw 'duplicate loc_id ' . l:record.loc_id
+        endif
+        let l:records[l:record.loc_id] = l:record
+      endfor
+    catch
+      echohl WarningMsg
+      echom 'xloc: invalid map ' . l:mapfile . ':' . l:line_number
+            \ . ': ' . v:exception
+      echohl None
+      return {}
+    endtry
     let s:xloc_record_cache[l:mapfile] = {
           \ 'mtime': l:mtime,
-          \ 'records': get(l:old, 'records', {})
+          \ 'records': l:records,
           \ }
   endif
 
   let l:records = s:xloc_record_cache[l:mapfile].records
-  if has_key(l:records, a:id)
-    return l:records[a:id]
-  endif
-
-  let l:line = s:XlocSearchLineByRg(l:mapfile, a:id)
-  if l:line ==# ''
-    let l:line = s:XlocSearchLineByGrep(l:mapfile, a:id)
-  endif
-  if l:line ==# ''
-    let l:line = s:XlocSearchLineByReadfile(l:mapfile, a:id)
-  endif
-  if l:line ==# ''
-    return {}
-  endif
-
-  let l:rec = s:XlocParseJsonLine(l:line)
-  if get(l:rec, 'loc_id', '') !=# a:id
-    return {}
-  endif
-
-  let l:records[a:id] = l:rec
-  return l:rec
+  return get(l:records, a:id, {})
 endfunction
 
 function! s:XlocLineUnderCursor(id) abort
@@ -236,7 +160,9 @@ function! XlocGF() abort
 
   let l:mapfile = s:XlocFindMapFile()
   if l:mapfile ==# ''
-    call s:XlocNativeGF()
+    echohl WarningMsg
+    echom 'xloc: canonical sidecar map not found for ' . expand('%:p')
+    echohl None
     return
   endif
 

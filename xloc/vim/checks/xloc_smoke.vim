@@ -32,6 +32,9 @@ let s:relative_src = s:repo . '/tb/relative_src.sv'
 let s:local_src = s:run . '/local_src.sv'
 let s:log = s:run . '/sim.log'
 let s:map = s:log . '.xloc.jsonl'
+let s:bad_log = s:run . '/bad.log'
+let s:bad_map = s:bad_log . '.xloc.jsonl'
+let s:no_map_log = s:run . '/no_map.log'
 
 call s:Write(s:absolute_src, ['abs 1', 'abs 2', 'abs 3'])
 call s:Write(s:relative_src, ['rel 1', 'rel 2', 'rel 3'])
@@ -48,6 +51,8 @@ call s:Write(s:map, [
       \ '{"loc_id":"L_00000003","file":"local_src.sv"}',
       \ '{"loc_id":"L_00000004","file":"missing.sv"}',
       \ ])
+call s:Write(s:no_map_log, ['UVM_ERROR L_0000000A(1)'])
+call s:Write(s:run . '/L_0000000A', ['native gf decoy'])
 
 let g:xloc_repo_root = s:repo
 
@@ -75,5 +80,34 @@ execute 'edit' fnameescape(s:log)
 call cursor(4, 1)
 XlocGF
 call s:AssertEqual(fnamemodify(s:log, ':p'), expand('%:p'), 'missing source stays in log')
+
+function! s:AssertInvalidMap(lines, message) abort
+  call s:Write(s:bad_log, ['UVM_ERROR L_00000001(2)'])
+  call s:Write(s:bad_map, a:lines)
+  execute 'edit' fnameescape(s:bad_log)
+  call cursor(1, 1)
+  XlocGF
+  call s:AssertEqual(fnamemodify(s:bad_log, ':p'), expand('%:p'), a:message)
+endfunction
+
+call s:AssertInvalidMap(['not json'], 'malformed JSON map stays in log')
+call s:AssertInvalidMap([''], 'blank JSONL record stays in log')
+call s:AssertInvalidMap([
+      \ '{"loc_id":"L_00000001","file":"first.sv"}',
+      \ '{"loc_id":"L_00000001","file":"second.sv"}',
+      \ ], 'duplicate loc_id map stays in log')
+call s:AssertInvalidMap([
+      \ '{"loc_id":"L_00000001","file":"first.sv","line":1}',
+      \ ], 'unknown field map stays in log')
+call s:AssertInvalidMap([
+      \ '{"loc_id":"L_00000001","file":7}',
+      \ ], 'wrong field type map stays in log')
+
+execute 'lcd' fnameescape(s:run)
+execute 'edit' fnameescape(s:no_map_log)
+call cursor(1, 1)
+XlocGF
+call s:AssertEqual(fnamemodify(s:no_map_log, ':p'), expand('%:p'),
+      \ 'canonical sidecar absence must not invoke native gf')
 
 qa!
