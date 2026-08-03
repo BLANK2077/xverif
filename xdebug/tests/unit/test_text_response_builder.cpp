@@ -265,6 +265,27 @@ int main() {
     text = render_xout_response(handler_text);
     assert(text == "@xdebug.any.action.v1\nsummary:\n  ok: true\n");
 
+    Json handler_response = {
+        {"ok", true},
+        {"action", "trace.active_driver_chain"},
+        {"summary", {{"termination", "ambiguous"}}},
+    };
+    const std::string handler_xout =
+        "@xdebug.trace.active_driver_chain.v1\n"
+        "ambiguous_rhs_samples:\n"
+        "  signal time before after\n"
+        "  top.rhs 10ns 1'b0 1'b1\n\n";
+    text = render_xout_response(handler_response, handler_xout);
+    assert(text ==
+           "@xdebug.trace.active_driver_chain.v1\n"
+           "ambiguous_rhs_samples:\n"
+           "  signal time before after\n"
+           "  top.rhs 10ns 1'b0 1'b1\n");
+    assert(text.find("termination") == std::string::npos);
+    assert(text.find("XOUT_BEGIN") == std::string::npos);
+    assert(text.find("XOUT_END") == std::string::npos);
+    assert(render_xout_transport_payload(handler_response, handler_xout) == text);
+
     Json error = {
         {"ok", false},
         {"action", "trace.driver"},
@@ -286,5 +307,8 @@ int main() {
     assert(text.find("example_note:") != std::string::npos ||
            text.find("example_note :") != std::string::npos);
     assert(text.find("next_actions:") != std::string::npos);
+    const std::string ignored_handler_xout = "@xdebug.should.not.pass.v1\n";
+    assert(render_xout_response(error, ignored_handler_xout) == text);
+    assert(render_xout_transport_payload(error, ignored_handler_xout) == text);
     return 0;
 }

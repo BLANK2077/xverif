@@ -133,7 +133,14 @@ void render_generic(TextResponseBuilder& out, const Json& response) {
 
 } // namespace
 
-std::string render_xout_response(const Json& response) {
+std::string render_xout_response(const Json& response,
+                                 const std::string& handler_xout) {
+    if (response.value("ok", false) && !handler_xout.empty()) {
+        std::string text = handler_xout;
+        while (!text.empty() && text.back() == '\n') text.pop_back();
+        text.push_back('\n');
+        return text;
+    }
     if (response.value("ok", false) && response.contains("text") &&
         response["text"].is_string()) {
         std::string text = response["text"].get<std::string>();
@@ -190,6 +197,19 @@ std::string render_xout_response(const Json& response) {
     emit_suggestions(out, response);
     emit_common_blocks(out, response);
     return out.str();
+}
+
+std::string render_xout_response(const Json& response) {
+    return render_xout_response(response, std::string());
+}
+
+std::string render_xout_transport_payload(const Json& response,
+                                          const std::string& handler_xout) {
+    return render_xout_response(response, handler_xout);
+}
+
+std::string render_xout_transport_payload(const Json& response) {
+    return render_xout_response(response);
 }
 
 } // namespace xdebug
