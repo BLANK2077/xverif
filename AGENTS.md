@@ -265,3 +265,9 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 - 错误现象：统一构建后对 `xdebug.axi_vip` 做 focused 验证时误用 `--xverif-gate regression`，被 suite membership 门禁在收集前拒绝。
 - 误判原因：沿用此前大部分 xdebug runtime suite 的 gate，没有先从当前 catalog 或 `--xverif-plan` 核对 AXI VIP 实际属于 nightly。
 - 以后规则：每个 focused suite 即使本轮此前运行过，也必须在执行前以当前 catalog 或目标 gate 的 `--xverif-plan` 核实 membership；不能依据相邻 suite 或旧运行记录推断 gate。
+
+### 2026-08-04 环境错误复盘
+
+- 错误现象：在临时重建仓库运行 `xdebug.native_xout_all` 时，第一次遗漏已确认的 `XIF_AGENT` 导致 xif fixture 指纹 cache miss，第二次遗漏 `XDEBUG_XOUT_PHASE` 导致测试在采集前拒绝启动。
+- 误判原因：只复用了 host、Python 与 gate 参数，没有从 native XOUT runner 和 fixture default environment 重新核对该 suite 的完整显式环境合同；临时仓库绝对路径还会参与 XIF fixture 指纹。
+- 以后规则：native XOUT 最终采集必须一次显式传入 `XVERIF_TEST_EXECUTION_ENV=host`、已缓存构建对应的 `XIF_AGENT`、`XDEBUG_XOUT_PHASE=final` 和当前重建仓库 `PYTHONPATH`；启动前先核对 runner phase enum 与 fixture fingerprint 环境，不以 preflight 失败逐项补参数。
