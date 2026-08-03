@@ -2,7 +2,6 @@
 #include "service/engine_action_registry.h"
 #include "service/engine_globals.h"
 
-#include "api/text_response_builder.h"
 #include "design/protocol/protocol.h"
 #include "waveform/server/fsdb_value_reader.h"
 #include "waveform/event/event_manager.h"
@@ -13,7 +12,7 @@
 #include "waveform/common/xdebug_waveform_paths.h"
 #include "waveform/service/action_support.h"
 #include "waveform/service/rc_generator.h"
-#include "waveform/value/logic_value.h"
+#include "core/value/logic_value.h"
 #include "waveform/apb/apb_analyzer.h"
 #include "core/npi/time_contract.h"
 
@@ -40,9 +39,10 @@ public:
     const char* action_name() const override { return name_.c_str(); }
     bool needs_design() const override { return nd_; }
     bool needs_waveform() const override { return nw_; }
-    Json run(const Json& request, EngineActionContext& ctx) const override {
+    Json run(ContractBoundRequest& request, EngineActionContext& ctx) const override {
         std::string error;
-        Json effective_request = request;
+        Json effective_request = request.consume_args_request(
+            "xdebug_waveform::ai_dispatch_query/" + name_);
         Json result = xdebug_waveform::ai_dispatch_query(effective_request, error);
         if (!error.empty()) {
             if (!xdebug_waveform::g_apb_analyzer.last_cache_error().empty())
@@ -52,13 +52,7 @@ public:
         }
         // Fix statistics end time: ai functions may return FSDB max time
         // instead of the requested window end.
-        Json args = request.value("args", Json::object());
-        if (name_ == "signal.changes") {
-            int limit = args.value("line_limit", 1000);
-            size_t matched = result.value("returned_change_rows", static_cast<size_t>(0));
-            if (limit >= 0 && matched > static_cast<size_t>(limit))
-                result["truncated"] = true;
-        }
+        auto args = request.args();
         if (args.contains("time_range") && args["time_range"].is_object() &&
             args["time_range"].contains("end")) {
             std::string req_end = args["time_range"]["end"].get<std::string>();

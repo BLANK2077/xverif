@@ -4,6 +4,7 @@
 // Defined in server.cpp; used by all handler files.
 
 #include "npi_fsdb.h"
+#include "waveform/common/versioned_json_store.h"
 #include <memory>
 #include <string>
 #include <utility>
@@ -38,12 +39,14 @@ extern std::unique_ptr<AnalysisRepository> g_analysis_repository;
 std::string format_time(npiFsdbTime t);
 std::string format_duration(npiFsdbTime t);
 std::pair<std::string, std::string> format_time_range(npiFsdbTime begin, npiFsdbTime end);
-bool read_list_from_storage(const std::string& session_id,
-                            const char* list_name, SignalList& out_list);
-bool find_list_diff(npiFsdbFileHandle file,
-                    const std::vector<std::string>& signals,
-                    npiFsdbTime begin_time, npiFsdbTime end_time,
-                    npiFsdbTime& diff_time);
+StoreResult read_list_from_storage(
+    const std::string& session_id,
+    const char* list_name,
+    SignalList& out_list);
+bool find_list_first_change(npiFsdbFileHandle file,
+                            const std::vector<std::string>& signals,
+                            npiFsdbTime begin_time, npiFsdbTime end_time,
+                            npiFsdbTime& diff_time);
 bool read_sig_vec_value_at_with_status(npiFsdbFileHandle file,
     const std::vector<std::string>& signals, npiFsdbTime time, char fmt,
     std::vector<std::string>& out_values, std::vector<bool>& out_found);

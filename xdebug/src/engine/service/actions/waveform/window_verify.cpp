@@ -3,7 +3,6 @@
 #include "service/engine_globals.h"
 #include "waveform_action_error_helpers.h"
 
-#include "api/text_response_builder.h"
 #include "design/protocol/protocol.h"
 #include "waveform/server/fsdb_value_reader.h"
 #include "waveform/event/event_manager.h"
@@ -14,7 +13,7 @@
 #include "waveform/common/xdebug_waveform_paths.h"
 #include "waveform/service/action_support.h"
 #include "waveform/service/rc_generator.h"
-#include "waveform/value/logic_value.h"
+#include "core/value/logic_value.h"
 #include "core/npi/time_contract.h"
 
 #include "npi.h"
@@ -45,9 +44,11 @@ public:
     const char* action_name() const override { return name_.c_str(); }
     bool needs_design() const override { return nd_; }
     bool needs_waveform() const override { return nw_; }
-    Json run(const Json& request, EngineActionContext& ctx) const override {
+    Json run(ContractBoundRequest& request, EngineActionContext& ctx) const override {
         std::string error;
-        Json result = xdebug_waveform::ai_dispatch_query(request, error);
+        Json raw_request = request.consume_args_request(
+            "xdebug_waveform::ai_dispatch_query/window.verify");
+        Json result = xdebug_waveform::ai_dispatch_query(raw_request, error);
         if (!error.empty()) {
             if (error.find("expression operands must be aliases") != std::string::npos) {
                 return expression_alias_error(name_, error);

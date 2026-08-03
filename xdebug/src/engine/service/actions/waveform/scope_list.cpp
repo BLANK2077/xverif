@@ -500,7 +500,6 @@ public:
     std::string render_xout(const Json& response) const override {
         return render_tabular_xout(action_name(), response);
     }
-
 };
 
 }  // namespace

@@ -1,4 +1,5 @@
 #include "../server_internal.h"
+#include "../../common/clock_sampling_response.h"
 
 namespace xdebug_waveform {
 
@@ -14,14 +15,14 @@ std::string json_type_name(const Json& value) {
     return "unknown";
 }
 
-Json invalid_detect_abnormal_checks(const std::string& invalid_arg,
+Json invalid_signal_anomaly_inspect_checks(const std::string& invalid_arg,
                                     const std::string& message,
                                     const Json& received = Json()) {
     Json error;
     error["code"] = "INVALID_REQUEST";
     error["message"] = message;
     error["recoverable"] = true;
-    error["suggested_actions"] = Json::array({
+    error["next_actions"] = Json::array({
         "Use object checks such as {\"type\":\"unknown_xz\"}. String shorthand is not supported.",
         "Allowed check types are unknown_xz, glitch, and stuck."
     });
@@ -93,13 +94,13 @@ Json sampled_payloads_json(const std::vector<SampledEdgeRecord>& edges,
     return out;
 }
 
-Json ai_sampled_pulse_inspect(const Json& args, std::string& error) {
+Json ai_signal_sampled_pulse_inspect(const Json& args, std::string& error) {
     ClockSampleSpec clock_sample;
     if (!clock_sample_from_args(args, clock_sample, error)) return Json();
     std::string clock = clock_sample.clock;
     std::string valid = args.value("valid", std::string());
     if (clock.empty() || valid.empty()) {
-        error = "sampled_pulse.inspect requires args.clock and args.valid";
+        error = "signal.sampled_pulse.inspect requires args.clock and args.valid";
         return Json();
     }
     npiFsdbTime begin = 0, end = 0;
@@ -107,18 +108,26 @@ Json ai_sampled_pulse_inspect(const Json& args, std::string& error) {
 
     Json signals = {{"valid", valid}};
     Json payload_aliases = Json::array();
-    auto add_payload = [&](const std::string& path) {
-        if (path.empty()) return;
+    auto add_payload = [&](const std::string& path) -> bool {
+        if (path.empty()) {
+            error = "payload signal paths must be non-empty";
+            return false;
+        }
         std::string alias = "payload" + std::to_string(payload_aliases.size());
         signals[alias] = path;
         payload_aliases.push_back({{"alias", alias}, {"signal", path}});
+        return true;
     };
-    if (args.contains("payload") && args["payload"].is_string()) {
-        add_payload(args["payload"].get<std::string>());
-    }
-    if (args.contains("payloads") && args["payloads"].is_array()) {
+    if (args.contains("payloads")) {
+        if (!args["payloads"].is_array() || args["payloads"].empty()) {
+            error = "args.payloads must be a non-empty array of signal paths";
+            return Json();
+        }
         for (const auto& p : args["payloads"]) {
-            if (p.is_string()) add_payload(p.get<std::string>());
+            if (!p.is_string() || !add_payload(p.get<std::string>())) {
+                if (error.empty()) error = "args.payloads entries must be non-empty signal paths";
+                return Json();
+            }
         }
     }
 
@@ -136,10 +145,16 @@ Json ai_sampled_pulse_inspect(const Json& args, std::string& error) {
         "payload_changed_without_sampled_valid", std::string("summary"));
     if (payload_reporting != "off" && payload_reporting != "summary" &&
         payload_reporting != "all") {
-        error = "sampled_pulse.inspect rules.payload_changed_without_sampled_valid must be off, summary, or all";
+        error = "signal.sampled_pulse.inspect rules.payload_changed_without_sampled_valid must be off, summary, or all";
         return Json();
     }
-    npiFsdbValType fmt = json_value_format(args);
+    if (rules.contains("payload_changed_without_sampled_valid") &&
+        payload_aliases.empty()) {
+        error = "rules.payload_changed_without_sampled_valid requires args.payloads";
+        return Json();
+    }
+    npiFsdbValType fmt = npiFsdbHexStrVal;
+    if (!json_value_format(args, fmt, error)) return Json();
     char value_prefix = json_value_prefix(fmt);
 
     std::vector<SampledEdgeRecord> edges;
@@ -288,21 +303,27 @@ Json ai_sampled_pulse_inspect(const Json& args, std::string& error) {
     data["summary"] = {
         {"sampling_mode", "clock_edge"},
         {"clock", clock_sample.clock},
-        {"edge", clock_edge_kind_text(clock_sample.edge)},
         {"sample_time_semantics", "time is sample_time"},
         {"sample_count", sample_count},
         {"sampled_high_cycles", sampled_high},
-        {"risk_count", risk_count},
         {"unsampled_valid_pulse_count", unsampled_pulse_count},
         {"payload_risk_count", payload_risk_count},
-        {"payload_changed_without_sampled_valid_reporting", payload_reporting},
-        {"returned_finding_count", findings.size()},
-        {"analysis_complete", analysis_complete},
-        {"truncated", findings_truncated},
-        {"truncation_scope", findings_truncated ? Json("response_findings") : Json(nullptr)}
+        {"payload_changed_without_sampled_valid_reporting", payload_reporting}
     };
-    if (clock_sample.edge != ClockEdgeKind::Negedge)
-        data["summary"]["sample_point"] = clock_sample_point_text(clock_sample.sample_point);
+    std::vector<std::string> truncation_scopes;
+    if (sample_truncated) truncation_scopes.push_back("analysis_samples");
+    if (valid_truncated) truncation_scopes.push_back("analysis_valid_changes");
+    if (payload_truncated) truncation_scopes.push_back("analysis_payload_changes");
+    if (findings_truncated) truncation_scopes.push_back("response_findings");
+    xdebug_core::set_completeness(
+        data["summary"],
+        analysis_complete,
+        analysis_complete,
+        findings_truncated,
+        static_cast<std::size_t>(risk_count),
+        findings.size(),
+        truncation_scopes);
+    data["sampling"] = clock_sampling_contract_json(clock_sample);
     data["valid"] = valid;
     data["payloads"] = payload_aliases;
     data["begin"] = format_time(begin);
@@ -317,22 +338,46 @@ Json ai_sampled_pulse_inspect(const Json& args, std::string& error) {
     return data;
 }
 
-Json ai_handshake_inspect(const Json& args, std::string& error) {
+Json ai_protocol_handshake_inspect(const Json& args, std::string& error) {
     ClockSampleSpec clock_sample;
     if (!clock_sample_from_args(args, clock_sample, error)) return Json();
     std::string clock = clock_sample.clock;
     std::string valid = args.value("valid", std::string());
     std::string ready = args.value("ready", std::string());
     if (clock.empty() || valid.empty() || ready.empty()) {
-        error = "handshake.inspect requires args.clock, args.valid and args.ready";
+        error = "protocol.handshake.inspect requires args.clock, args.valid and args.ready";
         return Json();
     }
     npiFsdbTime begin = 0, end = 0;
     if (!json_time_range(args, begin, end, error)) return Json();
     Json signals = {{"valid", valid}, {"ready", ready}};
-    if (args.contains("data") && args["data"].is_array()) {
+    bool has_data = false;
+    if (args.contains("data") && args["data"].is_string()) {
+        const std::string path = args["data"].get<std::string>();
+        if (path.empty()) {
+            error = "protocol.handshake.inspect args.data must not be empty";
+            return Json();
+        }
+        signals["data0"] = path;
+        has_data = true;
+    } else if (args.contains("data") && args["data"].is_array()) {
+        if (args["data"].empty()) {
+            error = "protocol.handshake.inspect args.data array must not be empty";
+            return Json();
+        }
         int idx = 0;
-        for (const auto& d : args["data"]) if (d.is_string()) signals["data" + std::to_string(idx++)] = d.get<std::string>();
+        for (const auto& d : args["data"]) {
+            if (!d.is_string() || d.get<std::string>().empty()) {
+                error = "protocol.handshake.inspect args.data entries must be non-empty signal paths";
+                return Json();
+            }
+            signals["data" + std::to_string(idx++)] =
+                d.get<std::string>();
+        }
+        has_data = true;
+    } else if (args.contains("data")) {
+        error = "protocol.handshake.inspect args.data must be a non-empty signal path or signal-path array";
+        return Json();
     }
     std::vector<std::string> aliases, paths;
     fsdbSigVec_t handles;
@@ -347,7 +392,13 @@ Json ai_handshake_inspect(const Json& args, std::string& error) {
     bool require_valid_hold = rules.value("require_valid_hold_until_handshake", true);
     std::string ready_reporting = rules.value("ready_without_valid", std::string("summary"));
     if (ready_reporting != "summary" && ready_reporting != "intervals" && ready_reporting != "all") {
-        error = "handshake.inspect rules.ready_without_valid must be summary, intervals, or all";
+        error = "protocol.handshake.inspect rules.ready_without_valid must be summary, intervals, or all";
+        return Json();
+    }
+    if (has_data != check_data) {
+        error = has_data
+            ? "args.data requires rules.check_data_stable_when_stalled=true"
+            : "rules.check_data_stable_when_stalled=true requires args.data";
         return Json();
     }
     int samples = 0, transfers = 0, stall_cycles = 0, max_stall = 0, ready_only = 0, data_violations = 0;
@@ -377,10 +428,7 @@ Json ai_handshake_inspect(const Json& args, std::string& error) {
         if (ready_reporting == "intervals") {
             Json interval = {{"begin", format_time(ready_only_begin)},
                              {"end", format_time(interval_end)},
-                             {"cycle_count", ready_only_interval_cycles},
-                             // Retain the previous field for clients that had
-                             // already consumed the short-lived interval form.
-                             {"cycles", ready_only_interval_cycles}};
+                             {"cycle_count", ready_only_interval_cycles}};
             if (open_at_window_end) interval["open_at_window_end"] = true;
             ready_only_intervals.push_back(interval);
         }
@@ -471,7 +519,6 @@ Json ai_handshake_inspect(const Json& args, std::string& error) {
     data["summary"] = {
         {"sampling_mode", "clock_edge"},
         {"clock", clock_sample.clock},
-        {"edge", clock_edge_kind_text(clock_sample.edge)},
         {"sample_time_semantics", "time is sample_time"},
         {"sample_count", samples},
         {"transfer_count", transfers},
@@ -482,21 +529,29 @@ Json ai_handshake_inspect(const Json& args, std::string& error) {
         {"data_stability_violations", data_violations},
         {"require_valid_hold_until_handshake", require_valid_hold},
         {"valid_hold_violations", valid_hold_violations},
-        {"valid_wait_open_at_window_end", awaiting_handshake},
-        {"finding_count", finding_count},
-        {"returned_finding_count", findings.size()},
-        {"analysis_complete", !scan_truncated},
-        {"truncated", response_truncated},
-        {"truncation_scope", response_truncated ? Json("response_findings") : Json(nullptr)}
+        {"valid_wait_open_at_window_end", awaiting_handshake}
     };
+    std::vector<std::string> truncation_scopes;
+    if (scan_truncated) truncation_scopes.push_back("analysis_samples");
+    if (response_truncated) truncation_scopes.push_back("response_findings");
+    xdebug_core::set_completeness(
+        data["summary"],
+        !scan_truncated,
+        !scan_truncated,
+        response_truncated,
+        static_cast<std::size_t>(finding_count),
+        findings.size(),
+        truncation_scopes);
+    data["sampling"] = clock_sampling_contract_json(clock_sample);
     if (ready_reporting == "intervals") data["ready_without_valid_intervals"] = ready_only_intervals;
     data["findings"] = findings;
     return data;
 }
 
-Json ai_detect_abnormal(const Json& args, std::string& error) {
-    if (!args.contains("signals") || !args["signals"].is_array()) {
-        error = "detect_abnormal requires args.signals[]";
+Json ai_signal_anomaly_inspect(const Json& args, std::string& error) {
+    if (!args.contains("signals") || !args["signals"].is_array() ||
+        args["signals"].empty()) {
+        error = "signal.anomaly.inspect requires args.signals[]";
         return Json();
     }
     npiFsdbTime begin = 0, end = 0;
@@ -504,8 +559,9 @@ Json ai_detect_abnormal(const Json& args, std::string& error) {
     Json checks = args.value("checks", Json::array());
     npiFsdbTime glitch_width = 0, stuck_duration = 0;
     bool check_glitch = false, check_stuck = false, check_unknown = false;
+    std::set<std::string> configured_check_types;
     if (!checks.is_array()) {
-        return invalid_detect_abnormal_checks(
+        return invalid_signal_anomaly_inspect_checks(
             "args.checks",
             "args.checks must be an array of objects with a string type field; string shorthand is not supported.",
             checks);
@@ -514,22 +570,39 @@ Json ai_detect_abnormal(const Json& args, std::string& error) {
         const Json& c = checks[i];
         std::string arg_path = "args.checks[" + std::to_string(i) + "]";
         if (!c.is_object()) {
-            return invalid_detect_abnormal_checks(
+            return invalid_signal_anomaly_inspect_checks(
                 arg_path,
                 arg_path + " must be an object with a string type field; string shorthand is not supported. Example: {\"type\":\"unknown_xz\"}",
                 c);
         }
         if (!c.contains("type") || !c["type"].is_string()) {
-            return invalid_detect_abnormal_checks(
+            return invalid_signal_anomaly_inspect_checks(
                 arg_path + ".type",
                 arg_path + ".type must be a string; allowed types are unknown_xz, glitch, and stuck.",
                 c.contains("type") ? c["type"] : Json(nullptr));
         }
         std::string type = c["type"].get<std::string>();
+        if (!configured_check_types.insert(type).second) {
+            return invalid_signal_anomaly_inspect_checks(
+                arg_path + ".type",
+                arg_path + ".type duplicates an earlier check; configure each check type at most once.",
+                c["type"]);
+        }
         if (type == "glitch") {
+            bool unknown_field = false;
+            for (auto it = c.begin(); it != c.end(); ++it) {
+                if (it.key() != "type" && it.key() != "min_pulse_width")
+                    unknown_field = true;
+            }
+            if (unknown_field) {
+                return invalid_signal_anomaly_inspect_checks(
+                    arg_path,
+                    arg_path + " glitch check accepts only type and min_pulse_width",
+                    c);
+            }
             check_glitch = true;
             if (c.contains("min_pulse_width") && !c["min_pulse_width"].is_string()) {
-                return invalid_detect_abnormal_checks(
+                return invalid_signal_anomaly_inspect_checks(
                     arg_path + ".min_pulse_width",
                     arg_path + ".min_pulse_width must be a time string such as \"1ns\".",
                     c["min_pulse_width"]);
@@ -538,15 +611,32 @@ Json ai_detect_abnormal(const Json& args, std::string& error) {
             if (!parse_user_time(v.c_str(), false, glitch_width, error)) {
                 std::string parse_error = error;
                 error.clear();
-                return invalid_detect_abnormal_checks(
+                return invalid_signal_anomaly_inspect_checks(
                     arg_path + ".min_pulse_width",
                     arg_path + ".min_pulse_width must be a valid time string such as \"1ns\": " + parse_error,
                     c["min_pulse_width"]);
             }
+            if (glitch_width == 0) {
+                return invalid_signal_anomaly_inspect_checks(
+                    arg_path + ".min_pulse_width",
+                    arg_path + ".min_pulse_width must be greater than zero.",
+                    c.value("min_pulse_width", Json("1ns")));
+            }
         } else if (type == "stuck") {
+            bool unknown_field = false;
+            for (auto it = c.begin(); it != c.end(); ++it) {
+                if (it.key() != "type" && it.key() != "min_duration")
+                    unknown_field = true;
+            }
+            if (unknown_field) {
+                return invalid_signal_anomaly_inspect_checks(
+                    arg_path,
+                    arg_path + " stuck check accepts only type and min_duration",
+                    c);
+            }
             check_stuck = true;
             if (c.contains("min_duration") && !c["min_duration"].is_string()) {
-                return invalid_detect_abnormal_checks(
+                return invalid_signal_anomaly_inspect_checks(
                     arg_path + ".min_duration",
                     arg_path + ".min_duration must be a time string such as \"1us\".",
                     c["min_duration"]);
@@ -555,15 +645,27 @@ Json ai_detect_abnormal(const Json& args, std::string& error) {
             if (!parse_user_time(v.c_str(), false, stuck_duration, error)) {
                 std::string parse_error = error;
                 error.clear();
-                return invalid_detect_abnormal_checks(
+                return invalid_signal_anomaly_inspect_checks(
                     arg_path + ".min_duration",
                     arg_path + ".min_duration must be a valid time string such as \"1us\": " + parse_error,
                     c["min_duration"]);
             }
+            if (stuck_duration == 0) {
+                return invalid_signal_anomaly_inspect_checks(
+                    arg_path + ".min_duration",
+                    arg_path + ".min_duration must be greater than zero.",
+                    c.value("min_duration", Json("1us")));
+            }
         } else if (type == "unknown_xz") {
+            if (c.size() != 1) {
+                return invalid_signal_anomaly_inspect_checks(
+                    arg_path,
+                    arg_path + " unknown_xz check accepts only type",
+                    c);
+            }
             check_unknown = true;
         } else {
-            return invalid_detect_abnormal_checks(
+            return invalid_signal_anomaly_inspect_checks(
                 arg_path + ".type",
                 arg_path + ".type has unsupported value \"" + type + "\"; allowed types are unknown_xz, glitch, and stuck.",
                 c["type"]);
@@ -587,7 +689,10 @@ Json ai_detect_abnormal(const Json& args, std::string& error) {
             findings.push_back(finding);
     };
     for (const auto& s : args["signals"]) {
-        if (!s.is_string()) continue;
+        if (!s.is_string() || s.get<std::string>().empty()) {
+            error = "signal.anomaly.inspect args.signals entries must be non-empty signal paths";
+            return Json();
+        }
         std::string signal = s.get<std::string>();
         fsdbTimeValPairVec_t changes;
         std::string signal_error;
@@ -645,16 +750,22 @@ Json ai_detect_abnormal(const Json& args, std::string& error) {
     const bool response_truncated = max_findings >= 0 && finding_count > max_findings;
     Json data;
     data["summary"] = {
-        {"finding_count", finding_count},
-        {"returned_finding_count", findings.size()},
         {"signal_count", scan_status.size()},
-        {"analysis_complete", analysis_complete},
-        {"truncated", response_truncated},
-        {"truncation_scope", response_truncated ? Json("response_findings") : Json(nullptr)},
         {"checks", checks},
         {"glitch_threshold", check_glitch ? Json(format_time(glitch_width)) : Json(nullptr)},
         {"stuck_threshold", check_stuck ? Json(format_time(stuck_duration)) : Json(nullptr)}
     };
+    std::vector<std::string> truncation_scopes;
+    if (!analysis_complete) truncation_scopes.push_back("analysis_signals");
+    if (response_truncated) truncation_scopes.push_back("response_findings");
+    xdebug_core::set_completeness(
+        data["summary"],
+        analysis_complete,
+        analysis_complete,
+        response_truncated,
+        static_cast<std::size_t>(finding_count),
+        findings.size(),
+        truncation_scopes);
     data["findings"] = findings;
     data["scan_status"] = scan_status;
     return data;

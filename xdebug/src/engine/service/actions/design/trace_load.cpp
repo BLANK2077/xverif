@@ -24,9 +24,12 @@
 namespace xdebug_design {
 namespace {
 
-static TraceOptions parse_trace_opts(const Json& args) {
+static TraceOptions parse_trace_opts(const ContractJsonView& args) {
     TraceOptions opts;
-    opts.limit = args.value("line_limit", 0);
+    // limits.max_results is a response projection limit.  The static trace
+    // must run without that cap so summary.analysis_complete describes real
+    // analysis.
+    opts.limit = 0;
     opts.role = args.value("role", std::string());
     opts.no_statement_only = args.value("no_statement_only", false);
     return opts;
@@ -38,8 +41,8 @@ public:
     bool needs_design() const override { return true; }
     bool needs_waveform() const override { return false; }
 
-    Json run(const Json& request, EngineActionContext& ctx) const override {
-        Json args = request.value("args", Json::object());
+    Json run(ContractBoundRequest& request, EngineActionContext& ctx) const override {
+        auto args = request.args();
         std::string signal = args.value("signal", std::string());
         if (signal.empty()) return design_missing_signal_error(action_name());
         SignalResolveResult resolved;
@@ -58,7 +61,7 @@ public:
     }
 
     std::string render_xout(const Json& response) const override {
-        return append_common_blocks_xout(render_source_path_xout(action_name(), response), response);
+        return render_source_path_xout(action_name(), response);
     }
 
 };

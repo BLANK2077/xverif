@@ -1,6 +1,6 @@
 #include "stream_expr.h"
 
-#include "../value/logic_value.h"
+#include "core/value/logic_value.h"
 
 #include <algorithm>
 #include <cctype>
@@ -428,9 +428,11 @@ private:
 } // namespace
 
 Json stream_value_json(const StreamValue& value) {
-    LogicValue logic = logic_value_from_fsdb_raw(
+    xdebug_core::LogicValue logic =
+        xdebug_core::logic_value_from_fsdb_raw(
         value.bits, 'b', value.width_reliable ? value.width() : 0);
-    return logic_value_json(logic, current_value_render_format());
+    return xdebug_core::logic_value_json(
+        logic, xdebug_core::current_value_render_format());
 }
 
 bool stream_value_truthy(const StreamValue& value, bool unknown_default) {
@@ -440,9 +442,11 @@ bool stream_value_truthy(const StreamValue& value, bool unknown_default) {
 }
 
 std::string stream_value_hex(const StreamValue& value) {
-    LogicValue logic = logic_value_from_fsdb_raw(
+    xdebug_core::LogicValue logic =
+        xdebug_core::logic_value_from_fsdb_raw(
         value.bits, 'b', value.width_reliable ? value.width() : 0);
-    return render_logic_value(logic, ValueRenderFormat::Hex);
+    return xdebug_core::render_logic_value(
+        logic, xdebug_core::ValueRenderFormat::Hex);
 }
 
 bool stream_value_has_xz(const StreamValue& value) {

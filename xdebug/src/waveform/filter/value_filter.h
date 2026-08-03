@@ -1,7 +1,7 @@
 #pragma once
 
 #include "json.hpp"
-#include "waveform/value/logic_value.h"
+#include "core/value/logic_value.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -25,7 +25,6 @@ struct ValueFilter {
 };
 
 struct ValueFilterParseOptions {
-    bool allow_legacy_0x = false;
     size_t max_bits = 0;
     bool require_nonzero_mask = false;
 };
@@ -40,7 +39,7 @@ bool parse_value_filter(const Json& spec, const std::string& path,
                         const ValueFilterParseOptions& options,
                         ValueFilter& out, ValueFilterError& error);
 ValueFilterMatch match_value_filter(const ValueFilter& filter,
-                                    const LogicValue& value);
+                                    const xdebug_core::LogicValue& value);
 ValueFilterMatch value_filter_and(ValueFilterMatch lhs,
                                   ValueFilterMatch rhs);
 int compare_unsigned_filter_bits(const std::string& lhs,

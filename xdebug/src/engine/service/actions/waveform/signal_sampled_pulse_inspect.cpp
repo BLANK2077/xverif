@@ -2,7 +2,6 @@
 #include "service/engine_action_registry.h"
 #include "service/engine_globals.h"
 
-#include "api/text_response_builder.h"
 #include "design/protocol/protocol.h"
 #include "waveform/server/fsdb_value_reader.h"
 #include "waveform/event/event_manager.h"
@@ -13,7 +12,7 @@
 #include "waveform/common/xdebug_waveform_paths.h"
 #include "waveform/service/action_support.h"
 #include "waveform/service/rc_generator.h"
-#include "waveform/value/logic_value.h"
+#include "core/value/logic_value.h"
 #include "core/npi/time_contract.h"
 
 #include "npi.h"
@@ -30,18 +29,20 @@
 
 namespace xdebug_design {
 namespace {
-class CursorActionHandler : public EngineActionHandler {
+class AiActionHandler : public EngineActionHandler {
     std::string name_;
+    bool nd_, nw_;
 public:
-    explicit CursorActionHandler(const char* name) : name_(name) {}
+    AiActionHandler(const char* name, bool needs_design, bool needs_waveform)
+        : name_(name), nd_(needs_design), nw_(needs_waveform) {}
     const char* action_name() const override { return name_.c_str(); }
-    bool needs_design() const override { return false; }
-    bool needs_waveform() const override { return true; }
-    Json run(const Json& request, EngineActionContext& ctx) const override {
-        std::string action = request.value("action", std::string());
-        Json args = request.value("args", Json::object());
+    bool needs_design() const override { return nd_; }
+    bool needs_waveform() const override { return nw_; }
+    Json run(ContractBoundRequest& request, EngineActionContext& ctx) const override {
         std::string error;
-        Json result = xdebug_waveform::ai_cursor_action(action, args, error);
+        Json raw_request = request.consume_args_request(
+            "xdebug_waveform::ai_dispatch_query/signal.sampled_pulse.inspect");
+        Json result = xdebug_waveform::ai_dispatch_query(raw_request, error);
         if (!error.empty()) {
             return make_handler_error_from_message(error);
         }
@@ -51,8 +52,9 @@ public:
 
 }  // namespace
 
-std::unique_ptr<EngineActionHandler> make_cursor_list_handler() {
-    return std::unique_ptr<EngineActionHandler>(new CursorActionHandler("waveform.cursor.list"));
+std::unique_ptr<EngineActionHandler>
+make_signal_sampled_pulse_inspect_handler() {
+    return std::unique_ptr<EngineActionHandler>(new AiActionHandler("signal.sampled_pulse.inspect", false, true));
 }
 
 }  // namespace xdebug_design

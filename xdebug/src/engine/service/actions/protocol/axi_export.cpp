@@ -1,5 +1,6 @@
 #include "service/engine_action_handler.h"
 #include "service/engine_action_registry.h"
+#include "service/config_store_error.h"
 #include "service/engine_globals.h"
 #include "protocol_action_helpers.h"
 
@@ -10,7 +11,8 @@
 #include "waveform/axi/axi_exporter.h"
 #include "waveform/common/xdebug_waveform_paths.h"
 #include "waveform/server/fsdb_value_reader.h"
-#include "waveform/value/logic_value.h"
+#include "core/value/logic_value.h"
+#include "core/output/completeness.h"
 
 #include <fstream>
 #include <memory>
@@ -25,23 +27,27 @@ public:
     const char* action_name() const override { return "axi.export"; }
     bool needs_design() const override { return false; }
     bool needs_waveform() const override { return true; }
-    Json run(const Json& r, EngineActionContext& ctx) const override {
+    Json run(
+        ContractBoundRequest& request,
+        EngineActionContext& ctx) const override {
         using namespace xdebug_waveform;
-        Json a = r.value("args", Json::object());
-        std::string name = a.value("name", "");
+        auto args = request.args();
+        std::string name = args.value("name", "");
         if (name.empty()) return protocol_missing_name_error(action_name(), "axi");
 
         AxiManager am;
         AxiConfig cfg;
-        if (!am.get_axi(g_session_id, name, cfg))
+        StoreResult loaded = am.get_axi(g_session_id, name, cfg);
+        if (loaded.status == StoreStatus::NotFound)
             return protocol_config_not_found_error(action_name(), "axi", name);
+        if (!loaded.ok()) return make_config_store_error(loaded);
 
-        Json tr = a.value("time_range", Json::object());
+        auto time_range = args["time_range"];
         std::string begin_s;
         std::string end_s;
-        if (tr.is_object()) {
-            begin_s = tr.value("begin", std::string());
-            end_s = tr.value("end", std::string());
+        if (time_range.is_object()) {
+            begin_s = time_range.value("begin", std::string());
+            end_s = time_range.value("end", std::string());
         }
         if (begin_s.empty() || end_s.empty())
             return make_handler_error(
@@ -61,15 +67,20 @@ public:
             return protocol_time_error(action_name(), "args.time_range",
                                        "axi.export end time is before begin time");
 
-        Json output = a.value("output", Json::object());
+        auto output = args["output"];
         std::string format = output.value("file_format", std::string("tsv"));
+        std::string output_prefix = output.value("path", std::string());
+        if (output.contains("file_format") && output_prefix.empty())
+            return protocol_invalid_arg_error(
+                action_name(), "args.output.file_format",
+                "output.file_format requires a non-empty output.path",
+                "output object with both path and file_format");
         if (format != "tsv" && format != "csv")
             return protocol_invalid_enum_error(
                 action_name(), "args.output.file_format",
                 "output.file_format must be tsv or csv",
                 Json::array({"tsv", "csv"}));
 
-        std::string output_prefix = output.value("path", std::string());
         if (output_prefix.empty()) {
             std::ostringstream oss;
             oss << xdebug_waveform_axi_exports_dir(g_session_id)
@@ -102,8 +113,9 @@ public:
                               const std::string& signal) {
                 const FsdbSignalWidth width =
                     fsdb_signal_width(g_fsdb_file, signal);
-                return render_logic_value(logic_value_from_fsdb_raw(
-                    raw, 'h', width.reliable ? width.width : 0));
+                return xdebug_core::render_logic_value(
+                    xdebug_core::logic_value_from_fsdb_raw(
+                        raw, 'h', width.reliable ? width.width : 0));
             };
             const bool write = txn.is_write;
             npiFsdbTime latency = txn.completion_time >= txn.addr_time ? txn.completion_time - txn.addr_time : 0;
@@ -134,8 +146,6 @@ public:
                         {"format", format},
                         {"status", output_prefix.empty() ? "preview" : "written"},
                         {"output_written", !output_prefix.empty()},
-                        {"truncated", false},
-                        {"analysis_complete", result.analysis_complete},
                         {"sample_count", result.sample_count},
                         {"full_scan_count", result.full_scan_count},
                         {"incomplete_write_count", result.incomplete_write_count},
@@ -158,6 +168,23 @@ public:
             size_t rlimit = std::min<size_t>(result.reads.size(), 8);
             for (size_t i = 0; i < wlimit; ++i) preview["writes"].push_back(txn_json(result.writes[i]));
             for (size_t i = 0; i < rlimit; ++i) preview["reads"].push_back(txn_json(result.reads[i]));
+            const std::size_t total_count =
+                result.writes.size() + result.reads.size();
+            const std::size_t returned_count = wlimit + rlimit;
+            const bool response_truncated = returned_count < total_count;
+            std::vector<std::string> truncation_scopes;
+            if (!result.analysis_complete)
+                truncation_scopes.push_back("analysis_transactions");
+            if (response_truncated)
+                truncation_scopes.push_back("response_preview");
+            xdebug_core::set_completeness(
+                summary,
+                result.analysis_complete,
+                result.analysis_complete,
+                response_truncated,
+                total_count,
+                returned_count,
+                truncation_scopes);
             Json out;
             out["summary"] = summary;
             out["preview"] = preview;
@@ -178,6 +205,18 @@ public:
                              {"read_path", read_file},
                              {"meta_path", meta_file},
                              {"file_format", format}};
+        const std::size_t total_count =
+            result.writes.size() + result.reads.size();
+        xdebug_core::set_completeness(
+            summary,
+            result.analysis_complete,
+            result.analysis_complete,
+            false,
+            total_count,
+            total_count,
+            result.analysis_complete
+                ? std::vector<std::string>{}
+                : std::vector<std::string>{"analysis_transactions"});
         out["summary"] = summary;
         return out;
     }

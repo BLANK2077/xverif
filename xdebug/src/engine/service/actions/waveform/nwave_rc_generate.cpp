@@ -2,7 +2,6 @@
 #include "service/engine_action_registry.h"
 #include "service/engine_globals.h"
 
-#include "api/text_response_builder.h"
 #include "design/protocol/protocol.h"
 #include "waveform/server/fsdb_value_reader.h"
 #include "waveform/event/event_manager.h"
@@ -13,7 +12,7 @@
 #include "waveform/common/xdebug_waveform_paths.h"
 #include "waveform/service/action_support.h"
 #include "waveform/service/rc_generator.h"
-#include "waveform/value/logic_value.h"
+#include "core/value/logic_value.h"
 #include "core/npi/time_contract.h"
 
 #include "npi.h"
@@ -30,15 +29,15 @@
 
 namespace xdebug_design {
 namespace {
-class RcGenerateHandler : public EngineActionHandler {
+class NwaveRcGenerateHandler : public EngineActionHandler {
 public:
     const char* action_name() const override { return "nwave.rc.generate"; }
     bool needs_design() const override { return false; }
     bool needs_waveform() const override { return true; }
-    Json run(const Json& r, EngineActionContext& ctx) const override {
-        Json a = r.value("args", Json::object());
+    Json run(ContractBoundRequest& r, EngineActionContext& ctx) const override {
+        auto a = r.args();
         std::string config_path = a.value("config_path", "");
-        Json output = a.value("output", Json::object());
+        ContractJsonView output = a["output"];
         std::string rc_path = output.value("path", "");
         bool allow_invalid = a.value("allow_invalid", false);
         if (config_path.empty() || rc_path.empty())
@@ -130,8 +129,8 @@ public:
 
 }  // namespace
 
-std::unique_ptr<EngineActionHandler> make_rc_generate_handler() {
-    return std::unique_ptr<EngineActionHandler>(new RcGenerateHandler);
+std::unique_ptr<EngineActionHandler> make_nwave_rc_generate_handler() {
+    return std::unique_ptr<EngineActionHandler>(new NwaveRcGenerateHandler);
 }
 
 }  // namespace xdebug_design

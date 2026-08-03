@@ -2,7 +2,6 @@
 #include "service/engine_action_registry.h"
 #include "service/engine_globals.h"
 
-#include "api/text_response_builder.h"
 #include "design/protocol/protocol.h"
 #include "waveform/server/fsdb_value_reader.h"
 #include "waveform/event/event_manager.h"
@@ -13,9 +12,9 @@
 #include "waveform/common/xdebug_waveform_paths.h"
 #include "waveform/service/action_support.h"
 #include "waveform/service/rc_generator.h"
-#include "waveform/value/logic_value.h"
-#include "core/npi/time_contract.h"
+#include "core/value/logic_value.h"
 #include "core/output/completeness.h"
+#include "core/npi/time_contract.h"
 
 #include "npi.h"
 #include "npi_fsdb.h"
@@ -60,20 +59,6 @@ static std::string normalize_root_path(std::string path) {
     while (!path.empty() && path.back() == '/') path.pop_back();
     return path;
 }
-static std::string join_strings(const Json& arr) {
-    std::ostringstream os;
-    if (!arr.is_array()) return "";
-    for (size_t i = 0; i < arr.size(); ++i) {
-        if (i) os << ",";
-        os << arr[i].get<std::string>();
-    }
-    return os.str();
-}
-static std::string object_string_field(const Json& obj, const char* key) {
-    if (!obj.is_object()) return "";
-    return obj.value(key, std::string());
-}
-
 class ScopeRootsHandler : public EngineActionHandler {
 public:
     const char* action_name() const override { return "scope.roots"; }
@@ -203,45 +188,8 @@ public:
         return out;
     }
 
-    std::string render_xout(const Json& r) const override {
-        xdebug::TextResponseBuilder out("xdebug");
-        out.emit_header("scope.roots");
-        Json summary = r.value("summary", Json::object());
-        out.emit_section("summary");
-        out.emit_kv("recommended",
-                    summary.value("recommended_root", Json(nullptr)).is_null()
-                        ? "none (" + summary.value("recommended_reason", std::string("unknown")) + ")"
-                        : summary.value("recommended_root", std::string()));
-        out.emit_kv("source", summary.value("source", std::string("auto")));
-        out.emit_kv("roots", summary.value("root_count", 0));
-        out.emit_kv("matched", summary.value("matched_count", 0));
-        out.emit_kv("wave", summary.value("wave_count", 0));
-        out.emit_kv("design", summary.value("design_count", 0));
-
-        Json data = r.value("data", Json::object());
-        Json roots = data.value("roots", Json::array());
-        out.emit_section("roots");
-        std::vector<std::vector<std::string>> rows;
-        for (const auto& root : roots) {
-            rows.push_back({
-                root.value("path", std::string()),
-                root.value("status", std::string()),
-                join_strings(root.value("sources", Json::array())),
-                object_string_field(root.value("wave", Json()), "full_name"),
-                object_string_field(root.value("design", Json()), "full_name")
-            });
-        }
-        if (roots.empty()) rows.push_back({"[empty]", "", "", "", ""});
-        out.emit_table({"path", "status", "sources", "wave", "design"}, rows);
-
-        Json limitations = data.value("limitations", Json::array());
-        if (!limitations.empty()) {
-            out.emit_section("limitations");
-            for (const auto& item : limitations) {
-                out.emit_row({xdebug::json_to_xout_value(item)});
-            }
-        }
-        return out.str();
+    std::string render_xout(const Json& response) const override {
+        return render_tabular_xout(action_name(), response);
     }
 
 private:

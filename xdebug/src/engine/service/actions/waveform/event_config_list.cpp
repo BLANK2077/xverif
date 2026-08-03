@@ -1,9 +1,9 @@
 #include "service/engine_action_handler.h"
 #include "service/engine_action_registry.h"
+#include "service/config_store_error.h"
 #include "service/engine_globals.h"
 #include "event_action_helpers.h"
 
-#include "api/text_response_builder.h"
 #include "design/protocol/protocol.h"
 #include "waveform/server/fsdb_value_reader.h"
 #include "waveform/event/event_manager.h"
@@ -14,7 +14,8 @@
 #include "waveform/common/xdebug_waveform_paths.h"
 #include "waveform/service/action_support.h"
 #include "waveform/service/rc_generator.h"
-#include "waveform/value/logic_value.h"
+#include "core/value/logic_value.h"
+#include "core/output/completeness.h"
 #include "core/npi/time_contract.h"
 
 #include "npi.h"
@@ -36,37 +37,47 @@ public:
     const char* action_name() const override { return "event.config.list"; }
     bool needs_design() const override { return false; }
     bool needs_waveform() const override { return true; }
-    Json run(const Json& request, EngineActionContext& ctx) const override {
+    Json run(ContractBoundRequest& request, EngineActionContext& ctx) const override {
         using namespace xdebug_waveform;
-        Json args = request.value("args", Json::object());
+        auto args = request.args();
         std::string name = args.value("name", "");
         EventManager em;
         if (name.empty()) {
-            auto names = em.list_events(g_session_id, g_fsdb_file_path);
+            std::vector<std::string> names;
+            StoreResult listed =
+                em.list_events(g_session_id, g_fsdb_file_path, names);
+            if (!listed.ok()) return make_config_store_error(listed);
             Json arr = Json::array();
             const int line_limit = args.value("line_limit", 100);
             for (size_t i = 0; i < names.size() &&
                  (line_limit < 0 || static_cast<int>(i) < line_limit); i++) arr.push_back(names[i]);
-            return Json({{"summary", {{"event_count", static_cast<int>(names.size())},
-                                       {"returned_event_count", static_cast<int>(arr.size())},
-                                       {"response_truncated", arr.size() < names.size()},
-                                       {"truncated", arr.size() < names.size()}}},
-                         {"events", arr}});
+            Json out = {{"summary", Json::object()}, {"events", arr}};
+            const bool response_truncated = arr.size() < names.size();
+            xdebug_core::set_completeness(
+                out["summary"],
+                true,
+                true,
+                response_truncated,
+                names.size(),
+                arr.size(),
+                response_truncated
+                    ? std::vector<std::string>{"response_events"}
+                    : std::vector<std::string>{});
+            return out;
         }
         if (args.contains("line_limit"))
             return event_invalid_arg_error(action_name(), "args.line_limit",
                                            "line_limit is only valid when listing all event configs",
                                            "omit line_limit when args.name is present");
         EventConfig cfg;
-        if (!em.get_event(g_session_id, g_fsdb_file_path, name, cfg))
+        StoreResult loaded =
+            em.get_event(g_session_id, g_fsdb_file_path, name, cfg);
+        if (loaded.status == StoreStatus::NotFound)
             return event_config_not_found_error("event.config.list", name);
+        if (!loaded.ok()) return make_config_store_error(loaded);
         Json out;
-        out["summary"] = {{"name", name}, {"sampling_mode", "clock_edge"},
-                          {"clock", cfg.clock_sample.clock},
-                          {"edge", xdebug_waveform::clock_edge_kind_text(cfg.clock_sample.edge)}};
-        if (cfg.clock_sample.edge != xdebug_waveform::ClockEdgeKind::Negedge)
-            out["summary"]["sample_point"] = xdebug_waveform::clock_sample_point_text(cfg.clock_sample.sample_point);
-        out["signals"] = cfg.signals;
+        out["summary"] = {{"status", "found"}};
+        out["config"] = event_config_json(cfg);
         return out;
     }
 };

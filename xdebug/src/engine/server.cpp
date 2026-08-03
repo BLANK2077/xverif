@@ -9,15 +9,16 @@
 #include "core/logging/action_log.h"
 #include "core/npi/time_contract.h"
 #include "core/session/session_timeout.h"
+#include "core/schema/internal_request_contract.h"
 #include "core/schema/runtime_schema_validator.h"
 #include "core/transport/file_exchange.h"
-#include "waveform/value/logic_value.h"
+#include "core/value/logic_value.h"
 #include "waveform/cache/analysis_probe.h"
 #include "waveform/cache/analysis_repository.h"
 #include "waveform/apb/apb_analyzer.h"
 #include "waveform/axi/axi_analyzer.h"
+#include "waveform/common/xdebug_waveform_paths.h"
 #include "waveform/stream/stream_analyzer.h"
-#include "waveform/common/clock_sampling.h"
 #include "json.hpp"
 
 #include <cstdio>
@@ -79,6 +80,30 @@ static int g_crash_fd = -1;
 static char g_crash_prefix[512] = {};
 static char g_current_action[128] = {};
 static char g_current_request_id[128] = {};
+
+static void touch_current_generation(
+    xdebug_engine::SessionRegistry& registry,
+    time_t last_active) {
+    std::string generation;
+    const bool marker_ok =
+        xdebug_design_read_generation_marker(
+            g_session_id, generation);
+    const bool touched =
+        marker_ok &&
+        registry
+            .touch_if_generation(
+                g_session_id,
+                generation,
+                last_active)
+            .ok();
+    if (!touched) {
+        xdebug_core::log_lifecycle_event(
+            "engine",
+            g_session_id,
+            "server.touch_generation_failed",
+            false);
+    }
+}
 
 // Unified-engine resource state.
 bool g_has_design = false;
@@ -214,7 +239,15 @@ static void install_crash_signal_handlers() {
 
 static void update_current_request_marker(const Json& request) {
     std::string action = request.value("action", std::string());
-    std::string request_id = request.value("request_id", request.value("id", std::string()));
+    std::string request_id;
+    Json observability =
+        request.value("observability", Json::object());
+    if (observability.is_object() &&
+        observability.contains("request_id") &&
+        observability["request_id"].is_string()) {
+        request_id =
+            observability["request_id"].get<std::string>();
+    }
     snprintf(g_current_action, sizeof(g_current_action), "%s", action.c_str());
     snprintf(g_current_request_id, sizeof(g_current_request_id), "%s", request_id.c_str());
 }
@@ -232,47 +265,6 @@ static std::string hash_string_hex(const std::string& value) {
     char buf[32];
     snprintf(buf, sizeof(buf), "%016llx", h);
     return std::string(buf);
-}
-
-static void append_sampling_contract(const Json& args, Json& data) {
-    if (!args.value("clock", std::string()).empty()) {
-        const Json summary = data.value("summary", Json::object());
-        const bool sampled = data.contains("clock_context") ||
-            summary.value("sampling_mode", std::string()) == "clock_edge";
-        if (!sampled) return;
-
-        xdebug_waveform::ClockEdgeKind edge;
-        std::string parse_error;
-        if (!xdebug_waveform::parse_clock_edge_kind(args.value("edge", std::string("negedge")),
-                                                    edge, parse_error)) return;
-        Json requested = {{"edge", xdebug_waveform::clock_edge_kind_text(edge)},
-                          {"sample_point", args.contains("sample_point")
-                              ? args["sample_point"] : Json(nullptr)}};
-        const bool negedge = edge == xdebug_waveform::ClockEdgeKind::Negedge;
-        Json effective = {{"edge", xdebug_waveform::clock_edge_kind_text(edge)},
-                          {"sample_point", negedge ? Json(nullptr)
-                              : Json(args.value("sample_point", std::string("before")))}};
-        Json contract = {{"requested", requested},
-                         {"effective", effective},
-                         {"sample_point_applied", !negedge},
-                         {"sample_point_ignored_for_negedge", negedge && args.contains("sample_point")}};
-        if (negedge && args.contains("sample_point"))
-            contract["sample_point_not_applied_reason"] =
-                "negedge keeps the established current-value sampling semantics";
-
-        if (data.contains("clock_context") && data["clock_context"].is_object()) {
-            data["clock_context"]["requested_sampling"] = requested;
-            data["clock_context"]["effective_sampling"] = effective;
-            data["clock_context"]["sample_point_applied"] = !negedge;
-            data["clock_context"]["sample_point_ignored_for_negedge"] =
-                negedge && args.contains("sample_point");
-            if (negedge && args.contains("sample_point"))
-                data["clock_context"]["sample_point_not_applied_reason"] =
-                    contract["sample_point_not_applied_reason"];
-        } else {
-            data["sampling"] = contract;
-        }
-    }
 }
 
 static void log_environment_snapshot(int argc, char** argv) {
@@ -442,11 +434,20 @@ static void enrich_runtime_parameter_error(const Json& request, Json& error) {
     if (message.find("TIME_RANGE_INVALID:") == 0) error["code"] = "TIME_RANGE_INVALID";
     if (message.find("TIME_SPEC_INVALID:") == 0) error["code"] = "TIME_SPEC_INVALID";
     Json example = xdebug_core::valid_request_example(action);
+    const auto infer_parameter = [&](const std::string& invalid_arg,
+                                     const std::string& expected) {
+        if (error.contains("invalid_arg")) return;
+        error["invalid_arg"] = invalid_arg;
+        error["expected"] = expected;
+    };
     if (message.find("end time is before begin time") != std::string::npos ||
         message.find("args.time_range.end is before args.time_range.begin") != std::string::npos) {
-        error["invalid_arg"] = "args.time_range.end";
-        error["expected"] = "time_range.end must be greater than or equal to time_range.begin";
-        patch_example_path(example, "args.time_range.end", Json());
+        if (!error.contains("invalid_arg")) {
+            infer_parameter(
+                "args.time_range.end",
+                "time_range.end must be greater than or equal to time_range.begin");
+            patch_example_path(example, "args.time_range.end", Json());
+        }
     } else if (message.find("Invalid time") != std::string::npos ||
                message.find("TIME_SPEC_INVALID") != std::string::npos) {
         std::string invalid = "args.time";
@@ -457,21 +458,23 @@ static void enrich_runtime_parameter_error(const Json& request, Json& error) {
             if (tr.contains("end") && message.find("end") != std::string::npos)
                 invalid = "args.time_range.end";
         }
-        error["invalid_arg"] = invalid;
-        error["expected"] = "time string such as 10ns, 100ps, or max for end";
-        patch_example_path(example, invalid, Json());
+        if (!error.contains("invalid_arg")) {
+            infer_parameter(
+                invalid,
+                "time string such as 10ns, 100ps, or max for end");
+            patch_example_path(example, invalid, Json());
+        }
     } else if (message.find("Clock signal not found") != std::string::npos) {
-        error["invalid_arg"] = "args.clock";
-        error["expected"] = "existing clock signal path";
+        infer_parameter("args.clock", "existing clock signal path");
     } else if (message.find("Signal not found") != std::string::npos ||
                message.find("signal not found") != std::string::npos) {
-        error["invalid_arg"] = "args.signal";
-        error["expected"] = "existing signal path";
+        infer_parameter("args.signal", "existing signal path");
     } else if (message.find("AXI config not found") != std::string::npos ||
                message.find("APB config not found") != std::string::npos ||
                message.find("CONFIG_NOT_FOUND") != std::string::npos) {
-        error["invalid_arg"] = "args.name";
-        error["expected"] = "name of a previously loaded config";
+        infer_parameter(
+            "args.name",
+            "name of a previously loaded config");
     }
     Json args = request.value("args", Json::object());
     if (action == "axi.channel_stall" && args.is_object() && args.contains("channel") &&
@@ -480,7 +483,7 @@ static void enrich_runtime_parameter_error(const Json& request, Json& error) {
         if (c != "aw" && c != "w" && c != "b" && c != "ar" && c != "r") {
             error["invalid_arg"] = "args.channel";
             error["expected"] = "one of aw, w, b, ar, r";
-            error["allowed_values"] = Json::array({"aw", "w", "b", "ar", "r"});
+            error["available_values"] = Json::array({"aw", "w", "b", "ar", "r"});
             patch_example_path(example, "args.channel", "ar");
         }
     }
@@ -587,7 +590,7 @@ static int file_transport_loop(const std::string& file_dir) {
     const std::string agent_id = current_host_name() + "-" + std::to_string(getpid());
     xdebug_engine::SessionRegistry registry;
     time_t last_active = time(nullptr);
-    registry.touch(g_session_id, last_active);
+    touch_current_generation(registry, last_active);
     xdebug_core::log_lifecycle_event("engine", g_session_id, "transport.file_loop_begin", true,
                                      {{"file_dir", file_dir}, {"idle_timeout_sec", g_idle_timeout_sec}});
     while (true) {
@@ -615,7 +618,7 @@ static int file_transport_loop(const std::string& file_dir) {
             continue;
         }
         last_active = time(nullptr);
-        registry.touch(g_session_id, last_active);
+        touch_current_generation(registry, last_active);
         Json response = error_response("INVALID_REQUEST", "invalid file transport request");
         bool quit = false;
         bool ok = claim.ready &&
@@ -652,12 +655,22 @@ static bool handle_client(int client_fd, bool& should_quit) {
     } catch (...) {
         return send_response(client_fd, error_response("INVALID_JSON", "request must be a JSON object"));
     }
-    std::string api_ver = request.value("api_version", std::string());
-    if (api_ver != INTERNAL_API_VERSION && api_ver != "xdebug.v1") {
-        return send_response(client_fd, error_response("UNSUPPORTED_API_VERSION",
-            "expected xdebug.internal.v1 or xdebug.v1, got " + api_ver));
+    xdebug_core::RuntimeSchemaValidator schema_validator;
+    xdebug_core::RuntimeSchemaValidationResult schema_validation =
+        schema_validator.validate_internal_request(request);
+    if (!schema_validation.ok) {
+        return send_response(
+            client_fd,
+            schema_validation_error_response(
+                request,
+                request.value("action", std::string()),
+                schema_validation));
     }
-    if (g_transport == "tcp" && request.value("auth_token", std::string()) != g_auth_token) {
+    const Json routing =
+        request.value("routing", Json::object());
+    if (g_transport == "tcp" &&
+        routing.value("transport_auth_token", std::string()) !=
+            g_auth_token) {
         return send_response(client_fd, error_response("AUTH_FAILED", "authentication failed"));
     }
     update_current_request_marker(request);
@@ -667,26 +680,6 @@ static bool handle_client(int client_fd, bool& should_quit) {
     if (action == "server.quit")   { send_response(client_fd, ok_response()); should_quit = true; return true; }
     if (action == "server.ping")   return send_response(client_fd, ok_response({{"pong", true}}));
     if (action == "server.version")return send_response(client_fd, ok_response({{"api_version", INTERNAL_API_VERSION}}));
-
-    // ── session introspection ──
-    if (action == "session.list") {
-        Json arr = Json::array();
-        Json s;
-        s["session_id"] = g_session_id;
-        s["has_design"] = g_has_design;
-        s["has_waveform"] = g_has_waveform;
-        if (g_has_waveform) s["fsdb"] = g_fsdb_path;
-        arr.push_back(s);
-        return send_response(client_fd, ok_response({{"sessions", arr}}));
-    }
-    if (action == "session.doctor") {
-        return send_response(client_fd, ok_response({
-            {"session_id", g_session_id},
-            {"has_design", g_has_design},
-            {"has_waveform", g_has_waveform},
-            {"healthy", true}
-        }));
-    }
 
     // ── data actions: registry lookup ──
     const EngineActionHandler* h = engine_action_registry().find(action);
@@ -699,29 +692,25 @@ static bool handle_client(int client_fd, bool& should_quit) {
         return send_response(client_fd, error_response("WAVEFORM_NOT_LOADED",
             "waveform not loaded; open session with -fsdb"));
 
-    xdebug_core::RuntimeSchemaValidator schema_validator;
-    xdebug_core::RuntimeSchemaValidationResult schema_validation =
-        schema_validator.validate_request(action, request);
-    if (!schema_validation.ok) {
-        return send_response(client_fd, schema_validation_error_response(request, action, schema_validation));
+    xdebug_design::ContractBoundRequest bound_request(
+        request, action, true);
+    auto args = bound_request.args();
+    auto limits = bound_request.limits();
+    if (limits.contains("timeout_ms")) {
+        limits["timeout_ms"].consume(
+            "engine_transport_timeout");
     }
 
     xdebug_core::TimeRenderOptions time_render_options;
-    Json raw_args = request.value("args", Json::object());
-    xdebug_design::ContractBoundRequest bound_request(request, action, true);
-    auto args = bound_request.args();
-    auto limits = bound_request.limits();
-    if (limits.contains("timeout_ms"))
-        limits["timeout_ms"].consume("engine_transport_timeout");
-    if (args.contains("time_unit")) {
-        if (!args["time_unit"].is_string())
+    if (args.contains("render_time_unit")) {
+        if (!args["render_time_unit"].is_string())
             return send_response(client_fd, error_response("TIME_UNIT_INVALID",
-                "args.time_unit must be ns, ps, us, or auto"));
-        std::string time_unit_error;
-        if (!xdebug_core::parse_time_render_unit(args["time_unit"].get<std::string>(),
+                "args.render_time_unit must be ns, ps, us, or auto"));
+        std::string render_time_unit_error;
+        if (!xdebug_core::parse_time_render_unit(args["render_time_unit"].get<std::string>(),
                                                  time_render_options.unit,
-                                                 time_unit_error)) {
-            return send_response(client_fd, error_response("TIME_UNIT_INVALID", time_unit_error));
+                                                 render_time_unit_error)) {
+            return send_response(client_fd, error_response("TIME_UNIT_INVALID", render_time_unit_error));
         }
     }
     xdebug_core::ScopedTimeRenderOptions time_render_scope(time_render_options);
@@ -729,10 +718,10 @@ static bool handle_client(int client_fd, bool& should_quit) {
     ActionResourceScope resources;
     EngineActionContext ctx(g_session_id, action, resources);
     std::string value_format = args.value("value_format", std::string("hex"));
-    xdebug_waveform::ValueRenderFormat render_format =
-        xdebug_waveform::ValueRenderFormat::Hex;
-    xdebug_waveform::parse_value_render_format(value_format, render_format);
-    xdebug_waveform::ScopedValueRenderFormat value_render_scope(render_format);
+    xdebug_core::ValueRenderFormat render_format =
+        xdebug_core::ValueRenderFormat::Hex;
+    xdebug_core::parse_value_render_format(value_format, render_format);
+    xdebug_core::ScopedValueRenderFormat value_render_scope(render_format);
     Json data;
     try {
         data = h->run(bound_request, ctx);
@@ -750,27 +739,23 @@ static bool handle_client(int client_fd, bool& should_quit) {
     const std::vector<std::string> unconsumed_paths =
         bound_request.unconsumed_paths();
     if (!unconsumed_paths.empty()) {
-        Json error = xdebug_core::DiagnosticErrorBuilder::handler(
-            "REQUEST_CONTRACT_VIOLATION",
-            "request contains arguments not consumed by the action").to_json();
-        error["invalid_arg"] = unconsumed_paths.front();
-        error["expected"] = "argument consumed by the selected action";
-        error["unconsumed_paths"] = unconsumed_paths;
-        return send_response(client_fd, error_response(error));
+        return send_response(
+            client_fd,
+            error_response(
+                xdebug_core::request_consumption_violation(
+                    unconsumed_paths)));
     }
-    append_sampling_contract(raw_args, data);
-    xdebug_waveform::apply_value_render_format(data, render_format);
-    xdebug_waveform::apply_value_width_summary(data);
+    xdebug_core::apply_value_render_format(data, render_format);
+    xdebug_core::apply_value_width_summary(data);
     Json resp = ok_response(data);
-    // Propagate truncation flag from handler to response envelope.
-    if (data.contains("truncated") && data["truncated"].is_boolean() &&
-        data["truncated"].get<bool>())
-        resp["meta"] = {{"truncated", true}};
-    // Let handler generate XOUT text
-    Json xout_resp;
-    xout_resp["data"] = data;
-    if (data.contains("summary")) xout_resp["summary"] = data["summary"];
-    resp["text"] = h->render_xout(xout_resp);
+    Json xout_response = {
+        {"data", data},
+    };
+    if (data.contains("summary") && data["summary"].is_object())
+        xout_response["summary"] = data["summary"];
+    // Internal-only sidecar.  The public frontend removes this field before
+    // response-schema validation and keeps it only for XOUT presentation.
+    resp["__xout"] = h->render_xout(xout_response);
     return send_response(client_fd, resp);
 }
 
@@ -985,6 +970,31 @@ int server_main(int argc, char** argv) {
             delete[] npi_argv;
             return static_cast<int>(xdebug_engine::EngineStartupExitCode::GenericFailure);
         }
+        if (!xdebug_waveform::xdebug_waveform_ensure_session_dir(
+                g_session_id)) {
+            const std::string session_dir =
+                xdebug_waveform::xdebug_waveform_session_dir(
+                    g_session_id);
+            server_debug_log(
+                "waveform state directory provisioning failed: %s",
+                session_dir.c_str());
+            xdebug_core::log_lifecycle_event(
+                "engine", g_session_id,
+                "waveform_state.provision_failed", false,
+                {{"session_dir", session_dir}});
+            close_fsdb_file();
+            npi_end();
+            end_npi_startup_capture();
+            delete[] npi_argv;
+            return static_cast<int>(
+                xdebug_engine::EngineStartupExitCode::GenericFailure);
+        }
+        xdebug_core::log_lifecycle_event(
+            "engine", g_session_id,
+            "waveform_state.provisioned", true,
+            {{"session_dir",
+              xdebug_waveform::xdebug_waveform_session_dir(
+                  g_session_id)}});
         xdebug_waveform::g_axi_analyzer.configure_repository(
             xdebug_waveform::g_analysis_repository.get(), g_session_id,
             fsdb_identity);
@@ -1141,11 +1151,19 @@ int server_main(int argc, char** argv) {
                                          endpoint_ok,
                                          {{"transport", endpoint.transport}, {"socket_path", endpoint.socket_path},
                                           {"host", endpoint.host}, {"port", endpoint.port}});
+        if (!endpoint_ok) {
+            close(g_srv_fd);
+            g_srv_fd = -1;
+            if (g_transport == "uds") unlink(g_sock_path);
+            close_fsdb_file();
+            npi_end();
+            return 1;
+        }
     }
 
     xdebug_engine::SessionRegistry registry;
     time_t last_active = time(nullptr);
-    registry.touch(g_session_id, last_active);
+    touch_current_generation(registry, last_active);
 
     // Accept loop
     while (true) {
@@ -1178,7 +1196,7 @@ int server_main(int argc, char** argv) {
         handle_client(client_fd, quit);
         close(client_fd);
         last_active = time(nullptr);
-        registry.touch(g_session_id, last_active);
+        touch_current_generation(registry, last_active);
 
         if (quit) break;
     }

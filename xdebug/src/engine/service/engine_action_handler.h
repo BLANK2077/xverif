@@ -22,28 +22,19 @@ public:
     virtual const char* action_name() const = 0;
     virtual bool needs_design() const = 0;
     virtual bool needs_waveform() const = 0;
-    // New handlers consume fields through ContractBoundRequest.  The raw-JSON
-    // overload remains temporarily as a migration bridge for the 53a handlers;
-    // its default bound implementation explicitly assigns the complete args
-    // subtree to that legacy parser, so request ownership is still auditable.
-    virtual Json run(ContractBoundRequest& request,
-                     EngineActionContext& ctx) const;
-    virtual Json run(const Json& request,
-                     EngineActionContext& ctx) const;
+    virtual Json run(
+        ContractBoundRequest& request,
+        EngineActionContext& ctx) const = 0;
 
-    // XOUT text rendering.  Default recursively renders summary + data tree.
-    // Subclasses may override additively:
-    //   std::string render_xout(const Json& r) const override {
-    //       std::string base = EngineActionHandler::render_xout(r);
-    //       // ... append custom sections ...
-    //       return base;
-    //   }
+    // Compact XOUT rendering is deliberately owned by the handler layer.
+    // The base implementation covers ordinary summary/data responses; handlers
+    // override this method for domain-specific source windows and tables.
     virtual std::string render_xout(const Json& response) const;
 };
 
-std::string append_common_blocks_xout(std::string text, const Json& response);
 std::string render_tabular_xout(const std::string& action,
                                 const Json& response);
+
 Json make_handler_error(const std::string& code, const std::string& message);
 Json make_handler_error(const std::string& code, const std::string& message,
                         const Json& details);

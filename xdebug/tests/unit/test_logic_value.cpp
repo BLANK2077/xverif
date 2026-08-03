@@ -1,8 +1,10 @@
-#include "waveform/value/logic_value.h"
+#include "core/value/logic_value.h"
 
 #include <cassert>
 
-using namespace xdebug_waveform;
+using namespace xdebug_core;
+
+using Json = nlohmann::ordered_json;
 
 int main() {
     LogicValue fsdb_hex = logic_value_from_fsdb_raw("22", 'h');
@@ -107,9 +109,9 @@ int main() {
     assert(wide_dec.bits.size() == 128);
     assert(wide_dec.bits.find('0') == std::string::npos);
 
-    LogicValue legacy = parse_user_logic_literal("0x22");
-    assert(!legacy.valid);
-    assert(legacy.error.find("0x prefix is not accepted") != std::string::npos);
+    LogicValue c_hex = parse_user_logic_literal("0x22");
+    assert(!c_hex.valid);
+    assert(c_hex.error.find("0x prefix is not accepted") != std::string::npos);
 
     return 0;
 }

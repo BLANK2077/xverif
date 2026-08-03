@@ -51,27 +51,29 @@ inline Json event_invalid_arg_error(const std::string& action,
                                     const std::string& invalid_arg,
                                     const std::string& message,
                                     const std::string& expected,
-                                    const Json& allowed_values = Json()) {
+                                    const Json& available_values = Json()) {
     Json details = {{"invalid_arg", invalid_arg},
                     {"expected", expected},
                     {"correct_example", event_action_example(action)},
                     {"example_note", "Example only; replace placeholder values with the active event query."}};
-    if (!allowed_values.is_null()) details["allowed_values"] = allowed_values;
+    if (!available_values.is_null()) {
+        details["available_values"] = available_values;
+    }
     return make_handler_error("INVALID_ARGUMENT", message, details);
 }
 
 inline Json event_invalid_enum_error(const std::string& action,
                                      const std::string& invalid_arg,
                                      const std::string& message,
-                                     const Json& allowed_values) {
+                                     const Json& available_values) {
     return make_handler_error(
         "INVALID_ENUM",
         message,
         {{"invalid_arg", invalid_arg},
-         {"expected", "one of allowed_values"},
-         {"allowed_values", allowed_values},
+         {"expected", "one of available_values"},
+         {"available_values", available_values},
          {"correct_example", event_action_example(action)},
-         {"example_note", "Example only; choose a value from allowed_values."}});
+         {"example_note", "Example only; choose a value from available_values."}});
 }
 
 inline Json event_time_error(const std::string& action,

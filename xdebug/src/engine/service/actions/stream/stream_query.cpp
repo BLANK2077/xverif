@@ -1,6 +1,7 @@
 #include "service/engine_action_handler.h"
 #include "service/engine_action_registry.h"
 #include "service/engine_globals.h"
+#include "service/config_store_error.h"
 #include "api/text_response_builder.h"
 
 #include "waveform/common/xdebug_waveform_paths.h"
@@ -322,11 +323,16 @@ bool get_config(
         return false;
     }
     StreamManager manager;
-    if (!manager.get_stream(
+    xdebug_waveform::StoreResult loaded =
+        manager.get_stream(
             xdebug_waveform::g_session_id,
             name,
-            config)) {
-        fail = stream_name_error("stream.query", name);
+            config);
+    if (!loaded.ok()) {
+        fail =
+            loaded.status == xdebug_waveform::StoreStatus::NotFound
+                ? stream_name_error("stream.query", name)
+                : make_config_store_error(loaded);
         return false;
     }
     return true;

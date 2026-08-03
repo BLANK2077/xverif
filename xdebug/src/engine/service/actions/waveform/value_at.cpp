@@ -2,6 +2,7 @@
 #include "api/text_response_builder.h"
 #include "service/engine_action_registry.h"
 #include "service/engine_globals.h"
+#include "service/config_store_error.h"
 #include "clock_point_query.h"
 #include "waveform_action_error_helpers.h"
 
@@ -154,9 +155,14 @@ bool load_collection(
     if (kind == "list") {
         xdebug_waveform::SignalList list;
         xdebug_waveform::ListManager manager;
-        if (!manager.get_list(
-                xdebug_waveform::g_session_id, name, list)) {
+        xdebug_waveform::StoreResult loaded =
+            manager.get_list(xdebug_waveform::g_session_id, name, list);
+        if (loaded.status == xdebug_waveform::StoreStatus::NotFound) {
             error = source_not_found_error(kind, name);
+            return false;
+        }
+        if (!loaded.ok()) {
+            error = make_config_store_error(loaded);
             return false;
         }
         collection =
@@ -166,9 +172,14 @@ bool load_collection(
     if (kind == "apb") {
         xdebug_waveform::ApbConfig config;
         xdebug_waveform::ApbManager manager;
-        if (!manager.get_apb(
-                xdebug_waveform::g_session_id, name, config)) {
+        xdebug_waveform::StoreResult loaded =
+            manager.get_apb(xdebug_waveform::g_session_id, name, config);
+        if (loaded.status == xdebug_waveform::StoreStatus::NotFound) {
             error = source_not_found_error(kind, name);
+            return false;
+        }
+        if (!loaded.ok()) {
+            error = make_config_store_error(loaded);
             return false;
         }
         collection =
@@ -178,9 +189,14 @@ bool load_collection(
     if (kind == "axi") {
         xdebug_waveform::AxiConfig config;
         xdebug_waveform::AxiManager manager;
-        if (!manager.get_axi(
-                xdebug_waveform::g_session_id, name, config)) {
+        xdebug_waveform::StoreResult loaded =
+            manager.get_axi(xdebug_waveform::g_session_id, name, config);
+        if (loaded.status == xdebug_waveform::StoreStatus::NotFound) {
             error = source_not_found_error(kind, name);
+            return false;
+        }
+        if (!loaded.ok()) {
+            error = make_config_store_error(loaded);
             return false;
         }
         collection =
@@ -189,9 +205,14 @@ bool load_collection(
     }
     xdebug_waveform::StreamConfig config;
     xdebug_waveform::StreamManager manager;
-    if (!manager.get_stream(
-            xdebug_waveform::g_session_id, name, config)) {
+    xdebug_waveform::StoreResult loaded =
+        manager.get_stream(xdebug_waveform::g_session_id, name, config);
+    if (loaded.status == xdebug_waveform::StoreStatus::NotFound) {
         error = source_not_found_error(kind, name);
+        return false;
+    }
+    if (!loaded.ok()) {
+        error = make_config_store_error(loaded);
         return false;
     }
     std::string compile_error;
@@ -566,9 +587,8 @@ public:
         xdebug::TextResponseBuilder out("xdebug");
         out.emit_header(action_name());
         std::vector<std::string> columns{"name"};
-        for (const auto& sample : samples) {
+        for (const auto& sample : samples)
             columns.push_back(sample.value("time", std::string()));
-        }
         std::vector<std::vector<std::string>> rows;
         for (size_t entry_index = 0; entry_index < entries.size(); ++entry_index) {
             const Json& entry = entries[entry_index];
@@ -576,13 +596,9 @@ public:
                 entry.value("key", entry.value("path", std::string()))};
             for (const auto& sample : samples) {
                 const Json values = sample.value("values", Json::array());
-                if (entry_index >= values.size()) {
-                    row.push_back("missing_value");
-                    continue;
-                }
+                if (entry_index >= values.size()) { row.push_back("missing_value"); continue; }
                 const Json& cell = values[entry_index];
-                const std::string status =
-                    cell.value("status", std::string("missing_value"));
+                const std::string status = cell.value("status", std::string("missing_value"));
                 row.push_back(status == "ok" && cell.contains("value")
                     ? xdebug::json_to_xout_value(cell["value"]) : status);
             }

@@ -3,13 +3,63 @@
 #include <cctype>
 #include <climits>
 #include <cstdlib>
+#include <initializer_list>
+#include <set>
+#include <utility>
 
 namespace xdebug_waveform {
 
 namespace {
 
+enum class ClockSamplePointPolicy {
+    RejectForNegedge,
+    PreserveForEveryEdge
+};
+
+bool reject_unknown_fields(
+    const Json& value,
+    const char* owner,
+    std::initializer_list<const char*> allowed_fields,
+    std::string& error) {
+    if (!value.is_object()) {
+        error = std::string(owner) + " config must be an object";
+        return false;
+    }
+    std::set<std::string> allowed;
+    for (const char* field : allowed_fields) allowed.insert(field);
+    for (auto it = value.begin(); it != value.end(); ++it) {
+        if (allowed.find(it.key()) == allowed.end()) {
+            error = std::string(owner) +
+                    " config contains unknown field: " + it.key();
+            return false;
+        }
+    }
+    return true;
+}
+
+bool read_optional_nonempty_string(
+    const Json& value,
+    const char* owner,
+    const char* field,
+    std::string& output,
+    std::string& error) {
+    auto it = value.find(field);
+    if (it == value.end()) {
+        output.clear();
+        return true;
+    }
+    if (!it->is_string() || it->get<std::string>().empty()) {
+        error = std::string(owner) + " config field " + field +
+                " must be a non-empty string when present";
+        return false;
+    }
+    output = it->get<std::string>();
+    return true;
+}
+
 bool parse_clock_sample_config(const Json& j,
                                const char* owner,
+                               ClockSamplePointPolicy sample_point_policy,
                                ClockSampleSpec& spec,
                                std::string& err) {
     static const char* legacy[] = {"clk", "sampling", "clock_edge", "posedge", "sample_offset", nullptr};
@@ -20,8 +70,18 @@ bool parse_clock_sample_config(const Json& j,
             return false;
         }
     }
-    if (!get_string(j, "clock", spec.clock)) {
-        err = std::string(owner) + " config requires clock";
+    spec = ClockSampleSpec{};
+    if (!get_string(j, "clock", spec.clock) ||
+        spec.clock.empty()) {
+        err = std::string(owner) +
+              " config requires a non-empty clock string";
+        return false;
+    }
+    if (j.contains("edge") &&
+        (!j["edge"].is_string() ||
+         j["edge"].get<std::string>().empty())) {
+        err = std::string(owner) +
+              " config edge must be a non-empty string when present";
         return false;
     }
     if (!parse_clock_edge_kind(string_or(j, "edge", "negedge"), spec.edge, err)) {
@@ -41,7 +101,9 @@ bool parse_clock_sample_config(const Json& j,
             return false;
         }
     }
-    if (spec.edge == ClockEdgeKind::Negedge && spec.has_sample_point) {
+    if (sample_point_policy == ClockSamplePointPolicy::RejectForNegedge &&
+        spec.edge == ClockEdgeKind::Negedge &&
+        spec.has_sample_point) {
         err = std::string(owner) + " config sample_point is only valid with edge:posedge or edge:dual";
         return false;
     }
@@ -51,20 +113,37 @@ bool parse_clock_sample_config(const Json& j,
 } // namespace
 
 bool parse_apb_config(const Json& j, ApbConfig& c, std::string& err) {
-    auto get = [&j](const char* key) -> std::string {
-        auto it = j.find(key);
-        return it != j.end() && it->is_string() ? it->get<std::string>() : "";
+    if (!reject_unknown_fields(
+            j,
+            "APB",
+            {"clock", "edge", "sample_point", "reset", "paddr",
+             "psel", "penable", "pwrite", "pwdata", "prdata",
+             "pready", "pslverr"},
+            err)) {
+        return false;
+    }
+    c = ApbConfig{};
+    const std::pair<const char*, std::string*> apb_fields[] = {
+        {"paddr", &c.paddr}, {"pwdata", &c.pwdata},
+        {"prdata", &c.prdata}, {"pwrite", &c.pwrite},
+        {"penable", &c.penable}, {"psel", &c.psel},
+        {"pready", &c.pready}, {"pslverr", &c.pslverr},
     };
-    c.paddr = get("paddr");
-    c.pwdata = get("pwdata");
-    c.prdata = get("prdata");
-    c.pwrite = get("pwrite");
-    c.penable = get("penable");
-    c.psel = get("psel");
-    c.pready = get("pready");
-    c.pslverr = get("pslverr");
+    for (const auto& field : apb_fields) {
+        if (!read_optional_nonempty_string(
+                j, "APB", field.first, *field.second, err)) {
+            return false;
+        }
+    }
     if (!j.contains("reset") || !parse_reset_config(j["reset"], c.reset, err)) return false;
-    if (!parse_clock_sample_config(j, "APB", c.clock_sample, err)) return false;
+    if (!parse_clock_sample_config(
+            j,
+            "APB",
+            ClockSamplePointPolicy::RejectForNegedge,
+            c.clock_sample,
+            err)) {
+        return false;
+    }
     if (c.paddr.empty() || c.pwdata.empty() || c.prdata.empty() || c.pwrite.empty() ||
         c.penable.empty() || c.psel.empty() || c.clock_sample.clock.empty()) {
         err = "missing required APB config field";
@@ -73,37 +152,53 @@ bool parse_apb_config(const Json& j, ApbConfig& c, std::string& err) {
     return true;
 }
 
-Json apb_config_json(const ApbConfig& c) {
-    Json j = {
-        {"name", c.name}, {"paddr", c.paddr}, {"pwdata", c.pwdata}, {"prdata", c.prdata},
-        {"pwrite", c.pwrite}, {"penable", c.penable}, {"psel", c.psel},
-        {"clock", c.clock_sample.clock}, {"reset", reset_config_json(c.reset)},
-        {"edge", clock_edge_kind_text(c.clock_sample.edge)}
-    };
-    if (c.clock_sample.edge != ClockEdgeKind::Negedge)
-        j["sample_point"] = clock_sample_point_text(c.clock_sample.sample_point);
-    if (!c.pready.empty()) j["pready"] = c.pready;
-    if (!c.pslverr.empty()) j["pslverr"] = c.pslverr;
-    return j;
-}
-
 bool parse_axi_config(const Json& j, AxiConfig& c, std::string& err) {
-    auto get = [&j](const char* key) -> std::string {
-        auto it = j.find(key);
-        return it != j.end() && it->is_string() ? it->get<std::string>() : "";
+    if (!reject_unknown_fields(
+            j,
+            "AXI",
+            {"clock", "edge", "sample_point", "reset",
+             "awvalid", "awready", "awaddr", "awid", "awlen",
+             "awsize", "awburst", "wvalid", "wready", "wdata",
+             "wstrb", "wlast", "bvalid", "bready", "bid", "bresp",
+             "arvalid", "arready", "araddr", "arid", "arlen",
+             "arsize", "arburst", "rvalid", "rready", "rdata",
+             "rid", "rresp", "rlast"},
+            err)) {
+        return false;
+    }
+    c = AxiConfig{};
+    const std::pair<const char*, std::string*> axi_fields[] = {
+        {"awaddr", &c.awaddr}, {"awid", &c.awid},
+        {"awlen", &c.awlen}, {"awsize", &c.awsize},
+        {"awburst", &c.awburst}, {"awvalid", &c.awvalid},
+        {"awready", &c.awready}, {"wdata", &c.wdata},
+        {"wstrb", &c.wstrb}, {"wlast", &c.wlast},
+        {"wvalid", &c.wvalid}, {"wready", &c.wready},
+        {"bid", &c.bid}, {"bresp", &c.bresp},
+        {"bvalid", &c.bvalid}, {"bready", &c.bready},
+        {"araddr", &c.araddr}, {"arid", &c.arid},
+        {"arlen", &c.arlen}, {"arsize", &c.arsize},
+        {"arburst", &c.arburst}, {"arvalid", &c.arvalid},
+        {"arready", &c.arready}, {"rid", &c.rid},
+        {"rdata", &c.rdata}, {"rresp", &c.rresp},
+        {"rlast", &c.rlast}, {"rvalid", &c.rvalid},
+        {"rready", &c.rready},
     };
-    c.awaddr = get("awaddr"); c.awid = get("awid"); c.awlen = get("awlen");
-    c.awsize = get("awsize"); c.awburst = get("awburst"); c.awvalid = get("awvalid");
-    c.awready = get("awready"); c.wdata = get("wdata"); c.wstrb = get("wstrb");
-    c.wlast = get("wlast"); c.wvalid = get("wvalid"); c.wready = get("wready");
-    c.bid = get("bid"); c.bresp = get("bresp"); c.bvalid = get("bvalid"); c.bready = get("bready");
-    c.araddr = get("araddr"); c.arid = get("arid"); c.arlen = get("arlen");
-    c.arsize = get("arsize"); c.arburst = get("arburst"); c.arvalid = get("arvalid");
-    c.arready = get("arready"); c.rid = get("rid"); c.rdata = get("rdata");
-    c.rresp = get("rresp"); c.rlast = get("rlast"); c.rvalid = get("rvalid");
-    c.rready = get("rready");
+    for (const auto& field : axi_fields) {
+        if (!read_optional_nonempty_string(
+                j, "AXI", field.first, *field.second, err)) {
+            return false;
+        }
+    }
     if (!j.contains("reset") || !parse_reset_config(j["reset"], c.reset, err)) return false;
-    if (!parse_clock_sample_config(j, "AXI", c.clock_sample, err)) return false;
+    if (!parse_clock_sample_config(
+            j,
+            "AXI",
+            ClockSamplePointPolicy::RejectForNegedge,
+            c.clock_sample,
+            err)) {
+        return false;
+    }
     if (c.awaddr.empty() || c.awid.empty() || c.awlen.empty() || c.awsize.empty() ||
         c.awburst.empty() || c.awvalid.empty() || c.awready.empty() || c.wdata.empty() ||
         c.wstrb.empty() || c.wlast.empty() || c.wvalid.empty() || c.wready.empty() ||
@@ -118,30 +213,15 @@ bool parse_axi_config(const Json& j, AxiConfig& c, std::string& err) {
     return true;
 }
 
-Json axi_config_json(const AxiConfig& c) {
-    Json j;
-    j["name"] = c.name;
-    j["awaddr"] = c.awaddr; j["awid"] = c.awid; j["awlen"] = c.awlen;
-    j["awsize"] = c.awsize; j["awburst"] = c.awburst; j["awvalid"] = c.awvalid;
-    j["awready"] = c.awready; j["wdata"] = c.wdata; j["wstrb"] = c.wstrb;
-    j["wlast"] = c.wlast; j["wvalid"] = c.wvalid; j["wready"] = c.wready;
-    j["bid"] = c.bid; j["bresp"] = c.bresp; j["bvalid"] = c.bvalid; j["bready"] = c.bready;
-    j["araddr"] = c.araddr; j["arid"] = c.arid; j["arlen"] = c.arlen;
-    j["arsize"] = c.arsize; j["arburst"] = c.arburst; j["arvalid"] = c.arvalid;
-    j["arready"] = c.arready; j["rid"] = c.rid; j["rdata"] = c.rdata;
-    j["rresp"] = c.rresp; j["rlast"] = c.rlast; j["rvalid"] = c.rvalid;
-    j["rready"] = c.rready;
-    j["clock"] = c.clock_sample.clock;
-    j["reset"] = reset_config_json(c.reset);
-    j["edge"] = clock_edge_kind_text(c.clock_sample.edge);
-    if (c.clock_sample.edge != ClockEdgeKind::Negedge)
-        j["sample_point"] = clock_sample_point_text(c.clock_sample.sample_point);
-    return j;
-}
-
 bool parse_nonnegative_int(const Json& v, int& out) {
+    if (v.is_number_unsigned()) {
+        const unsigned long long n = v.get<unsigned long long>();
+        if (n > static_cast<unsigned long long>(INT_MAX)) return false;
+        out = static_cast<int>(n);
+        return true;
+    }
     if (!v.is_number_integer()) return false;
-    long long n = v.get<long long>();
+    const long long n = v.get<long long>();
     if (n < 0 || n > INT_MAX) return false;
     out = static_cast<int>(n);
     return true;
@@ -165,7 +245,23 @@ bool parse_field_ref(const std::string& text, EventField& field) {
 }
 
 bool parse_event_config(const Json& j, EventConfig& c, std::string& err) {
-    if (!parse_clock_sample_config(j, "event", c.clock_sample, err)) return false;
+    if (!reject_unknown_fields(
+            j,
+            "event",
+            {"clock", "edge", "sample_point", "reset", "signals",
+             "fields"},
+            err)) {
+        return false;
+    }
+    c = EventConfig{};
+    if (!parse_clock_sample_config(
+            j,
+            "event",
+            ClockSamplePointPolicy::PreserveForEveryEdge,
+            c.clock_sample,
+            err)) {
+        return false;
+    }
     if (j.contains("rst_n")) {
         err = "event config field rst_n is not supported; use reset.signal and reset.polarity";
         return false;
@@ -178,8 +274,9 @@ bool parse_event_config(const Json& j, EventConfig& c, std::string& err) {
         return false;
     }
     for (auto it = sig_it->begin(); it != sig_it->end(); ++it) {
-        if (!it.value().is_string()) {
-            err = "event signal alias must map to string path: " + it.key();
+        if (it.key().empty() || !it.value().is_string() ||
+            it.value().get<std::string>().empty()) {
+            err = "event signal aliases and paths must be non-empty strings";
             return false;
         }
         c.signals[it.key()] = it.value().get<std::string>();
@@ -191,6 +288,10 @@ bool parse_event_config(const Json& j, EventConfig& c, std::string& err) {
             return false;
         }
         for (auto it = fields_it->begin(); it != fields_it->end(); ++it) {
+            if (it.key().empty()) {
+                err = "event field name must not be empty";
+                return false;
+            }
             EventField f;
             if (it.value().is_string()) {
                 if (!parse_field_ref(it.value().get<std::string>(), f)) {
@@ -198,6 +299,14 @@ bool parse_event_config(const Json& j, EventConfig& c, std::string& err) {
                     return false;
                 }
             } else if (it.value().is_object()) {
+                if (!reject_unknown_fields(
+                        it.value(),
+                        "event field",
+                        {"signal", "left", "right"},
+                        err)) {
+                    err += ": " + it.key();
+                    return false;
+                }
                 auto left_it = it.value().find("left");
                 auto right_it = it.value().find("right");
                 if (!get_string(it.value(), "signal", f.signal_alias) ||
@@ -227,7 +336,7 @@ Json event_config_json(const EventConfig& c) {
     j["clock"] = c.clock_sample.clock;
     if (c.has_reset) j["reset"] = reset_config_json(c.reset);
     j["edge"] = clock_edge_kind_text(c.clock_sample.edge);
-    if (c.clock_sample.edge != ClockEdgeKind::Negedge)
+    if (c.clock_sample.has_sample_point)
         j["sample_point"] = clock_sample_point_text(c.clock_sample.sample_point);
     j["signals"] = c.signals;
     Json fields = Json::object();

@@ -9,6 +9,12 @@ inline Json list_action_example(const std::string& action) {
     if (action == "list.create") {
         args = {{"name", "debug_list"},
                 {"signals", Json::array({"top.u.valid", "top.u.ready"})}};
+    } else if (action == "list.load") {
+        args = {{"config",
+                 {{"lists",
+                   Json::array({Json{{"name", "debug_list"},
+                                     {"signals", Json::array(
+                                         {"top.u.valid", "top.u.ready"})}}})}}}};
     } else if (action == "list.add") {
         args = {{"name", "debug_list"}, {"signal", "top.u.valid"}};
     } else if (action == "list.delete") {

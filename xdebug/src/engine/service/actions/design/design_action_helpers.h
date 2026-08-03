@@ -6,8 +6,7 @@
 namespace xdebug_design {
 
 inline Json design_action_example(const std::string& action) {
-    Json args = Json::object();
-    args = {{"signal", "top.u.valid"}};
+    Json args = {{"signal", "top.u.valid"}};
     if (action == "trace.driver" || action == "trace.load") {
         args["line_limit"] = 16;
     }

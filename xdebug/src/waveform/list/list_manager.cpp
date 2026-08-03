@@ -1,298 +1,385 @@
 #include "list_manager.h"
-#include "../common/xdebug_waveform_paths.h"
-#include "json.hpp"
 
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/file.h>
-#include <cctype>
+#include "../common/xdebug_waveform_paths.h"
+
+#include <algorithm>
+#include <functional>
 #include <map>
 #include <set>
+#include <utility>
 
 namespace xdebug_waveform {
+namespace {
 
-using Json = nlohmann::ordered_json;
-
-ListManager::ListManager() {
+StoreJson list_to_json(const SignalList& list) {
+    return {
+        {"name", list.name},
+        {"signals", list.signals}
+    };
 }
 
-ListManager::~ListManager() {
-}
-
-bool ListManager::load_lists(const std::string& session_id,
-                             const std::vector<SignalList>& incoming,
-                             const std::string& mode,
-                             std::string& error) {
-    if (mode != "replace" && mode != "append") {
-        error = "list.load mode must be replace or append";
+bool json_to_list(
+    const StoreJson& value,
+    SignalList& list,
+    std::string& error) {
+    if (!value.is_object() || value.size() != 2 ||
+        !value.contains("name") || !value["name"].is_string() ||
+        value["name"].get<std::string>().empty() ||
+        !value.contains("signals") || !value["signals"].is_array()) {
+        error =
+            "signal list must contain only non-empty name and signals array";
         return false;
     }
-    if (incoming.empty()) {
-        error = "list.load requires at least one list";
-        return false;
-    }
-    std::set<std::string> incoming_names;
-    for (const auto& list : incoming) {
-        if (list.name.empty() || !incoming_names.insert(list.name).second) {
-            error = "list names must be non-empty and unique";
+    list.name = value["name"].get<std::string>();
+    list.signals.clear();
+    std::set<std::string> signals;
+    for (size_t index = 0; index < value["signals"].size(); ++index) {
+        const auto& signal = value["signals"][index];
+        if (!signal.is_string() || signal.get<std::string>().empty()) {
+            error =
+                "signals[" + std::to_string(index) +
+                "] must be a non-empty string";
             return false;
         }
-        std::set<std::string> signals;
-        for (const auto& signal : list.signals) {
-            if (signal.empty() || !signals.insert(signal).second) {
-                error = "signals in list " + list.name +
-                        " must be non-empty and unique";
-                return false;
-            }
+        const std::string path = signal.get<std::string>();
+        if (!signals.insert(path).second) {
+            error = "duplicate signal path: " + path;
+            return false;
         }
+        list.signals.push_back(path);
     }
+    error.clear();
+    return true;
+}
 
-    std::vector<SignalList> current;
-    if (!load_session(session_id, current)) {
-        error = "failed to read existing signal lists";
-        return false;
-    }
-    if (mode == "append") {
-        std::set<std::string> names;
-        for (const auto& list : current) names.insert(list.name);
-        for (const auto& list : incoming) {
-            if (!names.insert(list.name).second) {
-                error = "signal list already exists: " + list.name;
-                return false;
-            }
-            current.push_back(list);
+StoreResult parse_lists(
+    const StoreJson& items,
+    std::vector<SignalList>& lists) {
+    lists.clear();
+    std::set<std::string> names;
+    for (size_t index = 0; index < items.size(); ++index) {
+        SignalList list;
+        std::string error;
+        if (!json_to_list(items[index], list, error)) {
+            return store_invalid(
+                "lists[" + std::to_string(index) + "]: " + error);
         }
-    } else {
+        if (!names.insert(list.name).second) {
+            return store_invalid("duplicate signal list name: " + list.name);
+        }
+        lists.push_back(std::move(list));
+    }
+    return {};
+}
+
+StoreJson serialize_lists(const std::vector<SignalList>& lists) {
+    StoreJson items = StoreJson::array();
+    for (const auto& list : lists) items.push_back(list_to_json(list));
+    return items;
+}
+
+VersionedJsonStore store_for(const std::string& session_id) {
+    return VersionedJsonStore(
+        xdebug_waveform_lists_path(session_id), "lists");
+}
+
+using SignalListMutation =
+    std::function<StoreResult(SignalList&)>;
+
+StoreResult update_named_list(
+    const std::string& session_id,
+    const std::string& list_name,
+    const SignalListMutation& mutation) {
+    return store_for(session_id).update([&](StoreJson& items) {
+        std::vector<SignalList> lists;
+        StoreResult parsed = parse_lists(items, lists);
+        if (!parsed.ok()) return parsed;
+        for (size_t list_index = 0;
+             list_index < lists.size();
+             ++list_index) {
+            if (lists[list_index].name != list_name) continue;
+            StoreResult mutated = mutation(lists[list_index]);
+            if (!mutated.ok()) return mutated;
+            SignalList modified =
+                std::move(lists[list_index]);
+            lists.erase(lists.begin() + list_index);
+            lists.push_back(std::move(modified));
+            items = serialize_lists(lists);
+            return StoreResult{};
+        }
+        return store_not_found(
+            "signal list not found: " + list_name);
+    });
+}
+
+StoreResult signal_index_out_of_range(
+    const std::string& list_name,
+    size_t one_based_index,
+    size_t signal_count) {
+    return {
+        StoreStatus::Invalid,
+        "PRECONDITION_FAILED",
+        "signal index " + std::to_string(one_based_index) +
+            " is outside the one-based range for list " +
+            list_name + " with " +
+            std::to_string(signal_count) + " signals"
+    };
+}
+
+} // namespace
+
+StoreResult ListManager::load_session(
+    const std::string& session_id,
+    std::vector<SignalList>& lists) {
+    StoreJson items;
+    StoreResult loaded = store_for(session_id).load(items);
+    if (!loaded.ok()) return loaded;
+    return parse_lists(items, lists);
+}
+
+StoreResult ListManager::load_lists(
+    const std::string& session_id,
+    const std::vector<SignalList>& incoming,
+    const std::string& mode) {
+    if (mode != "replace" && mode != "append") {
+        return store_invalid("list.load mode must be replace or append");
+    }
+    std::vector<SignalList> validated;
+    StoreResult incoming_result =
+        parse_lists(serialize_lists(incoming), validated);
+    if (!incoming_result.ok()) {
+        incoming_result.message =
+            "cannot persist invalid signal list config: " +
+            incoming_result.message;
+        return incoming_result;
+    }
+    if (validated.empty()) {
+        return store_invalid("list.load requires at least one list");
+    }
+    if (!xdebug_waveform_ensure_session_dir(session_id)) {
+        return {
+            StoreStatus::IoError,
+            "CONFIG_STORE_IO_ERROR",
+            "cannot create signal-list session directory"
+        };
+    }
+    return store_for(session_id).update([&](StoreJson& items) {
+        std::vector<SignalList> current;
+        StoreResult parsed = parse_lists(items, current);
+        if (!parsed.ok()) return parsed;
+        if (mode == "append") {
+            std::set<std::string> names;
+            for (const auto& list : current) names.insert(list.name);
+            for (const auto& list : validated) {
+                if (!names.insert(list.name).second) {
+                    return store_conflict(
+                        "signal list already exists: " + list.name);
+                }
+                current.push_back(list);
+            }
+            items = serialize_lists(current);
+            return StoreResult{};
+        }
         std::map<std::string, SignalList> by_name;
         for (const auto& list : current) by_name[list.name] = list;
-        for (const auto& list : incoming) by_name[list.name] = list;
-        current.clear();
-        for (const auto& item : by_name) current.push_back(item.second);
+        for (const auto& list : validated) by_name[list.name] = list;
+        std::vector<SignalList> replaced;
+        for (const auto& entry : by_name) replaced.push_back(entry.second);
+        items = serialize_lists(replaced);
+        return StoreResult{};
+    });
+}
+
+StoreResult ListManager::create_list(
+    const std::string& session_id,
+    const std::string& name,
+    const std::vector<std::string>& signals) {
+    if (name.empty()) {
+        return store_invalid("signal list name must be non-empty");
     }
-    if (!save_session(session_id, current)) {
-        error = "failed to persist signal lists";
-        return false;
-    }
-    return true;
-}
-
-static bool lock_file(int fd) {
-    return flock(fd, LOCK_EX) == 0;
-}
-
-static bool unlock_file(int fd) {
-    return flock(fd, LOCK_UN) == 0;
-}
-
-static Json list_to_json(const SignalList& list) {
-    Json j;
-    j["name"] = list.name;
-    j["signals"] = list.signals;
-    return j;
-}
-
-static bool json_to_list(const Json& j, SignalList& list) {
-    if (!j.is_object()) return false;
-    list.name = j.value("name", "");
-    list.signals.clear();
-    if (j.contains("signals") && j["signals"].is_array()) {
-        for (const auto& sig : j["signals"]) {
-            if (sig.is_string()) list.signals.push_back(sig.get<std::string>());
+    std::set<std::string> unique_signals;
+    for (const auto& signal : signals) {
+        if (signal.empty()) {
+            return store_invalid("signal list paths must be non-empty");
+        }
+        if (!unique_signals.insert(signal).second) {
+            return store_conflict(
+                "duplicate signal in new list " + name + ": " + signal);
         }
     }
-    return !list.name.empty();
-}
-
-bool ListManager::parse_legacy_line(const char* line, SignalList& list, int& session_id) {
-    char name_buf[256];
-    if (sscanf(line, "%d|%255[^|\n]", &session_id, name_buf) != 2) {
-        return false;
+    if (!xdebug_waveform_ensure_session_dir(session_id)) {
+        return {
+            StoreStatus::IoError,
+            "CONFIG_STORE_IO_ERROR",
+            "cannot create signal-list session directory"
+        };
     }
-    list.name = name_buf;
-    list.signals.clear();
-
-    char* mutable_line = strdup(line);
-    char* p = strchr(mutable_line, '|');
-    if (p) {
-        p = strchr(p + 1, '|');
-        while (p) {
-            p++;
-            char* end = strchr(p, '|');
-            if (end) *end = '\0';
-            if (strlen(p) > 0) list.signals.push_back(p);
-            p = end;
-        }
-    }
-    free(mutable_line);
-    return true;
-}
-
-bool ListManager::migrate_legacy(const std::string& session_id, std::vector<SignalList>& lists) {
-    (void)session_id;
-    (void)lists;
-    return false;
-}
-
-bool ListManager::load_session(const std::string& session_id, std::vector<SignalList>& lists) {
-    lists.clear();
-    std::string path = xdebug_waveform_lists_path(session_id);
-    int fd = open(path.c_str(), O_RDONLY);
-    if (fd < 0) return migrate_legacy(session_id, lists);
-    if (!lock_file(fd)) {
-        close(fd);
-        return false;
-    }
-
-    FILE* fp = fdopen(fd, "r");
-    if (!fp) {
-        unlock_file(fd);
-        close(fd);
-        return false;
-    }
-
-    std::string text;
-    char buf[4096];
-    while (fgets(buf, sizeof(buf), fp)) text += buf;
-    fclose(fp);
-    if (text.empty()) return true;
-
-    try {
-        Json root = Json::parse(text);
-        if (!root.is_object() || !root.value("lists", Json::array()).is_array()) return true;
-        for (const auto& item : root["lists"]) {
-            SignalList list;
-            if (json_to_list(item, list)) lists.push_back(list);
-        }
-    } catch (...) {
-        return false;
-    }
-    return true;
-}
-
-bool ListManager::save_session(const std::string& session_id, const std::vector<SignalList>& lists) {
-    if (!xdebug_waveform_ensure_session_dir(session_id)) return false;
-    std::string path = xdebug_waveform_lists_path(session_id);
-    int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
-    if (fd < 0) return false;
-    if (!lock_file(fd)) {
-        close(fd);
-        return false;
-    }
-    Json root;
-    root["version"] = 1;
-    root["lists"] = Json::array();
-    for (const auto& list : lists) root["lists"].push_back(list_to_json(list));
-    std::string data = root.dump(2) + "\n";
-    bool ok = write(fd, data.c_str(), data.size()) == static_cast<ssize_t>(data.size());
-    unlock_file(fd);
-    close(fd);
-    return ok;
-}
-
-bool ListManager::create_list(const std::string& session_id, const std::string& name) {
-    std::vector<SignalList> lists;
-    load_session(session_id, lists);
-    for (const auto& list : lists) {
-        if (list.name == name) return false;
-    }
-    SignalList list;
-    list.name = name;
-    lists.push_back(list);
-    return save_session(session_id, lists);
-}
-
-bool ListManager::delete_list(const std::string& session_id, const std::string& name) {
-    std::vector<SignalList> lists;
-    load_session(session_id, lists);
-    std::vector<SignalList> out;
-    bool found = false;
-    for (const auto& list : lists) {
-        if (list.name == name) {
-            found = true;
-            continue;
-        }
-        out.push_back(list);
-    }
-    return found && save_session(session_id, out);
-}
-
-bool ListManager::add_signal(const std::string& session_id, const std::string& list_name, const std::string& signal) {
-    std::vector<SignalList> lists;
-    load_session(session_id, lists);
-    for (size_t i = 0; i < lists.size(); ++i) {
-        if (lists[i].name == list_name) {
-            lists[i].signals.push_back(signal);
-            SignalList modified = lists[i];
-            lists.erase(lists.begin() + i);
-            lists.push_back(modified);
-            return save_session(session_id, lists);
-        }
-    }
-    return false;
-}
-
-bool ListManager::del_signal(const std::string& session_id, const std::string& list_name, const std::string& path_or_index) {
-    std::vector<SignalList> lists;
-    load_session(session_id, lists);
-    for (size_t i = 0; i < lists.size(); ++i) {
-        if (lists[i].name != list_name) continue;
-        bool is_index = true;
-        for (char c : path_or_index) {
-            if (!isdigit(static_cast<unsigned char>(c))) {
-                is_index = false;
-                break;
+    return store_for(session_id).update([&](StoreJson& items) {
+        std::vector<SignalList> lists;
+        StoreResult parsed = parse_lists(items, lists);
+        if (!parsed.ok()) return parsed;
+        for (const auto& list : lists) {
+            if (list.name == name) {
+                return store_conflict(
+                    "signal list already exists: " + name);
             }
         }
-        if (is_index) {
-            int idx = atoi(path_or_index.c_str());
-            if (idx <= 0 || idx > static_cast<int>(lists[i].signals.size())) return false;
-            lists[i].signals.erase(lists[i].signals.begin() + (idx - 1));
-        } else {
-            bool found = false;
-            for (auto it = lists[i].signals.begin(); it != lists[i].signals.end(); ++it) {
-                if (*it == path_or_index) {
-                    lists[i].signals.erase(it);
-                    found = true;
-                    break;
+        SignalList list;
+        list.name = name;
+        list.signals = signals;
+        lists.push_back(std::move(list));
+        items = serialize_lists(lists);
+        return StoreResult{};
+    });
+}
+
+StoreResult ListManager::delete_list(
+    const std::string& session_id,
+    const std::string& name) {
+    return store_for(session_id).update([&](StoreJson& items) {
+        std::vector<SignalList> lists;
+        StoreResult parsed = parse_lists(items, lists);
+        if (!parsed.ok()) return parsed;
+        std::vector<SignalList> kept;
+        bool found = false;
+        for (const auto& list : lists) {
+            if (list.name == name) found = true;
+            else kept.push_back(list);
+        }
+        if (!found) {
+            return store_not_found("signal list not found: " + name);
+        }
+        items = serialize_lists(kept);
+        return StoreResult{};
+    });
+}
+
+StoreResult ListManager::add_signal(
+    const std::string& session_id,
+    const std::string& list_name,
+    const std::string& signal) {
+    if (list_name.empty() || signal.empty()) {
+        return store_invalid(
+            "signal list name and signal path must be non-empty");
+    }
+    return store_for(session_id).update([&](StoreJson& items) {
+        std::vector<SignalList> lists;
+        StoreResult parsed = parse_lists(items, lists);
+        if (!parsed.ok()) return parsed;
+        for (size_t index = 0; index < lists.size(); ++index) {
+            if (lists[index].name != list_name) continue;
+            for (const auto& existing : lists[index].signals) {
+                if (existing == signal) {
+                    return store_conflict(
+                        "signal is already present in list " + list_name +
+                        ": " + signal);
                 }
             }
-            if (!found) return false;
+            lists[index].signals.push_back(signal);
+            SignalList modified = lists[index];
+            lists.erase(lists.begin() + index);
+            lists.push_back(std::move(modified));
+            items = serialize_lists(lists);
+            return StoreResult{};
         }
-        SignalList modified = lists[i];
-        lists.erase(lists.begin() + i);
-        lists.push_back(modified);
-        return save_session(session_id, lists);
-    }
-    return false;
+        return store_not_found("signal list not found: " + list_name);
+    });
 }
 
-bool ListManager::get_list(const std::string& session_id, const std::string& name, SignalList& list) {
-    std::vector<SignalList> lists;
-    load_session(session_id, lists);
-    for (const auto& candidate : lists) {
-        if (candidate.name == name) {
-            list = candidate;
-            return true;
-        }
+StoreResult ListManager::delete_signal_by_path(
+    const std::string& session_id,
+    const std::string& list_name,
+    const std::string& signal_path) {
+    if (list_name.empty() || signal_path.empty()) {
+        return store_invalid(
+            "signal list name and signal path must be non-empty");
     }
-    return false;
+    return update_named_list(
+        session_id,
+        list_name,
+        [&](SignalList& list) {
+            auto found = std::find(
+                list.signals.begin(),
+                list.signals.end(),
+                signal_path);
+            if (found == list.signals.end()) {
+                return store_not_found(
+                    "signal is not present in list " +
+                    list_name + ": " + signal_path);
+            }
+            list.signals.erase(found);
+            return StoreResult{};
+        });
 }
 
-bool ListManager::get_latest_list(const std::string& session_id, std::string& name) {
+StoreResult ListManager::delete_signal_by_one_based_index(
+    const std::string& session_id,
+    const std::string& list_name,
+    size_t one_based_index,
+    std::string& removed_signal) {
+    removed_signal.clear();
+    if (list_name.empty()) {
+        return store_invalid(
+            "signal list name must be non-empty");
+    }
+    std::string removed_candidate;
+    StoreResult deleted = update_named_list(
+        session_id,
+        list_name,
+        [&](SignalList& list) {
+            if (one_based_index == 0 ||
+                one_based_index > list.signals.size()) {
+                return signal_index_out_of_range(
+                    list_name,
+                    one_based_index,
+                    list.signals.size());
+            }
+            const size_t zero_based_index =
+                one_based_index - 1;
+            removed_candidate =
+                list.signals[zero_based_index];
+            list.signals.erase(
+                list.signals.begin() + zero_based_index);
+            return StoreResult{};
+        });
+    if (deleted.ok()) {
+        removed_signal = std::move(removed_candidate);
+    }
+    return deleted;
+}
+
+StoreResult ListManager::get_list(
+    const std::string& session_id,
+    const std::string& name,
+    SignalList& list) {
     std::vector<SignalList> lists;
-    load_session(session_id, lists);
-    if (lists.empty()) return false;
+    StoreResult loaded = load_session(session_id, lists);
+    if (!loaded.ok()) return loaded;
+    for (const auto& current : lists) {
+        if (current.name != name) continue;
+        list = current;
+        return {};
+    }
+    return store_not_found("signal list not found: " + name);
+}
+
+StoreResult ListManager::get_latest_list(
+    const std::string& session_id,
+    std::string& name) {
+    std::vector<SignalList> lists;
+    StoreResult loaded = load_session(session_id, lists);
+    if (!loaded.ok()) return loaded;
+    if (lists.empty()) {
+        return store_not_found("no signal lists are loaded");
+    }
     name = lists.back().name;
-    return true;
+    return {};
 }
 
-std::vector<SignalList> ListManager::list_all(const std::string& session_id) {
-    std::vector<SignalList> lists;
-    load_session(session_id, lists);
-    return lists;
+StoreResult ListManager::list_all(
+    const std::string& session_id,
+    std::vector<SignalList>& lists) {
+    return load_session(session_id, lists);
 }
 
 } // namespace xdebug_waveform

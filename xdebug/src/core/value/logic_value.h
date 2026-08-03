@@ -57,7 +57,7 @@ std::string logic_value_compact_string(const LogicValue& value);
 std::string logic_value_compare_key(const LogicValue& value);
 bool logic_value_has_xz(const LogicValue& value);
 
-bool is_legacy_0x_literal(const std::string& text);
+bool has_c_hex_prefix(const std::string& text);
 std::string value_format_invalid_message(const std::string& value);
 
 } // namespace xdebug_core

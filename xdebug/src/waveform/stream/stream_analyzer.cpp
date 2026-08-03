@@ -1,10 +1,11 @@
 #include "stream_analyzer.h"
+#include "core/output/completeness.h"
 
 #include "../cache/analysis_probe.h"
 #include "../cache/analysis_size_estimator.h"
 #include "../server/fsdb_scan_utils.h"
 #include "../server/fsdb_value_reader.h"
-#include "../value/logic_value.h"
+#include "core/value/logic_value.h"
 
 #include "npi_fsdb.h"
 #include "npi_L1.h"
@@ -40,13 +41,15 @@ StreamValue x_value() {
 }
 
 unsigned long long parse_user_u64(const std::string& text, bool& ok, std::string& error) {
-    LogicValue literal = parse_user_logic_literal(text);
+    xdebug_core::LogicValue literal =
+        xdebug_core::parse_user_logic_literal(text);
     if (!literal.valid) {
         ok = false;
         error = literal.error;
         return 0;
     }
-    if (logic_value_has_xz(literal) || literal.bits.size() > 63) {
+    if (xdebug_core::logic_value_has_xz(literal) ||
+        literal.bits.size() > 63) {
         ok = false;
         error = "match value must be a known literal up to 63 bits: " + text;
         return 0;
@@ -84,8 +87,10 @@ ValueFilterMatch match_filter_fields(const std::map<std::string, StreamValue>& f
             combined = value_filter_and(combined, ValueFilterMatch::Unresolved);
             continue;
         }
-        LogicValue logic = logic_value_from_bits(value->second.bits,
-                                                 static_cast<int>(value->second.bits.size()));
+        xdebug_core::LogicValue logic =
+            xdebug_core::logic_value_from_bits(
+                value->second.bits,
+                static_cast<int>(value->second.bits.size()));
         const ValueFilterMatch result = match_value_filter(item.second, logic);
         combined = value_filter_and(combined, result);
         if (combined == ValueFilterMatch::No) return combined;
@@ -154,10 +159,18 @@ Json beat_preview_json(const std::vector<StreamBeat>& beats) {
         size_t tail_start = n > 10 ? n - 5 : 5;
         for (size_t i = tail_start; i < n; ++i) tail.push_back(beat_json(beats[i]));
     }
-    return Json{{"total_beats", n},
-                {"truncated", n > 10},
-                {"head", head},
-                {"tail", tail}};
+    Json preview = {{"head", head}, {"tail", tail}};
+    xdebug_core::set_completeness(
+        preview,
+        true,
+        true,
+        n > 10,
+        n,
+        head.size() + tail.size(),
+        n > 10
+            ? std::vector<std::string>{"response_beats"}
+            : std::vector<std::string>{});
+    return preview;
 }
 
 } // namespace
@@ -783,7 +796,7 @@ bool StreamQueryView::materialize(StreamAnalysis& analysis,
                  static_cast<int>(analysis.packets.size()) < retain_limit)) {
                 analysis.packets.push_back(state.packet);
             } else if (options_.filter.enabled) {
-                analysis.truncated = true;
+                analysis.response_truncated = true;
             } else if (options_.query_kind.empty()) {
                 // Export and other internal callers require the complete
                 // packet table materialized in the request view.
@@ -956,7 +969,7 @@ bool StreamQueryView::materialize(StreamAnalysis& analysis,
                 static_cast<int>(analysis.transfers.size()) < retain_limit)
                 analysis.transfers.push_back(row);
             else
-                analysis.truncated = true;
+                analysis.response_truncated = true;
         }
     }
     const npiFsdbTime finish_time = begin_index == end_index
@@ -1014,25 +1027,14 @@ bool StreamAnalyzer::analyze_cached(
     npiFsdbTime maximum = 0;
     npi_fsdb_min_time(file, &minimum);
     npi_fsdb_max_time(file, &maximum);
-    AnalysisCacheScope effective_scope = cache_scope;
-    if (effective_scope == AnalysisCacheScope::Range &&
-        options.begin == minimum && options.end == maximum)
-        effective_scope = AnalysisCacheScope::Full;
-
     const AnalysisCacheKey full_key = cache_key(
         config, AnalysisCacheScope::Full, minimum, maximum);
-    AnalysisCacheKey selected_key = effective_scope == AnalysisCacheScope::Full
+    AnalysisCacheKey selected_key = cache_scope == AnalysisCacheScope::Full
         ? full_key
         : cache_key(config, AnalysisCacheScope::Range,
                     options.begin, options.end);
     std::shared_ptr<const StreamBaseAnalysis> base;
-    if (effective_scope == AnalysisCacheScope::Range) {
-        base = repository_->find_canonical<StreamBaseAnalysis>(
-            full_key, kStreamBaseTypeTag);
-        if (base) selected_key = full_key;
-    }
-
-    if (!base) {
+    {
         const AnalysisAcquireStatus acquire = repository_->begin_canonical(
             selected_key, kStreamBaseTypeTag, sizeof(StreamBaseAnalysis),
             last_cache_error_);
@@ -1268,7 +1270,7 @@ bool StreamAnalyzer::analyze_legacy(npiFsdbFileHandle file,
                 static_cast<int>(analysis.packets.size()) < retain_limit) {
                 analysis.packets.push_back(state.packet);
             } else {
-                analysis.truncated = true;
+                analysis.response_truncated = true;
             }
         }
         state.active = false;
@@ -1498,13 +1500,13 @@ bool StreamAnalyzer::analyze_legacy(npiFsdbFileHandle file,
                 if (retain_limit <= 0 || static_cast<int>(analysis.transfers.size()) < retain_limit)
                     analysis.transfers.push_back(row);
                 else
-                    analysis.truncated = true;
+                    analysis.response_truncated = true;
             }
         }
 
         cycle++;
     }
-    if (sample_truncated) analysis.truncated = true;
+    if (sample_truncated) analysis.analysis_complete = false;
     finish_stall(sampled_edges.empty() ? options.end : sampled_edges.back().time, cycle);
     finish_packet(single_packet, true);
     for (auto& kv : channel_packets) finish_packet(kv.second, true);
@@ -1591,11 +1593,19 @@ Json stream_summary_json(const StreamConfig& config, const StreamAnalysis& analy
     j["data_xz_count"] = analysis.data_xz_count;
     j["ready_bp_conflict_count"] = analysis.ready_bp_conflict_count;
     j["packet_stable_mismatch_count"] = analysis.packet_stable_mismatch_count;
-    j["truncated"] = analysis.truncated;
-    j["response_truncated"] = analysis.truncated;
-    j["retained_transfer_count"] = analysis.transfers.size();
-    j["analysis_complete"] = analysis.analysis_complete;
-    j["truncation_scope"] = analysis.truncated ? Json("response_rows") : Json(nullptr);
+    std::vector<std::string> truncation_scopes;
+    if (!analysis.analysis_complete)
+        truncation_scopes.push_back("analysis_samples");
+    if (analysis.response_truncated)
+        truncation_scopes.push_back("response_transfers");
+    xdebug_core::set_completeness(
+        j,
+        analysis.analysis_complete,
+        analysis.analysis_complete,
+        analysis.response_truncated,
+        static_cast<std::size_t>(analysis.transfer_count),
+        analysis.transfers.size(),
+        truncation_scopes);
     j["requested_range"] = {{"begin", format_time(analysis.requested_begin)},
                              {"end", format_time(analysis.requested_end)}};
     j["scanned_range"] = {{"begin", analysis.has_scanned_samples

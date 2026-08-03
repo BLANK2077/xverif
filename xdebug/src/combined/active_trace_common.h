@@ -3,7 +3,7 @@
 #include "api/json_types.h"
 #include "core/npi/resource_guard.h"
 #include "core/npi/time_contract.h"
-#include "waveform/value/logic_value.h"
+#include "core/value/logic_value.h"
 
 #include "npi.h"
 #include "npi_fsdb.h"
@@ -72,8 +72,8 @@ inline std::string fsdb_value_at(npiFsdbFileHandle fsdb,
 
 inline std::string format_value(const std::string& raw) {
     if (raw.empty()) return "?";
-    return xdebug_waveform::logic_value_compact_string(
-        xdebug_waveform::logic_value_from_fsdb_raw(raw, 'b'));
+    return xdebug_core::logic_value_compact_string(
+        xdebug_core::logic_value_from_fsdb_raw(raw, 'b'));
 }
 
 inline std::string driver_text(npiHandle h, const std::string& kind) {

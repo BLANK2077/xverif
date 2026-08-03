@@ -2,7 +2,6 @@
 #include "service/engine_action_registry.h"
 #include "service/engine_globals.h"
 
-#include "api/text_response_builder.h"
 #include "design/protocol/protocol.h"
 #include "waveform/server/fsdb_value_reader.h"
 #include "waveform/event/event_manager.h"
@@ -13,7 +12,7 @@
 #include "waveform/common/xdebug_waveform_paths.h"
 #include "waveform/service/action_support.h"
 #include "waveform/service/rc_generator.h"
-#include "waveform/value/logic_value.h"
+#include "core/value/logic_value.h"
 #include "core/npi/time_contract.h"
 
 #include "npi.h"
@@ -39,11 +38,28 @@ public:
     const char* action_name() const override { return name_.c_str(); }
     bool needs_design() const override { return nd_; }
     bool needs_waveform() const override { return nw_; }
-    Json run(const Json& request, EngineActionContext& ctx) const override {
+    Json run(ContractBoundRequest& request, EngineActionContext& ctx) const override {
         std::string error;
-        Json result = xdebug_waveform::ai_dispatch_query(request, error);
+        Json effective_request = request.consume_args_request(
+            "xdebug_waveform::ai_dispatch_query/" + name_);
+        Json result = xdebug_waveform::ai_dispatch_query(effective_request, error);
         if (!error.empty()) {
             return make_handler_error_from_message(error);
+        }
+        // Fix statistics end time: ai functions may return FSDB max time
+        // instead of the requested window end.
+        auto args = request.args();
+        if (args.contains("time_range") && args["time_range"].is_object() &&
+            args["time_range"].contains("end")) {
+            std::string req_end = args["time_range"]["end"].get<std::string>();
+            if (!req_end.empty() && result.contains("end") &&
+                result["end"].is_string() && result["end"] != req_end) {
+                npiFsdbTime parsed_end = 0;
+                std::string parse_error;
+                if (xdebug_waveform::parse_user_time(req_end.c_str(), true, parsed_end, parse_error)) {
+                    result["end"] = xdebug_core::format_time(g_fsdb_file, parsed_end);
+                }
+            }
         }
         return result;
     }
@@ -51,8 +67,9 @@ public:
 
 }  // namespace
 
-std::unique_ptr<EngineActionHandler> make_sampled_pulse_inspect_handler() {
-    return std::unique_ptr<EngineActionHandler>(new AiActionHandler("signal.sampled_pulse.inspect", false, true));
+std::unique_ptr<EngineActionHandler>
+make_protocol_handshake_inspect_handler() {
+    return std::unique_ptr<EngineActionHandler>(new AiActionHandler("protocol.handshake.inspect", false, true));
 }
 
 }  // namespace xdebug_design

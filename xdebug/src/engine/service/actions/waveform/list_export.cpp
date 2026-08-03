@@ -4,7 +4,6 @@
 #include "waveform_action_support.h"
 #include "list_action_helpers.h"
 
-#include "api/text_response_builder.h"
 #include "design/protocol/protocol.h"
 #include "waveform/server/fsdb_value_reader.h"
 #include "waveform/event/event_manager.h"
@@ -15,7 +14,8 @@
 #include "waveform/common/xdebug_waveform_paths.h"
 #include "waveform/service/action_support.h"
 #include "waveform/service/rc_generator.h"
-#include "waveform/value/logic_value.h"
+#include "core/value/logic_value.h"
+#include "core/output/completeness.h"
 #include "core/npi/time_contract.h"
 
 #include "npi.h"
@@ -37,18 +37,20 @@ public:
     const char* action_name() const override { return "list.export"; }
     bool needs_design() const override { return false; }
     bool needs_waveform() const override { return true; }
-    Json run(const Json& r, EngineActionContext& ctx) const override {
-        Json a = r.value("args", Json::object());
-        std::string n = a.value("name", a.value("list", ""));
+    Json run(ContractBoundRequest& r, EngineActionContext& ctx) const override {
+        auto a = r.args();
+        std::string n = a.value("name", "");
         if (n.empty())
             return list_missing_field_error("list.export", "args.name", "name of a list created in this session");
         xdebug_waveform::SignalList lst;
-        if (!read_list_storage(n, lst))
+        xdebug_waveform::StoreResult loaded = read_list_storage(n, lst);
+        if (loaded.status == xdebug_waveform::StoreStatus::NotFound)
             return list_not_found_error("list.export", n);
+        if (!loaded.ok()) return make_config_store_error(loaded);
 
-        Json tr = a.value("time_range", Json::object());
-        std::string bs = tr.value("begin", std::string());
-        std::string es = tr.value("end", std::string());
+        ContractJsonView time_range = a["time_range"];
+        std::string bs = time_range.value("begin", std::string());
+        std::string es = time_range.value("end", std::string());
         if (bs.empty())
             return list_missing_field_error("list.export", "args.time_range.begin", "time range begin such as 0ns");
         if (es.empty())
@@ -74,23 +76,30 @@ public:
         if (end - begin < 256000ULL)
             return make_handler_error(
                 "TIME_RANGE_TOO_SMALL",
-                "list.export requires at least 256ns; use list.value_at or value.batch_at for point reads",
+                "list.export requires at least 256ns; use value.at with a list selector for point reads",
                 {{"invalid_arg", "args.time_range"},
                  {"expected", "time range at least 256ns for export"},
                  {"correct_example", list_action_example("list.export")},
-                 {"next_actions", Json::array({"Use list.value_at or value.batch_at for point reads."})}});
+                 {"next_actions", Json::array({"Use value.at with args.list and a non-empty args.times array for point reads."})}});
 
-        Json output = a.value("output", Json::object());
-        std::string format = output.value("file_format", std::string("u64bin"));
+        ContractJsonView output = a["output"];
+        std::string format =
+            output.value("file_format", std::string("u64bin"));
+        std::string output_dir = output.value("path", std::string());
+        if (output.contains("file_format") && output_dir.empty())
+            return make_handler_error(
+                "INVALID_REQUEST",
+                "list.export output.file_format requires a non-empty output.path",
+                {{"invalid_arg", "args.output.file_format"},
+                 {"expected", "output object with both path and file_format"}});
         if (format != "u64bin")
             return make_handler_error(
                 "INVALID_ENUM",
                 "list.export output.file_format must be u64bin; response manifest uses versioned format u64bin.v1",
                 {{"invalid_arg", "args.output.file_format"},
                  {"expected", "u64bin"},
-                 {"allowed_values", Json::array({"u64bin"})},
+                 {"available_values", Json::array({"u64bin"})},
                  {"correct_example", list_action_example("list.export")}});
-        std::string output_dir = output.value("path", std::string());
         if (!output_dir.empty() && a.contains("line_limit"))
             return make_handler_error(
                 "INVALID_REQUEST",
@@ -102,7 +111,7 @@ public:
             int line_limit = a.value("line_limit", 16);
             int index = 0;
             for (const auto& signal : lst.signals) {
-                if (index >= line_limit) break;
+                if (line_limit >= 0 && index >= line_limit) break;
                 signal_preview.push_back({{"index", index}, {"signal", signal}});
                 ++index;
             }
@@ -110,16 +119,27 @@ public:
             Json out;
             out["summary"] = {
                 {"name", n},
-                {"signal_count", lst.signals.size()},
                 {"row_count", 0},
                 {"format", "u64bin.v1"},
                 {"status", "preview"},
                 {"output_written", false},
                 {"line_limit", line_limit},
-                {"truncated", static_cast<int>(lst.signals.size()) > line_limit},
                 {"begin", range.first},
                 {"end", range.second}
             };
+            const bool response_truncated =
+                line_limit >= 0 &&
+                lst.signals.size() > static_cast<std::size_t>(line_limit);
+            xdebug_core::set_completeness(
+                out["summary"],
+                true,
+                true,
+                response_truncated,
+                lst.signals.size(),
+                signal_preview.size(),
+                response_truncated
+                    ? std::vector<std::string>{"response_signals"}
+                    : std::vector<std::string>{});
             out["signals"] = signal_preview;
             return out;
         }
@@ -138,16 +158,22 @@ public:
         Json out;
         out["summary"] = {
             {"name", n},
-            {"signal_count", result.signal_count},
             {"row_count", result.row_count},
             {"format", result.format},
             {"status", "written"},
             {"output_written", true},
-            {"truncated", false},
             {"begin", xdebug_core::format_time(xdebug_waveform::g_fsdb_file, begin)},
             {"end", xdebug_core::format_time(xdebug_waveform::g_fsdb_file, end)},
             {"output", {{"path", result.output_dir}, {"manifest_path", result.manifest_file}}}
         };
+        xdebug_core::set_completeness(
+            out["summary"],
+            true,
+            true,
+            false,
+            result.signal_count,
+            result.signal_count,
+            {});
         return out;
     }
 };

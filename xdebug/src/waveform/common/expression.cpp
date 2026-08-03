@@ -2,7 +2,7 @@
 
 #include "../event/event_expr.h"
 #include "../stream/stream_expr.h"
-#include "../value/logic_value.h"
+#include "core/value/logic_value.h"
 
 #include <cctype>
 
@@ -36,7 +36,8 @@ bool is_raw_bit_string(const std::string& text) {
 
 ExpressionValue expression_value_from_raw(const std::string& raw) {
     if (!is_raw_bit_string(raw)) {
-        LogicValue parsed = parse_user_logic_literal(raw);
+        xdebug_core::LogicValue parsed =
+            xdebug_core::parse_user_logic_literal(raw);
         if (parsed.valid && !parsed.bits.empty()) return ExpressionValue{parsed.bits, parsed.known};
     }
 

@@ -15,9 +15,11 @@ public:
     bool needs_design() const override { return false; }
     bool needs_waveform() const override { return true; }
 
-    Json run(const Json& request, EngineActionContext&) const override {
+    Json run(ContractBoundRequest& request, EngineActionContext&) const override {
         std::string error;
-        Json result = xdebug_waveform::ai_dispatch_query(request, error);
+        Json raw_request = request.consume_args_request(
+            "xdebug_waveform::ai_dispatch_query/signal.xz_verify");
+        Json result = xdebug_waveform::ai_dispatch_query(raw_request, error);
         if (!error.empty()) return make_handler_error_from_message(error);
         return result;
     }

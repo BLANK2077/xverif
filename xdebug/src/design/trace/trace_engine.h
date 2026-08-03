@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "npi_hdl.h"
+#include "trace_completeness.h"
 
 namespace xdebug_design {
 
@@ -22,9 +23,11 @@ struct TraceRecord {
     std::string signal;
     std::string role;
     std::string file;
-    int line;
+    int line = 0;
     std::string source;
     std::string resolution;
+    std::string evidence_kind;
+    bool evidence_complete = true;
 };
 
 struct TraceResult {
@@ -42,6 +45,9 @@ struct TraceResult {
     bool ok = true;
     bool truncated = false;
     bool has_statement_only = false;
+    bool has_unknown_expr = false;
+    bool has_incomplete_evidence = false;
+    bool analysis_complete = true;
 };
 
 class TraceEngine {

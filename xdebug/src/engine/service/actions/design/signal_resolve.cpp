@@ -10,6 +10,7 @@
 #include "design/trace/trace_engine.h"
 #include "design/signal/signal_finder.h"
 #include "design/service/action_support.h"
+#include "core/output/completeness.h"
 
 #include "npi.h"
 #include "npi_fsdb.h"
@@ -29,8 +30,8 @@ public:
     bool needs_design() const override { return true; }
     bool needs_waveform() const override { return false; }
 
-    Json run(const Json& request, EngineActionContext& ctx) const override {
-        Json args = request.value("args", Json::object());
+    Json run(ContractBoundRequest& request, EngineActionContext& ctx) const override {
+        auto args = request.args();
         std::string signal = args.value("signal", std::string());
         if (signal.empty()) return design_missing_signal_error(action_name());
         SignalResolveResult result;
@@ -41,10 +42,21 @@ public:
             matches.push_back({{"signal", match.signal}, {"type", match.type},
                                {"file", match.file}, {"line", match.line}});
         }
-        return Json{{"summary", {{"status", "found"}, {"query", signal},
-                                  {"match_count", static_cast<int>(matches.size())},
-                                  {"truncated", result.truncated}}},
-                    {"matches", matches}};
+        Json out = {
+            {"summary", {{"status", "found"}, {"query", signal}}},
+            {"matches", matches}
+        };
+        xdebug_core::set_completeness(
+            out["summary"],
+            !result.truncated,
+            !result.truncated,
+            false,
+            matches.size(),
+            matches.size(),
+            result.truncated
+                ? std::vector<std::string>{"analysis_matches"}
+                : std::vector<std::string>{});
+        return out;
     }
 };
 

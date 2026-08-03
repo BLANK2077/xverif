@@ -1,5 +1,5 @@
 #include "action_support.h"
-#include "../value/logic_value.h"
+#include "core/value/logic_value.h"
 
 #include <algorithm>
 #include <cctype>
@@ -20,16 +20,19 @@ std::string compact_expr_ws(const std::string& expr) {
 }
 
 bool contains_xz(const std::string& value) {
-    return logic_value_has_xz(logic_value_from_fsdb_raw(value, 'h'));
+    return xdebug_core::logic_value_has_xz(
+        xdebug_core::logic_value_from_fsdb_raw(value, 'h'));
 }
 
 std::string normalize_numeric(std::string value) {
-    LogicValue parsed = logic_value_from_fsdb_raw(value, 'h');
-    return logic_value_compare_key(parsed);
+    xdebug_core::LogicValue parsed =
+        xdebug_core::logic_value_from_fsdb_raw(value, 'h');
+    return xdebug_core::logic_value_compare_key(parsed);
 }
 
 Json make_value_object(const std::string& raw) {
-    return logic_value_json(logic_value_from_fsdb_raw(raw, 'h'));
+    return xdebug_core::logic_value_json(
+        xdebug_core::logic_value_from_fsdb_raw(raw, 'h'));
 }
 
 Json make_value_map(const Json& raw_map) {

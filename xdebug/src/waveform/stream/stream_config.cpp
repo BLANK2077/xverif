@@ -4,23 +4,45 @@
 
 #include <cctype>
 #include <set>
+#include <utility>
 
 namespace xdebug_waveform {
 
 namespace {
 
-bool get_string(const Json& obj, const char* key, std::string& out) {
+bool get_nonempty_string_if_present(
+    const Json& obj,
+    const std::string& stream_name,
+    const char* key,
+    std::string& out,
+    std::string& error) {
     auto it = obj.find(key);
-    if (it == obj.end()) return false;
-    if (!it->is_string()) return false;
+    if (it == obj.end()) {
+        out.clear();
+        return true;
+    }
+    if (!it->is_string() || it->get<std::string>().empty()) {
+        error = "stream " + stream_name + " " + key +
+                " must be a non-empty string when present";
+        return false;
+    }
     out = it->get<std::string>();
     return true;
 }
 
-bool get_bool(const Json& obj, const char* key, bool& out) {
+bool get_bool_if_present(
+    const Json& obj,
+    const std::string& stream_name,
+    const char* key,
+    bool& out,
+    std::string& error) {
     auto it = obj.find(key);
-    if (it == obj.end()) return false;
-    if (!it->is_boolean()) return false;
+    if (it == obj.end()) return true;
+    if (!it->is_boolean()) {
+        error = "stream " + stream_name + " " + key +
+                " must be boolean when present";
+        return false;
+    }
     out = it->get<bool>();
     return true;
 }
@@ -34,6 +56,11 @@ bool parse_field_map(const Json& item,
     if (fields_it == item.end()) return true;
     if (!fields_it->is_object()) {
         error = "stream " + stream_name + " " + key + " must be an object";
+        return false;
+    }
+    if (fields_it->empty()) {
+        error = "stream " + stream_name + " " + key +
+                " must be non-empty when present";
         return false;
     }
     for (auto it = fields_it->begin(); it != fields_it->end(); ++it) {
@@ -121,6 +148,18 @@ bool parse_stream_config_json(const Json& item, StreamConfig& config, std::strin
         error = "stream config field data_fields is not supported; use beat_fields";
         return false;
     }
+    static const std::set<std::string> allowed_fields = {
+        "name", "signals", "clock", "edge", "sample_point", "reset",
+        "vld", "rdy", "bp", "sop", "eop", "data", "beat_fields",
+        "packet_stable_fields", "channel_id", "channel_id_valid",
+        "allow_interleaving", "description"
+    };
+    for (auto it = item.begin(); it != item.end(); ++it) {
+        if (allowed_fields.find(it.key()) == allowed_fields.end()) {
+            error = "stream config contains unknown field: " + it.key();
+            return false;
+        }
+    }
     config = StreamConfig();
     static const char* legacy[] = {"clk", "sampling", "clock_edge", "posedge", "sample_offset", nullptr};
     for (int i = 0; legacy[i]; ++i) {
@@ -130,37 +169,66 @@ bool parse_stream_config_json(const Json& item, StreamConfig& config, std::strin
             return false;
         }
     }
-    get_string(item, "name", config.name);
+    if (!get_nonempty_string_if_present(
+            item, "<unnamed>", "name", config.name, error)) {
+        return false;
+    }
     if (!stream_name_valid(config.name)) {
         error = "invalid stream name: " + config.name;
         return false;
     }
     if (!parse_signal_map(item, config.name, config.signals, error)) return false;
-    get_string(item, "clock", config.clock_sample.clock);
+    if (!get_nonempty_string_if_present(
+            item, config.name, "clock", config.clock_sample.clock, error)) {
+        return false;
+    }
     config.has_reset = item.contains("reset");
     if (config.has_reset && !parse_reset_config(item["reset"], config.reset, error)) {
         error = "invalid stream reset for " + config.name + ": " + error;
         return false;
     }
-    get_string(item, "vld", config.vld);
-    get_string(item, "rdy", config.rdy);
-    get_string(item, "bp", config.bp);
-    get_string(item, "sop", config.sop);
-    get_string(item, "eop", config.eop);
-    get_string(item, "data", config.data);
-    get_string(item, "channel_id", config.channel_id);
-    get_string(item, "channel_id_valid", config.channel_id_valid);
-    get_bool(item, "allow_interleaving", config.allow_interleaving);
-    get_string(item, "description", config.description);
+    const std::pair<const char*, std::string*> string_fields[] = {
+        {"vld", &config.vld}, {"rdy", &config.rdy},
+        {"bp", &config.bp}, {"sop", &config.sop},
+        {"eop", &config.eop}, {"data", &config.data},
+        {"channel_id", &config.channel_id},
+        {"channel_id_valid", &config.channel_id_valid},
+        {"description", &config.description},
+    };
+    for (const auto& field : string_fields) {
+        if (!get_nonempty_string_if_present(
+                item, config.name, field.first, *field.second, error)) {
+            return false;
+        }
+    }
+    if (!get_bool_if_present(
+            item,
+            config.name,
+            "allow_interleaving",
+            config.allow_interleaving,
+            error)) {
+        return false;
+    }
 
     std::string edge;
-    get_string(item, "edge", edge);
+    if (!get_nonempty_string_if_present(
+            item, config.name, "edge", edge, error)) {
+        return false;
+    }
     if (!parse_clock_edge_kind(edge.empty() ? "negedge" : edge, config.clock_sample.edge, error)) {
         error = "invalid stream edge for " + config.name + ": " + error;
         return false;
     }
     std::string sample_point;
-    if (get_string(item, "sample_point", sample_point)) {
+    if (item.contains("sample_point")) {
+        if (!get_nonempty_string_if_present(
+                item,
+                config.name,
+                "sample_point",
+                sample_point,
+                error)) {
+            return false;
+        }
         config.clock_sample.has_sample_point = true;
         if (!parse_clock_sample_point_kind(sample_point,
                                            config.clock_sample.sample_point,

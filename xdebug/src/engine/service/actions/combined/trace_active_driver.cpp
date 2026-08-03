@@ -12,21 +12,51 @@
 namespace xdebug_design {
 namespace {
 
+Json active_driver_domain_request(
+    ContractBoundRequest& request,
+    const std::string& signal,
+    const std::string& time) {
+    Json projected = {
+        {"args", {
+            {"signal", signal},
+            {"time", time},
+        }},
+        {"limits", Json::object()},
+    };
+    auto limits = request.limits();
+    for (const char* key : {
+             "max_depth",
+             "max_nodes",
+             "max_time_steps",
+             "max_trace_signals",
+         }) {
+        ContractJsonView value = limits[key];
+        if (value.exists()) {
+            projected["limits"][key] = value.get<int>();
+        }
+    }
+    return projected;
+}
+
 class ActiveDriverHandler : public EngineActionHandler {
 public:
     const char* action_name() const override { return "trace.active_driver"; }
     bool needs_design() const override { return true; }
     bool needs_waveform() const override { return true; }
-    Json run(const Json& request, EngineActionContext& ctx) const override {
-        Json args = request.value("args", Json::object());
+    Json run(ContractBoundRequest& request, EngineActionContext& ctx) const override {
+        auto args = request.args();
         std::string signal = args.value("signal", std::string());
         std::string requested_time = args.value("time", std::string());
-        Json trace_request = request;
-        if (!trace_request.contains("args") || !trace_request["args"].is_object()) {
-            trace_request["args"] = Json::object();
-        }
-        trace_request["args"]["include_trace"] = true;
-        Json raw = xdebug::build_active_driver_payload(trace_request, g_daidir_path, g_fsdb_path, g_fsdb_file);
+        Json domain_request = active_driver_domain_request(
+            request,
+            signal,
+            requested_time);
+        Json raw = xdebug::build_active_driver_payload(
+            domain_request,
+            g_daidir_path,
+            g_fsdb_path,
+            g_fsdb_file,
+            true);
         if (raw.contains("error")) return raw;
         Json out = simplify_active_driver_payload(raw,
                                                   signal,
@@ -37,8 +67,9 @@ public:
     }
 
     std::string render_xout(const Json& response) const override {
-        return append_common_blocks_xout(render_source_path_xout(action_name(), response), response);
+        return render_source_path_xout(action_name(), response);
     }
+
 };
 
 } // namespace

@@ -9,8 +9,9 @@
 #include "waveform/axi/axi_analyzer.h"
 #include "waveform/axi/axi_exporter.h"
 #include "waveform/common/xdebug_waveform_paths.h"
-#include "waveform/value/logic_value.h"
+#include "core/value/logic_value.h"
 #include "core/npi/time_contract.h"
+#include "core/output/completeness.h"
 
 #include <fstream>
 #include <memory>
@@ -20,29 +21,35 @@
 namespace xdebug_design {
 namespace {
 
-class ApbCursorHandler : public EngineActionHandler {
+class ApbTransactionCursorHandler : public EngineActionHandler {
 public:
     const char* action_name() const override { return "apb.transaction.cursor"; }
     bool needs_design() const override { return false; }
     bool needs_waveform() const override { return true; }
-    Json run(const Json& r, EngineActionContext& ctx) const override {
+    Json run(
+        ContractBoundRequest& request,
+        EngineActionContext& ctx) const override {
         using namespace xdebug_waveform;
-        Json a = r.value("args", Json::object());
-        std::string name = a.value("name", "");
-        std::string op = a.value("op", "begin");
+        auto args = request.args();
+        std::string name = args.value("name", "");
+        std::string op = args.value("op", "begin");
         if (name.empty()) return protocol_missing_name_error(action_name(), "apb");
 
-        ApbConfig cfg; std::string err;
-        if (!ensure_apb_analyzed(name, cfg, err)) {
-            if (err.rfind("APB config not found:", 0) == 0)
+        ApbConfig cfg;
+        ProtocolEnsureResult ensured = ensure_apb_analyzed(name, cfg);
+        if (!ensured.ok()) {
+            if (ensured.status == ProtocolEnsureStatus::ConfigNotFound)
                 return protocol_config_not_found_error(action_name(), "apb", name);
+            if (ensured.status == ProtocolEnsureStatus::StoreError)
+                return make_config_store_error(ensured.store);
             if (!g_apb_analyzer.last_cache_error().empty())
                 return make_analysis_cache_error(
                     g_apb_analyzer.last_cache_error());
-            return protocol_analyze_error(action_name(), "apb", name, err);
+            return protocol_analyze_error(
+                action_name(), "apb", name, ensured.message);
         }
 
-        std::string dir = a.value("direction", "all");
+        std::string dir = args.value("direction", "all");
         int filter = (dir == "write") ? 1 : (dir == "read") ? 2 : 0;
 
         const ApbTransaction* txn = nullptr;
@@ -60,17 +67,35 @@ public:
         size_t index = 0;
         size_t total = 0;
         g_apb_analyzer.cursor_state(name, filter, index, total);
+        const ApbResult* result = g_apb_analyzer.get_result(name);
+        if (!result)
+            return protocol_analyze_error(
+                action_name(), "apb", name,
+                "canonical APB result unavailable");
+        const bool analysis_complete = result->diagnostics.analysis_complete;
         out["summary"] = {{"name",name},{"op",op},{"direction",dir},{"found",ok},
                           {"index", ok ? Json(index) : Json(nullptr)}, {"index_base", 1},
-                          {"total_count", total}, {"at_begin", ok && index == 1},
+                          {"at_begin", ok && index == 1},
                           {"at_end", ok && index == total}};
+        xdebug_core::set_completeness(
+            out["summary"],
+            analysis_complete,
+            analysis_complete,
+            false,
+            total,
+            ok ? 1U : 0U,
+            analysis_complete
+                ? std::vector<std::string>{}
+                : std::vector<std::string>{"analysis_transactions"});
         if (ok && txn) {
             Json tj;
             tj["time"] = xdebug_core::format_time(g_fsdb_file, txn->time);
-            tj["addr"] = render_logic_value(
-                logic_value_from_fsdb_raw(txn->addr, 'h', txn->addr_width));
-            tj["data"] = render_logic_value(
-                logic_value_from_fsdb_raw(txn->data, 'h', txn->data_width));
+            tj["addr"] = xdebug_core::render_logic_value(
+                xdebug_core::logic_value_from_fsdb_raw(
+                    txn->addr, 'h', txn->addr_width));
+            tj["data"] = xdebug_core::render_logic_value(
+                xdebug_core::logic_value_from_fsdb_raw(
+                    txn->data, 'h', txn->data_width));
             tj["is_write"] = txn->is_write;
             tj["has_error"] = txn->has_error;
             out["transaction"] = tj;
@@ -81,8 +106,9 @@ public:
 
 }  // namespace
 
-std::unique_ptr<EngineActionHandler> make_apb_cursor_handler() {
-    return std::unique_ptr<EngineActionHandler>(new ApbCursorHandler);
+std::unique_ptr<EngineActionHandler> make_apb_transaction_cursor_handler() {
+    return std::unique_ptr<EngineActionHandler>(
+        new ApbTransactionCursorHandler);
 }
 
 }  // namespace xdebug_design

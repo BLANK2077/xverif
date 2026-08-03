@@ -1,7 +1,7 @@
 #include "../server_internal.h"
 #include "core/npi/time_contract.h"
 #include "session/session_types.h"
-#include "waveform/value/logic_value.h"
+#include "core/value/logic_value.h"
 
 namespace xdebug_waveform {
 
@@ -65,7 +65,8 @@ std::string json_response(const Json& j) {
 }
 
 bool contains_xz_value(const std::string& value) {
-    return logic_value_has_xz(logic_value_from_fsdb_raw(value, 'h'));
+    return xdebug_core::logic_value_has_xz(
+        xdebug_core::logic_value_from_fsdb_raw(value, 'h'));
 }
 
 std::string with_value_prefix(const std::string& value, char prefix) {
@@ -75,14 +76,16 @@ std::string with_value_prefix(const std::string& value, char prefix) {
 }
 
 Json wave_value_json(const std::string& raw, char prefix) {
-    return logic_value_json(logic_value_from_fsdb_raw(raw, prefix));
+    return xdebug_core::logic_value_json(
+        xdebug_core::logic_value_from_fsdb_raw(raw, prefix));
 }
 
 Json wave_value_json(const std::string& raw, char prefix,
                      const std::string& signal_path) {
     FsdbSignalWidth width = fsdb_signal_width(g_fsdb_file, signal_path);
-    return logic_value_json(logic_value_from_fsdb_raw(
-        raw, prefix, width.reliable ? width.width : 0));
+    return xdebug_core::logic_value_json(
+        xdebug_core::logic_value_from_fsdb_raw(
+            raw, prefix, width.reliable ? width.width : 0));
 }
 
 bool stat_fsdb(long& mtime,
@@ -113,6 +116,20 @@ bool fsdb_changed() {
 void send_error(int client_fd, const std::string& message) {
     std::string err = std::string(ERROR_PREFIX) + message + "\n" + END_MARKER;
     send_all(client_fd, err.c_str(), err.length());
+}
+
+bool require_store_result(
+    int client_fd,
+    const StoreResult& result) {
+    if (result.ok()) return true;
+    const std::string code =
+        result.code.empty() ? "CONFIG_STORE_IO_ERROR" : result.code;
+    const std::string message =
+        result.message.empty()
+            ? "configuration store operation failed"
+            : result.message;
+    send_error(client_fd, code + ": " + message);
+    return false;
 }
 
 std::string fsdb_time_scale() {
@@ -250,13 +267,19 @@ bool parse_user_time(const char* text,
 
     std::string cursor_name = spec.cursor_name;
     CursorManager cm;
-    if (spec.use_active_cursor && !cm.get_active_cursor(g_session_id, cursor_name)) {
-        error = "CURSOR_NOT_FOUND: active cursor is not set";
-        return false;
+    if (spec.use_active_cursor) {
+        StoreResult active =
+            cm.get_active_cursor(g_session_id, cursor_name);
+        if (!active.ok()) {
+            error = store_error_text(active);
+            return false;
+        }
     }
     Cursor cursor;
-    if (!cm.get_cursor(g_session_id, cursor_name, cursor)) {
-        error = "CURSOR_NOT_FOUND: Cursor '" + cursor_name + "' does not exist";
+    StoreResult loaded =
+        cm.get_cursor(g_session_id, cursor_name, cursor);
+    if (!loaded.ok()) {
+        error = store_error_text(loaded);
         return false;
     }
     uint64_t resolved = cursor.time;
@@ -269,7 +292,10 @@ bool parse_user_time(const char* text,
     return true;
 }
 
-bool read_list_from_storage(const std::string& session_id, const char* list_name, SignalList& out_list) {
+StoreResult read_list_from_storage(
+    const std::string& session_id,
+    const char* list_name,
+    SignalList& out_list) {
     ListManager lm;
     return lm.get_list(session_id, list_name, out_list);
 }
@@ -293,20 +319,30 @@ bool json_time_range(const Json& args,
     begin = 0;
     end = 0xFFFFFFFFFFFFFFFFULL;
     Json tr = args.value("time_range", Json::object());
-    bool has_begin = (tr.is_object() && (tr.contains("begin") || tr.contains("from"))) || args.contains("begin") || args.contains("from");
-    bool has_end   = (tr.is_object() && (tr.contains("end")   || tr.contains("to")))   || args.contains("end")   || args.contains("to");
+    if (!tr.is_object()) {
+        error = "TIME_RANGE_INVALID: args.time_range must be an object";
+        return false;
+    }
+    for (const char* alias : {"from", "to"}) {
+        if (tr.contains(alias) || args.contains(alias)) {
+            error =
+                std::string("INVALID_ARGUMENT: unsupported time range alias: ") +
+                alias;
+            return false;
+        }
+    }
+    if (args.contains("begin") || args.contains("end")) {
+        error =
+            "INVALID_ARGUMENT: begin/end must be nested in args.time_range";
+        return false;
+    }
+    bool has_begin = tr.contains("begin");
+    bool has_end = tr.contains("end");
     if (has_begin || has_end || !args.contains("around")) {
-        auto read_time_key = [&](const char* primary, const char* alias, const char* default_val) -> std::string {
-            if (tr.is_object()) {
-                if (tr.contains(primary)) return tr[primary].get<std::string>();
-                if (tr.contains(alias))   return tr[alias].get<std::string>();
-            }
-            if (args.contains(primary)) return args[primary].get<std::string>();
-            if (args.contains(alias))   return args[alias].get<std::string>();
-            return default_val;
-        };
-        std::string begin_s = read_time_key("begin", "from", "0ns");
-        std::string end_s   = read_time_key("end",   "to",   "max");
+        std::string begin_s =
+            tr.value("begin", std::string("0ns"));
+        std::string end_s =
+            tr.value("end", std::string("max"));
         if (!parse_user_time(begin_s.c_str(), false, begin, error) ||
             !parse_user_time(end_s.c_str(), true, end, error)) {
             return false;
@@ -341,11 +377,26 @@ bool json_time_range(const Json& args,
            apply_window_duration(after_s, false, end);
 }
 
-npiFsdbValType json_value_format(const Json& args) {
-    std::string fmt = args.value("format", std::string("binary"));
-    if (fmt == "hex" || fmt == "h") return npiFsdbHexStrVal;
-    if (fmt == "decimal" || fmt == "dec" || fmt == "d") return npiFsdbDecStrVal;
-    return npiFsdbBinStrVal;
+bool json_value_format(const Json& args,
+                       npiFsdbValType& format,
+                       std::string& error) {
+    const std::string value_format =
+        args.value("value_format", std::string("hex"));
+    if (value_format == "hex") {
+        format = npiFsdbHexStrVal;
+        return true;
+    }
+    if (value_format == "bin") {
+        format = npiFsdbBinStrVal;
+        return true;
+    }
+    if (value_format == "dec") {
+        format = npiFsdbDecStrVal;
+        return true;
+    }
+    error =
+        "INVALID_ARGUMENT: args.value_format must be hex, bin, or dec";
+    return false;
 }
 
 std::string server_compact_expr_ws(const std::string& expr) {

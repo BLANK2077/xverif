@@ -53,23 +53,23 @@ bool read_sig_vec_value_at_with_status(npiFsdbFileHandle file,
                                        std::vector<bool>& out_found);
 
 // Find the earliest time where not all signals in the list have the same value
-bool find_list_diff(npiFsdbFileHandle file,
-                    const std::vector<std::string>& signals,
-                    npiFsdbTime begin_time,
-                    npiFsdbTime end_time,
-                    npiFsdbTime& diff_time);
+bool find_list_first_change(npiFsdbFileHandle file,
+                            const std::vector<std::string>& signals,
+                            npiFsdbTime begin_time,
+                            npiFsdbTime end_time,
+                            npiFsdbTime& diff_time);
 
-struct ListDiffChange {
+struct ListFirstChange {
     std::string signal;
     std::string before;
     std::string after;
 };
 
-bool find_first_list_changes(npiFsdbFileHandle file,
+bool find_list_first_changes(npiFsdbFileHandle file,
                              const std::vector<std::string>& signals,
                              npiFsdbTime begin_time,
                              npiFsdbTime end_time,
-                             npiFsdbTime& diff_time,
-                             std::vector<ListDiffChange>& changes);
+                             npiFsdbTime& first_change_time,
+                             std::vector<ListFirstChange>& changes);
 
 } // namespace xdebug_waveform

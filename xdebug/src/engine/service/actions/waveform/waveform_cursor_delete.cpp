@@ -2,7 +2,6 @@
 #include "service/engine_action_registry.h"
 #include "service/engine_globals.h"
 
-#include "api/text_response_builder.h"
 #include "design/protocol/protocol.h"
 #include "waveform/server/fsdb_value_reader.h"
 #include "waveform/event/event_manager.h"
@@ -13,7 +12,7 @@
 #include "waveform/common/xdebug_waveform_paths.h"
 #include "waveform/service/action_support.h"
 #include "waveform/service/rc_generator.h"
-#include "waveform/value/logic_value.h"
+#include "core/value/logic_value.h"
 #include "core/npi/time_contract.h"
 
 #include "npi.h"
@@ -37,11 +36,13 @@ public:
     const char* action_name() const override { return name_.c_str(); }
     bool needs_design() const override { return false; }
     bool needs_waveform() const override { return true; }
-    Json run(const Json& request, EngineActionContext& ctx) const override {
-        std::string action = request.value("action", std::string());
-        Json args = request.value("args", Json::object());
+    Json run(ContractBoundRequest& request, EngineActionContext& ctx) const override {
+        std::string action = request.action();
+        auto args = request.args();
         std::string error;
-        Json result = xdebug_waveform::ai_cursor_action(action, args, error);
+        Json raw_args = args.consume_subtree(
+            "xdebug_waveform::ai_cursor_action/" + action);
+        Json result = xdebug_waveform::ai_cursor_action(action, raw_args, error);
         if (!error.empty()) {
             return make_handler_error_from_message(error);
         }

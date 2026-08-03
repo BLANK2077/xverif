@@ -67,7 +67,8 @@ void handle_axi_rw(int client_fd, const char* name, bool is_write, const char* a
     send_axi_txn_or_error(client_fd, ok, txn, json);
 }
 
-void handle_axi_cursor(int client_fd, const char* name, int cmd_type, int filter, bool json) {
+void handle_axi_transaction_cursor(int client_fd, const char* name,
+                                   int cmd_type, int filter, bool json) {
     if (!ensure_axi_analyzed(client_fd, name)) return;
     const xdebug_waveform::AxiTransaction* txn = nullptr;
     bool ok = false;
@@ -294,11 +295,9 @@ void handle_event_query(int client_fd,
                                npiFsdbTime context_window) {
     xdebug_waveform::EventManager em;
     xdebug_waveform::EventConfig config;
-    if (!em.get_event(g_session_id, g_fsdb_file_path, name, config)) {
-        std::string err = std::string(ERROR_PREFIX) + "Event config not found: " + name + "\n" + END_MARKER;
-        send_all(client_fd, err.c_str(), err.length());
-        return;
-    }
+    StoreResult event_loaded =
+        em.get_event(g_session_id, g_fsdb_file_path, name, config);
+    if (!require_store_result(client_fd, event_loaded)) return;
     xdebug_waveform::EventQuery query;
     query.expr = expr ? expr : "";
     query.begin = begin_time;
@@ -322,11 +321,10 @@ void handle_event_query(int client_fd,
 
         if (use_axi_context) {
             xdebug_waveform::AxiConfig axi_config;
-            if (!read_axi_from_registry(g_session_id, axi_context_name, axi_config)) {
-                std::string err = std::string(ERROR_PREFIX) + "AXI config not found: " + axi_context_name + "\n" + END_MARKER;
-                send_all(client_fd, err.c_str(), err.length());
-                return;
-            }
+            StoreResult axi_loaded =
+                read_axi_from_registry(
+                    g_session_id, axi_context_name, axi_config);
+            if (!require_store_result(client_fd, axi_loaded)) return;
             if (!g_axi_analyzer.analyze(axi_context_name, g_fsdb_file, axi_config)) {
                 std::string err = std::string(ERROR_PREFIX) + "Failed to analyze AXI: " + axi_context_name + "\n" + END_MARKER;
                 send_all(client_fd, err.c_str(), err.length());
@@ -345,11 +343,10 @@ void handle_event_query(int client_fd,
         }
         if (use_apb_context) {
             xdebug_waveform::ApbConfig apb_config;
-            if (!read_apb_from_registry(g_session_id, apb_context_name, apb_config)) {
-                std::string err = std::string(ERROR_PREFIX) + "APB config not found: " + apb_context_name + "\n" + END_MARKER;
-                send_all(client_fd, err.c_str(), err.length());
-                return;
-            }
+            StoreResult apb_loaded =
+                read_apb_from_registry(
+                    g_session_id, apb_context_name, apb_config);
+            if (!require_store_result(client_fd, apb_loaded)) return;
             if (!g_apb_analyzer.analyze(apb_context_name, g_fsdb_file, apb_config)) {
                 std::string err = std::string(ERROR_PREFIX) + "Failed to analyze APB: " + apb_context_name + "\n" + END_MARKER;
                 send_all(client_fd, err.c_str(), err.length());

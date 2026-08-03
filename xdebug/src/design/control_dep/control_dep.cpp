@@ -347,7 +347,47 @@ std::set<std::string> ControlDepTracer::trace_control_deps(const char* signal_na
     return results;
 }
 
-// New method: extract signals with detailed information
+ControlDepInfo ControlDepTracer::make_control_dep_info(npiHandle control_stmt,
+                                                       int signal_type,
+                                                       const char* signal_name) {
+    ControlDepInfo info;
+    info.signal_name = signal_name ? signal_name : "";
+    if (!control_stmt) {
+        return info;
+    }
+
+    info.line_no = npi_get(npiLineNo, control_stmt);
+    const char* file = npi_get_str(npiFile, control_stmt);
+    if (file) {
+        info.file_name = file;
+    }
+    if (info.file_name.empty() || info.line_no <= 0) {
+        return info;
+    }
+
+    const stringVec_t* lines =
+        npi_util_text_get_file_line_vec(const_cast<char*>(info.file_name.c_str()));
+    if (!lines || info.line_no > static_cast<int>(lines->size())) {
+        return info;
+    }
+    info.source_line = (*lines)[info.line_no - 1];
+    while (!info.source_line.empty() &&
+           (info.source_line.back() == '\n' || info.source_line.back() == '\r' ||
+            info.source_line.back() == ' ' || info.source_line.back() == '\t')) {
+        info.source_line.pop_back();
+    }
+    info.evidence_complete = true;
+
+    char buf[512];
+    snprintf(buf, sizeof(buf), "%s, %s, {%s : %d}",
+             get_type_str(signal_type),
+             info.signal_name.c_str(),
+             info.file_name.c_str(),
+             info.line_no);
+    info.display_info = buf;
+    return info;
+}
+
 void ControlDepTracer::extract_signals_from_expr_with_info(npiHandle expr_handle,
                                                             npiHandle control_stmt,
                                                             std::vector<ControlDepInfo>& results) {
@@ -359,40 +399,7 @@ void ControlDepTracer::extract_signals_from_expr_with_info(npiHandle expr_handle
     if (type == npiNet || type == npiReg || type == npiBitVar) {
         const char* name = npi_get_str(npiFullName, expr_handle);
         if (name) {
-            ControlDepInfo info;
-            info.signal_name = name;
-
-            // Get line number and file from control statement (where the signal is used)
-            if (control_stmt) {
-                info.line_no = npi_get(npiLineNo, control_stmt);
-                const char* file = npi_get_str(npiFile, control_stmt);
-                if (file) {
-                    info.file_name = file;
-                    // Get source line
-                    const stringVec_t* lines = npi_util_text_get_file_line_vec(const_cast<char*>(file));
-                    if (lines && info.line_no > 0 && info.line_no <= (int)lines->size()) {
-                        info.source_line = (*lines)[info.line_no - 1];
-                        // Trim trailing whitespace
-                        while (!info.source_line.empty() &&
-                               (info.source_line.back() == '\n' || info.source_line.back() == '\r' ||
-                                info.source_line.back() == ' ' || info.source_line.back() == '\t')) {
-                            info.source_line.pop_back();
-                        }
-                    }
-                }
-
-                // Build display_info using condition statement location (signal usage location)
-                const char* type_str = (type == npiNet) ? "npiNet" :
-                                       (type == npiReg) ? "npiReg" : "npiBitVar";
-                char buf[512];
-                snprintf(buf, sizeof(buf), "%s, %s, {%s : %d}",
-                         type_str, name, info.file_name.c_str(), info.line_no);
-                info.display_info = buf;
-            } else {
-                // Fallback to signal definition info if no condition statement
-                info.display_info = npi_ut_get_hdl_info(expr_handle, true, false);
-            }
-            results.push_back(info);
+            results.push_back(make_control_dep_info(control_stmt, type, name));
         }
         return;
     }
@@ -411,33 +418,7 @@ void ControlDepTracer::extract_signals_from_expr_with_info(npiHandle expr_handle
     if (type == npiOperation) {
         const char* name = npi_get_str(npiFullName, expr_handle);
         if (name) {
-            ControlDepInfo info;
-            info.signal_name = name;
-
-            if (control_stmt) {
-                info.line_no = npi_get(npiLineNo, control_stmt);
-                const char* file = npi_get_str(npiFile, control_stmt);
-                if (file) {
-                    info.file_name = file;
-                    const stringVec_t* lines = npi_util_text_get_file_line_vec(const_cast<char*>(file));
-                    if (lines && info.line_no > 0 && info.line_no <= (int)lines->size()) {
-                        info.source_line = (*lines)[info.line_no - 1];
-                        while (!info.source_line.empty() &&
-                               (info.source_line.back() == '\n' || info.source_line.back() == '\r' ||
-                                info.source_line.back() == ' ' || info.source_line.back() == '\t')) {
-                            info.source_line.pop_back();
-                        }
-                    }
-                }
-
-                char buf[512];
-                snprintf(buf, sizeof(buf), "%s, %s, {%s : %d}",
-                         get_type_str(type), name, info.file_name.c_str(), info.line_no);
-                info.display_info = buf;
-            } else {
-                info.display_info = npi_ut_get_hdl_info(expr_handle, true, false);
-            }
-            results.push_back(info);
+            results.push_back(make_control_dep_info(control_stmt, type, name));
             return;
         }
         xdebug::NpiIteratorGuard operand_iter(npi_iterate(npiOperand, expr_handle));
@@ -453,34 +434,7 @@ void ControlDepTracer::extract_signals_from_expr_with_info(npiHandle expr_handle
     // Other expression types - try to get name if available
     const char* name = npi_get_str(npiFullName, expr_handle);
     if (name) {
-        ControlDepInfo info;
-        info.signal_name = name;
-
-        if (control_stmt) {
-            info.line_no = npi_get(npiLineNo, control_stmt);
-            const char* file = npi_get_str(npiFile, control_stmt);
-            if (file) {
-                info.file_name = file;
-                const stringVec_t* lines = npi_util_text_get_file_line_vec(const_cast<char*>(file));
-                if (lines && info.line_no > 0 && info.line_no <= (int)lines->size()) {
-                    info.source_line = (*lines)[info.line_no - 1];
-                    while (!info.source_line.empty() &&
-                           (info.source_line.back() == '\n' || info.source_line.back() == '\r' ||
-                            info.source_line.back() == ' ' || info.source_line.back() == '\t')) {
-                        info.source_line.pop_back();
-                    }
-                }
-            }
-
-            // Build display_info using condition statement location
-            char buf[512];
-            snprintf(buf, sizeof(buf), "%s, %s, {%s : %d}",
-                     get_type_str(type), name, info.file_name.c_str(), info.line_no);
-            info.display_info = buf;
-        } else {
-            info.display_info = npi_ut_get_hdl_info(expr_handle, true, false);
-        }
-        results.push_back(info);
+        results.push_back(make_control_dep_info(control_stmt, type, name));
     }
 }
 

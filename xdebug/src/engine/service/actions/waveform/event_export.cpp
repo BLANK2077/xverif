@@ -1,9 +1,9 @@
 #include "service/engine_action_handler.h"
 #include "service/engine_action_registry.h"
+#include "service/config_store_error.h"
 #include "service/engine_globals.h"
 #include "event_action_helpers.h"
 
-#include "api/text_response_builder.h"
 #include "design/protocol/protocol.h"
 #include "waveform/server/fsdb_value_reader.h"
 #include "waveform/event/event_manager.h"
@@ -12,10 +12,12 @@
 #include "waveform/list/signal_list.h"
 #include "waveform/export/waveform_exporter.h"
 #include "waveform/common/expression.h"
+#include "waveform/common/clock_sampling_response.h"
 #include "waveform/common/xdebug_waveform_paths.h"
 #include "waveform/service/action_support.h"
 #include "waveform/service/rc_generator.h"
-#include "waveform/value/logic_value.h"
+#include "core/value/logic_value.h"
+#include "core/output/completeness.h"
 #include "core/npi/time_contract.h"
 
 #include "npi.h"
@@ -34,8 +36,8 @@ namespace xdebug_design {
 namespace {
 
 static Json value_object(const std::string& raw) {
-    return xdebug_waveform::logic_value_json(
-        xdebug_waveform::logic_value_from_fsdb_raw(raw, 'h'));
+    return xdebug_core::logic_value_json(
+        xdebug_core::logic_value_from_fsdb_raw(raw, 'h'));
 }
 
 static Json expression_alias_error(const char* action, const std::string& message) {
@@ -66,16 +68,19 @@ public:
     const char* action_name() const override { return export_mode_ ? "event.export" : "event.find"; }
     bool needs_design() const override { return false; }
     bool needs_waveform() const override { return true; }
-    Json run(const Json& request, EngineActionContext& ctx) const override {
+    Json run(ContractBoundRequest& request, EngineActionContext& ctx) const override {
         using namespace xdebug_waveform;
-        Json args = request.value("args", Json::object());
+        auto args = request.args();
         std::string name = args.value("name", "");
         EventConfig config;
 
         if (!name.empty()) {
             EventManager em;
-            if (!em.get_event(g_session_id, g_fsdb_file_path, name, config))
+            StoreResult loaded =
+                em.get_event(g_session_id, g_fsdb_file_path, name, config);
+            if (loaded.status == StoreStatus::NotFound)
                 return event_config_not_found_error(action_name(), name);
+            if (!loaded.ok()) return make_config_store_error(loaded);
         } else {
             static const char* legacy[] = {"clk", "sampling", "clock_edge", "posedge", "sample_offset", nullptr};
             for (int i = 0; legacy[i]; ++i) {
@@ -92,10 +97,24 @@ public:
                 return event_missing_field_error(action_name(), "args.clock", "clock alias or signal path for inline event config");
             config.clock_sample.clock = clock;
             std::string edge_error;
-            config.has_reset = args.contains("reset");
-            if (config.has_reset && !parse_reset_config(args["reset"], config.reset, edge_error))
-                return event_invalid_arg_error(action_name(), "args.reset", edge_error,
-                                               "reset object with signal and polarity");
+            ContractJsonView reset = args["reset"];
+            config.has_reset = reset.exists();
+            if (config.has_reset) {
+                Json reset_config = {
+                    {"signal", reset.value("signal", std::string())},
+                    {"polarity", reset.value("polarity", std::string())}
+                };
+                if (!parse_reset_config(
+                        reset_config,
+                        config.reset,
+                        edge_error)) {
+                    return event_invalid_arg_error(
+                        action_name(),
+                        "args.reset",
+                        edge_error,
+                        "reset object with signal and polarity");
+                }
+            }
             if (!parse_clock_edge_kind(args.value("edge", std::string("negedge")),
                                        config.clock_sample.edge,
                                        edge_error)) {
@@ -115,21 +134,39 @@ public:
                     return event_invalid_enum_error(action_name(), "args.sample_point", edge_error,
                                                     Json::array({"before", "after"}));
             }
-            if (config.clock_sample.edge == ClockEdgeKind::Negedge &&
-                config.clock_sample.has_sample_point)
-                return event_invalid_arg_error(action_name(), "args.sample_point",
-                                               "args.sample_point is only valid with edge:posedge or edge:dual",
-                                               "omit sample_point for negedge, or use edge posedge/dual");
-            Json sigs = args.value("signals", Json::object());
-            for (auto it = sigs.begin(); it != sigs.end(); ++it) {
-                if (it->is_string()) config.signals[it.key()] = it->get<std::string>();
+            ContractJsonView signals = args["signals"];
+            Json sigs = signals.exists()
+                ? signals.consume_subtree(
+                      "event_inline_signal_map_parser")
+                : Json::object();
+            if (!sigs.is_object() || sigs.empty()) {
+                return event_missing_field_error(
+                    action_name(),
+                    "args.signals",
+                    "non-empty alias to real signal path map");
             }
-            if (config.signals.empty())
-                return event_missing_field_error(action_name(), "args.signals", "alias to real signal path map");
+            for (auto it = sigs.begin(); it != sigs.end(); ++it) {
+                if (it.key().empty() || !it.value().is_string() ||
+                    it.value().get<std::string>().empty()) {
+                    return event_invalid_arg_error(
+                        action_name(),
+                        "args.signals",
+                        "event signal aliases and paths must be non-empty strings",
+                        "non-empty alias to non-empty waveform path map");
+                }
+                config.signals[it.key()] = it.value().get<std::string>();
+            }
+        }
+        std::string clock_resolution_error;
+        if (!normalize_clock_sample_spec(
+                g_fsdb_file,
+                config.clock_sample,
+                clock_resolution_error)) {
+            return make_handler_error_from_message(clock_resolution_error);
         }
 
         npiFsdbTime tbegin = 0, tend = ~0ULL;
-        Json time_range = args.value("time_range", Json::object());
+        ContractJsonView time_range = args["time_range"];
         auto parse_t = [](const std::string& s, bool allow_max, npiFsdbTime& t, std::string& error) -> bool {
             if (s.empty()) return true;
             xdebug_core::TimeParseOptions options;
@@ -138,8 +175,16 @@ public:
             return xdebug_core::parse_time(g_fsdb_file, s, options, t, error);
         };
         std::string time_error;
-        if (!parse_t(time_range.value("begin", ""), false, tbegin, time_error) ||
-            !parse_t(time_range.value("end", ""), true, tend, time_error)) {
+        if (!parse_t(
+                time_range.value("begin", ""),
+                false,
+                tbegin,
+                time_error) ||
+            !parse_t(
+                time_range.value("end", ""),
+                true,
+                tend,
+                time_error)) {
             return event_time_error(action_name(), time_error);
         }
 
@@ -153,8 +198,6 @@ public:
         EventScanStats scan_stats;
         query.stats = &scan_stats;
         std::string mode = args.value("mode", export_mode_ ? "export" : "first");
-        if (mode == "head") mode = "first";
-        if (mode == "tail") mode = "last";
         if (!export_mode_ && mode != "first" && mode != "last" && mode != "all") {
             return event_invalid_enum_error(action_name(), "args.mode",
                                             "args.mode must be first, last, or all",
@@ -213,23 +256,56 @@ public:
             preview_arr.push_back(arr[i]);
         Json out;
         bool include_events = true;
-        if (export_mode_ && args.contains("aggregate") && args["aggregate"].is_object()) {
-            Json aggregate_args = args["aggregate"];
+        ContractJsonView aggregate_args = args["aggregate"];
+        if (export_mode_ && aggregate_args.exists()) {
             Json aggregate;
             aggregate["count"] = arr.size();
             Json groups = Json::object();
-            Json group_by = aggregate_args.value("group_by", Json::array());
-            if (group_by.is_array() && !group_by.empty()) {
+            ContractJsonView group_by_view = aggregate_args["group_by"];
+            Json group_by = group_by_view.exists()
+                ? group_by_view.consume_subtree(
+                      "event_export_group_by_parser")
+                : Json::array();
+            if (group_by_view.exists() &&
+                (!group_by.is_array() || group_by.empty())) {
+                return event_invalid_arg_error(
+                    action_name(),
+                    "args.aggregate.group_by",
+                    "group_by must be a non-empty array when present",
+                    "configured event signal aliases or field names");
+            }
+            for (const auto& field : group_by) {
+                if (!field.is_string() ||
+                    field.get<std::string>().empty()) {
+                    return event_invalid_arg_error(
+                        action_name(),
+                        "args.aggregate.group_by",
+                        "group_by entries must be non-empty strings",
+                        "configured event signal aliases or field names");
+                }
+                const std::string group_name =
+                    field.get<std::string>();
+                if (config.fields.find(group_name) ==
+                        config.fields.end() &&
+                    config.signals.find(group_name) ==
+                        config.signals.end()) {
+                    return event_invalid_arg_error(
+                        action_name(),
+                        "args.aggregate.group_by",
+                        "unknown event group_by name: " + group_name,
+                        "configured event signal aliases or field names");
+                }
+            }
+            if (!group_by.empty()) {
                 for (const auto& event : arr) {
                     std::string key;
                     for (const auto& field : group_by) {
-                        if (!field.is_string()) continue;
                         std::string name = field.get<std::string>();
                         Json value;
                         if (event["fields"].contains(name)) value = event["fields"][name]["value"];
                         else if (event["signals"].contains(name)) value = event["signals"][name]["value"];
                         if (!key.empty()) key += "|";
-                        key += name + "=" + (value.is_string() ? value.get<std::string>() : "null");
+                        key += name + "=" + value.get<std::string>();
                     }
                     groups[key] = groups.value(key, 0) + 1;
                 }
@@ -238,25 +314,27 @@ public:
             aggregate["group_count"] = groups.size();
             out["aggregate"] = aggregate;
             include_events = aggregate_args.value("events", true);
+            if (!include_events && args.contains("line_limit")) {
+                return event_invalid_arg_error(
+                    action_name(),
+                    "args.line_limit",
+                    "event.export args.line_limit has no effect when aggregate.events=false",
+                    "omit line_limit or set aggregate.events=true");
+            }
         }
         if (include_events) {
             out["events"] = preview_arr;
         }
         out["summary"] = {
-            {"event_count", static_cast<int>(matched_count)},
-            {"returned_event_count", static_cast<int>(preview_arr.size())},
-            {"response_truncated", preview_arr.size() < matched_count},
-            {"scan_complete", !event_budget_exhausted && !scan_stats.sample_budget_exhausted},
             {"sample_count", scan_stats.sample_count},
             {"mode", mode},
             {"inline", name.empty()},
             {"sampling_mode", "clock_edge"},
             {"clock", config.clock_sample.clock},
-            {"edge", clock_edge_kind_text(config.clock_sample.edge)},
             {"sample_time_semantics", "time is sample_time"}
         };
-        if (config.clock_sample.edge != ClockEdgeKind::Negedge)
-            out["summary"]["sample_point"] = clock_sample_point_text(config.clock_sample.sample_point);
+        out["sampling"] =
+            clock_sampling_contract_json(config.clock_sample);
         if (!arr.empty()) {
             out["summary"]["first"] = arr[0]["time"];
             out["summary"]["last"] = arr[arr.size()-1]["time"];
@@ -264,9 +342,23 @@ public:
         auto formatted_range = xdebug_core::format_time_range(g_fsdb_file, tbegin, tend);
         out["summary"]["begin"] = formatted_range.first;
         out["summary"]["end"] = formatted_range.second;
-        Json output = args.value("output", Json::object());
+        ContractJsonView output = args["output"];
         std::string output_path = output.value("path", std::string());
         std::string file_format = output.value("file_format", std::string("json"));
+        if (!output_path.empty() && args.contains("line_limit")) {
+            return event_invalid_arg_error(
+                action_name(),
+                "args.line_limit",
+                "event.export args.line_limit only controls preview rows and is not valid for file export",
+                "omit line_limit when args.output.path is present");
+        }
+        if (output.contains("file_format") && output_path.empty()) {
+            return event_invalid_arg_error(
+                action_name(),
+                "args.output.file_format",
+                "output.file_format requires a non-empty output.path",
+                "output object with both path and file_format");
+        }
         if (file_format != "json")
             return event_invalid_enum_error(action_name(), "args.output.file_format",
                                             "event.export output.file_format must be json",
@@ -275,21 +367,29 @@ public:
         out["summary"]["output_written"] = !output_path.empty();
         out["summary"]["row_count"] = static_cast<int>(arr.size());
         out["summary"]["line_limit"] = response_limit;
-        out["summary"]["truncated"] = event_budget_exhausted || scan_stats.sample_budget_exhausted || preview_arr.size() < matched_count;
-        out["summary"]["analysis_complete"] = !event_budget_exhausted && !scan_stats.sample_budget_exhausted;
-        out["summary"]["truncation_scopes"] = Json::array();
-        if (event_budget_exhausted) out["summary"]["truncation_scopes"].push_back("analysis_events");
-        if (scan_stats.sample_budget_exhausted) out["summary"]["truncation_scopes"].push_back("analysis_samples");
-        if (preview_arr.size() < matched_count) out["summary"]["truncation_scopes"].push_back("response_events");
+        const bool analysis_complete =
+            !event_budget_exhausted && !scan_stats.sample_budget_exhausted;
+        const bool response_truncated = preview_arr.size() < matched_count;
+        std::vector<std::string> truncation_scopes;
+        if (event_budget_exhausted) truncation_scopes.push_back("analysis_events");
+        if (scan_stats.sample_budget_exhausted) truncation_scopes.push_back("analysis_samples");
+        if (response_truncated) truncation_scopes.push_back("response_events");
+        xdebug_core::set_completeness(
+            out["summary"],
+            analysis_complete,
+            analysis_complete,
+            response_truncated,
+            matched_count,
+            preview_arr.size(),
+            truncation_scopes);
         if (!output_path.empty()) {
             std::string write_error;
             Json artifact = out;
-            artifact["events"] = arr;
+            if (include_events) artifact["events"] = arr;
             if (!xdebug_waveform::write_text_file_creating_dirs(output_path, artifact.dump(2) + "\n", write_error))
                 return make_handler_error("ACTION_FAILED", write_error, {{"cause_code", "EXPORT_FAILED"}});
             Json output_info = {{"path", output_path}, {"file_format", file_format}};
             out["summary"]["output"] = output_info;
-            out["output"] = output_info;
             out.erase("events");
         }
         return out;

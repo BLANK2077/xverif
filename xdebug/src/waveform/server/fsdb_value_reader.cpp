@@ -106,11 +106,11 @@ bool read_sig_vec_value_at_with_status(npiFsdbFileHandle file,
     return all_found;
 }
 
-bool find_list_diff(npiFsdbFileHandle file,
-                    const std::vector<std::string>& signals,
-                    npiFsdbTime begin_time,
-                    npiFsdbTime end_time,
-                    npiFsdbTime& diff_time) {
+bool find_list_first_change(npiFsdbFileHandle file,
+                            const std::vector<std::string>& signals,
+                            npiFsdbTime begin_time,
+                            npiFsdbTime end_time,
+                            npiFsdbTime& diff_time) {
     if (signals.empty()) return false;
 
     // Get handles for all signals
@@ -194,12 +194,12 @@ bool find_list_diff(npiFsdbFileHandle file,
     return found;
 }
 
-bool find_first_list_changes(npiFsdbFileHandle file,
+bool find_list_first_changes(npiFsdbFileHandle file,
                              const std::vector<std::string>& signals,
                              npiFsdbTime begin_time,
                              npiFsdbTime end_time,
-                             npiFsdbTime& diff_time,
-                             std::vector<ListDiffChange>& changes) {
+                             npiFsdbTime& first_change_time,
+                             std::vector<ListFirstChange>& changes) {
     changes.clear();
     if (signals.empty()) return false;
     std::vector<npiFsdbSigHandle> handles;
@@ -231,13 +231,15 @@ bool find_first_list_changes(npiFsdbFileHandle file,
         if (!found) {
             if (next == current[index]) continue;
             found = true;
-            diff_time = t;
-        } else if (t != diff_time) {
+            first_change_time = t;
+        } else if (t != first_change_time) {
             break;
         }
         if (next != current[index]) {
             auto existing = std::find_if(changes.begin(), changes.end(),
-                [&](const ListDiffChange& item) { return item.signal == signals[index]; });
+                [&](const ListFirstChange& item) {
+                    return item.signal == signals[index];
+                });
             if (existing == changes.end())
                 changes.push_back({signals[index], current[index], next});
             else

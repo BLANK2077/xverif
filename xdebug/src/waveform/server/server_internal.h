@@ -15,6 +15,7 @@
 #include "../cursor/cursor_manager.h"
 #include "../common/time_spec.h"
 #include "../common/clock_sampling.h"
+#include "core/output/completeness.h"
 #include "core/session/session_types.h"
 #include "json.hpp"
 
@@ -85,13 +86,20 @@ Json wave_value_json(const std::string& raw, char prefix,
 bool stat_fsdb(long& mtime, long long& size, unsigned long long& dev, unsigned long long& inode);
 bool fsdb_changed();
 void send_error(int client_fd, const std::string& message);
+bool require_store_result(
+    int client_fd,
+    const StoreResult& result);
 bool parse_user_time(const char* text, bool allow_max, npiFsdbTime& out_time, std::string& error);
-bool read_list_from_storage(const std::string& session_id, const char* list_name, SignalList& out_list);
+StoreResult read_list_from_storage(
+    const std::string& session_id,
+    const char* list_name,
+    SignalList& out_list);
 std::string format_time(npiFsdbTime t);
 std::string format_duration(npiFsdbTime t);
 std::pair<std::string, std::string> format_time_range(npiFsdbTime begin, npiFsdbTime end);
 bool json_time_range(const Json& args, npiFsdbTime& begin, npiFsdbTime& end, std::string& error);
-npiFsdbValType json_value_format(const Json& args);
+bool json_value_format(const Json& args, npiFsdbValType& format,
+                       std::string& error);
 std::string server_compact_expr_ws(const std::string& expr);
 char json_value_prefix(npiFsdbValType fmt);
 bool clock_sample_from_args(const Json& args, ClockSampleSpec& spec, std::string& error);
@@ -101,9 +109,17 @@ void handle_list_value(int client_fd, const char* list_name, npiFsdbTime time, c
 void handle_signal_check(int client_fd, const char* signal_path);
 void handle_list_validate(int client_fd, const char* list_name, bool json);
 void handle_scope(int client_fd, const char* scope_path, bool recursive, bool json);
-bool read_apb_from_registry(const std::string& session_id, const char* name, ApbConfig& out_config);
-bool read_axi_from_registry(const std::string& session_id, const char* name, AxiConfig& out_config);
-void handle_list_diff(int client_fd, const char* list_name, npiFsdbTime begin_time, npiFsdbTime end_time);
+StoreResult read_apb_from_registry(
+    const std::string& session_id,
+    const char* name,
+    ApbConfig& out_config);
+StoreResult read_axi_from_registry(
+    const std::string& session_id,
+    const char* name,
+    AxiConfig& out_config);
+void handle_list_first_change(int client_fd, const char* list_name,
+                              npiFsdbTime begin_time,
+                              npiFsdbTime end_time);
 void handle_list_export(int client_fd, const char* list_name, npiFsdbTime begin_time,
                         npiFsdbTime end_time, const char* output_dir,
                         const char* format);
@@ -134,15 +150,16 @@ Json ai_expr_eval_at(const Json& args, std::string& error);
 Json ai_window_verify(const Json& args, std::string& error);
 Json ai_signal_statistics(const Json& args, std::string& error);
 Json ai_counter_statistics(const Json& args, std::string& error);
-Json ai_sampled_pulse_inspect(const Json& args, std::string& error);
-Json ai_handshake_inspect(const Json& args, std::string& error);
-Json ai_detect_abnormal(const Json& args, std::string& error);
+Json ai_signal_sampled_pulse_inspect(const Json& args, std::string& error);
+Json ai_protocol_handshake_inspect(const Json& args, std::string& error);
+Json ai_signal_anomaly_inspect(const Json& args, std::string& error);
 Json resolved_time_json(const std::string& spec, npiFsdbTime time);
 Json ai_dispatch_query(const Json& req, std::string& error);
 
 void handle_axi_rw(int client_fd, const char* name, bool is_write, const char* addr_str,
                    const char* id_str, int num, bool last_flag, bool json);
-void handle_axi_cursor(int client_fd, const char* name, int cmd_type, int filter, bool json);
+void handle_axi_transaction_cursor(int client_fd, const char* name,
+                                   int cmd_type, int filter, bool json);
 void handle_axi_stat(int client_fd, const char* name, bool latency, int filter,
                      const char* id_str, bool json);
 void handle_event_query(int client_fd, const char* name, npiFsdbTime begin_time,

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "service/config_store_error.h"
 #include "service/engine_action_handler.h"
 #include "service/engine_globals.h"
 #include "waveform/apb/apb_analyzer.h"
@@ -7,7 +8,33 @@
 #include "waveform/axi/axi_analyzer.h"
 #include "waveform/axi/axi_manager.h"
 
+#include <utility>
+
 namespace xdebug_design {
+
+enum class ProtocolEnsureStatus {
+    Ok,
+    ConfigNotFound,
+    StoreError,
+    AnalysisError
+};
+
+struct ProtocolEnsureResult {
+    ProtocolEnsureStatus status = ProtocolEnsureStatus::Ok;
+    xdebug_waveform::StoreResult store;
+    std::string message;
+
+    ProtocolEnsureResult() = default;
+    ProtocolEnsureResult(
+        ProtocolEnsureStatus result_status,
+        xdebug_waveform::StoreResult store_result,
+        std::string result_message)
+        : status(result_status),
+          store(std::move(store_result)),
+          message(std::move(result_message)) {}
+
+    bool ok() const { return status == ProtocolEnsureStatus::Ok; }
+};
 
 inline bool analyze_apb_config(const std::string& name,
                                const xdebug_waveform::ApbConfig& config,
@@ -23,15 +50,30 @@ inline bool analyze_apb_config(const std::string& name,
     return false;
 }
 
-inline bool ensure_apb_analyzed(const std::string& name,
-                                xdebug_waveform::ApbConfig& config,
-                                std::string& error) {
+inline ProtocolEnsureResult ensure_apb_analyzed(
+    const std::string& name,
+    xdebug_waveform::ApbConfig& config) {
     xdebug_waveform::ApbManager manager;
-    if (!manager.get_apb(xdebug_waveform::g_session_id, name, config)) {
-        error = "APB config not found: " + name;
-        return false;
+    xdebug_waveform::StoreResult loaded =
+        manager.get_apb(xdebug_waveform::g_session_id, name, config);
+    if (!loaded.ok()) {
+        return {
+            loaded.status == xdebug_waveform::StoreStatus::NotFound
+                ? ProtocolEnsureStatus::ConfigNotFound
+                : ProtocolEnsureStatus::StoreError,
+            loaded,
+            loaded.message
+        };
     }
-    return analyze_apb_config(name, config, error);
+    std::string error;
+    if (!analyze_apb_config(name, config, error)) {
+        return {
+            ProtocolEnsureStatus::AnalysisError,
+            {},
+            error
+        };
+    }
+    return {};
 }
 
 inline bool analyze_axi_config(const std::string& name,
@@ -48,15 +90,30 @@ inline bool analyze_axi_config(const std::string& name,
     return false;
 }
 
-inline bool ensure_axi_analyzed(const std::string& name,
-                                xdebug_waveform::AxiConfig& config,
-                                std::string& error) {
+inline ProtocolEnsureResult ensure_axi_analyzed(
+    const std::string& name,
+    xdebug_waveform::AxiConfig& config) {
     xdebug_waveform::AxiManager manager;
-    if (!manager.get_axi(xdebug_waveform::g_session_id, name, config)) {
-        error = "AXI config not found: " + name;
-        return false;
+    xdebug_waveform::StoreResult loaded =
+        manager.get_axi(xdebug_waveform::g_session_id, name, config);
+    if (!loaded.ok()) {
+        return {
+            loaded.status == xdebug_waveform::StoreStatus::NotFound
+                ? ProtocolEnsureStatus::ConfigNotFound
+                : ProtocolEnsureStatus::StoreError,
+            loaded,
+            loaded.message
+        };
     }
-    return analyze_axi_config(name, config, error);
+    std::string error;
+    if (!analyze_axi_config(name, config, error)) {
+        return {
+            ProtocolEnsureStatus::AnalysisError,
+            {},
+            error
+        };
+    }
+    return {};
 }
 
 inline Json apb_config_json(const xdebug_waveform::ApbConfig& cfg) {
@@ -68,8 +125,8 @@ inline Json apb_config_json(const xdebug_waveform::ApbConfig& cfg) {
                 {"pwdata", cfg.pwdata}, {"prdata", cfg.prdata}};
     if (cfg.clock_sample.edge != xdebug_waveform::ClockEdgeKind::Negedge)
         out["sample_point"] = xdebug_waveform::clock_sample_point_text(cfg.clock_sample.sample_point);
-    out["pready"] = cfg.pready;
-    out["pslverr"] = cfg.pslverr;
+    if (!cfg.pready.empty()) out["pready"] = cfg.pready;
+    if (!cfg.pslverr.empty()) out["pslverr"] = cfg.pslverr;
     return out;
 }
 
@@ -218,15 +275,15 @@ inline Json protocol_invalid_arg_error(const std::string& action,
 inline Json protocol_invalid_enum_error(const std::string& action,
                                         const std::string& invalid_arg,
                                         const std::string& message,
-                                        const Json& allowed_values) {
+                                        const Json& available_values) {
     return make_handler_error(
         "INVALID_ENUM",
         message,
         {{"invalid_arg", invalid_arg},
-         {"expected", "one of allowed_values"},
-         {"allowed_values", allowed_values},
+         {"expected", "one of available_values"},
+         {"available_values", available_values},
          {"correct_example", protocol_action_example(action)},
-         {"example_note", "Example only; choose a value from allowed_values."}});
+         {"example_note", "Example only; choose a value from available_values."}});
 }
 
 inline Json protocol_time_error(const std::string& action,

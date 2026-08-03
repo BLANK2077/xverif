@@ -93,16 +93,18 @@ public:
         }
 
         ApbConfig config;
-        std::string analysis_error;
-        if (!ensure_apb_analyzed(name, config, analysis_error)) {
-            if (analysis_error.rfind("APB config not found:", 0) == 0)
+        ProtocolEnsureResult ensured = ensure_apb_analyzed(name, config);
+        if (!ensured.ok()) {
+            if (ensured.status == ProtocolEnsureStatus::ConfigNotFound)
                 return protocol_config_not_found_error(
                     action_name(), "apb", name);
+            if (ensured.status == ProtocolEnsureStatus::StoreError)
+                return make_config_store_error(ensured.store);
             if (!g_apb_analyzer.last_cache_error().empty())
                 return make_analysis_cache_error(
                     g_apb_analyzer.last_cache_error());
             return protocol_analyze_error(
-                action_name(), "apb", name, analysis_error);
+                action_name(), "apb", name, ensured.message);
         }
 
         const ApbResult* result = g_apb_analyzer.get_result(name);

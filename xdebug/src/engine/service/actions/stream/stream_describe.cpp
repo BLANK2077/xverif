@@ -1,6 +1,7 @@
 #include "service/engine_action_handler.h"
 #include "service/engine_action_registry.h"
 #include "service/engine_globals.h"
+#include "service/config_store_error.h"
 
 #include "waveform/common/xdebug_waveform_paths.h"
 #include "waveform/stream/stream_analyzer.h"
@@ -30,7 +31,7 @@ using xdebug_waveform::StreamQueryOptions;
 Json err(const std::string& code, const std::string& message, const Json& details) {
     return make_handler_error(code, message, details);
 }
-Json stream_show_example(const std::string& stream = "req_stream") {
+Json stream_describe_example(const std::string& stream = "req_stream") {
     return Json{{"api_version", "xdebug.v1"},
                 {"action", "stream.describe"},
                 {"target", {{"session_id", "case_a"}}},
@@ -39,7 +40,7 @@ Json stream_show_example(const std::string& stream = "req_stream") {
 Json stream_name_error(const std::string& name) {
     Json details = {{"invalid_arg", "args.stream"},
                     {"expected", "name of a previously loaded stream config"},
-                    {"correct_example", stream_show_example()},
+                    {"correct_example", stream_describe_example()},
                     {"example_note", "Example only; replace target.session_id and args.stream with active case values."},
                     {"next_actions", Json::array({"Call stream.config.list to inspect loaded stream names.",
                                                    "Call stream.config.load before showing a stream."})}};
@@ -58,29 +59,42 @@ Json issue_json(const std::vector<xdebug_waveform::StreamValidationIssue>& issue
     }
     return arr;
 }
-bool get_config(const Json& args, StreamConfig& config, Json& fail) {
-    std::string name = args.value("stream", args.value("name", std::string()));
+bool get_config(
+    ContractJsonView args,
+    StreamConfig& config,
+    Json& fail) {
+    std::string name = args.value("stream", std::string());
     if (name.empty()) {
         fail = stream_name_error(name);
         return false;
     }
     StreamManager manager;
-    if (!manager.get_stream(xdebug_waveform::g_session_id, name, config)) {
-        fail = stream_name_error(name);
+    xdebug_waveform::StoreResult loaded =
+        manager.get_stream(
+            xdebug_waveform::g_session_id,
+            name,
+            config);
+    if (!loaded.ok()) {
+        fail =
+            loaded.status == xdebug_waveform::StoreStatus::NotFound
+                ? stream_name_error(name)
+                : make_config_store_error(loaded);
         return false;
     }
     return true;
 }
 
-class StreamShowHandler : public EngineActionHandler {
+class StreamDescribeHandler : public EngineActionHandler {
 public:
     const char* action_name() const override { return "stream.describe"; }
     bool needs_design() const override { return false; }
     bool needs_waveform() const override { return true; }
-    Json run(const Json& request, EngineActionContext& ctx) const override {
+    Json run(
+        ContractBoundRequest& request,
+        EngineActionContext& ctx) const override {
         Json fail;
         StreamConfig config;
-        if (!get_config(request.value("args", Json::object()), config, fail)) return fail;
+        if (!get_config(request.args(), config, fail)) return fail;
         StreamAnalyzer analyzer;
         std::vector<xdebug_waveform::StreamValidationIssue> issues;
         std::string error;
@@ -99,8 +113,8 @@ public:
 
 }  // namespace
 
-std::unique_ptr<EngineActionHandler> make_stream_show_handler() {
-    return std::unique_ptr<EngineActionHandler>(new StreamShowHandler);
+std::unique_ptr<EngineActionHandler> make_stream_describe_handler() {
+    return std::unique_ptr<EngineActionHandler>(new StreamDescribeHandler);
 }
 
 }  // namespace xdebug_design

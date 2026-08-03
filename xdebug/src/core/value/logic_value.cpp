@@ -229,7 +229,7 @@ ScopedValueRenderFormat::~ScopedValueRenderFormat() {
     g_value_render_format = previous_;
 }
 
-bool is_legacy_0x_literal(const std::string& text) {
+bool has_c_hex_prefix(const std::string& text) {
     std::string s = trim(text);
     return s.size() > 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X');
 }
@@ -251,7 +251,7 @@ LogicValue logic_value_from_fsdb_raw(const std::string& raw, char radix, int wid
         if (tick > 0) explicit_width = std::atoi(s.substr(0, tick).c_str());
         r = s[tick + 1];
         body = s.substr(tick + 2);
-    } else if (is_legacy_0x_literal(s)) {
+    } else if (has_c_hex_prefix(s)) {
         r = 'h';
         body = s.substr(2);
     } else if (s.size() > 2 && s[0] == '0' && (s[1] == 'b' || s[1] == 'B')) {
@@ -285,7 +285,7 @@ LogicValue logic_value_from_bits(const std::string& bits, int width_hint) {
 LogicValue parse_user_logic_literal(const std::string& text) {
     std::string s = trim(text);
     if (s.empty()) return invalid_literal(text, "empty value literal");
-    if (is_legacy_0x_literal(s)) return invalid_literal(text, value_format_invalid_message(text));
+    if (has_c_hex_prefix(s)) return invalid_literal(text, value_format_invalid_message(text));
 
     size_t tick = s.find('\'');
     if (tick != std::string::npos && tick + 1 < s.size()) {
@@ -462,6 +462,9 @@ void apply_value_width_summary(LogicJson& response) {
         response["summary"].contains("signal") &&
         response["summary"]["signal"].is_string()) {
         root_signal = response["summary"]["signal"].get<std::string>();
+    } else if (response.contains("signal") &&
+               response["signal"].is_string()) {
+        root_signal = response["signal"].get<std::string>();
     }
     LogicJson diagnostics = LogicJson::array();
     std::set<std::string> seen;

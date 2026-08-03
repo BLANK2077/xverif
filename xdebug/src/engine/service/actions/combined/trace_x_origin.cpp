@@ -3,10 +3,12 @@
 #include "service/trace_source_path_formatter.h"
 
 #include "combined/active_trace_common.h"
-#include "combined/trace_x_chain_identity.h"
+#include "combined/trace_x_origin_chain_identity.h"
+#include "core/output/completeness.h"
 #include "core/npi/time_contract.h"
 #include "waveform/server/fsdb_scan_utils.h"
-#include "waveform/value/logic_value.h"
+#include "waveform/server/fsdb_value_reader.h"
+#include "core/value/logic_value.h"
 
 #include "npi.h"
 #include "npi_fsdb.h"
@@ -39,10 +41,10 @@ std::string x_mask_from_bits(const std::string& bits) {
     std::string mask;
     mask.reserve(bits.size());
     for (char bit : bits) mask.push_back(bit == 'x' || bit == 'X' ? '1' : '0');
-    return xdebug_waveform::logic_value_json(
-        xdebug_waveform::logic_value_from_bits(
+    return xdebug_core::logic_value_json(
+        xdebug_core::logic_value_from_bits(
             mask, static_cast<int>(mask.size())),
-        xdebug_waveform::ValueRenderFormat::Bin)["value"].get<std::string>();
+        xdebug_core::ValueRenderFormat::Bin)["value"].get<std::string>();
 }
 
 bool is_control_kind(const std::string& kind) {
@@ -73,7 +75,7 @@ struct XPoint {
     std::string signal;
     std::string time;
     npiFsdbTime tick = 0;
-    xdebug_waveform::LogicValue value;
+    xdebug_core::LogicValue value;
     bool at_fsdb_start = false;
 };
 
@@ -81,7 +83,7 @@ Json point_json(const XPoint& point, const char* time_field) {
     return {
         {"signal", point.signal},
         {time_field, point.time},
-        {"value", xdebug_waveform::logic_value_json(point.value)},
+        {"value", xdebug_core::logic_value_json(point.value)},
         {"x_mask", x_mask_from_bits(point.value.bits)}
     };
 }
@@ -97,7 +99,11 @@ bool read_point(npiFsdbFileHandle fsdb,
     point.signal = signal;
     point.tick = tick;
     point.time = xdebug_core::format_time(fsdb, tick);
-    point.value = xdebug_waveform::logic_value_from_fsdb_raw(raw, 'b');
+    const xdebug_waveform::FsdbSignalWidth width =
+        xdebug_waveform::fsdb_signal_width(handle);
+    point.value =
+        xdebug_core::logic_value_from_fsdb_raw(
+            raw, 'b', width.reliable ? width.width : 0);
     return point.value.valid;
 }
 
@@ -297,7 +303,7 @@ struct ChainState {
     Json pending_x_dependencies = Json::array();
     Json branch_events = Json::array();
     std::set<std::string> visited;
-    std::vector<xdebug::TraceXSemanticHop> semantic_hops;
+    std::vector<xdebug::TraceXOriginSemanticHop> semantic_hops;
     bool suppressed = false;
 };
 
@@ -347,7 +353,7 @@ int semantic_prefix_hop_index(const ChainState& chain,
     std::size_t semantic_index = 0;
     for (const auto& hop : chain.hops) {
         const std::string relation = hop.value("relation", std::string());
-        if (xdebug::trace_x_is_transparent_relation(relation)) continue;
+        if (xdebug::trace_x_origin_is_transparent_relation(relation)) continue;
         semantic_index++;
         if (semantic_index == semantic_prefix_size) {
             return hop.value("index", 0);
@@ -358,7 +364,7 @@ int semantic_prefix_hop_index(const ChainState& chain,
 }
 
 Json pending_semantic_branch(const ChainState& chain,
-                             const xdebug::TraceXSemanticHop& hop) {
+                             const xdebug::TraceXOriginSemanticHop& hop) {
     Json pending = {
         {"signal", hop.signal},
         {"relation", hop.relation},
@@ -368,7 +374,7 @@ Json pending_semantic_branch(const ChainState& chain,
     for (const auto& raw_hop : chain.hops) {
         if (raw_hop.value("signal", std::string()) == hop.signal &&
             raw_hop.value("x_onset_time", std::string()) == hop.x_onset_time &&
-            xdebug::trace_x_semantic_relation(
+            xdebug::trace_x_origin_semantic_relation(
                 raw_hop.value("relation", std::string())) == hop.relation) {
             if (raw_hop.contains("value")) pending["value"] = raw_hop["value"];
             if (raw_hop.contains("x_mask")) pending["x_mask"] = raw_hop["x_mask"];
@@ -378,14 +384,14 @@ Json pending_semantic_branch(const ChainState& chain,
     return pending;
 }
 
-class TraceXHandler : public EngineActionHandler {
+class TraceXOriginHandler : public EngineActionHandler {
 public:
     const char* action_name() const override { return "trace.x_origin"; }
     bool needs_design() const override { return true; }
     bool needs_waveform() const override { return true; }
 
-    Json run(const Json& request, EngineActionContext&) const override {
-        const Json args = request.value("args", Json::object());
+    Json run(ContractBoundRequest& request, EngineActionContext&) const override {
+        auto args = request.args();
         const std::string signal = args.value("signal", std::string());
         const std::string requested_time = args.value("time", std::string());
         if (signal.empty() || requested_time.empty()) {
@@ -414,22 +420,28 @@ public:
 
         Json query = point_json(query_point, "query_time");
         if (!query_point.value.has_x) {
-            return {
+            Json result = {
                 {"summary", {{"signal", signal}, {"query_time", query_point.time},
                               {"termination", "not_x_at_query_time"},
                               {"evidence_status", "proven"}, {"chain_count", 0},
                               {"completed_chain_count", 0}, {"limited_chain_count", 0},
-                              {"hop_count", 0}, {"origin_count", 0},
-                              {"truncated", false}}},
+                              {"hop_count", 0}, {"origin_count", 0}}},
                 {"query", query}, {"chains", Json::array()},
-                {"limitations", Json::array()}, {"truncated", false}
+                {"limitations", Json::array()}
             };
+            xdebug_core::set_completeness(
+                result["summary"], true, true, false, 0, 0, {});
+            return result;
         }
 
         XPoint root;
         if (!find_x_onset(g_fsdb_file, signal, requested_tick, root)) root = query_point;
 
-        Json limits_json = request.value("limits", Json::object());
+        ContractJsonView limits_view = request.limits();
+        Json limits_json = limits_view.exists()
+            ? limits_view.consume_subtree(
+                  "trace_x_origin_limits_parser")
+            : Json::object();
         const int max_depth = std::max(1, limits_json.value("max_depth", 8));
         const int max_nodes = std::max(1, limits_json.value("max_nodes", 50));
         const int max_time_steps = std::max(1, limits_json.value("max_time_steps", 128));
@@ -442,11 +454,11 @@ public:
         initial.current = root;
         initial.visited.insert(visit_key(root));
         initial.semantic_hops.push_back(
-            xdebug::TraceXSemanticHop(root.signal, root.time, "root"));
+            xdebug::TraceXOriginSemanticHop(root.signal, root.time, "root"));
         chains.push_back(initial);
         std::vector<size_t> stack{0};
         std::set<std::string> explored_states;
-        explored_states.insert(xdebug::trace_x_exploration_state_key(
+        explored_states.insert(xdebug::trace_x_origin_exploration_state_key(
             initial.semantic_hops, root.signal, root.time));
         std::set<std::string> visited_times;
         std::vector<std::string> limitations;
@@ -496,7 +508,8 @@ public:
                 {"signal", chain.current.signal},
                 {"x_onset_time", chain.current.time},
                 {"active_time", dependency_result.active_time},
-                {"value", xdebug_waveform::logic_value_json(chain.current.value)},
+                {"value", xdebug_core::logic_value_json(
+                    chain.current.value)},
                 {"x_mask", x_mask_from_bits(chain.current.value.bits)},
                 {"relation", chain.relation},
                 {"file", dependency_result.file},
@@ -597,9 +610,9 @@ public:
                 child.relation = child_relation;
                 child.depth = chain.depth + 1;
                 const std::string semantic_relation =
-                    xdebug::trace_x_semantic_relation(child_relation);
+                    xdebug::trace_x_origin_semantic_relation(child_relation);
                 if (!semantic_relation.empty()) {
-                    child.semantic_hops.push_back(xdebug::TraceXSemanticHop(
+                    child.semantic_hops.push_back(xdebug::TraceXOriginSemanticHop(
                         child.current.signal, child.current.time, semantic_relation,
                         children[child_index].sample.time));
                 }
@@ -609,7 +622,7 @@ public:
                     stop_chain(child, "loop_detected", "loop_detected", true);
                 } else {
                     const std::string state_key =
-                        xdebug::trace_x_exploration_state_key(
+                        xdebug::trace_x_origin_exploration_state_key(
                             child.semantic_hops, child.current.signal,
                             child.current.time);
                     if (!explored_states.insert(state_key).second) continue;
@@ -654,7 +667,7 @@ public:
         for (const auto& chain : chains) {
             if (chain.suppressed) continue;
             const std::string semantic_key =
-                xdebug::trace_x_semantic_chain_key(chain.semantic_hops);
+                xdebug::trace_x_origin_semantic_chain_key(chain.semantic_hops);
             const auto position = effective_positions.find(semantic_key);
             if (position == effective_positions.end()) {
                 effective_positions[semantic_key] = effective_chains.size();
@@ -675,7 +688,7 @@ public:
                  index < effective_chains.size(); ++index) {
                 const ChainState& omitted = effective_chains[index];
                 const std::size_t common_prefix =
-                    xdebug::trace_x_common_semantic_prefix(
+                    xdebug::trace_x_origin_common_semantic_prefix(
                         retained.semantic_hops, omitted.semantic_hops);
                 if (common_prefix > 0) {
                     branch_hop_index = std::min(
@@ -773,7 +786,7 @@ public:
         else if (origin_count > 0) termination = "origin_found";
         else termination = effective_chains.empty()
             ? "x_not_observable_upstream" : effective_chains.front().status;
-        const bool truncated = limited_count > 0;
+        const bool analysis_complete = limited_count == 0;
 
         Json result = {
             {"summary", {{"signal", signal}, {"query_time", query_point.time},
@@ -783,13 +796,21 @@ public:
                           {"chain_count", static_cast<int>(effective_chains.size())},
                           {"completed_chain_count", completed_count},
                           {"limited_chain_count", limited_count},
-                          {"hop_count", hop_count}, {"origin_count", origin_count},
-                          {"truncated", truncated}}},
+                          {"hop_count", hop_count}, {"origin_count", origin_count}}},
             {"query", query},
             {"chains", chain_array},
-            {"limitations", limitations},
-            {"truncated", truncated}
+            {"limitations", limitations}
         };
+        xdebug_core::set_completeness(
+            result["summary"],
+            analysis_complete,
+            analysis_complete,
+            false,
+            effective_chains.size(),
+            effective_chains.size(),
+            analysis_complete
+                ? std::vector<std::string>{}
+                : std::vector<std::string>{"analysis_trace"});
         if (!depth_frontiers.empty()) result["depth_frontiers"] = depth_frontiers;
         if (!suggested_next_actions.empty()) {
             result["suggested_next_actions"] = suggested_next_actions;
@@ -797,7 +818,6 @@ public:
         return result;
     }
 
-private:
     std::string render_xout(const Json& response) const override {
         return render_source_path_xout(action_name(), response);
     }
@@ -805,8 +825,8 @@ private:
 
 } // namespace
 
-std::unique_ptr<EngineActionHandler> make_trace_x_handler() {
-    return std::unique_ptr<EngineActionHandler>(new TraceXHandler);
+std::unique_ptr<EngineActionHandler> make_trace_x_origin_handler() {
+    return std::unique_ptr<EngineActionHandler>(new TraceXOriginHandler);
 }
 
 } // namespace xdebug_design

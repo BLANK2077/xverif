@@ -6,6 +6,7 @@
 #include "design_action_helpers.h"
 
 #include "core/ai/common_blocks.h"
+#include "core/output/completeness.h"
 
 #include "design/trace/trace_engine.h"
 #include "design/signal/signal_finder.h"
@@ -28,8 +29,8 @@ public:
     const char* action_name() const override { return "signal.canonicalize"; }
     bool needs_design() const override { return true; }
     bool needs_waveform() const override { return false; }
-    Json run(const Json& request, EngineActionContext& ctx) const override {
-        Json args = request.value("args", Json::object());
+    Json run(ContractBoundRequest& request, EngineActionContext& ctx) const override {
+        auto args = request.args();
         std::string query = args.value("signal", "");
         if (query.empty()) return make_handler_error(
             "MISSING_FIELD",
@@ -43,33 +44,73 @@ public:
         SignalResolveResult result;
         Json failure;
         if (!resolve_design_signal(action_name(), query, result, failure)) return failure;
+        if (result.matches.size() != 1) {
+            Json candidates = Json::array();
+            for (const SignalMatch& candidate : result.matches) {
+                candidates.push_back({
+                    {"path", candidate.signal},
+                    {"type", candidate.type},
+                    {"file", candidate.file.empty() ? Json(nullptr) : Json(candidate.file)},
+                    {"line", candidate.line > 0 ? Json(candidate.line) : Json(nullptr)}
+                });
+            }
+            Json details = {
+                {"invalid_arg", "args.signal"},
+                {"query", query},
+                {"available_values", candidates},
+                {"expected", "one exact design signal path"}
+            };
+            xdebug_core::set_completeness(
+                details,
+                !result.truncated,
+                !result.truncated,
+                false,
+                result.matches.size(),
+                candidates.size(),
+                result.truncated
+                    ? std::vector<std::string>{"design_signal_scan"}
+                    : std::vector<std::string>{});
+            return make_handler_error(
+                "AMBIGUOUS_SIGNAL",
+                "args.signal resolves to multiple design objects; provide one exact path",
+                details);
+        }
         const SignalMatch& match = result.matches.front();
         const std::string resolved_signal = match.signal;
         xdebug::PortConnectionInfo port = xdebug::resolve_input_port_connection(resolved_signal);
-        const std::string canonical = !port.target_signal.empty() ? port.target_signal : resolved_signal;
-        const size_t dot = canonical.rfind('.');
-        const std::string scope = dot == std::string::npos ? std::string() : canonical.substr(0, dot);
-        const std::string leaf = dot == std::string::npos ? canonical : canonical.substr(dot + 1);
-        Json aliases = Json::array();
-        if (canonical != resolved_signal) aliases.push_back(resolved_signal);
-        if (query != resolved_signal && query != canonical) aliases.push_back(query);
-        Json port_mappings = Json::array();
+        const bool has_connection = port.found_port && !port.target_signal.empty();
+        const std::string canonical_path =
+            has_connection ? port.target_signal : resolved_signal;
+        const size_t dot = canonical_path.rfind('.');
+        const std::string scope =
+            dot == std::string::npos ? std::string() : canonical_path.substr(0, dot);
+        const std::string leaf =
+            dot == std::string::npos ? canonical_path : canonical_path.substr(dot + 1);
+        Json connection = nullptr;
         if (port.found_port) {
-            port_mappings.push_back({{"instance", port.instance_path},
-                                     {"port", port.port_name},
-                                     {"direction", port.is_input_like ? "input_or_inout" : "output"},
-                                     {"port_signal", resolved_signal},
-                                     {"connected_signal", port.target_signal.empty()
-                                         ? Json(nullptr) : Json(port.target_signal)},
-                                     {"evidence", "npi_static_port_connection"}});
+            connection = {
+                {"instance", port.instance_path},
+                {"port", port.port_name},
+                {"direction", port.is_input_like ? "input_or_inout" : "output"},
+                {"evidence", "npi_static_port_connection"}
+            };
         }
-        return Json{{"summary", {{"status", "found"}, {"query", query},
-                                  {"ambiguous", result.matches.size() > 1},
-                                  {"canonicalization_scope", "static_design_connectivity"}}},
-                    {"canonical", canonical}, {"rtl_path", canonical},
-                    {"leaf", leaf}, {"scope", scope}, {"base_signal", canonical},
-                    {"select", nullptr}, {"aliases", aliases},
-                    {"fsdb_candidates", Json::array()}, {"port_mappings", port_mappings}};
+        return Json{
+            {"summary", {
+                {"status", "found"},
+                {"query", query},
+                {"match_count", 1},
+                {"canonicalization_scope", "static_design_connectivity"}
+            }},
+            {"resolved_path", resolved_signal},
+            {"connected_path", has_connection ? Json(port.target_signal) : Json(nullptr)},
+            {"canonical_path", canonical_path},
+            {"mapping_kind", has_connection ? "static_port_connection" : "identity"},
+            {"selection_basis", "unique_exact_design_match"},
+            {"scope", scope},
+            {"leaf", leaf},
+            {"connection", connection}
+        };
     }
 };
 

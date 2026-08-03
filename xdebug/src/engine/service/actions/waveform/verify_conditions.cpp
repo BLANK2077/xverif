@@ -4,7 +4,6 @@
 #include "clock_point_query.h"
 #include "waveform_action_error_helpers.h"
 
-#include "api/text_response_builder.h"
 #include "design/protocol/protocol.h"
 #include "waveform/server/fsdb_value_reader.h"
 #include "waveform/event/event_manager.h"
@@ -16,7 +15,7 @@
 #include "waveform/common/expression.h"
 #include "waveform/service/action_support.h"
 #include "waveform/service/rc_generator.h"
-#include "waveform/value/logic_value.h"
+#include "core/value/logic_value.h"
 #include "core/npi/time_contract.h"
 
 #include "npi.h"
@@ -28,32 +27,58 @@
 #include <memory>
 #include <algorithm>
 #include <map>
+#include <set>
 #include <sstream>
 #include <vector>
 
 namespace xdebug_design {
 namespace {
 
+Json point_clock_args_json(const ContractJsonView& args) {
+    Json clock_args = Json::object();
+    for (const char* key : {"clock", "edge", "sample_point"}) {
+        ContractJsonView value = args[key];
+        if (value.exists()) {
+            clock_args[key] = value.get<std::string>();
+        }
+    }
+    return clock_args;
+}
+
 class VerifyConditionsHandler : public EngineActionHandler {
 public:
     const char* action_name() const override { return "verify.conditions"; }
     bool needs_design() const override { return false; }
     bool needs_waveform() const override { return true; }
-    Json run(const Json& request, EngineActionContext& ctx) const override {
-        Json args = request.value("args", Json::object());
-        Json conditions = args.value("conditions", Json::array());
-        std::string time_str = args.value("time", args.value("at", ""));
+    Json run(ContractBoundRequest& request, EngineActionContext& ctx) const override {
+        auto args = request.args();
+        ContractJsonView conditions_view = args["conditions"];
+        Json conditions = conditions_view.exists()
+            ? conditions_view.consume_subtree(
+                  "verify_condition_expression_parser")
+            : Json::array();
+        ContractJsonView signals_view = args["signals"];
+        Json signals = signals_view.exists()
+            ? signals_view.consume_subtree(
+                  "verify_condition_signal_map_parser")
+            : Json::object();
+        std::string time_str = args.value("time", "");
         if (time_str.empty() || !conditions.is_array() ||
-            !args.contains("signals") || !args["signals"].is_object()) {
+            conditions.empty() || !signals.is_object() ||
+            signals.empty()) {
             return waveform_missing_field_error(
                 action_name(),
                 time_str.empty() ? "args.time" :
-                (!conditions.is_array() ? "args.conditions" : "args.signals"),
-                "args.conditions[], args.signals and args.time are required");
+                (!conditions.is_array() || conditions.empty()
+                     ? "args.conditions"
+                     : "args.signals"),
+                "non-empty args.conditions[], args.signals and args.time are required");
         }
         xdebug_waveform::ClockSampleSpec clock_spec;
         Json clock_error;
-        if (!parse_point_clock_args(args, clock_spec, clock_error)) return clock_error;
+        Json clock_args = point_clock_args_json(args);
+        if (!parse_point_clock_args(clock_args, clock_spec, clock_error))
+            return clock_error;
 
         npiFsdbTime fsdb_time = 0;
         std::string time_error;
@@ -62,24 +87,37 @@ public:
                                        time_error.empty() ? time_str : time_error);
         std::string formatted_time = xdebug_core::format_time(g_fsdb_file, fsdb_time);
         std::vector<PointSignalSpec> signal_specs;
-        for (auto it = args["signals"].begin(); it != args["signals"].end(); ++it) {
-            if (!it.value().is_string() || it.value().get<std::string>().empty()) {
+        for (auto it = signals.begin(); it != signals.end(); ++it) {
+            if (it.key().empty() || !it.value().is_string() ||
+                it.value().get<std::string>().empty()) {
                 return waveform_invalid_arg_error(
                     action_name(),
                     "args.signals",
                     "invalid parameter args.signals",
-                    "object mapping alias to non-empty signal path");
+                    "object mapping non-empty alias to non-empty signal path");
             }
             signal_specs.push_back({it.key(), it.value().get<std::string>()});
         }
         std::vector<xdebug_waveform::Expression> parsed_conditions;
+        std::set<std::string> referenced_aliases;
         for (const auto& cond : conditions) {
-            if (!cond.is_object() || !cond.contains("expr") || !cond["expr"].is_string()) {
+            if (!cond.is_object() || !cond.contains("expr") ||
+                !cond["expr"].is_string() ||
+                cond["expr"].get<std::string>().empty()) {
                 return waveform_invalid_arg_error(
                     action_name(),
                     "args.conditions[].expr",
                     "invalid parameter args.conditions[].expr",
                     "string expression using args.signals aliases");
+            }
+            if (cond.contains("name") &&
+                (!cond["name"].is_string() ||
+                 cond["name"].get<std::string>().empty())) {
+                return waveform_invalid_arg_error(
+                    action_name(),
+                    "args.conditions[].name",
+                    "condition name must be a non-empty string when present",
+                    "non-empty condition label");
             }
             xdebug_waveform::Expression expr;
             std::string parse_error;
@@ -99,7 +137,28 @@ public:
                     "expression operands must be aliases, not direct signal paths: " +
                     bad_aliases.front() + "; put real signal paths in args.signals");
             }
+            referenced_aliases.insert(
+                expr.aliases().begin(), expr.aliases().end());
             parsed_conditions.push_back(std::move(expr));
+        }
+        for (const auto& alias : referenced_aliases) {
+            if (!signals.contains(alias)) {
+                return waveform_invalid_arg_error(
+                    action_name(),
+                    "args.conditions[].expr",
+                    "condition references undeclared signal alias: " + alias,
+                    "every expression alias declared in args.signals");
+            }
+        }
+        for (auto it = signals.begin(); it != signals.end(); ++it) {
+            if (referenced_aliases.find(it.key()) ==
+                referenced_aliases.end()) {
+                return waveform_invalid_arg_error(
+                    action_name(),
+                    "args.signals." + it.key(),
+                    "signal alias is unused by every condition: " + it.key(),
+                    "only aliases referenced by conditions[].expr");
+            }
         }
         ClockPointQueryResult point;
         Json point_error;

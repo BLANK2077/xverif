@@ -29,20 +29,20 @@
 
 namespace xdebug_design {
 namespace {
-class AiActionHandler : public EngineActionHandler {
+class CursorActionHandler : public EngineActionHandler {
     std::string name_;
-    bool nd_, nw_;
 public:
-    AiActionHandler(const char* name, bool needs_design, bool needs_waveform)
-        : name_(name), nd_(needs_design), nw_(needs_waveform) {}
+    explicit CursorActionHandler(const char* name) : name_(name) {}
     const char* action_name() const override { return name_.c_str(); }
-    bool needs_design() const override { return nd_; }
-    bool needs_waveform() const override { return nw_; }
+    bool needs_design() const override { return false; }
+    bool needs_waveform() const override { return true; }
     Json run(ContractBoundRequest& request, EngineActionContext& ctx) const override {
+        std::string action = request.action();
+        auto args = request.args();
         std::string error;
-        Json raw_request = request.consume_args_request(
-            "xdebug_waveform::ai_dispatch_query/signal.changes");
-        Json result = xdebug_waveform::ai_dispatch_query(raw_request, error);
+        Json raw_args = args.consume_subtree(
+            "xdebug_waveform::ai_cursor_action/" + action);
+        Json result = xdebug_waveform::ai_cursor_action(action, raw_args, error);
         if (!error.empty()) {
             return make_handler_error_from_message(error);
         }
@@ -52,8 +52,8 @@ public:
 
 }  // namespace
 
-std::unique_ptr<EngineActionHandler> make_signal_changes_handler() {
-    return std::unique_ptr<EngineActionHandler>(new AiActionHandler("signal.changes", false, true));
+std::unique_ptr<EngineActionHandler> make_cursor_use_handler() {
+    return std::unique_ptr<EngineActionHandler>(new CursorActionHandler("waveform.cursor.use"));
 }
 
 }  // namespace xdebug_design

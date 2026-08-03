@@ -15,13 +15,7 @@ std::string AstExtractor::decompile(npiHandle hdl) const {
     if (!hdl) return "";
     npi_util_decompile_t decomp;
     const char* text = decomp.decompile(hdl, true, false, false, true);
-    if (text && *text) return text;
-    const char* fallback = npi_get_str(npiDecompile, hdl);
-    if (fallback && *fallback) return fallback;
-    const char* full = npi_get_str(npiFullName, hdl);
-    if (full && *full) return full;
-    const char* name = npi_get_str(npiName, hdl);
-    return name ? name : "";
+    return text && *text ? text : "";
 }
 
 bool AstExtractor::is_signal_handle(npiHandle hdl) const {
