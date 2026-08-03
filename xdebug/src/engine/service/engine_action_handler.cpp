@@ -35,7 +35,23 @@ bool contains_text(const std::string& haystack, const char* needle) {
     return haystack.find(needle) != std::string::npos;
 }
 
+std::string canonical_code_prefix(const std::string& message) {
+    const size_t colon = message.find(':');
+    if (colon == std::string::npos || colon == 0) return "";
+    for (size_t index = 0; index < colon; ++index) {
+        const unsigned char character =
+            static_cast<unsigned char>(message[index]);
+        if ((character < 'A' || character > 'Z') &&
+            (character < '0' || character > '9') && character != '_') {
+            return "";
+        }
+    }
+    return message.substr(0, colon);
+}
+
 std::string code_for_handler_message(const std::string& message) {
+    const std::string explicit_code = canonical_code_prefix(message);
+    if (!explicit_code.empty()) return explicit_code;
     std::string lower = lowercase(message);
     if (contains_text(lower, "value_not_available") ||
         contains_text(lower, "value not available")) {
@@ -85,14 +101,26 @@ Json make_handler_error(const std::string& code, const std::string& message,
 }
 
 Json make_handler_error_from_message(const std::string& message) {
-    return make_handler_error(code_for_handler_message(message), message);
+    const std::string explicit_code = canonical_code_prefix(message);
+    std::string clean_message = message;
+    if (!explicit_code.empty()) {
+        size_t begin = explicit_code.size() + 1;
+        while (begin < message.size() &&
+               std::isspace(static_cast<unsigned char>(message[begin]))) {
+            ++begin;
+        }
+        clean_message = message.substr(begin);
+    }
+    return make_handler_error(
+        explicit_code.empty() ? code_for_handler_message(message) : explicit_code,
+        clean_message);
 }
 
 Json make_analysis_cache_error(
     const xdebug_waveform::AnalysisCacheError& error) {
-    Json suggestions = Json::array();
+    Json next_actions = Json::array();
     for (const std::string& suggestion : error.suggestions)
-        suggestions.push_back(suggestion);
+        next_actions.push_back(suggestion);
     return make_handler_error(
         error.code.empty() ? "ANALYSIS_BUILD_FAILED" : error.code,
         error.message.empty() ? "analysis build failed" : error.message,
@@ -101,7 +129,7 @@ Json make_analysis_cache_error(
          {"hard_max_bytes", error.hard_max_bytes},
          {"protocol", error.protocol},
          {"key_summary", error.key_summary},
-         {"suggestions", suggestions}});
+         {"next_actions", next_actions}});
 }
 
 std::string append_common_blocks_xout(std::string text, const Json& response) {
