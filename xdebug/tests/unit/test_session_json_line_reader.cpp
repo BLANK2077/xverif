@@ -1,8 +1,10 @@
 #include "engine/session/json_line_reader.h"
+#include "test_temp_path.h"
 
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -19,10 +21,11 @@ void require(bool condition, const char* message) {
 }
 
 int input_fd(const std::string& wire) {
-    char path[] = "/tmp/xdebug-session-json-line.XXXXXX";
-    const int fd = mkstemp(path);
+    std::vector<char> path =
+        test_temp_template("xdebug-session-json-line.XXXXXX");
+    const int fd = mkstemp(path.data());
     require(fd >= 0, "create temporary input");
-    require(unlink(path) == 0, "unlink temporary input");
+    require(unlink(path.data()) == 0, "unlink temporary input");
 
     std::size_t offset = 0;
     while (offset < wire.size()) {
