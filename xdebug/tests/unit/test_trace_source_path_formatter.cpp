@@ -332,7 +332,10 @@ int main() {
         {"data", Json{{"paths", default_limited["paths"]}}},
     };
     std::string limited_text = xdebug_design::render_source_path_xout("trace.load", limited_response);
-    assert(limited_text.find("limit_hint: returned first 10 trace entries; increase limits.max_results to return all results") != std::string::npos);
+    assert(count_substr(limited_text, "limit_hint") == 1);
+    assert(limited_text.find(
+               "returned first 10 trace entries; increase limits.max_results to return all results") !=
+           std::string::npos);
 
     unlink(file.c_str());
     unsetenv("XDEBUG_TRACE_SOURCE_CONTEXT_LINES");
