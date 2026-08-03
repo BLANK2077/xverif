@@ -194,6 +194,59 @@ int main() {
     assert(public_error["summary"]["error_code"] == "INVALID_REQUEST");
     assert(public_error["data"].is_null());
 
+    xdebug_core::RuntimeSchemaValidator runtime_validator;
+    Json batch_response = make_response(Json::object(), "batch");
+    batch_response["summary"] = {
+        {"count", 0},
+        {"all_ok", true},
+        {"failed_count", 0},
+        {"failed_indexes", Json::array()},
+        {"failed_codes", Json::array()},
+        {"failed_layers", Json::array()},
+    };
+    batch_response["data"] = {{"results", Json::array()}};
+    xdebug_core::RuntimeSchemaValidationResult response_validation =
+        runtime_validator.validate_batch_response(batch_response);
+    assert(response_validation.ok);
+
+    Json unknown_child =
+        make_error(
+            Json::object(),
+            "does.not.exist",
+            "UNKNOWN_ACTION",
+            "unknown action",
+            true);
+    batch_response["data"]["results"].push_back(unknown_child);
+    batch_response["summary"] = {
+        {"count", 1},
+        {"all_ok", false},
+        {"failed_count", 1},
+        {"failed_indexes", Json::array({0})},
+        {"failed_codes", Json::array({"UNKNOWN_ACTION"})},
+        {"failed_layers", Json::array({"handler"})},
+    };
+    response_validation =
+        runtime_validator.validate_batch_response(batch_response);
+    assert(response_validation.ok);
+
+    Json invalid_unknown_child = batch_response;
+    invalid_unknown_child["data"]["results"][0]["unexpected"] = true;
+    response_validation =
+        runtime_validator.validate_batch_response(invalid_unknown_child);
+    assert(!response_validation.ok);
+    assert(response_validation.code ==
+           "INTERNAL_RESPONSE_SCHEMA_VIOLATION");
+    assert(response_validation.error["validation"]["issues"].is_array());
+    assert(!response_validation.error["validation"]["issues"].empty());
+
+    Json invalid_batch_envelope = batch_response;
+    invalid_batch_envelope["summary"]["unexpected"] = true;
+    response_validation =
+        runtime_validator.validate_batch_response(invalid_batch_envelope);
+    assert(!response_validation.ok);
+    assert(response_validation.code ==
+           "INTERNAL_RESPONSE_SCHEMA_VIOLATION");
+
     Json wrong_action_json = value_json;
     wrong_action_json["action"] = "trace.driver";
     RequestEnvelope wrong_action = RequestEnvelope::from_json(wrong_action_json);

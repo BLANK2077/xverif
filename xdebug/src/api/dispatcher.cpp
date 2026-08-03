@@ -557,7 +557,6 @@ Json Dispatcher::handle_batch(const Json& request) {
     bool all_ok = true;
     std::string mode = args.value("mode", std::string("continue_on_error"));
     for (auto child : requests) {
-        if (!child.contains("api_version")) child["api_version"] = kApiVersion;
         Json result = dispatch(child);
         results.push_back(result);
         if (!result.value("ok", false)) {
@@ -569,17 +568,12 @@ Json Dispatcher::handle_batch(const Json& request) {
             if (mode == "stop_on_error") break;
         }
     }
-    response["ok"] = all_ok;
     response["summary"] = {{"count", results.size()}, {"all_ok", all_ok},
                            {"failed_count", failed_indexes.size()},
                            {"failed_indexes", failed_indexes},
                            {"failed_codes", failed_codes},
                            {"failed_layers", failed_layers}};
     response["data"] = {{"results", results}};
-    if (!all_ok) response["error"] = {{"code", "BATCH_PARTIAL_FAILURE"},
-                                      {"message", "one or more child requests failed"},
-                                      {"recoverable", true},
-                                      {"error_layer", "handler"}};
     return response;
 }
 
@@ -830,6 +824,38 @@ Json Dispatcher::dispatch(const Json& request) {
         response = make_error(request, action, "INTERNAL_ERROR", e.what(), false);
     } catch (...) {
         response = make_error(request, action, "INTERNAL_ERROR", "unhandled exception", false);
+    }
+
+    const ActionSpec* response_spec =
+        action.empty()
+            ? nullptr
+            : default_action_registry().find_spec(action);
+    if (response_spec) {
+        xdebug_core::RuntimeSchemaValidator response_validator;
+        const xdebug_core::RuntimeSchemaValidationResult
+            response_validation =
+                action == "batch"
+                    ? response_validator.validate_batch_response(
+                          response,
+                          response_spec->response_schema)
+                    : response_validator.validate_response(
+                          action,
+                          response,
+                          response_spec->response_schema);
+        if (!response_validation.ok) {
+            xdebug_core::log_lifecycle_event(
+                "public",
+                begin_session,
+                "response.schema_validation_failed",
+                false,
+                {{"action", action},
+                 {"response", xdebug_core::sanitize_for_log(response)},
+                 {"contract_error", response_validation.error}});
+            response = make_error(
+                request,
+                action,
+                response_validation.error);
+        }
     }
 
     const auto end = clock::now();

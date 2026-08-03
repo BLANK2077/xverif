@@ -2,13 +2,16 @@
 
 #include "common/env_config.h"
 #include "core/diagnostic_error.h"
+#include "core/schema/internal_request_contract.h"
 
 #include "nlohmann/json-schema.hpp"
 
+#include <cctype>
 #include <fstream>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <sys/stat.h>
@@ -34,6 +37,29 @@ struct ValidationIssue {
     std::string message;
 };
 
+bool sensitive_diagnostic_path(const std::string& path) {
+    std::string segment;
+    for (size_t i = 0; i <= path.size(); ++i) {
+        const char c = i < path.size() ? path[i] : '\0';
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_') {
+            segment.push_back(c);
+            continue;
+        }
+        if (segment == "ownership_token" ||
+            segment == "ownership_token_hash") {
+            return true;
+        }
+        segment.clear();
+    }
+    return false;
+}
+
+struct CachedBatchValidators {
+    CachedValidator envelope;
+    CachedValidator unknown_child;
+    std::set<std::string> known_actions;
+};
+
 std::mutex& cache_mutex() {
     static std::mutex m;
     return m;
@@ -44,14 +70,29 @@ std::map<std::string, std::unique_ptr<CachedValidator> >& validator_cache() {
     return cache;
 }
 
+std::map<std::string, std::unique_ptr<CachedBatchValidators> >&
+batch_validator_cache() {
+    static std::map<std::string, std::unique_ptr<CachedBatchValidators> > cache;
+    return cache;
+}
+
 bool file_exists(const std::string& path) {
     struct stat st;
     return stat(path.c_str(), &st) == 0;
 }
 
-std::string schema_ref_for_action(const std::string& action, const std::string& schema_ref) {
+std::string request_schema_ref_for_action(
+    const std::string& action,
+    const std::string& schema_ref) {
     if (!schema_ref.empty()) return schema_ref;
     return "schemas/v1/actions/" + action + ".request.schema.json";
+}
+
+std::string response_schema_ref_for_action(
+    const std::string& action,
+    const std::string& schema_ref) {
+    if (!schema_ref.empty()) return schema_ref;
+    return "schemas/v1/actions/" + action + ".response.schema.json";
 }
 
 std::string repo_file_path(const std::string& rel) {
@@ -106,10 +147,205 @@ PlainJson runtime_schema_copy(PlainJson schema) {
     return schema;
 }
 
+std::string local_definition_name(const std::string& reference) {
+    const std::string prefix = "#/$defs/";
+    if (reference.compare(0, prefix.size(), prefix) != 0) return "";
+    return reference.substr(prefix.size());
+}
+
+void collect_local_definition_refs(
+    const PlainJson& value,
+    std::set<std::string>& refs) {
+    if (value.is_object()) {
+        PlainJson::const_iterator ref = value.find("$ref");
+        if (ref != value.end() && ref->is_string()) {
+            const std::string name =
+                local_definition_name(ref->get<std::string>());
+            if (!name.empty()) refs.insert(name);
+        }
+        for (PlainJson::const_iterator it = value.begin();
+             it != value.end();
+             ++it) {
+            collect_local_definition_refs(it.value(), refs);
+        }
+    } else if (value.is_array()) {
+        for (PlainJson::const_iterator it = value.begin();
+             it != value.end();
+             ++it) {
+            collect_local_definition_refs(*it, refs);
+        }
+    }
+}
+
+bool attach_definition_closure(
+    PlainJson& projected,
+    const PlainJson& definitions,
+    RuntimeSchemaValidationResult& result,
+    const std::string& schema_ref) {
+    std::set<std::string> pending;
+    collect_local_definition_refs(projected, pending);
+    PlainJson selected = PlainJson::object();
+    while (!pending.empty()) {
+        const std::string name = *pending.begin();
+        pending.erase(pending.begin());
+        if (selected.contains(name)) continue;
+        if (!definitions.contains(name)) {
+            result.ok = false;
+            result.code = "SCHEMA_VALIDATION_CONFIG_ERROR";
+            result.message =
+                "batch response projection references missing definition: " +
+                name;
+            result.error =
+                DiagnosticErrorBuilder::internal(
+                    result.code,
+                    result.message)
+                    .schema_path(schema_ref)
+                    .to_json();
+            return false;
+        }
+        selected[name] = definitions[name];
+        std::set<std::string> nested;
+        collect_local_definition_refs(definitions[name], nested);
+        pending.insert(nested.begin(), nested.end());
+    }
+    projected["$defs"] = selected;
+    return true;
+}
+
+bool compile_projected_validator(
+    CachedValidator& cached,
+    const PlainJson& schema,
+    const std::string& schema_ref,
+    RuntimeSchemaValidationResult& result) {
+    cached.schema_path = schema_ref;
+    cached.schema = runtime_schema_copy(schema);
+    cached.example = OrderedJson(nullptr);
+    try {
+        cached.validator.reset(new Validator(no_external_schema_loader));
+        cached.validator->set_root_schema(cached.schema);
+    } catch (const std::exception& e) {
+        result.ok = false;
+        result.code = "SCHEMA_VALIDATION_CONFIG_ERROR";
+        result.message =
+            "failed to compile runtime schema " + schema_ref + ": " +
+            e.what();
+        result.error =
+            DiagnosticErrorBuilder::internal(result.code, result.message)
+                .schema_path(schema_ref)
+                .to_json();
+        return false;
+    }
+    return true;
+}
+
+const CachedBatchValidators* get_cached_batch_validators(
+    const std::string& schema_ref,
+    RuntimeSchemaValidationResult& result) {
+    std::lock_guard<std::mutex> lock(cache_mutex());
+    std::map<std::string, std::unique_ptr<CachedBatchValidators> >& cache =
+        batch_validator_cache();
+    std::map<std::string, std::unique_ptr<CachedBatchValidators> >::
+        const_iterator found = cache.find(schema_ref);
+    if (found != cache.end()) return found->second.get();
+
+    PlainJson source;
+    std::string error;
+    if (!read_plain_json(repo_file_path(schema_ref), source, error)) {
+        result.ok = false;
+        result.code = "SCHEMA_VALIDATION_CONFIG_ERROR";
+        result.message = error;
+        result.error =
+            DiagnosticErrorBuilder::internal(result.code, result.message)
+                .schema_path(schema_ref)
+                .to_json();
+        return nullptr;
+    }
+    if (!source.contains("$defs") || !source["$defs"].is_object() ||
+        !source["$defs"].contains("successData") ||
+        !source["$defs"].contains("successData0") ||
+        !source["$defs"].contains("batchChild__unknown_child_error")) {
+        result.ok = false;
+        result.code = "SCHEMA_VALIDATION_CONFIG_ERROR";
+        result.message =
+            "batch response schema is missing projection definitions";
+        result.error =
+            DiagnosticErrorBuilder::internal(result.code, result.message)
+                .schema_path(schema_ref)
+                .to_json();
+        return nullptr;
+    }
+
+    PlainJson definitions = source["$defs"];
+    try {
+        definitions["successData"]["properties"]["results"]["items"] =
+            PlainJson::object();
+        definitions["successData0"]["properties"]["results"]["items"] =
+            PlainJson::object();
+    } catch (const std::exception& e) {
+        result.ok = false;
+        result.code = "SCHEMA_VALIDATION_CONFIG_ERROR";
+        result.message =
+            std::string("batch response projection failed: ") + e.what();
+        result.error =
+            DiagnosticErrorBuilder::internal(result.code, result.message)
+                .schema_path(schema_ref)
+                .to_json();
+        return nullptr;
+    }
+    PlainJson envelope = source;
+    envelope.erase("$defs");
+    if (!attach_definition_closure(
+            envelope, definitions, result, schema_ref)) {
+        return nullptr;
+    }
+
+    PlainJson unknown_child =
+        definitions["batchChild__unknown_child_error"];
+    if (!attach_definition_closure(
+            unknown_child, definitions, result, schema_ref)) {
+        return nullptr;
+    }
+
+    std::unique_ptr<CachedBatchValidators> cached(
+        new CachedBatchValidators());
+    const PlainJson& action_schema =
+        definitions["batchChild__unknown_child_error"]["properties"]["action"];
+    if (action_schema.contains("not") &&
+        action_schema["not"].contains("enum") &&
+        action_schema["not"]["enum"].is_array()) {
+        for (const PlainJson& action : action_schema["not"]["enum"]) {
+            if (action.is_string()) {
+                cached->known_actions.insert(action.get<std::string>());
+            }
+        }
+    }
+    if (cached->known_actions.empty()) {
+        result.ok = false;
+        result.code = "SCHEMA_VALIDATION_CONFIG_ERROR";
+        result.message =
+            "batch unknown-child schema has no known-action exclusion set";
+        result.error =
+            DiagnosticErrorBuilder::internal(result.code, result.message)
+                .schema_path(schema_ref)
+                .to_json();
+        return nullptr;
+    }
+    if (!compile_projected_validator(
+            cached->envelope, envelope, schema_ref, result) ||
+        !compile_projected_validator(
+            cached->unknown_child, unknown_child, schema_ref, result)) {
+        return nullptr;
+    }
+
+    const CachedBatchValidators* out = cached.get();
+    cache[schema_ref] = std::move(cached);
+    return out;
+}
+
 const CachedValidator* get_cached_validator(const std::string& action,
                                             const std::string& schema_ref,
                                             RuntimeSchemaValidationResult& result) {
-    std::string rel = schema_ref_for_action(action, schema_ref);
+    const std::string rel = schema_ref;
     std::lock_guard<std::mutex> lock(cache_mutex());
     std::map<std::string, std::unique_ptr<CachedValidator> >& cache = validator_cache();
     std::map<std::string, std::unique_ptr<CachedValidator> >::const_iterator it = cache.find(rel);
@@ -130,14 +366,19 @@ const CachedValidator* get_cached_validator(const std::string& action,
     std::unique_ptr<CachedValidator> cached(new CachedValidator());
     cached->schema_path = rel;
     cached->schema = runtime_schema_copy(schema);
-    cached->example = read_ordered_json_or_null(example_path_for_action(action));
+    cached->example =
+        rel == kInternalRequestSchema ||
+                rel.find(".response.schema.json") != std::string::npos
+            ? OrderedJson(nullptr)
+            : read_ordered_json_or_null(example_path_for_action(action));
     try {
         cached->validator.reset(new Validator(no_external_schema_loader));
         cached->validator->set_root_schema(cached->schema);
     } catch (const std::exception& e) {
         result.ok = false;
         result.code = "SCHEMA_VALIDATION_CONFIG_ERROR";
-        result.message = "failed to compile runtime request schema " + rel + ": " + e.what();
+        result.message =
+            "failed to compile runtime schema " + rel + ": " + e.what();
         result.error = DiagnosticErrorBuilder::internal(result.code, result.message)
             .schema_path(rel).to_json();
         return nullptr;
@@ -302,40 +543,6 @@ OrderedJson compact_correct_example(const OrderedJson& example) {
     return out;
 }
 
-std::string did_you_mean_for(const std::string& action,
-                             const std::string& invalid_arg,
-                             const std::string& extra_property) {
-    if (invalid_arg == "args.limit")
-        return (action == "apb.query" || action == "axi.query") ? "args.query.line_limit" : "args.line_limit";
-    if (invalid_arg == "args.query.limit" && (action == "apb.query" || action == "axi.query"))
-        return "args.query.line_limit";
-    if (invalid_arg == "args.num" && (action == "apb.query" || action == "axi.query"))
-        return "args.query.index";
-    if (invalid_arg == "args.name" && action.compare(0, 7, "stream.") == 0)
-        return "args.stream";
-    if (invalid_arg == "args.depth" && action == "trace.active_driver_chain")
-        return "limits.max_depth";
-    if (invalid_arg == "args.at") return "args.time";
-    if (invalid_arg == "args.path") return "args.output.path";
-    if (invalid_arg == "args.list_name" || invalid_arg == "args.config_name" ||
-        invalid_arg == "args.interface")
-        return "args.name";
-    if (invalid_arg == "args.valid" && action == "counter.statistics") return "args.vld";
-    if (invalid_arg == "args.count" && action == "counter.statistics") return "args.cnt";
-    if (invalid_arg == "args.signal" && action == "signal.anomaly.inspect")
-        return "args.signals";
-    if (invalid_arg == "args.checks" && action == "verify.conditions") return "args.conditions";
-    if (extra_property == "begin" || extra_property == "start" || extra_property == "from" ||
-        invalid_arg == "args.begin" || invalid_arg == "args.start" ||
-        invalid_arg == "args.start_time" || invalid_arg == "args.from" ||
-        invalid_arg == "args.time_range.start" || invalid_arg == "args.time_range.from")
-        return "args.time_range.begin";
-    if (extra_property == "end" || extra_property == "to" || invalid_arg == "args.end" ||
-        invalid_arg == "args.to" || invalid_arg == "args.time_range.to")
-        return "args.time_range.end";
-    return "";
-}
-
 OrderedJson required_any_of_for(const std::string& action, const std::string& invalid_arg) {
     if (invalid_arg != "args" && invalid_arg != "$") return OrderedJson();
     if (action == "event.find" || action == "event.export")
@@ -343,7 +550,7 @@ OrderedJson required_any_of_for(const std::string& action, const std::string& in
     if (action == "apb.config.load" || action == "axi.config.load")
         return OrderedJson::array({"args.config", "args.config_path"});
     if (action == "stream.config.load")
-        return OrderedJson::array({"args.streams", "args.config", "args.config_path", "args.file"});
+        return OrderedJson::array({"args.config", "args.config_path"});
     if (action == "axi.export")
         return OrderedJson::array({"args.time_range"});
     if (action == "list.delete")
@@ -365,18 +572,16 @@ std::string join_json_array(const OrderedJson& values) {
 std::string friendly_validation_message(const std::string& raw,
                                         const std::string& invalid_arg,
                                         const std::string& expected,
-                                        const OrderedJson& allowed,
-                                        const OrderedJson& required_any_of,
-                                        const std::string& did_you_mean) {
+                                        const OrderedJson& available,
+                                        const OrderedJson& required_any_of) {
     std::ostringstream oss;
     oss << "invalid parameter " << invalid_arg << ": " << raw;
-    if (!did_you_mean.empty()) oss << "; use " << did_you_mean << " instead";
     if (required_any_of.is_array() && !required_any_of.empty())
         oss << "; provide one of: " << join_json_array(required_any_of);
     else if (!expected.empty())
         oss << "; expected " << expected;
-    if (allowed.is_array() && !allowed.empty())
-        oss << "; allowed values: " << allowed.dump();
+    if (available.is_array() && !available.empty())
+        oss << "; available values: " << available.dump();
     return oss.str();
 }
 
@@ -456,27 +661,159 @@ RuntimeSchemaValidationResult make_validation_error(const CachedValidator& cache
     } else if (!missing_property.empty()) {
         builder.received_type("missing");
     }
-    OrderedJson allowed = enum_values_from_schema(schema_node);
-    if (!allowed.is_null()) builder.allowed_values(allowed);
+    OrderedJson available = enum_values_from_schema(schema_node);
+    if (!available.is_null()) builder.available_values(available);
     OrderedJson correct_example = compact_correct_example(cached.example);
     if (!correct_example.is_null()) builder.correct_example(correct_example);
-    std::string did_you_mean = did_you_mean_for(action, invalid_arg, extra_property);
-    builder.did_you_mean(did_you_mean);
     OrderedJson required_any_of = required_any_of_for(action, invalid_arg);
     if (!required_any_of.is_null()) builder.required_any_of(required_any_of);
-    result.message = friendly_validation_message(issue.message, invalid_arg, expected, allowed,
-                                                 required_any_of, did_you_mean);
+    result.message = sensitive_diagnostic_path(invalid_arg)
+        ? "sensitive request field failed validation"
+        : friendly_validation_message(
+              issue.message,
+              invalid_arg,
+              expected,
+              available,
+              required_any_of);
     result.error = builder.to_json();
     result.error["message"] = result.message;
     return result;
 }
 
-PlainJson public_schema_instance(const OrderedJson& request) {
-    PlainJson instance = PlainJson::parse(request.dump());
-    if (instance.is_object() && instance.value("api_version", std::string()) == "xdebug.internal.v1") {
-        instance["api_version"] = "xdebug.v1";
+RuntimeSchemaValidationResult validate_with_cached_schema(
+    const CachedValidator& cached,
+    const std::string& action,
+    const OrderedJson& request) {
+    RuntimeSchemaValidationResult result;
+    PlainJson instance;
+    try {
+        instance = PlainJson::parse(request.dump());
+    } catch (const std::exception& e) {
+        result.ok = false;
+        result.code = "INVALID_REQUEST";
+        result.message =
+            std::string("request must be a JSON object: ") + e.what();
+        result.error =
+            DiagnosticErrorBuilder::schema(result.code, result.message)
+                .invalid_arg("$")
+                .schema_path(cached.schema_path)
+                .to_json();
+        return result;
     }
-    return instance;
+
+    CollectingErrorHandler handler;
+    try {
+        cached.validator->validate(instance, handler);
+    } catch (const std::exception& e) {
+        result.ok = false;
+        result.code = "INVALID_REQUEST";
+        result.message = e.what();
+        DiagnosticErrorBuilder builder =
+            DiagnosticErrorBuilder::schema(result.code, result.message)
+                .invalid_arg("$")
+                .schema_path(cached.schema_path);
+        OrderedJson example = compact_correct_example(cached.example);
+        if (!example.is_null()) builder.correct_example(example);
+        result.error = builder.to_json();
+        return result;
+    }
+    if (!handler.issues.empty()) {
+        RuntimeSchemaValidationResult failure =
+            make_validation_error(
+                cached,
+                instance,
+                action,
+                handler.issues.front());
+        OrderedJson issues = OrderedJson::array();
+        for (const ValidationIssue& issue : handler.issues) {
+            const std::string issue_path =
+                pointer_to_arg_path(issue.pointer);
+            issues.push_back({
+                {"path", issue_path},
+                {"message",
+                 sensitive_diagnostic_path(issue_path)
+                     ? "sensitive request field failed validation"
+                     : issue.message},
+            });
+        }
+        if (issues.size() > 1) {
+            failure.error["validation_issues"] = issues;
+        }
+        return failure;
+    }
+    return result;
+}
+
+RuntimeSchemaValidationResult validate_response_with_cached_schema(
+    const CachedValidator& cached,
+    const OrderedJson& response) {
+    RuntimeSchemaValidationResult result;
+    PlainJson instance;
+    try {
+        instance = PlainJson::parse(response.dump());
+    } catch (const std::exception& e) {
+        result.ok = false;
+        result.code = "INTERNAL_RESPONSE_SCHEMA_VIOLATION";
+        result.message =
+            std::string("public response is not valid JSON: ") + e.what();
+        result.error =
+            DiagnosticErrorBuilder::internal(result.code, result.message)
+                .schema_path(cached.schema_path)
+                .to_json();
+        return result;
+    }
+
+    CollectingErrorHandler handler;
+    try {
+        cached.validator->validate(instance, handler);
+    } catch (const std::exception& e) {
+        result.ok = false;
+        result.code = "INTERNAL_RESPONSE_SCHEMA_VIOLATION";
+        result.message =
+            std::string("public response validation failed: ") + e.what();
+        result.error =
+            DiagnosticErrorBuilder::internal(result.code, result.message)
+                .schema_path(cached.schema_path)
+                .to_json();
+        return result;
+    }
+    if (handler.issues.empty()) return result;
+
+    result.ok = false;
+    result.code = "INTERNAL_RESPONSE_SCHEMA_VIOLATION";
+    result.message =
+        "handler response violated its action-specific response schema";
+    result.error =
+        DiagnosticErrorBuilder::internal(result.code, result.message)
+            .schema_path(cached.schema_path)
+            .to_json();
+    OrderedJson issues = OrderedJson::array();
+    for (const ValidationIssue& issue : handler.issues) {
+        issues.push_back({
+            {"path", pointer_to_arg_path(issue.pointer)},
+            {"message", issue.message},
+        });
+    }
+    result.error["validation"] = {
+        {"issues", issues}
+    };
+    return result;
+}
+
+bool internal_action_is_known(
+    const PlainJson& schema,
+    const std::string& action) {
+    if (!schema.contains("x-internal-actions") ||
+        !schema["x-internal-actions"].is_array()) {
+        return false;
+    }
+    for (const PlainJson& value : schema["x-internal-actions"]) {
+        if (value.is_string() &&
+            value.get<std::string>() == action) {
+            return true;
+        }
+    }
+    return false;
 }
 
 }  // namespace
@@ -485,50 +822,142 @@ RuntimeSchemaValidationResult RuntimeSchemaValidator::validate_request(const std
                                                                        const OrderedJson& request,
                                                                        const std::string& schema_ref) const {
     RuntimeSchemaValidationResult result;
-    const CachedValidator* cached = get_cached_validator(action, schema_ref, result);
+    const CachedValidator* cached = get_cached_validator(
+        action,
+        request_schema_ref_for_action(action, schema_ref),
+        result);
+    if (!cached) return result;
+    return validate_with_cached_schema(*cached, action, request);
+}
+
+RuntimeSchemaValidationResult
+RuntimeSchemaValidator::validate_response(
+    const std::string& action,
+    const OrderedJson& response,
+    const std::string& schema_ref) const {
+    RuntimeSchemaValidationResult result;
+    const CachedValidator* cached = get_cached_validator(
+        action,
+        response_schema_ref_for_action(action, schema_ref),
+        result);
+    if (!cached) return result;
+    return validate_response_with_cached_schema(*cached, response);
+}
+
+RuntimeSchemaValidationResult
+RuntimeSchemaValidator::validate_batch_response(
+    const OrderedJson& response,
+    const std::string& schema_ref) const {
+    RuntimeSchemaValidationResult result;
+    const std::string resolved_schema_ref =
+        response_schema_ref_for_action("batch", schema_ref);
+    const CachedBatchValidators* cached =
+        get_cached_batch_validators(resolved_schema_ref, result);
     if (!cached) return result;
 
-    PlainJson instance;
-    try {
-        instance = public_schema_instance(request);
-    } catch (const std::exception& e) {
-        result.ok = false;
-        result.code = "INVALID_REQUEST";
-        result.message = std::string("request must be a JSON object: ") + e.what();
-        result.error = DiagnosticErrorBuilder::schema(result.code, result.message)
-            .invalid_arg("$").schema_path(cached->schema_path).to_json();
+    result =
+        validate_response_with_cached_schema(cached->envelope, response);
+    if (!result.ok) return result;
+    if (!response.is_object() || !response.contains("data") ||
+        !response["data"].is_object() ||
+        !response["data"].contains("results") ||
+        !response["data"]["results"].is_array()) {
         return result;
     }
 
-    CollectingErrorHandler handler;
-    try {
-        cached->validator->validate(instance, handler);
-    } catch (const std::exception& e) {
-        result.ok = false;
-        result.code = "INVALID_REQUEST";
-        result.message = e.what();
-        DiagnosticErrorBuilder builder =
-            DiagnosticErrorBuilder::schema(result.code, result.message)
-                .invalid_arg("$").schema_path(cached->schema_path);
-        OrderedJson example = compact_correct_example(cached->example);
-        if (!example.is_null()) builder.correct_example(example);
-        result.error = builder.to_json();
-        return result;
-    }
-    if (!handler.issues.empty()) {
-        RuntimeSchemaValidationResult failure =
-            make_validation_error(*cached, instance, action, handler.issues.front());
-        OrderedJson issues = OrderedJson::array();
-        for (const ValidationIssue& issue : handler.issues) {
-            issues.push_back({
-                {"path", pointer_to_arg_path(issue.pointer)},
-                {"message", issue.message}
-            });
+    const OrderedJson& children = response["data"]["results"];
+    for (size_t index = 0; index < children.size(); ++index) {
+        const OrderedJson& child = children[index];
+        const bool known_action =
+            child.is_object() && child.contains("action") &&
+            child["action"].is_string() &&
+            cached->known_actions.count(
+                child["action"].get<std::string>()) != 0;
+        if (known_action) continue;
+
+        RuntimeSchemaValidationResult child_result =
+            validate_response_with_cached_schema(
+                cached->unknown_child, child);
+        if (child_result.ok) continue;
+
+        if (child_result.error.contains("validation") &&
+            child_result.error["validation"].is_object() &&
+            child_result.error["validation"].contains("issues") &&
+            child_result.error["validation"]["issues"].is_array()) {
+            for (OrderedJson& issue :
+                 child_result.error["validation"]["issues"]) {
+                if (!issue.is_object() || !issue.contains("path") ||
+                    !issue["path"].is_string()) {
+                    continue;
+                }
+                const std::string child_path =
+                    issue["path"].get<std::string>();
+                const std::string prefix =
+                    "data.results[" + std::to_string(index) + "]";
+                issue["path"] =
+                    child_path == "$"
+                        ? prefix
+                        : prefix + "." + child_path;
+            }
         }
-        if (issues.size() > 1) failure.error["validation_issues"] = issues;
-        return failure;
+        return child_result;
     }
     return result;
+}
+
+RuntimeSchemaValidationResult
+RuntimeSchemaValidator::validate_internal_request(
+    const OrderedJson& request) const {
+    RuntimeSchemaValidationResult result;
+    const std::string action =
+        request.is_object() && request.contains("action") &&
+                request["action"].is_string()
+            ? request["action"].get<std::string>()
+            : std::string();
+    const CachedValidator* cached = get_cached_validator(
+        action,
+        kInternalRequestSchema,
+        result);
+    if (!cached) return result;
+
+    if (!request.is_object()) {
+        return validate_with_cached_schema(*cached, action, request);
+    }
+    if (!request.contains("api_version") ||
+        !request["api_version"].is_string() ||
+        request["api_version"].get<std::string>() !=
+            kInternalApiVersion) {
+        result.ok = false;
+        result.code = "UNSUPPORTED_API_VERSION";
+        result.message = "expected xdebug.internal.v1";
+        result.error =
+            DiagnosticErrorBuilder::schema(
+                result.code,
+                result.message)
+                .invalid_arg("api_version")
+                .expected(kInternalApiVersion)
+                .schema_path(cached->schema_path)
+                .to_json();
+        return result;
+    }
+    if (action.empty()) {
+        return validate_with_cached_schema(*cached, action, request);
+    }
+    if (!internal_action_is_known(cached->schema, action)) {
+        result.ok = false;
+        result.code = "UNKNOWN_ACTION";
+        result.message = "unknown internal engine action: " + action;
+        result.error =
+            DiagnosticErrorBuilder::schema(
+                result.code,
+                result.message)
+                .invalid_arg("action")
+                .received(action)
+                .schema_path(cached->schema_path)
+                .to_json();
+        return result;
+    }
+    return validate_with_cached_schema(*cached, action, request);
 }
 
 OrderedJson valid_request_example(const std::string& action) {

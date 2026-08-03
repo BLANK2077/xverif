@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from runner import CliRunner
+from runner import CliRunner, StdioLoopRunner
 
 
 def _batch(mode: str):
@@ -26,13 +26,12 @@ def _batch(mode: str):
 
 @pytest.mark.contract
 def test_batch_continue_on_error_keeps_later_requests(
-    cli_runner: CliRunner,
+    stateless_stdio_loop: StdioLoopRunner,
 ) -> None:
-    result = cli_runner.run(_batch("continue_on_error"), output_format="json")
-    assert result.returncode == 1
+    result = stateless_stdio_loop.request(_batch("continue_on_error"))
+    assert result.returncode == 0
     response = result.response
-    assert response["ok"] is False
-    assert response["error"]["code"] == "BATCH_PARTIAL_FAILURE"
+    assert response["ok"] is True
     assert response["summary"] == {
         "count": 3,
         "all_ok": False,
@@ -49,13 +48,12 @@ def test_batch_continue_on_error_keeps_later_requests(
 
 @pytest.mark.contract
 def test_batch_stop_on_error_stops_after_first_failure(
-    cli_runner: CliRunner,
+    stateless_stdio_loop: StdioLoopRunner,
 ) -> None:
-    result = cli_runner.run(_batch("stop_on_error"), output_format="json")
-    assert result.returncode == 1
+    result = stateless_stdio_loop.request(_batch("stop_on_error"))
+    assert result.returncode == 0
     response = result.response
-    assert response["ok"] is False
-    assert response["error"]["code"] == "BATCH_PARTIAL_FAILURE"
+    assert response["ok"] is True
     assert response["summary"] == {
         "count": 2,
         "all_ok": False,
@@ -82,16 +80,35 @@ def test_batch_failure_aggregation_is_visible_in_xout(cli_runner: CliRunner) -> 
 
 
 @pytest.mark.contract
-def test_batch_requires_requests_array(cli_runner: CliRunner) -> None:
-    result = cli_runner.run(
+def test_batch_requires_requests_array(
+    stateless_stdio_loop: StdioLoopRunner,
+) -> None:
+    result = stateless_stdio_loop.request(
         {
             "api_version": "xdebug.v1",
             "action": "batch",
             "args": {},
-        },
-        output_format="json",
+        }
     )
     assert result.returncode == 1
     assert result.response["ok"] is False
     assert result.response["error"]["code"] == "INVALID_REQUEST"
     assert result.response["error"]["invalid_arg"] == "args.requests"
+
+
+@pytest.mark.contract
+def test_batch_does_not_default_child_api_version(
+    stateless_stdio_loop: StdioLoopRunner,
+) -> None:
+    request = _batch("continue_on_error")
+    request["args"]["requests"][1] = {"action": "actions"}
+
+    result = stateless_stdio_loop.request(request)
+
+    assert result.returncode == 0
+    response = result.response
+    assert response["ok"] is True
+    assert response["summary"]["all_ok"] is False
+    child = response["data"]["results"][1]
+    assert child["ok"] is False
+    assert child["error"]["code"] == "UNSUPPORTED_API_VERSION"

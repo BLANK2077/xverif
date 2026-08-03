@@ -32,6 +32,7 @@ CORE_SRCS = src/core/common/tool_config.cpp \
             src/core/logging/action_log.cpp \
             src/core/session/session_types.cpp \
             src/core/process/process_runner.cpp \
+            src/core/schema/internal_request_contract.cpp \
             src/core/schema/runtime_schema_validator.cpp \
             src/core/ai/common_blocks.cpp \
             src/core/ai/ai_response.cpp \
