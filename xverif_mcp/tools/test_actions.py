@@ -8,6 +8,7 @@
 选项:
     -c, --config      指定 JSON 配置文件（必填）
     --schema-only     只测试 schema（快，不需要 FSDB）
+    --runtime-only    只测试运行时调用，跳过全量 schema 扫描
     --level L1|L2|L3  测试级别（默认 all）
 """
 
@@ -341,15 +342,32 @@ async def discover_signal(session: ClientSession, cfg: dict) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-async def main():
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Test xdebug actions via MCP server")
     parser.add_argument("-c", "--config", required=True, help="JSON config file")
-    parser.add_argument("--schema-only", action="store_true", help="Only run L1 schema tests")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--schema-only",
+        action="store_true",
+        help="Only run L1 schema tests",
+    )
+    mode.add_argument(
+        "--runtime-only",
+        action="store_true",
+        help="Run L2/L3 runtime smoke without the exhaustive L1 schema scan",
+    )
     parser.add_argument("--level", choices=["L1", "L2", "L3", "all"], default="all",
                         help="Test level (default: all)")
     parser.add_argument("--transport", choices=["inprocess", "stdio"], default="inprocess",
                         help="MCP transport for this smoke test (default: inprocess)")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.runtime_only and args.level == "L1":
+        parser.error("--runtime-only cannot be combined with --level L1")
+    return args
+
+
+async def main():
+    args = parse_args()
 
     cfg = load_config(args.config)
     print(f"Config: daidir={cfg['daidir']}  fsdb={cfg['fsdb']}  signal={cfg.get('signal')}  clock={cfg.get('clock')}", flush=True)
@@ -359,7 +377,9 @@ async def main():
         total_fail = 0
 
         # --- L1: Schema (always run) ---
-        if args.level in ("L1", "all") or args.schema_only:
+        if not args.runtime_only and (
+            args.level in ("L1", "all") or args.schema_only
+        ):
             p, f = await test_all_schemas(session)
             total_pass += p
             total_fail += f

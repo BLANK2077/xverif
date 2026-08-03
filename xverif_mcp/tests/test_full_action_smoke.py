@@ -26,7 +26,13 @@ def test_full_action_smoke_uses_published_combined_fixture(tmp_path, xverif_fixt
         encoding="utf-8",
     )
     result = subprocess.run(
-        [sys.executable, str(ROOT / "xverif_mcp/tools/test_actions.py"), "-c", str(config)],
+        [
+            sys.executable,
+            str(ROOT / "xverif_mcp/tools/test_actions.py"),
+            "-c",
+            str(config),
+            "--runtime-only",
+        ],
         cwd=ROOT,
         text=True,
         capture_output=True,

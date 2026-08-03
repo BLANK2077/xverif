@@ -65,6 +65,31 @@ def test_schema_smoke_uses_runtime_action_catalog():
     ]
 
 
+def test_runtime_only_is_distinct_from_schema_only_and_l1():
+    script = _load_script()
+
+    runtime = script.parse_args(["-c", "config.json", "--runtime-only"])
+    assert runtime.runtime_only is True
+    assert runtime.schema_only is False
+    assert runtime.level == "all"
+
+    with pytest.raises(SystemExit):
+        script.parse_args([
+            "-c",
+            "config.json",
+            "--runtime-only",
+            "--schema-only",
+        ])
+    with pytest.raises(SystemExit):
+        script.parse_args([
+            "-c",
+            "config.json",
+            "--runtime-only",
+            "--level",
+            "L1",
+        ])
+
+
 def test_action_discovery_rejects_malformed_catalog_without_fallback():
     script = _load_script()
 
