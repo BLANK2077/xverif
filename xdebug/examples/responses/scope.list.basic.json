@@ -2,26 +2,67 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "scope.list",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
   "summary": {
     "path": "top",
-    "recursive": true,
-    "signal_count": 1,
-    "truncated": false
+    "level": 1,
+    "kind": "all",
+    "include_patterns": [],
+    "exclude_patterns": [],
+    "scanned_row_count": 5,
+    "returned_module_count": 1,
+    "returned_port_count": 2,
+    "returned_signal_count": 2,
+    "total_module_count": 1,
+    "total_port_count": 2,
+    "total_signal_count": 2,
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 5,
+    "returned_count": 5,
+    "truncation_scopes": []
   },
   "data": {
-    "scopes": [
+    "modules": [
       {
-        "name": "top.u0",
-        "type": "module"
+        "name": "u0",
+        "module_name": "worker"
+      }
+    ],
+    "ports": [
+      {
+        "name": "u0.bus",
+        "direction": "interface",
+        "width": null
+      },
+      {
+        "name": "u0.req_i",
+        "direction": "input",
+        "width": 1
       }
     ],
     "signals": [
       {
-        "name": "top.clk",
-        "width": 1,
-        "type": "wire"
+        "name": "clk",
+        "width": 1
+      },
+      {
+        "name": "link",
+        "width": null
       }
-    ],
-    "total_signals": 1
-  }
+    ]
+  },
+  "error": null
 }

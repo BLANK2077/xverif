@@ -204,4 +204,41 @@ std::string EngineActionHandler::render_xout(const Json& response) const {
     return append_common_blocks_xout(out.str(), response);
 }
 
+std::string render_tabular_xout(const std::string& action,
+                                const Json& response) {
+    xdebug::TextResponseBuilder out("xdebug");
+    out.emit_header(action);
+    const Json data = response.value("data", Json::object());
+    const Json summary = response.contains("summary")
+        ? response["summary"] : data.value("summary", Json::object());
+    if (summary.is_object() && !summary.empty()) {
+        out.emit_section("summary");
+        for (auto it = summary.begin(); it != summary.end(); ++it) {
+            render_data_value(out, it.key(), it.value());
+        }
+    }
+    if (!data.is_object()) return out.str();
+    for (auto it = data.begin(); it != data.end(); ++it) {
+        if (it.key() == "summary") continue;
+        if (it.value().is_array()) {
+            if (it.value().empty()) continue;
+            out.emit_section(it.key());
+            bool all_objects = true;
+            for (const auto& item : it.value()) {
+                all_objects = all_objects && item.is_object();
+            }
+            if (all_objects) {
+                out.emit_json_table(
+                    it.value(), static_cast<int>(it.value().size()));
+            }
+            else for (const auto& item : it.value()) {
+                out.emit_row({xdebug::json_to_xout_value(item)});
+            }
+        } else {
+            render_data_value(out, it.key(), it.value());
+        }
+    }
+    return out.str();
+}
+
 } // namespace xdebug_design

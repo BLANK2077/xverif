@@ -1953,8 +1953,8 @@
           "examples/responses/scope.list.basic.json"
         ]
       },
-      "description_en": "List waveform scopes and signals.",
-      "description_zh": "列出 FSDB scope 或信号。",
+      "description_en": "List waveform modules, ports, signals, interface instances, and interface ports.",
+      "description_zh": "按 module 层级列出 FSDB module、port 和 signal；interface 实例归入 signal，interface 端口归入 port。",
       "purposes": [
         "discover"
       ],
@@ -1987,10 +1987,14 @@
       },
       "examples": {
         "request": [
-          "examples/requests/scope.roots.basic.json"
+          "examples/requests/scope.roots.basic.json",
+          "examples/requests/scope.roots.mismatch.json",
+          "examples/requests/scope.roots.wave_only.json"
         ],
         "response": [
-          "examples/responses/scope.roots.basic.json"
+          "examples/responses/scope.roots.basic.json",
+          "examples/responses/scope.roots.mismatch.json",
+          "examples/responses/scope.roots.wave_only.json"
         ]
       },
       "description_en": "Discover waveform and design hierarchy roots.",

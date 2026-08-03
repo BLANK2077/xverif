@@ -1,0 +1,96 @@
+{
+  "api_version": "xdebug.v1",
+  "request_id": "scope-roots-mismatch",
+  "ok": true,
+  "action": "scope.roots",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "example-mismatch",
+    "mode": "combined",
+    "daidir": "simv.daidir",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/example-mismatch.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
+  "summary": {
+    "source": "auto",
+    "wave_available": true,
+    "design_available": true,
+    "resource_available": true,
+    "root_count": 2,
+    "wave_count": 1,
+    "design_count": 1,
+    "matched_count": 0,
+    "recommended_root": null,
+    "recommended_reason": "multiple roots or design/wave mismatch",
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 2,
+    "returned_count": 2,
+    "truncation_scopes": []
+  },
+  "data": {
+    "roots": [
+      {
+        "path": "design_top",
+        "sources": [
+          "design"
+        ],
+        "status": "design_only",
+        "wave": null,
+        "design": {
+          "path": "design_top",
+          "name": "design_top",
+          "full_name": "design_top",
+          "def_name": "design_top",
+          "kind": "module",
+          "discovery": "npi_top",
+          "traceable": true
+        }
+      },
+      {
+        "path": "wave_top",
+        "sources": [
+          "wave"
+        ],
+        "status": "wave_only",
+        "wave": {
+          "path": "wave_top",
+          "name": "wave_top",
+          "full_name": "wave_top",
+          "def_name": "wave_top",
+          "type": 0,
+          "queryable": true
+        },
+        "design": null
+      }
+    ],
+    "wave_roots": [
+      {
+        "path": "wave_top",
+        "name": "wave_top",
+        "full_name": "wave_top",
+        "def_name": "wave_top",
+        "type": 0,
+        "queryable": true
+      }
+    ],
+    "design_roots": [
+      {
+        "path": "design_top",
+        "name": "design_top",
+        "full_name": "design_top",
+        "def_name": "design_top",
+        "kind": "module",
+        "discovery": "npi_top",
+        "traceable": true
+      }
+    ]
+  },
+  "error": null
+}

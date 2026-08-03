@@ -1,0 +1,11 @@
+{
+  "api_version": "xdebug.v1",
+  "request_id": "scope-roots-mismatch",
+  "action": "scope.roots",
+  "target": {
+    "session_id": "example-mismatch"
+  },
+  "args": {
+    "source": "auto"
+  }
+}

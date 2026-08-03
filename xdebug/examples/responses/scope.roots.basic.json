@@ -3,14 +3,36 @@
   "request_id": "scope-roots-basic",
   "ok": true,
   "action": "scope.roots",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "example",
+    "mode": "combined",
+    "daidir": "simv.daidir",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/example.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
   "summary": {
     "source": "auto",
+    "wave_available": true,
+    "design_available": true,
+    "resource_available": true,
     "root_count": 1,
     "wave_count": 1,
     "design_count": 1,
     "matched_count": 1,
     "recommended_root": "top",
-    "recommended_reason": "unique root"
+    "recommended_reason": "unique root",
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 1,
+    "returned_count": 1,
+    "truncation_scopes": []
   },
   "data": {
     "roots": [
@@ -35,6 +57,7 @@
           "full_name": "top",
           "def_name": "top",
           "kind": "module",
+          "discovery": "npi_top",
           "traceable": true
         }
       }
@@ -56,8 +79,10 @@
         "full_name": "top",
         "def_name": "top",
         "kind": "module",
+        "discovery": "npi_top",
         "traceable": true
       }
     ]
-  }
+  },
+  "error": null
 }

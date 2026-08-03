@@ -1,0 +1,73 @@
+{
+  "api_version": "xdebug.v1",
+  "request_id": "scope-roots-wave-only",
+  "ok": true,
+  "action": "scope.roots",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "example-wave-only",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/example-wave-only.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
+  "summary": {
+    "source": "auto",
+    "wave_available": true,
+    "design_available": false,
+    "resource_available": true,
+    "root_count": 1,
+    "wave_count": 1,
+    "design_count": 0,
+    "matched_count": 0,
+    "recommended_root": "wave_top",
+    "recommended_reason": "unique root",
+    "scan_complete": false,
+    "analysis_complete": false,
+    "response_truncated": false,
+    "total_count": 1,
+    "returned_count": 1,
+    "truncation_scopes": [
+      "analysis_sources"
+    ]
+  },
+  "data": {
+    "roots": [
+      {
+        "path": "wave_top",
+        "sources": [
+          "wave"
+        ],
+        "status": "wave_only",
+        "wave": {
+          "path": "wave_top",
+          "name": "wave_top",
+          "full_name": "wave_top",
+          "def_name": "wave_top",
+          "type": 0,
+          "queryable": true
+        },
+        "design": null
+      }
+    ],
+    "wave_roots": [
+      {
+        "path": "wave_top",
+        "name": "wave_top",
+        "full_name": "wave_top",
+        "def_name": "wave_top",
+        "type": 0,
+        "queryable": true
+      }
+    ],
+    "design_roots": [],
+    "limitations": [
+      "design roots unavailable: design not loaded"
+    ]
+  },
+  "error": null
+}

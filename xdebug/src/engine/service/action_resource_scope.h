@@ -18,6 +18,10 @@ public:
         for (std::vector<npiFsdbVctHandle>::reverse_iterator it = vcts_.rbegin(); it != vcts_.rend(); ++it) {
             if (*it) npi_fsdb_release_vct(*it);
         }
+        for (std::vector<npiFsdbSigIter>::reverse_iterator it = fsdb_sig_iters_.rbegin();
+             it != fsdb_sig_iters_.rend(); ++it) {
+            if (*it) npi_fsdb_iter_sig_stop(*it);
+        }
         for (std::vector<npiFsdbScopeIter>::reverse_iterator it = fsdb_scope_iters_.rbegin();
              it != fsdb_scope_iters_.rend(); ++it) {
             if (*it) npi_fsdb_iter_scope_stop(*it);
@@ -37,6 +41,11 @@ public:
         return iter;
     }
 
+    npiFsdbSigIter own_fsdb_sig_iter(npiFsdbSigIter iter) {
+        if (iter) fsdb_sig_iters_.push_back(iter);
+        return iter;
+    }
+
     npiFsdbVctHandle own_vct(npiFsdbVctHandle vct) {
         if (vct) vcts_.push_back(vct);
         return vct;
@@ -44,11 +53,13 @@ public:
 
     size_t npi_handle_count() const { return npi_handles_.size(); }
     size_t fsdb_scope_iter_count() const { return fsdb_scope_iters_.size(); }
+    size_t fsdb_sig_iter_count() const { return fsdb_sig_iters_.size(); }
     size_t vct_count() const { return vcts_.size(); }
 
 private:
     std::vector<npiHandle> npi_handles_;
     std::vector<npiFsdbScopeIter> fsdb_scope_iters_;
+    std::vector<npiFsdbSigIter> fsdb_sig_iters_;
     std::vector<npiFsdbVctHandle> vcts_;
 };
 

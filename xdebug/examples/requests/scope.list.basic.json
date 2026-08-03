@@ -5,6 +5,10 @@
     "session_id": "case_a"
   },
   "args": {
-    "path": ""
+    "path": "top",
+    "level": 1,
+    "kind": "all",
+    "include_patterns": [],
+    "exclude_patterns": []
   }
 }

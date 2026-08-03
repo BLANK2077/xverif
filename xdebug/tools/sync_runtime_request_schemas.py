@@ -73,8 +73,14 @@ ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
     "include_parity": {"type": "boolean"},
     "include_preview": {"type": "boolean"},
     "include_statement_only": {"type": "boolean"},
+    "include_patterns": {
+        "type": "array",
+        "uniqueItems": True,
+        "items": {"type": "string", "minLength": 1},
+    },
     "id": {"type": "string"},
     "last": {"type": "boolean"},
+    "level": {"type": "integer", "minimum": 0, "default": 0},
     "line_limit": {"type": "integer", "minimum": 1},
     "list": {"type": "string", "minLength": 1},
     "method": {"type": "string", "enum": ["top_n", "threshold"]},
@@ -100,6 +106,11 @@ ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
     "max_rows": {"type": "integer"},
     "max_samples": {"type": "integer", "minimum": 1},
     "name_pattern": {"type": "string"},
+    "exclude_patterns": {
+        "type": "array",
+        "uniqueItems": True,
+        "items": {"type": "string", "minLength": 1},
+    },
     "no_statement_only": {"type": "boolean"},
     "note": {"type": "string"},
     "origin": {"type": "string"},
@@ -217,7 +228,7 @@ EXTRA_ARGS_BY_ACTION: dict[str, set[str]] = {
         "sample_point",
         "time_range",
     },
-    "scope.list": {"kind", "max_depth", "name_pattern", "recursive"},
+    "scope.list": {"exclude_patterns", "include_patterns", "kind", "level", "path"},
     "session.close": set(),
     "session.doctor": set(),
     "session.gc": set(),
@@ -851,8 +862,9 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
     if action == "scope.list":
         selected_props["kind"] = {
             "type": "string",
-            "enum": ["all", "scope", "signal"],
-            "description": "只返回 scope、signal，或两者都返回。",
+            "enum": ["all", "module", "port", "signal"],
+            "default": "all",
+            "description": "只返回 module、port、signal，或三者都返回。",
         }
     if action == "protocol.handshake.inspect":
         selected_props["rules"] = {
@@ -1066,6 +1078,27 @@ def value_at_schema_is_unified(schema: dict[str, Any]) -> bool:
     return isinstance(all_of, list) and len(all_of) >= 4
 
 
+def scope_list_schema_is_hierarchical(schema: dict[str, Any]) -> bool:
+    properties = schema.get("properties", {}).get(
+        "args", {}).get("properties", {})
+    required = {
+        "path", "level", "kind", "include_patterns", "exclude_patterns",
+    }
+    if not required.issubset(properties):
+        return False
+    return properties["kind"].get("enum") == [
+        "all", "module", "port", "signal",
+    ]
+
+
+def scope_roots_schema_has_source_selection(schema: dict[str, Any]) -> bool:
+    properties = schema.get("properties", {}).get(
+        "args", {}).get("properties", {})
+    source = properties.get("source", {})
+    return (source.get("enum") == ["auto", "wave", "design"] and
+            source.get("default") == "auto")
+
+
 def sync(check: bool, selected_actions: set[str] | None = None) -> list[str]:
     specs = [spec for spec in action_specs() if spec.get("status") != "removed"]
     arg_schemas = collect_arg_schemas(specs)
@@ -1084,6 +1117,12 @@ def sync(check: bool, selected_actions: set[str] | None = None) -> list[str]:
             continue
         schema = load_json(source_path)
         if spec["name"] == "value.at" and value_at_schema_is_unified(schema):
+            continue
+        if (spec["name"] == "scope.list" and
+                scope_list_schema_is_hierarchical(schema)):
+            continue
+        if (spec["name"] == "scope.roots" and
+                scope_roots_schema_has_source_selection(schema)):
             continue
         try:
             updated = sync_schema(schema, spec, arg_schemas)

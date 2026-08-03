@@ -5,7 +5,8 @@
   "type": "object",
   "required": [
     "api_version",
-    "action"
+    "action",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -15,7 +16,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -24,10 +26,66 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "daidir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "daidir"
+                ]
+              },
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "anyOf": [
+            {
+              "required": [
+                "daidir"
+              ]
+            },
+            {
+              "required": [
+                "fsdb"
+              ]
+            }
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [],
       "properties": {
         "source": {
           "type": "string",
@@ -37,42 +95,22 @@
             "design"
           ],
           "default": "auto",
-          "description": "Action-specific source input. Its type and accepted values are defined by this schema."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
+          "description": "scope roots 或证据的来源选择。"
         }
       },
-      "additionalProperties": false,
-      "required": []
+      "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
@@ -84,15 +122,15 @@
   "x-description-zh": "发现 waveform/design 根。",
   "x-agent": {
     "use_when": [
-      "发现 waveform/design 根。"
+      "Need only the database root scopes as entry points before choosing a narrower hierarchy query."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 scope.list 的业务目标；请改用列出的同域 action。"
+      "Do not use it for module hierarchy contents or module/port/signal filtering."
     ],
     "alternatives": [
       {
         "action": "scope.list",
-        "when": "列出 FSDB scope 或信号。"
+        "when": "List module-relative modules, ports, signals, and interface instances with level and glob filters."
       }
     ],
     "constraints": [

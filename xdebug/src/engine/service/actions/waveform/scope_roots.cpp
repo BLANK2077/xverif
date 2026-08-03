@@ -15,6 +15,7 @@
 #include "waveform/service/rc_generator.h"
 #include "waveform/value/logic_value.h"
 #include "core/npi/time_contract.h"
+#include "core/output/completeness.h"
 
 #include "npi.h"
 #include "npi_fsdb.h"
@@ -79,8 +80,8 @@ public:
     bool needs_design() const override { return false; }
     bool needs_waveform() const override { return false; }
 
-    Json run(const Json& request, EngineActionContext& ctx) const override {
-        Json args = request.value("args", Json::object());
+    Json run(ContractBoundRequest& request, EngineActionContext& ctx) const override {
+        auto args = request.args();
         std::string source = args.value("source", std::string("auto"));
         if (source.empty()) source = "auto";
         if (source != "auto" && source != "wave" && source != "design")
@@ -89,7 +90,7 @@ public:
                 "args.source must be auto, wave, or design",
                 {{"invalid_arg", "args.source"},
                  {"expected", "one of auto, wave, design"},
-                 {"allowed_values", Json::array({"auto", "wave", "design"})},
+                 {"available_values", Json::array({"auto", "wave", "design"})},
                  {"correct_example", {{"api_version", "xdebug.v1"},
                                       {"action", "scope.roots"},
                                       {"target", {{"session_id", "case_a"}}},
@@ -171,6 +172,9 @@ public:
         out["roots"] = roots;
         out["wave_roots"] = wave_roots;
         out["design_roots"] = design_roots;
+        const bool analysis_complete =
+            (!want_wave || wave_available) &&
+            (!want_design || design_available);
         out["summary"] = {
             {"source", source},
             {"wave_available", wave_available},
@@ -178,8 +182,6 @@ public:
             {"resource_available", source == "wave" ? wave_available :
                                    source == "design" ? design_available :
                                    (wave_available || design_available)},
-            {"analysis_complete", source == "auto" ?
-                                  ((!want_wave || wave_available) && (!want_design || design_available)) : true},
             {"root_count", static_cast<int>(roots.size())},
             {"wave_count", static_cast<int>(wave_roots.size())},
             {"design_count", static_cast<int>(design_roots.size())},
@@ -187,6 +189,16 @@ public:
             {"recommended_root", recommended},
             {"recommended_reason", reason}
         };
+        xdebug_core::set_completeness(
+            out["summary"],
+            analysis_complete,
+            analysis_complete,
+            false,
+            roots.size(),
+            roots.size(),
+            analysis_complete
+                ? std::vector<std::string>{}
+                : std::vector<std::string>{"analysis_sources"});
         if (!limitations.empty()) out["limitations"] = limitations;
         return out;
     }

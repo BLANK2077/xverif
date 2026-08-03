@@ -1,0 +1,11 @@
+{
+  "api_version": "xdebug.v1",
+  "request_id": "scope-roots-wave-only",
+  "action": "scope.roots",
+  "target": {
+    "session_id": "example-wave-only"
+  },
+  "args": {
+    "source": "auto"
+  }
+}

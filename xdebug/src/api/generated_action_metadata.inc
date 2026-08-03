@@ -1086,8 +1086,8 @@
     spec.request_examples = {"examples/requests/scope.list.basic.json"};
     spec.response_examples = {"examples/responses/scope.list.basic.json"};
     spec.args.required = {};
-    spec.description_en = "List waveform scopes and signals.";
-    spec.description_zh = "列出 FSDB scope 或信号。";
+    spec.description_en = "List waveform modules, ports, signals, interface instances, and interface ports.";
+    spec.description_zh = "按 module 层级列出 FSDB module、port 和 signal；interface 实例归入 signal，interface 端口归入 port。";
     spec.purposes = {"discover"};
     spec.use_when = {"Need module-relative hierarchy contents classified as modules, ports, and declared signals from the active waveform; interface instances are signals and interface ports use direction=interface."};
     spec.do_not_use_when = {"Do not use it when only database roots are needed, one known signal must be resolved, or composite members must be expanded."};
@@ -1105,8 +1105,8 @@
     spec.handler_kind = "engine_forward";
     spec.request_schema = "schemas/v1/actions/scope.roots.request.schema.json";
     spec.response_schema = "schemas/v1/actions/scope.roots.response.schema.json";
-    spec.request_examples = {"examples/requests/scope.roots.basic.json"};
-    spec.response_examples = {"examples/responses/scope.roots.basic.json"};
+    spec.request_examples = {"examples/requests/scope.roots.basic.json", "examples/requests/scope.roots.mismatch.json", "examples/requests/scope.roots.wave_only.json"};
+    spec.response_examples = {"examples/responses/scope.roots.basic.json", "examples/responses/scope.roots.mismatch.json", "examples/responses/scope.roots.wave_only.json"};
     spec.args.required = {};
     spec.description_en = "Discover waveform and design hierarchy roots.";
     spec.description_zh = "发现 waveform/design 根。";

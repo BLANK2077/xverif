@@ -5,7 +5,8 @@
   "type": "object",
   "required": [
     "api_version",
-    "action"
+    "action",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -15,7 +16,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -24,94 +26,137 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [],
       "properties": {
+        "exclude_patterns": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "相对当前 scope 的对象名称 glob 列表；列表内取 OR，并优先于 include_patterns。"
+          },
+          "description": "相对当前 scope 的对象名称 glob 列表；列表内取 OR，并优先于 include_patterns。"
+        },
+        "include_patterns": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "相对当前 scope 的对象名称 glob 列表；列表内取 OR，空列表表示全部包含。"
+          },
+          "description": "相对当前 scope 的对象名称 glob 列表；列表内取 OR，空列表表示全部包含。"
+        },
         "kind": {
           "type": "string",
           "enum": [
             "all",
-            "scope",
+            "module",
+            "port",
             "signal"
           ],
-          "description": "Action-specific kind input. Its type and accepted values are defined by this schema."
+          "default": "all",
+          "description": "只返回 module、port、signal，或三者都返回。"
         },
-        "max_depth": {
+        "level": {
           "type": "integer",
-          "description": "Action-specific max_depth input. Its type and accepted values are defined by this schema."
-        },
-        "name_pattern": {
-          "type": "string",
-          "description": "Action-specific name_pattern input. Its type and accepted values are defined by this schema."
+          "minimum": 0,
+          "default": 0,
+          "description": "相对当前 scope 进入真实 module 的层数；0 只列本层对象和直接子 module。"
         },
         "path": {
           "type": "string",
           "description": "Scope path to list. Empty string or '.' returns top-level scopes."
-        },
-        "recursive": {
-          "type": "boolean",
-          "description": "Action-specific recursive input. Its type and accepted values are defined by this schema."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
         }
       },
-      "additionalProperties": false,
-      "required": []
+      "additionalProperties": false
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "max_rows": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum hierarchy rows returned by the scope traversal."
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
-  "description": "List waveform scopes and signals.",
-  "x-purpose": "列出 FSDB scope 或信号。",
-  "x-how_it_works": "从 waveform 数据库遍历 scope，按 path/recursive/max_depth 遍历或截断；无 scope 时列根层级。",
-  "x-when_to_use": "帮助定位真实层次和信号路径。",
-  "x-arg_contract_notes": "none",
-  "x-description-zh": "列出 FSDB scope 或信号。",
+  "description": "List waveform modules, ports, signals, interface instances, and interface ports.",
+  "x-purpose": "分类列出 FSDB module、port 和 signal。",
+  "x-how_it_works": "args.level=0 只返回当前 module 的声明 port/signal、interface 实例（归入 signal）、interface 端口（归入 port，direction=interface）和直接子 module；1/2/3 继续进入相应 module 层级。include_patterns/exclude_patterns 用区分大小写的 */? glob 匹配相对 summary.path 的 name，exclude 优先且不剪枝；kind 接受 all、module、port、signal。结果不进入 interface，也不展开 composite 成员。",
+  "x-when_to_use": "用相对 name 确认真实层次、端口、信号和 interface 声明。",
+  "x-arg_contract_notes": "optional: path, level(default 0), kind(default all), include_patterns, exclude_patterns; limits: max_rows",
+  "x-description-zh": "按 module 层级列出 FSDB module、port 和 signal；interface 实例归入 signal，interface 端口归入 port。",
   "x-agent": {
     "use_when": [
-      "列出 FSDB scope 或信号。"
+      "Need module-relative hierarchy contents classified as modules, ports, and declared signals from the active waveform; interface instances are signals and interface ports use direction=interface."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 scope.roots 的业务目标；请改用列出的同域 action。"
+      "Do not use it when only database roots are needed, one known signal must be resolved, or composite members must be expanded."
     ],
     "alternatives": [
       {
         "action": "scope.roots",
-        "when": "发现 waveform/design 根。"
+        "when": "Return only waveform/design roots."
+      },
+      {
+        "action": "signal.resolve",
+        "when": "Resolve one design signal query."
       }
     ],
     "constraints": [
-      "none"
+      "optional: path, level(default 0), kind(default all), include_patterns, exclude_patterns; limits: max_rows"
     ]
   }
 }
