@@ -14,7 +14,7 @@ x-npi 用来教 AI agent 编写可复用的 Python `pynpi` 批量分析脚本。
 | 配置 `VERDI_HOME`、导入 `pynpi`、管理 `npisys.init/end` | [references/pynpi-runtime.md](references/pynpi-runtime.md) |
 | 读取 FSDB 值、变化、统计信息或时钟沿采样 | [references/waveform-patterns.md](references/waveform-patterns.md) |
 | 提取 APB、AXI 或 valid-ready stream 摘要 | [references/protocol-patterns.md](references/protocol-patterns.md) |
-| 查询 VCS/Verdi coverage database、coverage holes 或 functional coverage bins | [references/coverage-patterns.md](references/coverage-patterns.md) |
+| 查询 VCS/Verdi coverage database、coverage holes、functional bins 或原生 exclusion API | [references/coverage-patterns.md](references/coverage-patterns.md) |
 | 从 daidir/design DB 查询静态 driver/load 事实 | [references/design-trace-patterns.md](references/design-trace-patterns.md) |
 
 ## 可复用 helper
@@ -25,7 +25,7 @@ x-npi 用来教 AI agent 编写可复用的 Python `pynpi` 批量分析脚本。
 from x_npi.runtime import json_stdout_quarantine, pynpi_lifecycle
 from x_npi.wave import open_fsdb, iter_edge_samples
 from x_npi.protocol import axi_summary
-from x_npi.coverage import open_covdb, coverage_items
+from x_npi.coverage import load_exclusion_files, open_covdb, coverage_items
 ```
 
 公共 helper 按模块分组：
@@ -33,7 +33,7 @@ from x_npi.coverage import open_covdb, coverage_items
 - `runtime`：`verdi_home`、`configure_pynpi`、`json_stdout_quarantine`、`pynpi_lifecycle`。
 - `wave`：`open_fsdb`、`close_fsdb`、`time_in`、`preflight_signals`、`sample_values`、`iter_signal_changes`、`iter_edge_samples`、`clock_edges`、`edge_samples`、`value_statistics`。
 - `protocol`：`apb_transactions`、`apb_summary`、`axi_transactions`、`axi_summary`、`stream_summary`。
-- `coverage`：`open_covdb`、`close_covdb`、`test_names`、`merged_test_handle`、`coverage_items`、`coverage_summary`、`score_rows`、`functional_group_scores`。
+- `coverage`：`open_covdb`、`close_covdb`、`test_names`、`merged_test_handle`、`coverage_items`、`coverage_summary`、`score_rows`、`functional_group_scores`、`load_exclusion_files`、`set_report_time_excluded`、`save_exclusion_file`、`unload_exclusions`。
 - `design`：`handle_name`、`statement_row`、`trace_driver`、`trace_load`。
 - `jsonio`：`ok`、`error`、`print_json`、`split_limited`。
 

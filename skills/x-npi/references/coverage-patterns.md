@@ -7,7 +7,7 @@
 优先用 xcov 做交互式查询：
 
 - `scope.summary`、`scope.children`、`code_coverage.summary`、`code_coverage.holes` 看层次覆盖率。
-- `export.code_coverage`、`export.function_coverage`、`export.assert` 导出 Markdown 给 AI/人审阅。
+- `export.code_coverage`、`export.functional_coverage`、`export.assert` 导出 Markdown 给 AI/人审阅。
 
 切到 x-npi/pynpi 的场景：
 
@@ -152,6 +152,44 @@ Functional hierarchy 通常是：
 - bin
 
 cross bin 表示一个组合，不要拆成多个独立 bin。
+
+## Exclusion Management
+
+使用统一 helper 管理 pynpi exclusion API：
+
+```python
+from x_npi.coverage import (
+    load_exclusion_files,
+    merged_test_handle,
+    open_covdb,
+    save_exclusion_file,
+    set_report_time_excluded,
+    unload_exclusions,
+)
+
+db = open_covdb(vdb, strict=strict)
+test = merged_test_handle(db)
+load_exclusion_files(test, ["code.el", "functional.el", "assertion.el"])
+result = set_report_time_excluded(item, test, True)
+result = set_report_time_excluded(item, test, False)
+save_exclusion_file(test, "current.el")
+unload_exclusions(test)
+```
+
+- `set_report_time_excluded()` 内部执行 before、setter、after 复核，返回
+  `changed`、`already_in_state`、`immutable_compile_time` 或 `failed`；它只调用
+  `set_status_excluded_at_report_time(test, 1|0)`，不调用 `set_status_excluded()`。
+- `save_exclusion_file()` 固定使用 `save_exclude_file(path, "w")`；不要使用 `a/as/ws`，也不要读取、
+  拼接或改写原生 EL 文本。
+- `load_exclusion_files()` 先确认全部输入文件存在，再按给定顺序调用
+  `load_exclude_file`，由 pynpi 提供 union 语义。
+- `open_covdb(..., strict=True)` 只在 `cov.open` 时启用
+  `ExclusionInStrictMode`；不要启用或公开
+  `ExcludeByStmtLevel`。
+- exclusion handle 不跨 traversal 长期缓存。先用 metric/scope/type/traversal
+  identity 产生引用，写入前重新遍历并复核人类可读 identity 恰好匹配一次。
+- P0 只对 merged test 管理 exclusion。setter/load/save/unload 返回 `0` 时明确
+  失败，不解析 URG、不换 backend、不 fallback。
 
 ## URG-Aligned Summary Semantics
 

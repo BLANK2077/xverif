@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Sequence
 
 
@@ -26,14 +28,20 @@ CODE_SCORE_TYPES = {
 }
 
 
+class CoverageExclusionError(RuntimeError):
+    """Raised when a native pynpi exclusion operation fails."""
+
+
 def _cov():
     from pynpi import cov  # type: ignore
 
     return cov
 
 
-def open_covdb(vdb: str) -> Any:
-    db = _cov().open(vdb)
+def open_covdb(vdb: str, strict: bool = False) -> Any:
+    cov = _cov()
+    config_opt = int(cov.ConfigOpt.ExclusionInStrictMode) if strict else 0
+    db = cov.open(vdb, config_opt)
     if not db:
         raise RuntimeError(f"cov.open failed: {vdb}")
     return db
@@ -55,6 +63,80 @@ def merged_test_handle(db: Any) -> Any:
     if merged is None:
         raise RuntimeError("coverage database has no tests")
     return merged
+
+
+def load_exclusion_files(
+    test: Any,
+    paths: Sequence[str | os.PathLike[str]],
+) -> List[Json]:
+    """Load native EL files in order; pynpi defines their union semantics."""
+    normalized = [os.fspath(path) for path in paths]
+    for path in normalized:
+        if not Path(path).is_file():
+            raise FileNotFoundError(f"exclusion file not found: {path}")
+    results: List[Json] = []
+    for path in normalized:
+        value = test.load_exclude_file(path)
+        _require_exclusion_success("load_exclude_file", value, path=path)
+        results.append({"path": path, "status": "loaded"})
+    return results
+
+
+def set_report_time_excluded(item: Any, test: Any, excluded: bool) -> Json:
+    """Set one coverage handle's report-time exclusion and verify before/after state."""
+    target = bool(excluded)
+    before = bool(item.has_status_excluded_at_report_time(test))
+    compile_time = bool(item.has_status_excluded_at_compile_time(test))
+    if not target and compile_time and not before:
+        return {
+            "status": "immutable_compile_time",
+            "before": before,
+            "after": before,
+        }
+    if before == target:
+        return {
+            "status": "already_in_state",
+            "before": before,
+            "after": before,
+        }
+    value = item.set_status_excluded_at_report_time(test, 1 if target else 0)
+    after = bool(item.has_status_excluded_at_report_time(test))
+    if value != 1 or after != target:
+        status = "failed"
+    elif not target and compile_time:
+        status = "immutable_compile_time"
+    else:
+        status = "changed"
+    return {
+        "status": status,
+        "before": before,
+        "after": after,
+    }
+
+
+def save_exclusion_file(test: Any, path: str | os.PathLike[str]) -> str:
+    """Save report-time exclusions as one opaque native EL file in write mode."""
+    normalized = os.fspath(path)
+    value = test.save_exclude_file(normalized, "w")
+    _require_exclusion_success("save_exclude_file", value, path=normalized)
+    return normalized
+
+
+def unload_exclusions(test: Any) -> None:
+    """Unload all report-time exclusions from the current test handle."""
+    value = test.unload_exclusion()
+    _require_exclusion_success("unload_exclusion", value)
+
+
+def _require_exclusion_success(
+    operation: str,
+    value: Any,
+    path: str | None = None,
+) -> None:
+    if value == 1:
+        return
+    suffix = f": {path}" if path is not None else ""
+    raise CoverageExclusionError(f"pynpi {operation} returned failure{suffix}")
 
 
 def coverage_items(
