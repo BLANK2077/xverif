@@ -9,6 +9,14 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
+PLACEHOLDER_PREFIXES = (
+    "Action-specific ",
+    "Structured ",
+    "Ordered ",
+    "action-specific 参数值",
+    "组合参数对象",
+    "有序项目列表",
+)
 
 
 def _load(path: Path) -> Any:
@@ -20,8 +28,11 @@ def _walk(node: Any, path: str, errors: list[str], business: bool = True) -> Non
         return
     typ = node.get("type")
     if business and (typ in {"string", "integer", "number", "boolean", "object", "array"} or "oneOf" in node):
-        if not node.get("description") and not node.get("x-description-zh"):
+        description = node.get("description")
+        if not description and not node.get("x-description-zh"):
             errors.append(f"{path}: missing description")
+        elif isinstance(description, str) and description.startswith(PLACEHOLDER_PREFIXES):
+            errors.append(f"{path}: placeholder description is forbidden")
     if typ == "array" and "items" not in node:
         errors.append(f"{path}: array missing items")
     if typ == "object" or "properties" in node:
@@ -31,6 +42,8 @@ def _walk(node: Any, path: str, errors: list[str], business: bool = True) -> Non
                 _walk(child, f"{path}.{name}", errors)
     if isinstance(node.get("items"), dict):
         _walk(node["items"], path + "[]", errors)
+    if isinstance(node.get("additionalProperties"), dict):
+        _walk(node["additionalProperties"], path + ".*", errors)
     for key in ("oneOf", "anyOf", "allOf"):
         for index, child in enumerate(node.get(key, [])):
             _walk(child, f"{path}.{key}[{index}]", errors)
@@ -40,8 +53,6 @@ def main() -> int:
     specs = _load(ROOT / "specs" / "actions" / "actions.yaml")["actions"]
     errors: list[str] = []
     for spec in specs:
-        if spec.get("status") == "removed":
-            continue
         schema = _load(ROOT / spec["schemas"]["request"])
         args = schema.get("properties", {}).get("args", {})
         _walk(args, f"{spec['name']}.args", errors, business=False)

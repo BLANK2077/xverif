@@ -37,7 +37,24 @@ def walk(value: object, path: str, errors: list[str]) -> None:
 
 def main() -> int:
     errors: list[str] = []
-    for path in sorted((ROOT / "schemas" / "v1" / "actions").glob("*.request.schema.json")):
+    paths = list(
+        (ROOT / "schemas" / "v1" / "actions").glob(
+            "*.request.schema.json"
+        )
+    )
+    paths.append(
+        ROOT
+        / "schemas"
+        / "v1"
+        / "internal"
+        / "engine.request.schema.json"
+    )
+    for path in sorted(paths):
+        if not path.is_file():
+            errors.append(
+                f"{path.relative_to(ROOT)}: runtime request schema is missing"
+            )
+            continue
         schema = json.loads(path.read_text(encoding="utf-8"))
         walk(schema, "$", errors)
         try:
