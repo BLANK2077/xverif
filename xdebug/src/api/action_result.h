@@ -10,7 +10,6 @@ struct ActionResult {
     Json summary = Json::object();
     Json data = Json::object();
     Json warnings = Json::array();
-    Json meta = Json::object();
     Json error = nullptr;
 };
 

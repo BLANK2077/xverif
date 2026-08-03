@@ -164,82 +164,58 @@ Json catalog_schema_response(const Json& request) {
     Json args = request.value("args", Json::object());
     std::string action = args.value("action", std::string());
     std::string kind = args.value("kind", std::string());
-    if (!action.empty()) {
-        if (kind.empty()) kind = "request";
-        const ActionSpec* spec = default_action_registry().find_spec(action);
-        if (!spec) {
-            Json suggestions = suggested_action_names(action);
-            Json error = DiagnosticErrorBuilder::handler(
-                             "UNKNOWN_ACTION", "unknown action: " + action)
-                             .invalid_arg("args.action")
-                             .received(action)
-                             .available_values(suggestions)
-                             .did_you_mean(suggestions.empty() ? "" : suggestions[0].get<std::string>())
-                             .to_json();
-            error["suggested_actions"] = suggestions;
-            return make_error(request, "schema", error);
-        }
-        std::string rel;
-        if (kind == "request") rel = spec->request_schema;
-        else if (kind == "response") rel = spec->response_schema;
-        else {
-            Json example = {
-                {"api_version", "xdebug.v1"},
-                {"action", "schema"},
-                {"args", {{"action", action}, {"kind", "request"}}}
-            };
-            Json error = DiagnosticErrorBuilder::handler("INVALID_ENUM",
-                                               "schema args.kind must be request or response")
-                             .invalid_arg("args.kind")
-                             .expected("one of request, response")
-                             .received(kind)
-                             .allowed_values(Json::array({"request", "response"}))
-                             .example_note("示例仅说明 schema action 的 native JSON 形态；kind 必须是 request 或 response。")
-                             .correct_example(example)
-                             .to_json();
-            return make_error(request, "schema", error);
-        }
-        const std::string prefix = "schemas/v1/actions/";
-        std::string path = rel;
-        if (path.compare(0, prefix.size(), prefix) == 0) path = schema_root() + path.substr(prefix.size());
-        Json schema;
-        if (rel.empty() || !read_json_file(path, schema)) {
-            return make_error(request, "schema", "ACTION_SCHEMA_NOT_FOUND", "schema not found for " + action + " " + kind);
-        }
-        Json examples = Json::array();
-        const std::vector<std::string>& example_paths =
-            kind == "request" ? spec->request_examples : spec->response_examples;
-        for (const auto& example_rel : example_paths) {
-            Json example;
-            if (read_json_file(repo_root() + example_rel, example)) {
-                examples.push_back({{"path", example_rel}, {"value", example}});
-            }
-        }
-        Json constraints = schema.value("x-agent", Json::object()).value("constraints", Json::array());
-        response["summary"] = {{"action", action}, {"kind", kind}};
-        response["data"] = {{"schema", schema}, {"schema_path", rel},
-                            {"examples", examples}, {"constraints", constraints}};
-        return response;
+    if (kind.empty()) kind = "request";
+    const ActionSpec* spec = default_action_registry().find_spec(action);
+    if (!spec) {
+        Json suggestions = suggested_action_names(action);
+        Json error = DiagnosticErrorBuilder::handler(
+                         "UNKNOWN_ACTION", "unknown action: " + action)
+                         .invalid_arg("args.action")
+                         .received(action)
+                         .available_values(suggestions)
+                         .to_json();
+        return make_error(request, "schema", error);
     }
-    response["data"] = {
-        {"api_version", kApiVersion},
-        {"request", {
-            {"required", Json::array({"api_version", "action"})},
-            {"target_resources", Json::array({"daidir", "fsdb", "session_id"})},
-            {"modes", Json::array({"design", "waveform", "combined"})}
-        }},
-        {"combined_action", {
-            {"action", "trace.active_driver"},
-            {"required_target", Json::array({"daidir", "fsdb"})},
-            {"required_args", Json::array({"signal", "time"})},
-            {"optional_args", Json::array({"include_control", "include_parity"})}
-        }},
-        {"contract", {
-            {"source", "ActionRegistry"},
-            {"schema_root", "xdebug/schemas/v1"},
-            {"action_count", default_action_registry().list_specs().size()}
-        }}
-    };
+    std::string rel;
+    if (kind == "request") rel = spec->request_schema;
+    else if (kind == "response") rel = spec->response_schema;
+    else {
+        Json example = {
+            {"api_version", "xdebug.v1"},
+            {"action", "schema"},
+            {"args", {{"action", action}, {"kind", "request"}}}
+        };
+        Json error = DiagnosticErrorBuilder::handler("INVALID_ENUM",
+                                           "schema args.kind must be request or response")
+                         .invalid_arg("args.kind")
+                         .expected("one of request, response")
+                         .received(kind)
+                         .available_values(Json::array({"request", "response"}))
+                         .example_note("示例仅说明 schema action 的 native JSON 形态；kind 必须是 request 或 response。")
+                         .correct_example(example)
+                         .to_json();
+        return make_error(request, "schema", error);
+    }
+    const std::string prefix = "schemas/v1/actions/";
+    std::string path = rel;
+    if (path.compare(0, prefix.size(), prefix) == 0) path = schema_root() + path.substr(prefix.size());
+    Json schema;
+    if (rel.empty() || !read_json_file(path, schema)) {
+        return make_error(request, "schema", "ACTION_SCHEMA_NOT_FOUND", "schema not found for " + action + " " + kind);
+    }
+    Json examples = Json::array();
+    const std::vector<std::string>& example_paths =
+        kind == "request" ? spec->request_examples : spec->response_examples;
+    for (const auto& example_rel : example_paths) {
+        Json example;
+        if (read_json_file(repo_root() + example_rel, example)) {
+            examples.push_back({{"path", example_rel}, {"value", example}});
+        }
+    }
+    Json constraints = schema.value("x-agent", Json::object()).value("constraints", Json::array());
+    response["summary"] = {{"action", action}, {"kind", kind}};
+    response["data"] = {{"schema", schema}, {"schema_path", rel},
+                        {"examples", examples}, {"constraints", constraints}};
     return response;
 }
 

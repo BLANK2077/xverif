@@ -9,7 +9,6 @@ Json ResponseBuilder::success(const RequestEnvelope& request, const ActionSpec& 
     if (result.summary.is_object() && !result.summary.empty()) response["summary"] = result.summary;
     if (!result.data.is_null()) response["data"] = result.data;
     if (result.warnings.is_array() && !result.warnings.empty()) response["warnings"] = result.warnings;
-    if (result.meta.is_object() && !result.meta.empty()) response["meta"] = result.meta;
     if (!result.ok && !result.error.is_null()) response["error"] = result.error;
     if (!spec.response_schema.empty()) response["schema_version"] = spec.response_schema;
     return response;

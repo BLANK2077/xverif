@@ -175,24 +175,23 @@ ScopedTimeRenderOptions::~ScopedTimeRenderOptions() {
 bool parse_time_render_unit(const std::string& text,
                             TimeRenderUnit& unit,
                             std::string& error) {
-    std::string value = normalize_unit(text);
-    if (value.empty() || value == "ns") {
+    if (text == "ns") {
         unit = TimeRenderUnit::Ns;
         return true;
     }
-    if (value == "ps") {
+    if (text == "ps") {
         unit = TimeRenderUnit::Ps;
         return true;
     }
-    if (value == "us") {
+    if (text == "us") {
         unit = TimeRenderUnit::Us;
         return true;
     }
-    if (value == "auto") {
+    if (text == "auto") {
         unit = TimeRenderUnit::Auto;
         return true;
     }
-    error = "TIME_UNIT_INVALID: args.time_unit must be ns, ps, us, or auto";
+    error = "TIME_UNIT_INVALID: args.render_time_unit must be ns, ps, us, or auto";
     return false;
 }
 

@@ -70,19 +70,6 @@ public:
         return warning(w);
     }
 
-    // Set meta fields (truncated, etc.)
-    ResponseBuilder& meta(const nlohmann::json& m) {
-        out_["meta"] = m;
-        return *this;
-    }
-
-    // Set truncated flag in meta
-    ResponseBuilder& truncated(bool value) {
-        if (!out_.contains("meta")) out_["meta"] = nlohmann::json::object();
-        out_["meta"]["truncated"] = value;
-        return *this;
-    }
-
     // Get the built response (caller should finalize/print)
     nlohmann::json build() const { return out_; }
 
