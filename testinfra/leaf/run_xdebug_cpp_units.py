@@ -14,6 +14,7 @@ BINARIES = (
     "test_file_exchange",
     "test_process_runner",
     "test_session_catalog",
+    "test_session_registry",
     "test_action_registry",
     "test_request_contract",
     "test_text_response_builder",
@@ -23,6 +24,7 @@ BINARIES = (
     "test_trace_source_path_formatter",
     "test_trace_x_chain_identity",
     "test_common_blocks",
+    "test_contract_bound_request",
     "test_logic_value",
     "test_event_expr",
     "test_expression",
@@ -34,6 +36,11 @@ BINARIES = (
     "test_analysis_repository",
     "test_stream_base_analysis",
     "test_stream_manager",
+    "test_apb_manager",
+    "test_cursor_manager",
+    "test_list_manager",
+    "test_versioned_json_store",
+    "test_clock_sampling_event_manager",
 )
 
 
