@@ -2,11 +2,92 @@
 
 #include "json.hpp"
 
+#include <cctype>
 #include <string>
+#include <vector>
 
 namespace xdebug_core {
 
 using DiagnosticJson = nlohmann::ordered_json;
+
+inline bool sensitive_diagnostic_path(const std::string& path) {
+    std::string segment;
+    for (size_t i = 0; i <= path.size(); ++i) {
+        const char c = i < path.size() ? path[i] : '\0';
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_') {
+            segment.push_back(c);
+            continue;
+        }
+        if (segment == "ownership_token" ||
+            segment == "ownership_token_hash") {
+            return true;
+        }
+        segment.clear();
+    }
+    return false;
+}
+
+inline bool sensitive_diagnostic_key(const std::string& key) {
+    return key == "ownership_token" ||
+           key == "ownership_token_hash";
+}
+
+inline DiagnosticJson redact_sensitive_diagnostic_value(
+    const DiagnosticJson& value,
+    bool& redacted) {
+    if (value.is_array()) {
+        DiagnosticJson out = DiagnosticJson::array();
+        for (const auto& item : value) {
+            out.push_back(
+                redact_sensitive_diagnostic_value(item, redacted));
+        }
+        return out;
+    }
+    if (!value.is_object()) return value;
+
+    const bool sensitive_invalid_arg =
+        value.contains("invalid_arg") &&
+        value["invalid_arg"].is_string() &&
+        sensitive_diagnostic_path(
+            value["invalid_arg"].get<std::string>());
+    const bool sensitive_issue_path =
+        value.contains("path") &&
+        value["path"].is_string() &&
+        sensitive_diagnostic_path(
+            value["path"].get<std::string>());
+
+    DiagnosticJson out = DiagnosticJson::object();
+    for (auto it = value.begin(); it != value.end(); ++it) {
+        if (sensitive_diagnostic_key(it.key())) {
+            redacted = true;
+            continue;
+        }
+        if (sensitive_invalid_arg && it.key() == "received") {
+            redacted = true;
+            continue;
+        }
+        if ((sensitive_invalid_arg || sensitive_issue_path) &&
+            it.key() == "message") {
+            redacted = true;
+            out[it.key()] =
+                "sensitive request field failed validation";
+            continue;
+        }
+        out[it.key()] =
+            redact_sensitive_diagnostic_value(it.value(), redacted);
+    }
+    if (sensitive_invalid_arg) {
+        redacted = true;
+        out["received_redacted"] = true;
+    }
+    return out;
+}
+
+inline DiagnosticJson redact_sensitive_diagnostic(
+    const DiagnosticJson& value) {
+    bool redacted = false;
+    return redact_sensitive_diagnostic_value(value, redacted);
+}
 
 class DiagnosticErrorBuilder {
 public:
@@ -69,19 +150,6 @@ public:
         return *this;
     }
 
-    DiagnosticErrorBuilder& allowed_values(const DiagnosticJson& value) {
-        error_["allowed_values"] = value;
-        return *this;
-    }
-
-    DiagnosticErrorBuilder& did_you_mean(const std::string& value) {
-        if (!value.empty() &&
-            (!error_.contains("invalid_arg") || error_["invalid_arg"] != value)) {
-            error_["did_you_mean"] = value;
-        }
-        return *this;
-    }
-
     DiagnosticErrorBuilder& schema_path(const std::string& value) {
         if (!value.empty()) error_["schema_path"] = value;
         return *this;
@@ -127,7 +195,9 @@ public:
         return *this;
     }
 
-    DiagnosticJson to_json() const { return error_; }
+    DiagnosticJson to_json() const {
+        return redact_sensitive_diagnostic(error_);
+    }
 
 private:
     DiagnosticJson error_;
@@ -140,11 +210,22 @@ inline DiagnosticJson normalize_diagnostic_error(DiagnosticJson error,
     if (!error.contains("message")) error["message"] = "action failed";
     if (!error.contains("error_layer")) error["error_layer"] = default_layer;
     if (!error.contains("recoverable")) error["recoverable"] = true;
-    if (error.contains("did_you_mean") && error.contains("invalid_arg") &&
-        error["did_you_mean"] == error["invalid_arg"]) {
-        error.erase("did_you_mean");
+    return redact_sensitive_diagnostic(error);
+}
+
+inline DiagnosticJson request_consumption_violation(
+    const std::vector<std::string>& unconsumed_paths) {
+    DiagnosticJson received = DiagnosticJson::array();
+    for (const std::string& path : unconsumed_paths) {
+        received.push_back(path);
     }
-    return error;
+    return DiagnosticErrorBuilder::internal(
+               "INTERNAL_REQUEST_CONSUMPTION_VIOLATION",
+               "action left provided request fields unconsumed")
+        .invalid_arg("request")
+        .expected("every provided request field must be consumed exactly once")
+        .received(received)
+        .to_json();
 }
 
 } // namespace xdebug_core

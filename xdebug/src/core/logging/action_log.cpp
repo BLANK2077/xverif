@@ -2,6 +2,8 @@
 
 #include "common/env_config.h"
 #include "common/path_utils.h"
+#include "common/sha256.h"
+#include "core/diagnostic_error.h"
 
 #include <chrono>
 #include <cstdlib>
@@ -106,17 +108,6 @@ std::string strip_ndjson_suffix(const std::string& name) {
     return name;
 }
 
-std::string fnv1a_hex(const std::string& s) {
-    unsigned long long hash = 1469598103934665603ULL;
-    for (unsigned char c : s) {
-        hash ^= c;
-        hash *= 1099511628211ULL;
-    }
-    std::ostringstream oss;
-    oss << std::hex << hash;
-    return oss.str();
-}
-
 bool write_file_atomic_append(const std::string& path, const std::string& payload, int mode = 0600) {
     int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, mode);
     if (fd < 0) return false;
@@ -158,6 +149,7 @@ void append_health_event(const std::string& log_path,
         event["message"] = message;
         event["log_path"] = log_path;
         if (!detail.is_null() && !(detail.is_object() && detail.empty())) event["detail"] = detail;
+        event = sanitize_for_log(event);
         std::string line = event.dump();
         line.push_back('\n');
         write_file_atomic_append(dir + "/log_health.ndjson", line);
@@ -169,11 +161,16 @@ bool write_sidecar(const std::string& path, const Json& payload, Json& sidecars,
     try {
         std::string dir = dirname_of(path);
         if (!ensure_dir_recursive(dir)) return false;
-        std::string text = payload.dump(2);
+        const Json sanitized_payload = sanitize_for_log(payload);
+        std::string text = sanitized_payload.dump(2);
         std::ofstream out(path.c_str(), std::ios::trunc);
         if (!out) return false;
         out << text << "\n";
-        sidecars[key] = {{"path", path}, {"bytes", text.size()}, {"hash", fnv1a_hex(text)}};
+        sidecars[key] = {
+            {"path", path},
+            {"bytes", text.size()},
+            {"sha256", sha256_text(text)}
+        };
         return true;
     } catch (...) {
         return false;
@@ -238,6 +235,27 @@ bool heavy_key(const std::string& key) {
            key == "all_changes" || key == "all_events";
 }
 
+bool sensitive_lifecycle_key(const std::string& key) {
+    return key == "ownership_token" ||
+           key == "ownership_token_hash";
+}
+
+bool opaque_raw_text_key(const std::string& key) {
+    return key == "stderr" || key == "stderr_text" ||
+           key == "stdout" || key == "stdout_text" ||
+           key == "output" || key == "exception" ||
+           key == "raw_response" || key == "raw_stderr" ||
+           key == "raw_stdout";
+}
+
+Json opaque_raw_text_evidence(const std::string& value) {
+    return {
+        {"present", !value.empty()},
+        {"bytes", value.size()},
+        {"sha256", sha256_text(value)}
+    };
+}
+
 bool path_key(const std::string& key) {
     return key == "fsdb" || key == "daidir" || key == "dbdir" ||
            key == "file_dir" || key == "socket_path" ||
@@ -248,15 +266,21 @@ bool path_key(const std::string& key) {
 
 std::string path_log_mode() {
     std::string mode = xdebug_log_path_mode();
-    if (!mode.empty()) return mode;
     if (xdebug_log_redact_enabled()) return "hash";
-    return "full";
+    if (mode.empty()) return "hash";
+    if (mode == "full" || mode == "basename" || mode == "hash")
+        return mode;
+    return "hash";
 }
 
 std::string redact_path_for_log(const std::string& value) {
     std::string mode = path_log_mode();
     if (mode == "basename") return basename_of(value);
-    if (mode == "hash") return std::string("<path:") + fnv1a_hex(value) + ">";
+    if (mode == "hash") {
+        if (value.compare(0, 13, "<path:sha256:") == 0)
+            return value;
+        return std::string("<path:sha256:") + sha256_text(value) + ">";
+    }
     return value;
 }
 
@@ -290,12 +314,36 @@ Json sanitize_impl(const Json& value, int depth, bool& truncated) {
     if (value.is_object()) {
         Json out = Json::object();
         size_t count = 0;
+        bool sensitive_redacted = false;
+        const bool sensitive_diagnostic =
+            (value.contains("invalid_arg") &&
+             value["invalid_arg"].is_string() &&
+             sensitive_diagnostic_path(
+                 value["invalid_arg"].get<std::string>())) ||
+            (value.contains("path") &&
+             value["path"].is_string() &&
+             sensitive_diagnostic_path(
+                 value["path"].get<std::string>()));
         for (auto it = value.begin(); it != value.end(); ++it) {
             if (count >= kMaxObject) {
                 truncated = true;
                 break;
             }
-            if (heavy_key(it.key())) {
+            if (sensitive_lifecycle_key(it.key())) {
+                sensitive_redacted = true;
+            } else if (sensitive_diagnostic &&
+                       it.key() == "received") {
+                sensitive_redacted = true;
+            } else if (sensitive_diagnostic &&
+                       it.key() == "message") {
+                sensitive_redacted = true;
+                out[it.key()] =
+                    "sensitive request field failed validation";
+            } else if (opaque_raw_text_key(it.key()) &&
+                       it.value().is_string()) {
+                out[it.key()] = opaque_raw_text_evidence(
+                    it.value().get<std::string>());
+            } else if (heavy_key(it.key())) {
                 truncated = true;
                 out[it.key()] = "<omitted:large-field>";
             } else if (path_key(it.key()) && it.value().is_string()) {
@@ -304,6 +352,9 @@ Json sanitize_impl(const Json& value, int depth, bool& truncated) {
                 out[it.key()] = sanitize_impl(it.value(), depth + 1, truncated);
             }
             count++;
+        }
+        if (sensitive_redacted) {
+            out["sensitive_values_redacted"] = true;
         }
         if (value.size() > kMaxObject) out["<truncated>"] = "object";
         return out;
@@ -318,14 +369,17 @@ void append_event(const std::string& path, Json event) {
             append_health_event(path, "DIR_CREATE_FAILED", "failed to create log directory");
             return;
         }
+        event = sanitize_for_log(event);
         std::string line = event.dump();
         if (line.size() > kMaxLine) {
             spill_large_context_to_sidecars(path, event);
+            event = sanitize_for_log(event);
             line = event.dump();
         }
         if (line.size() > kMaxLine) {
             event["log_truncated"] = true;
             event["context"] = {{"message", "log event exceeded max line size and was truncated"}};
+            event = sanitize_for_log(event);
             line = event.dump();
             append_health_event(path, "EVENT_TRUNCATED", "log event exceeded max line size after sidecar spill",
                                 {{"line_bytes", line.size()}});
@@ -378,9 +432,7 @@ Json base_event(const std::string& layer,
     copy_correlation_field(event, context, "span_id");
     copy_correlation_field(event, context, "parent_span_id");
     copy_correlation_field(event, context, "alias");
-    bool truncated = false;
-    event["context"] = sanitize_impl(context, 0, truncated);
-    if (truncated) event["log_truncated"] = true;
+    event["context"] = context;
     return event;
 }
 
@@ -396,7 +448,13 @@ Json allowlisted_args_for_log(const std::string& action, const Json& args) {
     Json out = Json::object();
     if (!args.is_object()) return out;
     if (action == "value.at") {
-        for (const char* k : {"signal", "time", "radix", "format"}) copy_arg_if_present(out, args, k);
+        for (const char* k : {"signal", "list", "apb", "stream", "axi",
+                              "time", "times", "clock", "edge",
+                              "sample_point", "value_format"})
+            copy_arg_if_present(out, args, k);
+    } else if (action == "list.load") {
+        for (const char* k : {"config_path", "mode"})
+            copy_arg_if_present(out, args, k);
     } else if (action == "event.find") {
         for (const char* k : {"signal", "start", "end", "edge", "limit"}) copy_arg_if_present(out, args, k);
     } else if (action == "trace.active_driver") {
@@ -442,34 +500,80 @@ Json sanitize_for_log(const Json& value) {
 }
 
 Json request_summary_for_log(const Json& request) {
-    Json target = request.value("target", Json::object());
-    Json args = request.value("args", Json::object());
+    Json target =
+        request.is_object() && request.contains("target") &&
+                request["target"].is_object()
+            ? request["target"]
+            : Json::object();
+    Json args =
+        request.is_object() && request.contains("args") &&
+                request["args"].is_object()
+            ? request["args"]
+            : Json::object();
     Json out;
-    if (request.contains("trace_id")) out["trace_id"] = request["trace_id"];
     if (request.contains("request_id")) out["request_id"] = request["request_id"];
-    else if (request.contains("id") && request["id"].is_string()) out["request_id"] = request["id"];
-    if (request.contains("span_id")) out["span_id"] = request["span_id"];
-    if (request.contains("parent_span_id")) out["parent_span_id"] = request["parent_span_id"];
-    std::string action = request.value("action", std::string());
+    Json observability =
+        request.is_object()
+            ? request.value("observability", Json::object())
+            : Json::object();
+    if (observability.is_object()) {
+        for (const char* field : {
+                 "request_id",
+                 "trace_id",
+                 "span_id",
+                 "parent_span_id"}) {
+            if (observability.contains(field)) {
+                out[field] = observability[field];
+            }
+        }
+    }
+    std::string action =
+        request.contains("action") &&
+                request["action"].is_string()
+            ? request["action"].get<std::string>()
+            : std::string();
     out["action"] = action;
     if (target.is_object()) {
         Json t;
-        for (const char* k : {"session_id", "name", "mode", "daidir", "dbdir", "fsdb", "transport", "host", "bind_host", "port"}) {
+        for (const char* k : {
+                 "session_id",
+                 "daidir",
+                 "fsdb",
+                 "run_manifest"}) {
             if (target.contains(k)) t[k] = target[k];
         }
         out["target"] = sanitize_for_log(t);
     }
+    Json routing =
+        request.is_object()
+            ? request.value("routing", Json::object())
+            : Json::object();
+    if (routing.is_object()) {
+        Json r;
+        for (const char* field : {
+                 "session_id",
+                 "daidir",
+                 "fsdb",
+                 "mode"}) {
+            if (routing.contains(field)) {
+                r[field] = routing[field];
+            }
+        }
+        if (!r.empty()) out["routing"] = sanitize_for_log(r);
+    }
     if (args.is_object()) {
         Json keys = Json::array();
-        for (auto it = args.begin(); it != args.end(); ++it) keys.push_back(it.key());
+        for (auto it = args.begin(); it != args.end(); ++it) {
+            if (!sensitive_lifecycle_key(it.key())) {
+                keys.push_back(it.key());
+            }
+        }
         out["arg_keys"] = keys;
         if (args.contains("name")) out["name"] = args["name"];
-        if (args.contains("session_id")) out["arg_session_id"] = args["session_id"];
         Json allowlisted = allowlisted_args_for_log(action, args);
         if (!allowlisted.empty()) out["args"] = allowlisted;
     }
     if (request.contains("limits")) out["limits"] = sanitize_for_log(request["limits"]);
-    if (request.contains("output")) out["output"] = sanitize_for_log(request["output"]);
     return out;
 }
 
@@ -483,18 +587,17 @@ Json response_summary_for_log(const Json& response) {
     if (response.contains("parent_span_id")) out["parent_span_id"] = response["parent_span_id"];
     if (response.contains("session")) out["session"] = sanitize_for_log(response["session"]);
     if (response.contains("summary")) out["summary"] = sanitize_for_log(response["summary"]);
-    if (response.contains("meta")) out["meta"] = sanitize_for_log(response["meta"]);
     if (response.contains("error") && !response["error"].is_null()) out["error"] = sanitize_for_log(response["error"]);
     return out;
 }
 
-void update_public_session_manifest(const std::string& session_id,
+bool update_public_session_manifest(const std::string& session_id,
                                     const std::string& mode,
                                     const std::string& daidir,
                                     const std::string& fsdb) {
     try {
         std::string dir = public_session_dir(session_id);
-        if (!ensure_dir_recursive(dir)) return;
+        if (!ensure_dir_recursive(dir)) return false;
         Json manifest;
         manifest["session_id"] = session_id.empty() ? "adhoc" : session_id;
         if (!mode.empty()) manifest["mode"] = mode;
@@ -516,8 +619,12 @@ void update_public_session_manifest(const std::string& session_id,
         logs["public_stdio"] = public_stdio_log_path(session_id);
         manifest["logs"] = logs;
         std::ofstream out(path.c_str(), std::ios::trunc);
-        if (out) out << manifest.dump(2) << "\n";
+        if (!out) return false;
+        out << manifest.dump(2) << "\n";
+        out.flush();
+        return out.good();
     } catch (...) {
+        return false;
     }
 }
 

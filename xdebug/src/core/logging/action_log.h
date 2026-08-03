@@ -19,7 +19,7 @@ Json sanitize_for_log(const Json& value);
 Json request_summary_for_log(const Json& request);
 Json response_summary_for_log(const Json& response);
 
-void update_public_session_manifest(const std::string& session_id,
+bool update_public_session_manifest(const std::string& session_id,
                                     const std::string& mode,
                                     const std::string& daidir,
                                     const std::string& fsdb);

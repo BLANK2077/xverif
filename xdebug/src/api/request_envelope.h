@@ -13,11 +13,9 @@ struct RequestEnvelope {
     Json target = Json::object();
     Json args = Json::object();
     Json limits = Json::object();
-    Json output = Json::object();
     Json raw = Json::object();
 
     static RequestEnvelope from_json(const Json& request);
 };
 
 } // namespace xdebug
-

@@ -7,6 +7,7 @@
 #include "logging/action_log.h"
 
 #include <iostream>
+#include <set>
 #include <string>
 #include <unistd.h>
 
@@ -36,6 +37,8 @@ Json quit_envelope(const std::string& id) {
     return {
         {"id", id},
         {"ok", true},
+        {"api_version", kApiVersion},
+        {"action", "stdio.quit"},
         {"payload_format", "json"},
         {"json", {{"ok", true}, {"action", "stdio.quit"}}},
     };
@@ -49,33 +52,81 @@ Json loop_error(const std::string& id, const std::string& code, const std::strin
     };
 }
 
-std::string request_id_or_seq(const Json& req, int seq) {
-    if (req.contains("request_id") && req["request_id"].is_string()) {
-        return req["request_id"].get<std::string>();
-    }
-    if (req.contains("id") && req["id"].is_string()) {
-        return req["id"].get<std::string>();
-    }
-    return "req-" + std::to_string(seq);
-}
-
 bool has_string(const Json& object, const char* key) {
     return object.is_object() && object.contains(key) && object[key].is_string() &&
            !object[key].get<std::string>().empty();
+}
+
+struct LoopMetadata {
+    std::string id;
+    bool wants_json = false;
+    Json observability = Json::object();
+};
+
+bool consume_loop_metadata(Json& request,
+                           int seq,
+                           bool default_json,
+                           LoopMetadata& metadata,
+                           std::string& error) {
+    metadata.id = "req-" + std::to_string(seq);
+    metadata.wants_json = default_json;
+
+    if (request.contains("id")) {
+        if (!has_string(request, "id")) {
+            error = "stdio-loop id must be a non-empty string";
+            return false;
+        }
+        metadata.id = request["id"].get<std::string>();
+        request.erase("id");
+    } else if (has_string(request, "request_id")) {
+        metadata.id = request["request_id"].get<std::string>();
+    }
+
+    if (request.contains("payload_format")) {
+        if (!request["payload_format"].is_string()) {
+            error = "stdio-loop payload_format must be json or xout";
+            return false;
+        }
+        const std::string format = request["payload_format"].get<std::string>();
+        if (format == "json") {
+            metadata.wants_json = true;
+        } else if (format == "xout") {
+            metadata.wants_json = false;
+        } else {
+            error = "stdio-loop payload_format must be json or xout";
+            return false;
+        }
+        request.erase("payload_format");
+    }
+
+    metadata.observability["request_id"] =
+        has_string(request, "request_id")
+            ? request["request_id"].get<std::string>()
+            : metadata.id;
+    for (const char* field : {"trace_id", "span_id", "parent_span_id"}) {
+        if (!request.contains(field)) continue;
+        if (!has_string(request, field)) {
+            error = std::string("stdio-loop ") + field + " must be a non-empty string";
+            return false;
+        }
+        metadata.observability[field] = request[field];
+        request.erase(field);
+    }
+    return true;
 }
 
 std::string log_session_id(const Json& req) {
     Json target = req.value("target", Json::object());
     Json args = req.value("args", Json::object());
     if (has_string(target, "session_id")) return target["session_id"].get<std::string>();
-    if (has_string(args, "session_id")) return args["session_id"].get<std::string>();
-    if (has_string(args, "id") && args["id"].get<std::string>() != "all") return args["id"].get<std::string>();
     if (has_string(args, "name")) return args["name"].get<std::string>();
-    if (has_string(target, "name")) return target["name"].get<std::string>();
     return "adhoc";
 }
 
-Json stdio_context(const Json& req, const std::string& id, int seq) {
+Json stdio_context(const Json& req,
+                   const Json& observability,
+                   const std::string& id,
+                   int seq) {
     Json ctx = {
         {"request_id", id},
         {"seq", seq},
@@ -83,9 +134,9 @@ Json stdio_context(const Json& req, const std::string& id, int seq) {
     };
     std::string action = req.value("action", std::string());
     if (!action.empty()) ctx["action"] = action;
-    if (req.contains("trace_id")) ctx["trace_id"] = req["trace_id"];
-    if (req.contains("span_id")) ctx["span_id"] = req["span_id"];
-    if (req.contains("parent_span_id")) ctx["parent_span_id"] = req["parent_span_id"];
+    for (const char* field : {"trace_id", "span_id", "parent_span_id"}) {
+        if (observability.contains(field)) ctx[field] = observability[field];
+    }
     return ctx;
 }
 
@@ -93,44 +144,70 @@ void log_stdout_write_failed(const std::string& session_id, const Json& context)
     xdebug_core::log_stdio_event(session_id, "loop.stdout_write_failed", false, context);
 }
 
-bool request_wants_json(const Json& req, bool default_json) {
-    if (req.contains("__xverif_loop_payload_format") &&
-        req["__xverif_loop_payload_format"].is_string()) {
-        const std::string format = req["__xverif_loop_payload_format"].get<std::string>();
-        if (format == "json") return true;
-        if (format == "xout") return false;
+std::string render_transport_xout(const Json& response,
+                                  const std::string& handler_xout) {
+    if (response.value("ok", false) && !handler_xout.empty()) {
+        std::string text = handler_xout;
+        while (!text.empty() && text.back() == '\n') text.pop_back();
+        text.push_back('\n');
+        return text;
     }
-    if (default_json) return true;
-    return false;
+    return render_xout_response(response);
 }
 
-void strip_loop_internal_fields(Json& req) {
-    req.erase("__xverif_loop_payload_format");
+bool validate_quit_request(const Json& request, std::string& error) {
+    static const std::set<std::string> allowed = {
+        "api_version",
+        "request_id",
+        "action",
+    };
+    for (auto it = request.begin(); it != request.end(); ++it) {
+        if (allowed.find(it.key()) == allowed.end()) {
+            error = "stdio.quit does not accept field: " + it.key();
+            return false;
+        }
+    }
+    if (request.value("api_version", std::string()) != kApiVersion) {
+        error = "stdio.quit requires api_version xdebug.v1";
+        return false;
+    }
+    if (request.value("action", std::string()) != "stdio.quit") {
+        error = "stdio.quit action is required";
+        return false;
+    }
+    if (request.contains("request_id") && !has_string(request, "request_id")) {
+        error = "stdio.quit request_id must be a non-empty string";
+        return false;
+    }
+    return true;
 }
 
-Json make_envelope(const std::string& id, const Json& req, const Json& rsp, bool default_json) {
+Json make_envelope(const std::string& id, const Json& req, const Json& rsp,
+                   bool wants_json, const std::string& handler_xout) {
     Json out;
     out["id"] = id;
     out["ok"] = rsp.value("ok", false);
+    out["api_version"] = rsp.value("api_version", std::string(kApiVersion));
+    out["action"] = rsp.value("action", req.value("action", std::string()));
 
     if (!rsp.value("ok", false)) {
         out["error"] = rsp.value("error", Json::object());
         out["json"] = rsp;
-        if (!request_wants_json(req, default_json)) {
+        if (!wants_json) {
             out["payload_format"] = "xout";
-            out["xout"] = render_xout_response(rsp);
+            out["xout"] = render_transport_xout(rsp, handler_xout);
         } else {
             out["payload_format"] = "json";
         }
         return out;
     }
 
-    if (request_wants_json(req, default_json)) {
+    if (wants_json) {
         out["payload_format"] = "json";
         out["json"] = rsp;
     } else {
         out["payload_format"] = "xout";
-        out["xout"] = render_xout_response(rsp);
+        out["xout"] = render_transport_xout(rsp, handler_xout);
     }
 
     return out;
@@ -174,16 +251,40 @@ int run_stdio_loop(const std::string& executable_dir, bool default_json) {
             continue;
         }
 
-        const std::string id = request_id_or_seq(req, seq);
-        const bool wants_json = request_wants_json(req, default_json);
-        strip_loop_internal_fields(req);
-        const std::string action = req.value("action", std::string());
+        LoopMetadata metadata;
+        if (!consume_loop_metadata(req, seq, default_json, metadata, error)) {
+            Json err = loop_error(metadata.id, "INVALID_REQUEST", error);
+            bool written = write_jsonl(err);
+            Json ctx = {
+                {"request_id", metadata.id},
+                {"seq", seq},
+                {"error", error},
+            };
+            xdebug_core::log_stdio_event("adhoc", "loop.metadata_invalid", false, ctx);
+            if (!written) log_stdout_write_failed("adhoc", ctx);
+            continue;
+        }
+        const std::string& id = metadata.id;
+        const bool wants_json = metadata.wants_json;
+        const std::string action =
+            has_string(req, "action")
+                ? req["action"].get<std::string>()
+                : std::string();
         const std::string sid = log_session_id(req);
-        Json base_ctx = stdio_context(req, id, seq);
+        Json base_ctx = stdio_context(req, metadata.observability, id, seq);
         xdebug_core::log_stdio_event(sid, "request.begin", true, base_ctx);
 
         // Handle quit
         if (action == "stdio.quit") {
+            if (!validate_quit_request(req, error)) {
+                Json err = loop_error(id, "INVALID_REQUEST", error);
+                bool written = write_jsonl(err);
+                Json ctx = base_ctx;
+                ctx["error"] = {{"code", "INVALID_REQUEST"}, {"message", error}};
+                xdebug_core::log_stdio_event(sid, "loop.validate_failed", false, ctx);
+                if (!written) log_stdout_write_failed(sid, ctx);
+                continue;
+            }
             Json rsp = quit_envelope(id);
             bool written = write_jsonl(rsp);
             xdebug_core::log_stdio_event(sid, "loop.quit", written, base_ctx);
@@ -203,7 +304,7 @@ int run_stdio_loop(const std::string& executable_dir, bool default_json) {
                     : "UNSUPPORTED_API_VERSION";
 
             Json rsp = make_error(req, req.value("action", std::string()), code, error, false);
-            Json envelope = make_envelope(id, req, rsp, wants_json);
+            Json envelope = make_envelope(id, req, rsp, wants_json, "");
             bool written = write_jsonl(envelope);
             Json ctx = base_ctx;
             ctx["error"] = {{"code", code}, {"message", error}};
@@ -216,8 +317,9 @@ int run_stdio_loop(const std::string& executable_dir, bool default_json) {
         }
 
         // Dispatch
-        Json rsp = dispatcher.dispatch(req);
-        Json envelope = make_envelope(id, req, rsp, wants_json);
+        Json rsp = dispatcher.dispatch(req, metadata.observability);
+        Json envelope = make_envelope(
+            id, req, rsp, wants_json, dispatcher.last_xout());
         bool written = write_jsonl(envelope);
         xdebug_core::log_stdio_event(log_session_id(req), "request.end",
                                      written && rsp.value("ok", false),
