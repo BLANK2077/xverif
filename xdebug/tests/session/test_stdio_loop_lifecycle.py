@@ -104,6 +104,9 @@ def test_stdio_loop_multiple_requests_keep_ids_and_xout_mode(
     second = stdio_loop.request(
         {
             "id": "xout-2",
+            "trace_id": "trace-xout-2",
+            "span_id": "span-xout-2",
+            "payload_format": "xout",
             "api_version": "xdebug.v1",
             "action": "schema",
             "args": {"action": "actions", "kind": "request"},

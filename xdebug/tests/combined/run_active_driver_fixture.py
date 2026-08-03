@@ -14,6 +14,12 @@ import atexit
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+TESTS_ROOT = REPO_ROOT / "xdebug" / "tests"
+if str(TESTS_ROOT) not in sys.path:
+    sys.path.insert(0, str(TESTS_ROOT))
+
+from runner import StdioLoopRunner
+
 # When run via "make -C xdebug combined-test", CWD is the xdebug directory
 _XDEBUG_CANDIDATES = [
     os.environ.get("XDEBUG", ""),
@@ -55,6 +61,7 @@ failed = 0
 passed = 0
 skipped = 0
 opened_sessions = []
+stdio_loop = None
 
 
 def _has_license_issue(output: str) -> bool:
@@ -71,20 +78,30 @@ def _has_license_issue(output: str) -> bool:
 
 
 def run_xdebug(request_body: str) -> "tuple[int, str]":
-    """Run xdebug --json with the given request, return (rc, stdout)."""
-    proc = subprocess.run(
-        [XDEBUG, "--json", "-"],
-        input=request_body,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True,
-        timeout=120,
+    """Use one persistent JSON frontend and return CLI-compatible output."""
+    global stdio_loop
+    if stdio_loop is None:
+        stdio_loop = StdioLoopRunner(
+            Path(XDEBUG),
+            cwd=REPO_ROOT,
+            default_json=True,
+            wait_for_stderr_idle=False,
+        )
+        stdio_loop.start()
+    request = json.loads(request_body)
+    result = stdio_loop.request(request, timeout_sec=120)
+    output = (
+        json.dumps(result.response, indent=2)
+        if isinstance(result.response, dict)
+        else result.stdout_raw
     )
-    combined = proc.stdout + proc.stderr
-    return proc.returncode, combined
+    if result.stderr_raw:
+        output += "\n" + result.stderr_raw
+    return result.returncode, output
 
 
 def cleanup_opened_sessions():
+    global stdio_loop
     for session_id in reversed(opened_sessions):
         req = json.dumps({
             "api_version": "xdebug.v1",
@@ -92,16 +109,15 @@ def cleanup_opened_sessions():
             "target": {"session_id": session_id},
         })
         try:
-            subprocess.run(
-                [XDEBUG, "--json", "-"],
-                input=req + "\n",
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True,
-                timeout=15,
-            )
+            run_xdebug(req)
         except Exception:
             pass
+    if stdio_loop is not None:
+        try:
+            stdio_loop.quit()
+        finally:
+            stdio_loop.terminate()
+            stdio_loop = None
 
 
 atexit.register(cleanup_opened_sessions)
@@ -154,14 +170,17 @@ def open_session(name: str, daidir: str, fsdb: str) -> "tuple[str, str]":
         err = resp.get("error", {})
         return name, err.get("code", "UNKNOWN") + ": " + err.get("message", str(resp))
 
-    # Extract session_id — may be at session.* or data.session.*
+    # Extract the canonical public session identifier.
     session = resp.get("session", {}) or resp.get("data", {}).get("session", {})
-    sid = session.get("session_id") or session.get("id") or name
-    return str(sid), ""
+    sid = session.get("session_id")
+    if not isinstance(sid, str) or not sid:
+        return name, "session.open response missing canonical session_id"
+    return sid, ""
 
 
 def do_active_driver(session_id: str, signal: str, requested_time: str,
-                     extra_args: dict = None) -> "tuple[int, str, dict]":
+                     extra_args: dict = None,
+                     limits: dict = None) -> "tuple[int, str, dict]":
     """Run trace.active_driver, returns (rc, raw_output, json_response)."""
     args = {
         "signal": signal,
@@ -169,13 +188,15 @@ def do_active_driver(session_id: str, signal: str, requested_time: str,
     }
     if extra_args:
         args.update(extra_args)
-    req = json.dumps({
+    request = {
         "api_version": "xdebug.v1",
         "action": "trace.active_driver",
         "target": {"session_id": session_id},
         "args": args,
-    })
-    rc, out = run_xdebug(req)
+    }
+    if limits is not None:
+        request["limits"] = limits
+    rc, out = run_xdebug(json.dumps(request))
     resp = None
     # Bracket-match to extract the outermost JSON object
     stripped = out.strip()
@@ -203,11 +224,101 @@ def do_active_driver(session_id: str, signal: str, requested_time: str,
     return rc, out, resp
 
 
+def do_scope_list(session_id: str, args: dict) -> "tuple[int, str, dict]":
+    """Run scope.list, returns (rc, raw_output, json_response)."""
+    request = {
+        "api_version": "xdebug.v1",
+        "action": "scope.list",
+        "target": {"session_id": session_id},
+        "args": args,
+    }
+    rc, out = run_xdebug(json.dumps(request))
+    stripped = out.strip()
+    start = stripped.find("{")
+    if start < 0:
+        return rc, out, {}
+    depth = 0
+    for index in range(start, len(stripped)):
+        if stripped[index] == "{":
+            depth += 1
+        elif stripped[index] == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    response = json.loads(stripped[start:index + 1])
+                except (json.JSONDecodeError, ValueError):
+                    return rc, out, {}
+                return rc, out, response if isinstance(response, dict) else {}
+    return rc, out, {}
+
+
+def check_interface_is_signal(session_id: str):
+    """Verify interface instances/ports are classified without expansion."""
+    global failed, passed
+    rc, raw, response = do_scope_list(
+        session_id,
+        {
+            "path": "if_root_tb",
+            "level": 0,
+            "kind": "signal",
+            "include_patterns": ["link", "link.*"],
+        },
+    )
+    if rc != 0 or response.get("ok") is not True:
+        print(f"FAIL: scope_list_interface_signal — request failed: {raw[-500:]}")
+        failed += 1
+        return
+    signals = response.get("data", {}).get("signals", [])
+    if signals != [{"name": "link", "width": None}]:
+        print(
+            "FAIL: scope_list_interface_signal — expected one unexpanded "
+            f"interface signal, got {signals}"
+        )
+        failed += 1
+        return
+    if response.get("data", {}).get("modules") or response.get("data", {}).get("ports"):
+        print("FAIL: scope_list_interface_signal — kind filter leaked another category")
+        failed += 1
+        return
+
+    rc, raw, response = do_scope_list(
+        session_id,
+        {
+            "path": "if_root_tb",
+            "level": 1,
+            "kind": "port",
+            "include_patterns": ["u_src.bus", "u_src.bus.*"],
+        },
+    )
+    if rc != 0 or response.get("ok") is not True:
+        print(f"FAIL: scope_list_interface_port — request failed: {raw[-500:]}")
+        failed += 1
+        return
+    ports = response.get("data", {}).get("ports", [])
+    if ports != [
+        {"name": "u_src.bus", "direction": "interface", "width": None}
+    ]:
+        print(
+            "FAIL: scope_list_interface_port — expected direction=interface, "
+            f"got {ports}"
+        )
+        failed += 1
+        return
+    print("PASS: scope_list_interface_signal")
+    passed += 1
+
+
 def check(name: str, session_id: str, signal: str, requested_time: str,
-          checks: list, extra_args: dict = None):
+          checks: list, extra_args: dict = None, limits: dict = None):
     """Run a check case. Each check is a callable(resp, raw) -> bool."""
     global failed, passed
-    rc, raw, resp = do_active_driver(session_id, signal, requested_time, extra_args)
+    rc, raw, resp = do_active_driver(
+        session_id,
+        signal,
+        requested_time,
+        extra_args,
+        limits,
+    )
     if not resp:
         print(f"FAIL: {name} — no JSON response")
         print(f"  raw output (last 500 chars): {raw[-500:]}")
@@ -293,12 +404,17 @@ def data_has(key: str, expected):
     return has_field(f"data.{key}", expected)
 
 
-def meta_truncated(expected: bool):
+def summary_analysis_complete(expected: bool):
     def fn(resp, raw):
-        meta = resp.get("meta", {})
-        actual = meta.get("truncated", False)
+        summary = resp.get("summary", {})
+        actual = summary.get("analysis_complete")
         if actual != expected:
-            return False, f"meta.truncated is {actual}, expected {expected}"
+            return False, f"summary.analysis_complete is {actual}, expected {expected}"
+        if summary.get("response_truncated") is not False:
+            return False, "analysis budget exhaustion must not mark response_truncated"
+        scopes = summary.get("truncation_scopes", [])
+        if not expected and "analysis_trace" not in scopes:
+            return False, "analysis_trace is missing from summary.truncation_scopes"
         return True, ""
     return fn
 
@@ -325,8 +441,11 @@ def path_count_at_least(expected_count: int):
         paths = resp.get("data", {}).get("paths", [])
         if len(paths) < expected_count:
             return False, f"data.paths has {len(paths)} entries, expected at least {expected_count}"
-        if resp.get("summary", {}).get("path_count") != len(paths):
-            return False, "summary.path_count does not match data.paths length"
+        summary = resp.get("summary", {})
+        if summary.get("returned_count") != len(paths):
+            return False, "summary.returned_count does not match data.paths length"
+        if summary.get("total_count", -1) < len(paths):
+            return False, "summary.total_count is smaller than data.paths length"
         return True, ""
     return fn
 
@@ -412,6 +531,8 @@ def main():
     print("Running test cases...")
     print()
 
+    check_interface_is_signal(if_sid)
+
     # ── Test 1: q_20ns ──
     check("q_20ns: basic assignment resolution",
           ad_sid, "active_driver_tb.u_dut.q", "20ns",
@@ -441,9 +562,9 @@ def main():
     # ── Test 4: comb_q_x_50ns (control_only or resolved) ──
     def check_comb_q_x(resp, raw):
         summary = resp.get("summary", {})
-        if "path_count" in summary and "active_time" in summary:
+        if "returned_count" in summary and "active_time" in summary:
             return True, ""
-        return False, "summary.path_count or summary.active_time is missing"
+        return False, "summary.returned_count or summary.active_time is missing"
 
     check("comb_q_x_50ns: control_only for default/X branch",
           ad_sid, "active_driver_tb.u_dut.comb_q", "50ns",
@@ -489,9 +610,9 @@ def main():
     # ── Test 9: limits_max_nodes ──
     check("limits_max_nodes: truncation with max_nodes=1",
           ad_sid, "active_driver_tb.u_dut.q", "20ns",
-          extra_args={"limits": {"max_nodes": 1}},
+          limits={"max_nodes": 1},
           checks=[
-              meta_truncated(True),
+              summary_analysis_complete(False),
           ])
 
     # ── Summary ──

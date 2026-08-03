@@ -100,6 +100,7 @@ int main() {
     assert(response["action"] == "demo.echo");
     assert(response["summary"]["status"] == "ok");
     assert(response["schema_version"] == spec.response_schema);
+    assert(!response.contains("meta"));
 
     Json missing_arg = {
         {"api_version", "xdebug.v1"},

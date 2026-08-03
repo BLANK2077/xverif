@@ -42,7 +42,7 @@ def run_case(
     start = proc.stdout.find("{")
     assert start >= 0, proc.stdout + proc.stderr
     result, _ = json.JSONDecoder().raw_decode(proc.stdout[start:])
-    assert result["truncated"] is False
+    assert result["analysis_complete"] is True
     assert result["active_trace_calls"] == result["total_hops"]
     if "hops" in case:
         assert result["total_hops"] == case["hops"]

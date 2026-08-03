@@ -8,7 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from runner import ArtifactWriter, CliRunner, CommandRunner, StdioLoopRunner
+from runner import (
+    ArtifactWriter,
+    CliRunner,
+    CommandRunner,
+    HybridCliRunner,
+    StdioLoopRunner,
+)
 
 
 TESTS_ROOT = Path(__file__).resolve().parent
@@ -118,6 +124,23 @@ def cli_runner(
         cwd=repo_root,
         base_env={"HOME": str(isolated_home), "XVERIF_HOME": str(repo_root)},
     )
+
+
+@pytest.fixture
+def persistent_cli_runner(
+    xdebug_bin: Path,
+    repo_root: Path,
+    isolated_home: Path,
+) -> HybridCliRunner:
+    runner = HybridCliRunner(
+        xdebug_bin,
+        cwd=repo_root,
+        base_env={"HOME": str(isolated_home), "XVERIF_HOME": str(repo_root)},
+    )
+    try:
+        yield runner
+    finally:
+        runner.close()
 
 
 @pytest.fixture(scope="module")
