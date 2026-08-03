@@ -1,210 +1,254 @@
 #include "apb_manager.h"
-#include "../common/xdebug_waveform_paths.h"
-#include "json.hpp"
 
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/file.h>
+#include "../common/xdebug_waveform_paths.h"
+
+#include <set>
 
 namespace xdebug_waveform {
+namespace {
 
-using Json = nlohmann::ordered_json;
-
-ApbManager::ApbManager() {
-}
-
-ApbManager::~ApbManager() {
-}
-
-static bool lock_file(int fd) {
-    return flock(fd, LOCK_EX) == 0;
-}
-
-static bool unlock_file(int fd) {
-    return flock(fd, LOCK_UN) == 0;
-}
-
-static Json apb_to_json(const ApbConfig& c) {
-    Json j = {
-        {"name", c.name},
-        {"paddr", c.paddr},
-        {"pwdata", c.pwdata},
-        {"prdata", c.prdata},
-        {"pwrite", c.pwrite},
-        {"penable", c.penable},
-        {"psel", c.psel},
-        {"pready", c.pready},
-        {"pslverr", c.pslverr},
-        {"clock", c.clock_sample.clock},
-        {"reset", reset_config_json(c.reset)},
-        {"edge", clock_edge_kind_text(c.clock_sample.edge)}
+StoreJson apb_to_json(const ApbConfig& config) {
+    StoreJson value = {
+        {"name", config.name},
+        {"paddr", config.paddr},
+        {"pwdata", config.pwdata},
+        {"prdata", config.prdata},
+        {"pwrite", config.pwrite},
+        {"penable", config.penable},
+        {"psel", config.psel},
+        {"clock", config.clock_sample.clock},
+        {"reset", reset_config_json(config.reset)},
+        {"edge", clock_edge_kind_text(config.clock_sample.edge)}
     };
-    if (c.clock_sample.edge != ClockEdgeKind::Negedge)
-        j["sample_point"] = clock_sample_point_text(c.clock_sample.sample_point);
-    return j;
+    if (!config.pready.empty()) value["pready"] = config.pready;
+    if (!config.pslverr.empty()) value["pslverr"] = config.pslverr;
+    if (config.clock_sample.edge != ClockEdgeKind::Negedge) {
+        value["sample_point"] =
+            clock_sample_point_text(config.clock_sample.sample_point);
+    }
+    return value;
 }
 
-static bool json_to_apb(const Json& j, ApbConfig& c) {
-    if (!j.is_object()) return false;
-    if (j.contains("sample_offset")) return false;
-    c.name = j.value("name", "");
-    c.paddr = j.value("paddr", "");
-    c.pwdata = j.value("pwdata", "");
-    c.prdata = j.value("prdata", "");
-    c.pwrite = j.value("pwrite", "");
-    c.penable = j.value("penable", "");
-    c.psel = j.value("psel", "");
-    c.pready = j.value("pready", "");
-    c.pslverr = j.value("pslverr", "");
-    c.clock_sample.clock = j.value("clock", "");
-    std::string edge_error;
-    if (!j.contains("reset") || !parse_reset_config(j["reset"], c.reset, edge_error)) return false;
-    if (!parse_clock_edge_kind(j.value("edge", "negedge"), c.clock_sample.edge, edge_error)) {
+bool json_to_apb(
+    const StoreJson& value,
+    ApbConfig& config,
+    std::string& error) {
+    if (!value.is_object()) {
+        error = "APB config must be an object";
         return false;
     }
-    if (j.contains("sample_point")) {
-        if (!j["sample_point"].is_string()) return false;
-        c.clock_sample.has_sample_point = true;
-        if (!parse_clock_sample_point_kind(j["sample_point"].get<std::string>(),
-                                           c.clock_sample.sample_point,
-                                           edge_error)) return false;
-    }
-    if (c.clock_sample.edge == ClockEdgeKind::Negedge && c.clock_sample.has_sample_point)
+    static const std::set<std::string> base_fields = {
+        "name", "paddr", "pwdata", "prdata", "pwrite", "penable",
+        "psel", "clock", "reset", "edge"
+    };
+    const bool has_pready = value.contains("pready");
+    const bool has_pslverr = value.contains("pslverr");
+    const bool has_sample_point = value.contains("sample_point");
+    if (value.size() !=
+        base_fields.size() +
+            (has_pready ? 1U : 0U) +
+            (has_pslverr ? 1U : 0U) +
+            (has_sample_point ? 1U : 0U)) {
+        error = "APB config contains unknown or missing fields";
         return false;
-    return !c.name.empty();
-}
+    }
+    for (const auto& field : base_fields) {
+        if (!value.contains(field)) {
+            error = "APB config is missing field: " + field;
+            return false;
+        }
+    }
+    for (const char* field : {
+             "name", "paddr", "pwdata", "prdata", "pwrite", "penable",
+             "psel", "clock", "edge"}) {
+        if (!value[field].is_string() ||
+            value[field].get<std::string>().empty()) {
+            error = std::string("APB config field must be a non-empty string: ") +
+                    field;
+            return false;
+        }
+    }
+    for (const char* field : {"pready", "pslverr"}) {
+        if (value.contains(field) &&
+            (!value[field].is_string() ||
+             value[field].get<std::string>().empty())) {
+            error =
+                std::string(
+                    "APB optional config field must be a non-empty string: ") +
+                field;
+            return false;
+        }
+    }
 
-bool ApbManager::parse_legacy_line(const char* line, ApbConfig& config, int& session_id) {
-    char buf[10][1024];
-    int n = sscanf(line, "%d|%1023[^|]|%1023[^|]|%1023[^|]|%1023[^|]|%1023[^|]|%1023[^|]|%1023[^|]|%1023[^|]|%1023[^|]|%1023[^|\n]",
-                   &session_id,
-                   buf[0], buf[1], buf[2], buf[3], buf[4],
-                   buf[5], buf[6], buf[7], buf[8], buf[9]);
-    if (n != 11) return false;
-    config.name    = buf[0];
-    config.paddr   = buf[1];
-    config.pwdata  = buf[2];
-    config.prdata  = buf[3];
-    config.pwrite  = buf[4];
-    config.penable = buf[5];
-    config.psel    = buf[6];
-    config.clock_sample.clock = buf[7];
-    config.reset.signal = buf[8];
-    config.reset.polarity = ResetPolarity::ActiveLow;
-    config.clock_sample.edge = (strcmp(buf[9], "posedge") == 0)
-        ? ClockEdgeKind::Posedge : ClockEdgeKind::Negedge;
+    config.name = value["name"].get<std::string>();
+    config.paddr = value["paddr"].get<std::string>();
+    config.pwdata = value["pwdata"].get<std::string>();
+    config.prdata = value["prdata"].get<std::string>();
+    config.pwrite = value["pwrite"].get<std::string>();
+    config.penable = value["penable"].get<std::string>();
+    config.psel = value["psel"].get<std::string>();
+    config.pready =
+        has_pready ? value["pready"].get<std::string>() : std::string();
+    config.pslverr =
+        has_pslverr ? value["pslverr"].get<std::string>() : std::string();
+    config.clock_sample.clock = value["clock"].get<std::string>();
+    std::string parse_error;
+    if (!parse_reset_config(value["reset"], config.reset, parse_error)) {
+        error = "APB reset is invalid: " + parse_error;
+        return false;
+    }
+    if (!parse_clock_edge_kind(
+            value["edge"].get<std::string>(),
+            config.clock_sample.edge,
+            parse_error)) {
+        error = "APB edge is invalid: " + parse_error;
+        return false;
+    }
+    if (config.clock_sample.edge == ClockEdgeKind::Negedge) {
+        if (has_sample_point) {
+            error = "APB negedge config must not contain sample_point";
+            return false;
+        }
+        config.clock_sample.has_sample_point = false;
+    } else {
+        if (!has_sample_point || !value["sample_point"].is_string()) {
+            error = "APB non-negedge config requires sample_point";
+            return false;
+        }
+        config.clock_sample.has_sample_point = true;
+        if (!parse_clock_sample_point_kind(
+                value["sample_point"].get<std::string>(),
+                config.clock_sample.sample_point,
+                parse_error)) {
+            error = "APB sample_point is invalid: " + parse_error;
+            return false;
+        }
+    }
+    error.clear();
     return true;
 }
 
-bool ApbManager::migrate_legacy(const std::string& session_id, std::vector<ApbConfig>& configs) {
-    (void)session_id;
-    (void)configs;
-    return false;
-}
-
-bool ApbManager::load_session(const std::string& session_id, std::vector<ApbConfig>& configs) {
+StoreResult parse_configs(
+    const StoreJson& items,
+    std::vector<ApbConfig>& configs) {
     configs.clear();
-    int fd = open(xdebug_waveform_apb_path(session_id).c_str(), O_RDONLY);
-    if (fd < 0) return migrate_legacy(session_id, configs);
-    if (!lock_file(fd)) {
-        close(fd);
-        return false;
-    }
-    FILE* fp = fdopen(fd, "r");
-    if (!fp) {
-        unlock_file(fd);
-        close(fd);
-        return false;
-    }
-    std::string text;
-    char buf[4096];
-    while (fgets(buf, sizeof(buf), fp)) text += buf;
-    fclose(fp);
-    if (text.empty()) return true;
-    try {
-        Json root = Json::parse(text);
-        if (!root.is_object() || !root.value("configs", Json::array()).is_array()) return true;
-        for (const auto& item : root["configs"]) {
-            ApbConfig config;
-            if (json_to_apb(item, config)) configs.push_back(config);
+    std::set<std::string> names;
+    for (size_t index = 0; index < items.size(); ++index) {
+        ApbConfig config;
+        std::string error;
+        if (!json_to_apb(items[index], config, error)) {
+            return store_invalid(
+                "APB configs[" + std::to_string(index) + "]: " + error);
         }
-    } catch (...) {
-        return false;
-    }
-    return true;
-}
-
-bool ApbManager::save_session(const std::string& session_id, const std::vector<ApbConfig>& configs) {
-    if (!xdebug_waveform_ensure_session_dir(session_id)) return false;
-    int fd = open(xdebug_waveform_apb_path(session_id).c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
-    if (fd < 0) return false;
-    if (!lock_file(fd)) {
-        close(fd);
-        return false;
-    }
-    Json root;
-    root["version"] = 1;
-    root["configs"] = Json::array();
-    for (const auto& config : configs) root["configs"].push_back(apb_to_json(config));
-    std::string data = root.dump(2) + "\n";
-    bool ok = write(fd, data.c_str(), data.size()) == static_cast<ssize_t>(data.size());
-    unlock_file(fd);
-    close(fd);
-    return ok;
-}
-
-bool ApbManager::create_apb(const std::string& session_id, const ApbConfig& config) {
-    std::vector<ApbConfig> configs;
-    load_session(session_id, configs);
-    for (const auto& c : configs) {
-        if (c.name == config.name) return false;
-    }
-    configs.push_back(config);
-    return save_session(session_id, configs);
-}
-
-bool ApbManager::delete_apb(const std::string& session_id, const std::string& name) {
-    std::vector<ApbConfig> configs;
-    load_session(session_id, configs);
-    std::vector<ApbConfig> out;
-    bool found = false;
-    for (const auto& c : configs) {
-        if (c.name == name) {
-            found = true;
-            continue;
+        if (!names.insert(config.name).second) {
+            return store_invalid("duplicate APB config name: " + config.name);
         }
-        out.push_back(c);
+        configs.push_back(std::move(config));
     }
-    return found && save_session(session_id, out);
+    return {};
 }
 
-bool ApbManager::get_apb(const std::string& session_id, const std::string& name, ApbConfig& config) {
-    std::vector<ApbConfig> configs;
-    load_session(session_id, configs);
-    for (const auto& c : configs) {
-        if (c.name == name) {
-            config = c;
-            return true;
+StoreJson serialize_configs(const std::vector<ApbConfig>& configs) {
+    StoreJson items = StoreJson::array();
+    for (const auto& config : configs) items.push_back(apb_to_json(config));
+    return items;
+}
+
+VersionedJsonStore store_for(const std::string& session_id) {
+    return VersionedJsonStore(
+        xdebug_waveform_apb_path(session_id), "configs");
+}
+
+} // namespace
+
+StoreResult ApbManager::load_session(
+    const std::string& session_id,
+    std::vector<ApbConfig>& configs) {
+    StoreJson items;
+    StoreResult loaded = store_for(session_id).load(items);
+    if (!loaded.ok()) return loaded;
+    return parse_configs(items, configs);
+}
+
+StoreResult ApbManager::create_apb(
+    const std::string& session_id,
+    const ApbConfig& config) {
+    ApbConfig validated;
+    std::string validation_error;
+    if (!json_to_apb(apb_to_json(config), validated, validation_error)) {
+        return store_invalid(
+            "cannot persist invalid APB config: " + validation_error);
+    }
+    if (!xdebug_waveform_ensure_session_dir(session_id)) {
+        return {
+            StoreStatus::IoError,
+            "CONFIG_STORE_IO_ERROR",
+            "cannot create APB session directory"
+        };
+    }
+    return store_for(session_id).update([&](StoreJson& items) {
+        std::vector<ApbConfig> configs;
+        StoreResult parsed = parse_configs(items, configs);
+        if (!parsed.ok()) return parsed;
+        for (const auto& existing : configs) {
+            if (existing.name == config.name)
+                return store_conflict("APB config already exists: " + config.name);
         }
-    }
-    return false;
+        configs.push_back(config);
+        items = serialize_configs(configs);
+        return StoreResult{};
+    });
 }
 
-bool ApbManager::get_latest_apb(const std::string& session_id, std::string& name) {
+StoreResult ApbManager::delete_apb(
+    const std::string& session_id,
+    const std::string& name) {
+    return store_for(session_id).update([&](StoreJson& items) {
+        std::vector<ApbConfig> configs;
+        StoreResult parsed = parse_configs(items, configs);
+        if (!parsed.ok()) return parsed;
+        std::vector<ApbConfig> kept;
+        bool found = false;
+        for (const auto& config : configs) {
+            if (config.name == name) found = true;
+            else kept.push_back(config);
+        }
+        if (!found) return store_not_found("APB config not found: " + name);
+        items = serialize_configs(kept);
+        return StoreResult{};
+    });
+}
+
+StoreResult ApbManager::get_apb(
+    const std::string& session_id,
+    const std::string& name,
+    ApbConfig& config) {
     std::vector<ApbConfig> configs;
-    load_session(session_id, configs);
-    if (configs.empty()) return false;
+    StoreResult loaded = load_session(session_id, configs);
+    if (!loaded.ok()) return loaded;
+    for (const auto& current : configs) {
+        if (current.name != name) continue;
+        config = current;
+        return {};
+    }
+    return store_not_found("APB config not found: " + name);
+}
+
+StoreResult ApbManager::get_latest_apb(
+    const std::string& session_id,
+    std::string& name) {
+    std::vector<ApbConfig> configs;
+    StoreResult loaded = load_session(session_id, configs);
+    if (!loaded.ok()) return loaded;
+    if (configs.empty()) return store_not_found("no APB configs are loaded");
     name = configs.back().name;
-    return true;
+    return {};
 }
 
-std::vector<ApbConfig> ApbManager::list_all(const std::string& session_id) {
-    std::vector<ApbConfig> configs;
-    load_session(session_id, configs);
-    return configs;
+StoreResult ApbManager::list_all(
+    const std::string& session_id,
+    std::vector<ApbConfig>& configs) {
+    return load_session(session_id, configs);
 }
 
 } // namespace xdebug_waveform
