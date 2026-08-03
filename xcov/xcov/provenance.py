@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 from pathlib import Path
 from typing import Any, Dict
 
 from .errors import XcovError
+from .protocol import strict_json_loads
+from .schemas import SchemaValidationError, validate_run_manifest_document
 
 Json = Dict[str, Any]
 
@@ -54,8 +55,15 @@ def resource_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _mismatch(message: str, manifest: Json) -> XcovError:
-    return XcovError("RESOURCE_PROVENANCE_MISMATCH", message, manifest=manifest)
+def _mismatch(message: str) -> XcovError:
+    """Create a closed public provenance error.
+
+    The manifest is an input document, not a public error-detail contract.
+    Publishing it verbatim made the response shape depend on arbitrary input
+    keys and could disclose unrelated run metadata.
+    """
+
+    return XcovError("RESOURCE_PROVENANCE_MISMATCH", message)
 
 
 def validate_run_manifest(target: Json) -> Json | None:
@@ -68,50 +76,53 @@ def validate_run_manifest(target: Json) -> Json | None:
     if run_manifest is None:
         return None
     if not isinstance(run_manifest, str) or not run_manifest:
-        raise _mismatch("target.run_manifest must be a non-empty path", {})
+        raise _mismatch("target.run_manifest must be a non-empty path")
     manifest_path = _canonical(run_manifest)
     try:
-        details: Any = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise _mismatch("run manifest is not valid JSON", {}) from exc
-    if not isinstance(details, dict):
-        raise _mismatch("run manifest must be a JSON object", {})
-    if (details.get("schema_version") != "xcov.run-manifest.v1" or
-            details.get("state") != "published"):
-        raise _mismatch("run manifest must be xcov.run-manifest.v1 in published state", details)
+        details: Any = strict_json_loads(
+            manifest_path.read_text(encoding="utf-8")
+        )
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise _mismatch("run manifest is not valid JSON") from exc
+    try:
+        details = validate_run_manifest_document(details)
+    except SchemaValidationError as exc:
+        raise _mismatch(
+            f"run manifest violates the closed contract at {exc.path}: "
+            f"{exc.message}"
+        ) from exc
 
     resources = details.get("resources")
-    declared = resources.get("vdb") if isinstance(resources, dict) else None
-    if not isinstance(declared, dict):
-        raise _mismatch("run manifest does not declare resource: vdb", details)
+    declared = resources["vdb"]
     relative = declared.get("path")
     size = declared.get("size_bytes")
     expected_sha = declared.get("sha256")
-    if (not isinstance(relative, str) or not relative or Path(relative).is_absolute() or
-            not isinstance(size, int) or size < 0 or
-            not isinstance(expected_sha, str) or len(expected_sha) != 64):
-        raise _mismatch("run manifest has incomplete resource declaration: vdb", details)
 
     vdb = target.get("vdb")
     if not isinstance(vdb, str) or not vdb:
-        raise _mismatch("target.vdb is required when run_manifest is provided", details)
+        raise _mismatch(
+            "target.vdb is required when run_manifest is provided"
+        )
     expected_path = _canonical(str(manifest_path.parent / relative))
     actual_path = _canonical(vdb)
     if expected_path != actual_path:
-        details.update({"resource": "vdb", "expected_path": relative})
-        raise _mismatch("run manifest resource path does not match target: vdb", details)
+        raise _mismatch(
+            "run manifest resource path does not match target: vdb"
+        )
     actual_size = actual_path.stat().st_size
     if actual_size != size:
-        details.update({"resource": "vdb", "expected_size_bytes": size,
-                        "actual_size_bytes": actual_size})
-        raise _mismatch("run manifest resource size does not match target: vdb", details)
+        raise _mismatch(
+            "run manifest resource size does not match target: vdb"
+        )
     try:
         actual_sha = resource_sha256(actual_path)
     except OSError as exc:
-        raise _mismatch("run manifest resource cannot be hashed: vdb", details) from exc
+        raise _mismatch(
+            "run manifest resource cannot be hashed: vdb"
+        ) from exc
     if actual_sha != expected_sha:
-        details.update({"resource": "vdb", "expected_sha256": expected_sha,
-                        "actual_sha256": actual_sha})
-        raise _mismatch("run manifest resource SHA-256 does not match target: vdb", details)
+        raise _mismatch(
+            "run manifest resource SHA-256 does not match target: vdb"
+        )
     details["manifest_path"] = str(manifest_path)
     return details

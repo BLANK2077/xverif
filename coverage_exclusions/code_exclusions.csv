@@ -1,0 +1,3 @@
+# schema_version=xcov-code-exclusions.v1
+# coverage_kind=code
+scope,metric,line,object,bin,reason

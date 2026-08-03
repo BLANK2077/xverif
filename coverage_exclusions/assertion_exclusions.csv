@@ -1,0 +1,3 @@
+# schema_version=xcov-assertion-exclusions.v1
+# coverage_kind=assertion
+scope,line,assertion,assertion_kind,reason

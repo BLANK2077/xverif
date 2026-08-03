@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import csv
 import fnmatch
-import json
-import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
+from .coverage_contract import strict_coverage_pct
 from .errors import XcovError
+from .schemas import query_contract_for_action, sort_fields_for_action
 
 Json = Dict[str, Any]
 
@@ -19,8 +18,8 @@ DEFAULT_LIMITS = {
     "scope.summary": 100,
     "code_coverage.summary": 100,
     "code_coverage.holes": 100,
-    "function_coverage.summary": 100,
-    "function_coverage.holes": 100,
+    "functional_coverage.summary": 100,
+    "functional_coverage.holes": 100,
     "source.map": 100,
     "source.annotate": 100,
     "assert.summary": 100,
@@ -29,11 +28,12 @@ DEFAULT_LIMITS = {
 REGEX_HINT_CHARS = ("[", "]", "{", "}", "^", "$", "(", ")", "|", "+")
 
 
-def query_args(args: Json) -> Json:
+def query_args(action: str, args: Json) -> Json:
+    contract = query_contract_for_action(action)
     query = dict(args.get("query") or {})
     query.setdefault("include_patterns", [])
     query.setdefault("exclude_patterns", [])
-    query.setdefault("match_field", "full_name")
+    query.setdefault("match_field", contract["default"])
     query.setdefault("pattern_mode", "glob")
     query.setdefault("case_sensitive", True)
     if query.get("pattern_mode") != "glob":
@@ -44,10 +44,15 @@ def query_args(args: Json) -> Json:
             raise XcovError("REGEX_NOT_SUPPORTED", "only glob wildcard patterns are supported",
                             pattern=pat, supported="*,?")
     mf = query.get("match_field")
-    if not isinstance(mf, str) or not mf:
+    if (
+        not isinstance(mf, str)
+        or not mf
+        or mf not in contract["allowed"]
+    ):
         raise XcovError("INVALID_QUERY_FIELD",
-                        "match_field must be a single non-empty string, e.g. 'full_name' or 'name'",
-                        match_field=mf)
+                        f"query.match_field is not supported for {action}",
+                        match_field=repr(mf),
+                        supported=",".join(contract["allowed"]))
     return query
 
 
@@ -99,11 +104,37 @@ def filter_items(items: Iterable[Json], query: Json) -> List[Json]:
     return rows
 
 
-def sort_items(items: List[Json], sort: Json | None) -> List[Json]:
-    if not sort:
+def sort_items(action: str, items: List[Json], sort: Json | None) -> List[Json]:
+    if sort is None:
         return items
-    key = str(sort.get("by") or "name")
-    reverse = str(sort.get("order") or "asc") == "desc"
+    allowed = sort_fields_for_action(action)
+    key = sort.get("by")
+    if not isinstance(key, str) or key not in allowed:
+        raise XcovError(
+            "INVALID_SORT_FIELD",
+            f"sort.by is not supported for {action}",
+            field=repr(key),
+            supported=",".join(allowed),
+        )
+    order = sort.get("order", "asc")
+    if order not in ("asc", "desc"):
+        raise XcovError(
+            "INVALID_SORT_ORDER",
+            "sort.order must be asc or desc",
+        )
+    reverse = order == "desc"
+    missing = [
+        index
+        for index, item in enumerate(items)
+        if key not in item
+    ]
+    if missing:
+        raise XcovError(
+            "INVALID_SORT_FIELD",
+            f"sort.by is not present in the {action} response variant",
+            field=key,
+            row_index=missing[0],
+        )
 
     def item_key(item: Json):
         value = item.get(key)
@@ -124,25 +155,10 @@ def limit_args(action: str, args: Json) -> Json:
     max_items = limits.get("max_items")
     if max_items is not None and (not isinstance(max_items, int) or max_items < 0):
         raise XcovError("INVALID_LIMIT", "limits.max_items must be a non-negative integer")
-    if limits["overflow"] not in ("truncate", "error", "to_file", "summary_only"):
+    if limits["overflow"] not in ("truncate", "error", "summary_only"):
         raise XcovError("INVALID_LIMIT", "unsupported limits.overflow",
                         overflow=limits["overflow"])
     return limits
-
-
-def output_args(args: Json, default_mode: str = "inline") -> Json:
-    output = dict(args.get("output") or {})
-    output.setdefault("response_format", "xout")
-    output.setdefault("mode", default_mode)
-    output.setdefault("artifact_format", "json")
-    output.setdefault("path", None)
-    output.setdefault("allow_absolute_path", False)
-    if output["mode"] not in ("inline", "file", "both", "summary_only"):
-        raise XcovError("SCHEMA_INVALID", "unsupported output.mode", mode=output["mode"])
-    if output["artifact_format"] not in ("json", "ndjson", "csv", "md"):
-        raise XcovError("EXPORT_FORMAT_UNSUPPORTED", "unsupported artifact format",
-                        artifact_format=output["artifact_format"])
-    return output
 
 
 def resolve_artifact_path(path: str, allow_absolute_path: bool = False) -> str:
@@ -159,96 +175,52 @@ def resolve_artifact_path(path: str, allow_absolute_path: bool = False) -> str:
     return str(Path(".xverif") / "xcov_exports" / raw)
 
 
-def write_artifact(path: str, fmt: str, items: List[Json],
-                   allow_absolute_path: bool = False) -> str:
-    resolved = resolve_artifact_path(path, allow_absolute_path=allow_absolute_path)
-    parent = os.path.dirname(resolved)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-    try:
-        if fmt == "json":
-            with open(resolved, "w", encoding="utf-8") as fh:
-                json.dump(items, fh, ensure_ascii=False, indent=2, sort_keys=True)
-        elif fmt == "ndjson":
-            with open(resolved, "w", encoding="utf-8") as fh:
-                for item in items:
-                    fh.write(json.dumps(item, ensure_ascii=False, sort_keys=True) + "\n")
-        elif fmt == "csv":
-            keys = sorted({k for item in items for k in item if k != "evidence"})
-            keys += ["file", "line"]
-            with open(resolved, "w", encoding="utf-8", newline="") as fh:
-                writer = csv.DictWriter(fh, fieldnames=keys)
-                writer.writeheader()
-                for item in items:
-                    row = {k: item.get(k) for k in keys}
-                    evidence = item.get("evidence") if isinstance(item.get("evidence"), dict) else {}
-                    row["file"] = evidence.get("file")
-                    row["line"] = evidence.get("line")
-                    writer.writerow(row)
-        elif fmt == "md":
-            with open(resolved, "w", encoding="utf-8") as fh:
-                fh.write("| metric | type | full_name | covered | coverable | file | line |\n")
-                fh.write("|---|---|---|---:|---:|---|---:|\n")
-                for item in items:
-                    evidence = item.get("evidence") if isinstance(item.get("evidence"), dict) else {}
-                    fh.write(
-                        f"| {item.get('metric','')} | {item.get('type','')} | "
-                        f"{item.get('full_name','')} | {item.get('covered','')} | "
-                        f"{item.get('coverable','')} | {evidence.get('file','')} | "
-                        f"{evidence.get('line','')} |\n"
-                    )
-    except OSError as exc:
-        raise XcovError("OUTPUT_WRITE_FAILED", str(exc), path=resolved) from exc
-    return resolved
-
-
-def apply_output(action: str, args: Json, items: List[Json],
-                 default_mode: str = "inline") -> Tuple[Json, List[Json], List[str]]:
+def apply_output(action: str, args: Json, items: List[Json]) -> Tuple[Json, List[Json], List[str]]:
     limits = limit_args(action, args)
-    output = output_args(args, default_mode)
-    matched = len(items)
+    total_count = len(items)
     max_items = limits.get("max_items")
     overflow = limits.get("overflow")
-    mode = output.get("mode")
     warnings: List[str] = []
-    note = None
-    output_path = output.get("path")
-    should_write = mode == "file" or mode == "both" or overflow == "to_file"
-    truncated = bool(max_items is not None and matched > max_items)
-    if overflow == "error" and truncated:
-        raise XcovError("INVALID_LIMIT", "result exceeds limits.max_items",
-                        matched_count=matched, max_items=max_items)
-    if should_write:
-        if not output_path:
-            raise XcovError("OUTPUT_PATH_REQUIRED", "output.path is required")
-        output_path = write_artifact(str(output_path), str(output["artifact_format"]), items,
-                                     allow_absolute_path=bool(output.get("allow_absolute_path")))
-        note = f"full result written to {output_path}"
-    if mode in ("file", "summary_only") or overflow == "summary_only":
+    exceeds_limit = bool(max_items is not None and total_count > max_items)
+    if overflow == "error" and exceeds_limit:
+        raise XcovError(
+            "INVALID_LIMIT",
+            "result exceeds limits.max_items",
+            total_count=total_count,
+            max_items=max_items,
+        )
+    if overflow == "summary_only":
         inline: List[Json] = []
     elif max_items is None:
         inline = items
     else:
         inline = items[:max_items]
+    response_truncated = len(inline) < total_count
     summary = {
-        "matched_count": matched,
-        "returned": len(inline),
-        "truncated": truncated,
-        "output_mode": mode,
-        "output_path": output_path,
-        "artifact_format": output.get("artifact_format"),
+        "total_count": total_count,
+        "returned_count": len(inline),
+        "response_truncated": response_truncated,
+        "scan_complete": True,
+        "analysis_complete": True,
+        "truncation_scopes": ["data.items"] if response_truncated else [],
     }
-    if note:
-        summary["note"] = note
     return summary, inline, warnings
 
 
-def coverage_pct(covered: Any, coverable: Any) -> float | None:
-    try:
-        c = float(covered)
-        t = float(coverable)
-    except Exception:
-        return None
-    if t == 0:
-        return None
-    return round(c / t * 100.0, 4)
+def coverage_pct(covered: int, coverable: int) -> float | None:
+    if (
+        not isinstance(covered, int)
+        or isinstance(covered, bool)
+        or not isinstance(coverable, int)
+        or isinstance(coverable, bool)
+        or covered < 0
+        or coverable < 0
+        or covered > coverable
+    ):
+        raise XcovError(
+            "INTERNAL_CONTRACT_ERROR",
+            "coverage aggregation requires canonical non-negative counts",
+            covered=covered,
+            coverable=coverable,
+        )
+    return strict_coverage_pct(covered, coverable)

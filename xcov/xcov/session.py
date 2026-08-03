@@ -1,14 +1,18 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, Optional
 
-from .backend import CoverageBackend, FakeCoverageBackend, NpiCoverageBackend
+from .backend import (
+    CanonicalCoverageBackend,
+    CoverageBackend,
+    NpiCoverageBackend,
+)
 from .errors import XcovError
 from .logging import log_lifecycle_event
 
 Json = Dict[str, Any]
+BackendFactory = Callable[[str], CoverageBackend]
 
 
 @dataclass
@@ -17,6 +21,7 @@ class XcovSession:
     vdb: str
     backend: CoverageBackend
     worker: str
+    exclusion_policy: str = "default"
     state: str = "alive"
 
     def close(self) -> None:
@@ -29,37 +34,82 @@ class XcovSession:
             "session_id": self.session_id,
             "state": self.state,
             "vdb": self.vdb,
-            "test_count": summary.get("test_count", 0),
-            "top_scope_count": summary.get("top_scope_count", 0),
+            "test_count": summary["test_count"],
+            "top_scope_count": summary["top_scope_count"],
             "worker": self.worker,
+            "exclusion_policy": self.exclusion_policy,
         }
 
 
 class SessionManager:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        backend_factory: BackendFactory = NpiCoverageBackend,
+    ) -> None:
         self.sessions: Dict[str, XcovSession] = {}
+        self._backend_factory = backend_factory
 
-    def open(self, vdb: str, name: Optional[str] = None, fake: bool = False,
-             reuse: bool = True, reopen: bool = False) -> XcovSession:
-        sid = name or "cov0"
+    def session_id(self, name: Optional[str] = None) -> str:
+        return name or "cov0"
+
+    def require_available(self, name: Optional[str] = None) -> str:
+        sid = self.session_id(name)
         if sid in self.sessions and self.sessions[sid].state == "alive":
-            if reopen:
-                log_lifecycle_event(sid, "session.open.reopen", True, {"vdb": vdb})
-                self.sessions[sid].close()
-            elif reuse:
-                log_lifecycle_event(sid, "session.open.reuse", True, {"vdb": vdb})
-                return self.sessions[sid]
-            else:
-                log_lifecycle_event(sid, "session.open.exists", False, {"vdb": vdb})
-                raise XcovError("SESSION_EXISTS", "session already exists", session_id=sid)
-        log_lifecycle_event(sid, "session.open.begin", True, {"vdb": vdb, "fake": fake})
-        if fake or vdb == "fake":
-            backend: CoverageBackend = FakeCoverageBackend(vdb)
-            worker = "fake"
-        else:
-            backend = NpiCoverageBackend(vdb)
-            worker = "npi_python"
-        sess = XcovSession(session_id=sid, vdb=vdb, backend=backend, worker=worker)
+            log_lifecycle_event(
+                sid,
+                "session.open.exists",
+                False,
+                {},
+            )
+            raise XcovError(
+                "SESSION_EXISTS",
+                "session already exists; close it before opening a new VDB",
+                session_id=sid,
+            )
+        return sid
+
+    def open(
+        self,
+        vdb: str,
+        name: Optional[str] = None,
+        exclusion_policy: str = "default",
+    ) -> XcovSession:
+        sid = self.require_available(name)
+        log_lifecycle_event(sid, "session.open.begin", True, {"vdb": vdb})
+        backend = (
+            self._backend_factory(vdb, exclusion_policy=exclusion_policy)
+            if self._backend_factory is NpiCoverageBackend
+            else self._backend_factory(vdb)
+        )
+        if hasattr(backend, "exclusion_policy"):
+            backend.exclusion_policy = exclusion_policy
+        if not isinstance(backend, CoverageBackend):
+            raise XcovError(
+                "BACKEND_CONTRACT_VIOLATION",
+                "backend factory must return a CoverageBackend",
+                backend_type=type(backend).__name__,
+            )
+        worker = backend.worker_kind
+        if not isinstance(worker, str) or not worker:
+            backend.close()
+            raise XcovError(
+                "BACKEND_CONTRACT_VIOLATION",
+                "coverage backend must declare a non-empty worker_kind",
+                backend_type=type(backend).__name__,
+            )
+        canonical_backend = CanonicalCoverageBackend(backend)
+        try:
+            canonical_backend.summary()
+        except Exception:
+            backend.close()
+            raise
+        sess = XcovSession(
+            session_id=sid,
+            vdb=vdb,
+            backend=canonical_backend,
+            worker=worker,
+            exclusion_policy=exclusion_policy,
+        )
         self.sessions[sid] = sess
         log_lifecycle_event(sid, "session.open.ok", True, {"vdb": vdb, "worker": worker})
         return sess

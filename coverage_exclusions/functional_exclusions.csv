@@ -1,0 +1,3 @@
+# schema_version=xcov-functional-exclusions.v1
+# coverage_kind=functional
+scope,line,covergroup,coverpoint,cross,bin,reason

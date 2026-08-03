@@ -22,17 +22,21 @@ class XcovError(Exception):
 def error_response(action: str, request_id: str, code: str, message: str,
                    **detail: Any) -> Json:
     err = XcovError(code, message, **detail)
+    response_action = action if action else "error"
     return {
         "ok": False,
         "api_version": "xcov.v1",
         "request_id": request_id,
-        "action": action,
+        "action": response_action,
         "summary": {
-            "matched_count": 0,
-            "returned": 0,
-            "truncated": False,
-            "output_path": None,
+            "total_count": 0,
+            "returned_count": 0,
+            "response_truncated": False,
+            "scan_complete": False,
+            "analysis_complete": False,
+            "truncation_scopes": [],
         },
+        "data": {},
         "error": err.to_json(),
         "warnings": [],
     }
