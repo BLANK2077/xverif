@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "baseline": "53a955616257db17335dfb639a3bcbdbcafcb7c1",
+  "reference_head": "1c3ffc85d1bc3859bfa5f75c314cccaecc05e4d5",
+  "allowed_dispositions": ["rebuild", "superseded", "xout-repair-drop", "regenerate"],
+  "commits": [
+    {"sha":"a3d8241b1738e0285a3a26e9ef0fd7c146e0c171","subject":"根治 xverif 仓库级代码与 AI 合同一致性问题","default":"rebuild","rules":[
+      {"path":"(^|/)xout_codec\\.py$|testinfra/data/xout_lossless_golden\\.json$|testinfra/tests/test_xout_codecs\\.py$|tools/sync_python_xout_codecs\\.py$","disposition":"xout-repair-drop"},
+      {"path":"xdebug/src/api/(xout_renderer|text_response_builder)\\.(cpp|h)$|xdebug/src/engine/service/engine_action_handler\\.(cpp|h)$|xdebug/src/(engine/server|api/stdio_loop|main)\\.cpp$","disposition":"regenerate"}
+    ]},
+    {"sha":"864f3aad15d8c298eaac57a63e060194a147320d","subject":"重构 xdebug 列表配置与多时间点查询合同","default":"rebuild","rules":[
+      {"path":"list[._]value_at|value[._]batch_at","disposition":"superseded"},
+      {"path":"xdebug/src/api/xout_renderer\\.(cpp|h)$|response\\.schema\\.json$","disposition":"regenerate"}
+    ]},
+    {"sha":"59521ae512aa0b8d2d97d096bd5edbbe0db306fc","subject":"完善 MCP action 导航与配置化调试工作流","default":"rebuild","rules":[{"path":"generated/|generated_xdebug|surface-examples","disposition":"regenerate"}]},
+    {"sha":"d774f1a6b87f9a9e42dbc11bfa39145ad6043540","subject":"重构：统一 value.at 多来源批量取值合同","default":"rebuild","rules":[
+      {"path":"list[._]value_at","disposition":"superseded"},
+      {"path":"xdebug/src/api/xout_renderer\\.(cpp|h)$|response\\.schema\\.json$|references/generated/","disposition":"regenerate"}
+    ]},
+    {"sha":"2932977e64f3bb734ea780dadf8315c20cf841a5","subject":"重构：按层级分类检索 scope 内容","default":"rebuild","rules":[{"path":"xdebug/src/api/xout_renderer\\.(cpp|h)$|response\\.schema\\.json$|references/generated/","disposition":"regenerate"}]},
+    {"sha":"19a54e196469abc188ad13a99a7642f3b4a0a556","subject":"增强协议查询过滤与表格输出","default":"rebuild","rules":[{"path":"xdebug/src/api/xout_renderer\\.(cpp|h)$|response\\.schema\\.json$|references/generated/","disposition":"regenerate"}]},
+    {"sha":"b397315f40998eadfc654ae729c147e062429343","subject":"优化 C++ 单测增量构建","default":"rebuild","rules":[]},
+    {"sha":"0d5d6eeba41995ab58196e21ac757bfa2dbfe953","subject":"复用 stdio-loop 加速批量合同检查","default":"rebuild","rules":[]},
+    {"sha":"867e0d3f33f36788a29d594a574f69872f9dbbe1","subject":"优化静态响应合同校验","default":"rebuild","rules":[]},
+    {"sha":"7106ed2c4de59e6222c7a259fb205d53389384ea","subject":"优化 batch 响应合同验证","default":"rebuild","rules":[]},
+    {"sha":"b9aa3e1f20c668e24e45a233ee5010d8cbc4f8b2","subject":"优化构建元数据依赖，避免全量重编译","default":"rebuild","rules":[]},
+    {"sha":"2110c4d69ff04283e4f2b66afbbe273546e033c8","subject":"细化 NPI 测试资源分组，释放无关用例并行度","default":"rebuild","rules":[]},
+    {"sha":"076ee70510f0e83ad2d220bdd022b703fff33642","subject":"复用持久 frontend，加速多请求波形语义测试","default":"rebuild","rules":[]},
+    {"sha":"8558557572e2250a6e8768d25246bd37b2a7e310","subject":"拆分 MCP action smoke 层级，消除重复 schema 扫描","default":"rebuild","rules":[]},
+    {"sha":"e4eb93f5af8976bc321e83263cd34b19e344d47e","subject":"缓存并裁剪仓库文件遍历，加速完整性检查","default":"rebuild","rules":[]},
+    {"sha":"6992b6f15426e0c9dba9f4b9cbfd1448972e4d68","subject":"拆分 x-npi 性能门禁，缩短日常确定性回归","default":"rebuild","rules":[]},
+    {"sha":"451da61346fed3e95b9af87d2da101bcece55850","subject":"修复回归测试与当前响应及 XOUT 合同不一致","default":"regenerate","rules":[
+      {"path":"xverif_mcp/src/xverif_mcp/(framing|runner|server)\\.py$","disposition":"xout-repair-drop"},
+      {"path":"test_direct_output_formats|test_stream_v1_real_waveform","disposition":"regenerate"}
+    ]},
+    {"sha":"7152d10f2e6cb694a8fdc8cf2d0a16f8412c0717","subject":"feat(xcov): 增加分组 CSV exclusion 管理","default":"rebuild","rules":[{"path":"action-xout-examples|test_exclusions\\.py$|README","disposition":"regenerate"}]},
+    {"sha":"9341b5d42f0f9b6fb634fe568cba0b4b8ebe467b","subject":"feat(x-npi): 补齐 coverage exclusion 统一 helper","default":"rebuild","rules":[]},
+    {"sha":"c83a9ebd8f505ed1d0f2f62f5e4f4903dc715805","subject":"恢复全仓人类可读 XOUT 与 handler 渲染架构","default":"xout-repair-drop","rules":[
+      {"path":"actions/(protocol|stream|waveform)/|xcov/tests/test_exclusions\\.py$","disposition":"regenerate"},
+      {"path":"doc/|README|skills/","disposition":"superseded"}
+    ]},
+    {"sha":"a924a107ac73e4d39b3449ef6ce224403457a14b","subject":"统一 XOUT 的 token 优先输出策略","default":"rebuild","rules":[{"path":"PLAN|REVIEW|历史|doc/.*2026","disposition":"superseded"},{"path":"generated/|generated_help","disposition":"regenerate"}]},
+    {"sha":"ed8e11d31dcfa178fa1109333666b7acab6234d8","subject":"制定 XOUT 全量恢复与真实输出评审计划","default":"superseded","rules":[]},
+    {"sha":"398462fa7eeaa13634871fe0cca560c29fd5740c","subject":"建立全量 Native XOUT 基线与字节级审查门禁","default":"regenerate","rules":[]},
+    {"sha":"ab8040bd0a3b8e6dc53bea35dcb4027e24e8888f","subject":"收拢 XOUT 数值格式与重复请求入口合同","default":"rebuild","rules":[{"path":"request\\.schema\\.json$|engine\\.request\\.schema\\.json$","disposition":"regenerate"}]},
+    {"sha":"71b24b891874358f6a3a08e74417426e2a1a5233","subject":"统一全仓 LogicValue 的紧凑 XOUT 与严格响应合同","default":"rebuild","rules":[
+      {"path":"xdebug/src/api/(text_response_builder|xout_renderer)\\.cpp$|engine_action_handler\\.cpp$","disposition":"regenerate"},
+      {"path":"response\\.schema\\.json$|batch\\.response\\.schema\\.json$","disposition":"regenerate"}
+    ]},
+    {"sha":"72f235ccc941cfe5548ed37f3eb12613063cf16d","subject":"恢复 value.at 紧凑矩阵并保护协议专用 XOUT","default":"regenerate","rules":[]},
+    {"sha":"1c3ffc85d1bc3859bfa5f75c314cccaecc05e4d5","subject":"完成 73 个 XOUT 最终审查并同步全仓合同","default":"regenerate","rules":[{"path":"AGENTS\\.md$","disposition":"rebuild"}]}
+  ]
+}
