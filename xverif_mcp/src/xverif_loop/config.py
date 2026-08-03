@@ -2,6 +2,84 @@
 from __future__ import annotations
 
 import os
+import math
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Mapping
+
+
+class ConfigError(ValueError):
+    def __init__(self, env_name: str, value: str, expected: str) -> None:
+        self.env_name = env_name
+        self.value = value
+        self.expected = expected
+        super().__init__(f"invalid {env_name}={value!r}; expected {expected}")
+
+
+def validate_positive_timeout(value: object, *, source: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigError(source, str(value), "a finite positive number")
+    result = float(value)
+    if not math.isfinite(result) or result <= 0:
+        raise ConfigError(source, str(value), "a finite positive number")
+    return result
+
+
+@dataclass(frozen=True)
+class RuntimeConfig:
+    owner: str
+    backend: str
+    default_timeout_sec: float
+    startup_timeout_sec: float
+    request_timeout_sec: float
+    close_timeout_sec: float
+    bkill_timeout_sec: float
+    fake_lsf: bool
+    lsf_bsub_command: str
+    lsf_bkill_command: str
+    session_queue: str
+    session_resource: str | None
+    log_root: Path
+
+
+def _strict_env_float(environ: Mapping[str, str], name: str, default: float) -> float:
+    raw = environ.get(name)
+    if raw is None:
+        return default
+    if not raw or raw != raw.strip():
+        raise ConfigError(name, raw, "a finite positive number")
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ConfigError(name, raw, "a finite positive number") from exc
+    return validate_positive_timeout(value, source=name)
+
+
+def resolve_mcp_runtime_config(
+    environ: Mapping[str, str] | None = None,
+) -> RuntimeConfig:
+    snapshot = dict(os.environ if environ is None else environ)
+    backend = snapshot.get("XVERIF_MCP_BACKEND", "direct")
+    if backend not in {"direct", "lsf"}:
+        raise ConfigError("XVERIF_MCP_BACKEND", backend, "'direct' or 'lsf'")
+    fake_raw = snapshot.get("XVERIF_MCP_FAKE_LSF", "0")
+    if fake_raw not in {"0", "1"}:
+        raise ConfigError("XVERIF_MCP_FAKE_LSF", fake_raw, "'0' or '1'")
+    return RuntimeConfig(
+        owner="mcp",
+        backend=backend,
+        default_timeout_sec=_strict_env_float(snapshot, "XVERIF_MCP_TIMEOUT_SEC", 360.0),
+        startup_timeout_sec=_strict_env_float(snapshot, "XVERIF_MCP_STARTUP_TIMEOUT_SEC", 180.0),
+        request_timeout_sec=_strict_env_float(snapshot, "XVERIF_MCP_REQUEST_TIMEOUT_SEC", 360.0),
+        close_timeout_sec=_strict_env_float(snapshot, "XVERIF_MCP_CLOSE_TIMEOUT_SEC", 30.0),
+        bkill_timeout_sec=_strict_env_float(snapshot, "XVERIF_MCP_BKILL_TIMEOUT_SEC", 30.0),
+        fake_lsf=fake_raw == "1",
+        lsf_bsub_command=snapshot.get("XVERIF_LSF_BSUB", "bsub"),
+        lsf_bkill_command=snapshot.get("XVERIF_LSF_BKILL", "bkill"),
+        session_queue=snapshot.get("XVERIF_LSF_SESSION_QUEUE", "interactive"),
+        session_resource=snapshot.get("XVERIF_LSF_SESSION_RESOURCE"),
+        log_root=Path(snapshot.get("XVERIF_MCP_LOG_DIR", Path(snapshot.get("HOME", str(Path.home()))) / ".xverif/mcp")),
+    )
 
 _BACKEND_ENV = "XVERIF_MCP_BACKEND"
 _TIMEOUT_ENV = "XVERIF_MCP_TIMEOUT_SEC"
