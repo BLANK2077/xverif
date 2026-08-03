@@ -140,6 +140,15 @@ python3 xdebug/tools/sync_action_schema_hints.py --check
 python3 xdebug/tools/sync_action_metadata.py --check
 ```
 
+## Batch response 组合校验
+
+- batch 的公开 response schema 仍完整枚举所有 action-specific child 合同。运行时
+  采用组合式等价校验：递归 dispatch 在 child 写入 `data.results[]` 前按对应 action
+  response schema 校验；batch 外层使用从同一公开 schema 投影出的严格 envelope
+  校验；未知 action child 单独使用公开 schema 中的
+  `batchChild__unknown_child_error` 定义校验。不得把未知 child 或 envelope 当作已由
+  递归边界覆盖，也不得修改公开 schema 来换取运行时性能。
+
 ## 基础校验
 
 ```bash
