@@ -18,10 +18,12 @@ namespace xdebug_design {
  */
 struct ControlDepInfo {
     std::string signal_name;      // Full hierarchical signal name
-    std::string display_info;     // Formatted signal info (type, name, file, line)
+    std::string display_info;     // Formatted use-site evidence, empty when unresolved
     std::string file_name;        // Source file path
-    int line_no;                  // Line number in source file
+    int line_no = 0;              // Line number at the control-condition use site
     std::string source_line;      // Actual source code line text
+    std::string evidence_kind = "control_condition_use";
+    bool evidence_complete = false;
 };
 
 /**
@@ -61,6 +63,9 @@ private:
     void extract_signals_from_expr_with_info(npiHandle expr_handle,
                                               npiHandle condition_stmt,
                                               std::vector<ControlDepInfo>& results);
+    ControlDepInfo make_control_dep_info(npiHandle control_stmt,
+                                         int signal_type,
+                                         const char* signal_name);
 
     // Analyze a scope (module, named begin, etc.) for assignments to target signal
     void analyze_scope(npiHandle scope, const char* target_signal,
