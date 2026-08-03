@@ -176,20 +176,86 @@ def duration_fs(value):
     return float(match.group(1)) * scales[match.group(2)]
 
 
-def require_clock_summary(resp, edge, sample_point=None, expected_clock="ai_complex_top.clk"):
+def require_clock_sampling_contract(resp, edge, sample_point=None,
+                                    expected_clock="ai_complex_top.clk"):
     summary = resp["summary"]
     require(summary["sampling_mode"] == "clock_edge", "missing clock_edge sampling mode")
     require(summary["clock"] == expected_clock, "unexpected summary clock")
-    require(summary["edge"] == edge, "unexpected summary edge: {}".format(summary["edge"]))
-    expected_sample_point = sample_point
-    if expected_sample_point is None and edge in ("posedge", "dual"):
-        expected_sample_point = "before"
-    if expected_sample_point is None:
-        require("sample_point" not in summary, "negedge summary should not expose sample_point")
-    else:
-        require(summary["sample_point"] == expected_sample_point, "unexpected summary sample_point")
+    require("edge" not in summary and "sample_point" not in summary,
+            "sampling selection facts must have one owner in data.sampling")
     require(summary["sample_time_semantics"] == "time is sample_time",
             "missing sample time semantics: {}".format(json.dumps(summary, sort_keys=True)))
+    sampling = resp["data"]["sampling"]
+    require(sampling["requested"] == {
+                "edge": edge,
+                "sample_point": sample_point,
+            },
+            "unexpected requested sampling: {}".format(
+                json.dumps(sampling["requested"], sort_keys=True)))
+    effective_sample_point = None if edge == "negedge" else (sample_point or "before")
+    require(sampling["effective"] == {
+                "edge": edge,
+                "sample_point": effective_sample_point,
+            },
+            "unexpected effective sampling: {}".format(
+                json.dumps(sampling["effective"], sort_keys=True)))
+    ignored = edge == "negedge" and sample_point is not None
+    require(sampling["sample_point_applied"] is (edge != "negedge"),
+            "sample_point_applied does not match effective edge semantics")
+    require(sampling["sample_point_ignored_for_negedge"] is ignored,
+            "unexpected negedge sample-point disposition")
+    if ignored:
+        require(isinstance(sampling.get("sample_point_not_applied_reason"), str) and
+                sampling["sample_point_not_applied_reason"],
+                "ignored negedge sample_point must publish a reason")
+    else:
+        require("sample_point_not_applied_reason" not in sampling,
+                "non-ignored sampling must not publish an ignored reason")
+
+
+def require_clock_context(resp, edge, sample_point=None,
+                          expected_clock="ai_complex_top.clk"):
+    data = resp["data"]
+    context = (
+        data["samples"][0]["clock_context"]
+        if "samples" in data else data["clock_context"]
+    )
+    require(context["clock"] == expected_clock, "unexpected point-sampling clock")
+    require("edge" not in context,
+            "clock_context must not duplicate requested_sampling.edge")
+    require(context["requested_sampling"] == {
+                "edge": edge,
+                "sample_point": sample_point,
+            },
+            "unexpected requested point sampling")
+    effective_sample_point = None if edge == "negedge" else (sample_point or "before")
+    require(context["effective_sampling"] == {
+                "edge": edge,
+                "sample_point": effective_sample_point,
+            },
+            "unexpected effective point sampling")
+    ignored = edge == "negedge" and sample_point is not None
+    require(context["sample_point_applied"] is (edge != "negedge"),
+            "point sample_point_applied does not match effective edge semantics")
+    require(context["sample_point_ignored_for_negedge"] is ignored,
+            "unexpected point negedge sample-point disposition")
+    if ignored:
+        require(isinstance(context.get("sample_point_not_applied_reason"), str) and
+                context["sample_point_not_applied_reason"],
+                "ignored point sample_point must publish a reason")
+    else:
+        require("sample_point_not_applied_reason" not in context,
+                "non-ignored point sampling must not publish an ignored reason")
+    require(context["clock_edge_kind"] in (None, "posedge", "negedge"),
+            "clock_edge_kind must describe the actual edge at requested_time")
+    if context["bracket_complete"]:
+        require(context["previous_sample_time"] is not None and
+                context["next_sample_time"] is not None,
+                "complete bracket must publish both neighboring sample times")
+    else:
+        require(context["previous_sample_time"] is None or
+                context["next_sample_time"] is None,
+                "incomplete bracket must identify a missing boundary")
 
 
 def time_ns(value):
@@ -749,6 +815,7 @@ def run_nonaxi(xdebug, fsdb):
 
         v = r.query("value.at", args={"signal": "ai_complex_top.sig_a", "clock": "ai_complex_top.clk", "time": "75ns", "value_format": "hex"})
         require(v["data"]["value"]["value"] == "8'h22" and v["data"]["value"]["known"] is True, "unexpected sig_a value")
+        require_clock_context(v, "negedge")
         xz = r.query("value.at", args={"signal": "ai_complex_top.xz_bus", "clock": "ai_complex_top.clk", "time": "95ns", "value_format": "bin"})
         require(xz["data"]["value"]["known"] is False, "xz_bus should be unknown")
         require("bits" in xz["data"]["value"] and "has_x" in xz["data"]["value"], "xz_bus lacks logic diagnostics")
@@ -851,8 +918,8 @@ def run_nonaxi(xdebug, fsdb):
             "name": "evt0", "expr": "vld", "mode": "all",
             "time_range": {"begin": "0ns", "end": "200ns"}, "line_limit": 1,
         })
-        require(all_limited["summary"]["event_count"] >
-                all_limited["summary"]["returned_event_count"] == 1,
+        require(all_limited["summary"]["total_count"] >
+                all_limited["summary"]["returned_count"] == 1,
                 "event.find all must report full match count with limited response")
         require(all_limited["summary"]["analysis_complete"] is True and
                 all_limited["summary"]["response_truncated"] is True,
@@ -863,7 +930,7 @@ def run_nonaxi(xdebug, fsdb):
         })
         require(last_event["data"]["events"][0]["time"] == all_limited["summary"]["last"],
                 "event.find last must return the true last match")
-        require_clock_summary(found, "posedge")
+        require_clock_sampling_contract(found, "posedge")
         require("examples" not in found["data"], "event.find generated redundant data.examples")
         ge_threshold = r.query("event.find", args={"name": "evt0", "expr": "vld && !rdy && payload_lo >= 10", "time_range": {"begin": "0ns", "end": "200ns"}})
         require(len(ge_threshold["data"]["events"]) == 1, "event.find >= threshold failed")
@@ -884,7 +951,7 @@ def run_nonaxi(xdebug, fsdb):
             "mode": "last"
         })
         require(inline["summary"]["inline"] is True and len(inline["data"]["events"]) == 1, "inline event.find failed")
-        require_clock_summary(inline, "posedge")
+        require_clock_sampling_contract(inline, "posedge")
         require("examples" not in inline["data"], "inline event.find generated redundant data.examples")
         race_before = r.query("event.find", args={
             "expr": "!vld && !race",
@@ -900,7 +967,7 @@ def run_nonaxi(xdebug, fsdb):
             "mode": "first"
         })
         require(len(race_before["data"]["events"]) == 1, "event.find posedge before did not observe old values")
-        require_clock_summary(race_before, "posedge", "before")
+        require_clock_sampling_contract(race_before, "posedge", "before")
         race_after = r.query("event.find", args={
             "expr": "vld && race",
             "clock": "ai_complex_top.clk",
@@ -915,7 +982,7 @@ def run_nonaxi(xdebug, fsdb):
             "mode": "first"
         })
         require(len(race_after["data"]["events"]) == 1, "event.find posedge after did not observe new values")
-        require_clock_summary(race_after, "posedge", "after")
+        require_clock_sampling_contract(race_after, "posedge", "after")
         r.query("stream.config.load", args={"streams": [
             {
                 "name": "race_before_stream",
@@ -960,15 +1027,15 @@ def run_nonaxi(xdebug, fsdb):
             "query": "summary",
             "time_range": {"begin": "100ns", "end": "110ns"},
         })
-        require_clock_summary(stream_before, "posedge", "before", expected_clock="clk")
-        require_clock_summary(stream_after, "posedge", "after", expected_clock="clk")
+        require_clock_sampling_contract(stream_before, "posedge", "before", expected_clock="clk")
+        require_clock_sampling_contract(stream_after, "posedge", "after", expected_clock="clk")
         require(stream_before["summary"]["transfer_count"] == 0,
                 "stream posedge before should not observe same-edge event_vld/event_race transfer")
         require(stream_after["summary"]["transfer_count"] == 1,
                 "stream posedge after should observe same-edge event_vld/event_race transfer")
         exported = r.query("event.export", args={"name": "evt0", "expr": "vld && !rdy", "time_range": {"begin": "0ns", "end": "200ns"}, "line_limit": 1})
         require(len(exported["data"]["events"]) == 1, "event.export limit failed")
-        require_clock_summary(exported, "posedge")
+        require_clock_sampling_contract(exported, "posedge")
         require("examples" not in exported["data"], "event.export generated redundant data.examples")
         event_vld = exported["data"]["events"][0]["signals"]["vld"]
         require("'h" in event_vld["value"] and event_vld["known"] is True, "event signal value is not normalized")
@@ -1007,6 +1074,7 @@ def run_nonaxi(xdebug, fsdb):
         require(checks["summary"]["passed"] == 1 and checks["summary"]["failed"] == 1 and checks["summary"]["unknown"] == 1, "verify.conditions mismatch")
         require("results" not in checks["data"], "verify.conditions generated redundant data.results")
         require("checks" in checks["data"], "verify.conditions did not expose data.checks")
+        require_clock_context(checks, "negedge")
 
         expr = r.query("expr.eval_at", args={
             "clock": "ai_complex_top.clk",
@@ -1015,6 +1083,13 @@ def run_nonaxi(xdebug, fsdb):
             "signals": {"valid": "ai_complex_top.hs_valid", "ready": "ai_complex_top.hs_ready"},
         })
         require(expr["data"]["expr_value"] is True, "expr.eval_at expected true")
+        require_clock_context(expr, "negedge")
+        require(not any(field in expr["summary"] for field in (
+                    "requested_any_edge_hit",
+                    "requested_target_edge_hit",
+                    "bracket_complete",
+                )),
+                "expr.eval_at summary must not duplicate clock_context facts")
         expr_u = r.query("expr.eval_at", args={
             "clock": "ai_complex_top.clk",
             "time": "95ns",
@@ -1022,6 +1097,7 @@ def run_nonaxi(xdebug, fsdb):
             "signals": {"xz": "ai_complex_top.xz_bus"},
         })
         require(expr_u["summary"]["known"] is False, "expr.eval_at xz should be unknown")
+        require_clock_context(expr_u, "negedge")
 
         win = r.query("window.verify", args={
             "clock": "ai_complex_top.clk",
@@ -1045,7 +1121,7 @@ def run_nonaxi(xdebug, fsdb):
         require(limited_window["summary"]["returned_finding_count"] == 1 and
                 limited_window["summary"]["response_truncated"] is True,
                 "window.verify response evidence limit mismatch")
-        require_clock_summary(win, "posedge", "after")
+        require_clock_sampling_contract(win, "posedge", "after")
         offset_win = r.query("window.verify", args={
             "clock": "ai_complex_top.clk",
             "edge": "posedge",
@@ -1056,7 +1132,7 @@ def run_nonaxi(xdebug, fsdb):
         })
         require(offset_win["summary"]["all_passed"] is True,
                 "window.verify positive offset expected eventually pass: {}".format(json.dumps(offset_win, sort_keys=True)))
-        require_clock_summary(offset_win, "posedge", "before")
+        require_clock_sampling_contract(offset_win, "posedge", "before")
         dual_win = r.query("window.verify", args={
             "clock": "ai_complex_top.clk",
             "edge": "dual",
@@ -1065,7 +1141,7 @@ def run_nonaxi(xdebug, fsdb):
             "conditions": [{"expr": "rst", "mode": "always"}],
         })
         require(dual_win["summary"]["sample_count"] >= 4, "dual edge window should sample both edges")
-        require_clock_summary(dual_win, "dual")
+        require_clock_sampling_contract(dual_win, "dual")
         bad_window_field = r.query("window.verify", args={
             "clock": "ai_complex_top.clk",
             "posedge": True,
@@ -1164,7 +1240,7 @@ def run_nonaxi(xdebug, fsdb):
         require(missing_xz_signal["error"]["code"] == "SIGNAL_NOT_FOUND",
                 "missing X/Z signal should be SIGNAL_NOT_FOUND")
         stats = r.query("signal.statistics", args={"signal": "ai_complex_top.hs_valid", "clock": "ai_complex_top.clk", "time_range": {"begin": "120ns", "end": "210ns"}, "line_limit": 1000})
-        require_clock_summary(stats, "negedge")
+        require_clock_sampling_contract(stats, "negedge")
         require(stats["summary"]["sample_count"] > 0 and stats["summary"]["known_count"] > 0, "signal.statistics did not sample")
         require("high_cycles" in stats["data"] and "low_cycles" in stats["data"], "signal.statistics missing cycle counts")
         offset_stats = r.query("signal.statistics", args={
@@ -1175,7 +1251,7 @@ def run_nonaxi(xdebug, fsdb):
             "time_range": {"begin": "140ns", "end": "175ns"},
             "line_limit": 1000,
         })
-        require_clock_summary(offset_stats, "posedge", "before")
+        require_clock_sampling_contract(offset_stats, "posedge", "before")
         require(offset_stats["summary"]["sample_count"] > 0, "signal.statistics negative offset did not sample")
         anomaly = r.query("detect_abnormal", args={
             "signals": ["ai_complex_top.glitch_sig", "ai_complex_top.stuck_sig", "ai_complex_top.xz_bus"],
@@ -1235,6 +1311,7 @@ def run_nonaxi(xdebug, fsdb):
         health = r.query("value.at", args={"signal": "ai_complex_top.clk", "clock": "ai_complex_top.clk",
                                             "edge": "negedge", "sample_point": "after", "time": "10ns"})
         require(health["ok"] is True, "session should remain healthy after invalid detect_abnormal checks")
+        require_clock_context(health, "negedge", "after")
         clock_context = health["data"]["clock_context"]
         require(clock_context["requested_sampling"]["sample_point"] == "after",
                 "negedge request must retain requested sample_point")
@@ -1251,7 +1328,7 @@ def run_nonaxi(xdebug, fsdb):
             "rules": {"max_wait_cycles": 2, "check_data_stable_when_stalled": True},
         })
         require(hs["summary"]["max_stall_cycles"] >= 3 and hs["summary"]["data_stability_violations"] >= 1, "handshake.inspect mismatch")
-        require_clock_summary(hs, "negedge")
+        require_clock_sampling_contract(hs, "negedge")
         require(hs["summary"]["ready_without_valid_reporting"] == "summary",
                 "handshake default ready-without-valid reporting must be summary")
         require(hs["summary"]["require_valid_hold_until_handshake"] is True,

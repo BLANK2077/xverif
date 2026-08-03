@@ -18,6 +18,7 @@
 #include "waveform/service/action_support.h"
 #include "waveform/service/rc_generator.h"
 #include "core/value/logic_value.h"
+#include "core/output/completeness.h"
 #include "core/npi/time_contract.h"
 
 #include "npi.h"
@@ -228,20 +229,27 @@ public:
                     return event_invalid_enum_error(action_name(), "args.sample_point", edge_error,
                                                     Json::array({"before", "after"}));
             }
-            if (config.clock_sample.edge == ClockEdgeKind::Negedge &&
-                config.clock_sample.has_sample_point)
-                return event_invalid_arg_error(action_name(), "args.sample_point",
-                                               "args.sample_point is only valid with edge:posedge or edge:dual",
-                                               "omit sample_point for negedge, or use edge posedge/dual");
             ContractJsonView signals = args["signals"];
             Json sigs = signals.exists()
                 ? signals.consume_subtree("event_find_inline_signal_map_parser")
                 : Json::object();
-            for (auto it = sigs.begin(); it != sigs.end(); ++it) {
-                if (it->is_string()) config.signals[it.key()] = it->get<std::string>();
+            if (!sigs.is_object() || sigs.empty()) {
+                return event_missing_field_error(
+                    action_name(),
+                    "args.signals",
+                    "non-empty alias to real signal path map");
             }
-            if (config.signals.empty())
-                return event_missing_field_error(action_name(), "args.signals", "alias to real signal path map");
+            for (auto it = sigs.begin(); it != sigs.end(); ++it) {
+                if (it.key().empty() || !it.value().is_string() ||
+                    it.value().get<std::string>().empty()) {
+                    return event_invalid_arg_error(
+                        action_name(),
+                        "args.signals",
+                        "event signal aliases and paths must be non-empty strings",
+                        "non-empty alias to non-empty waveform path map");
+                }
+                config.signals[it.key()] = it.value().get<std::string>();
+            }
         }
 
         std::string clock_resolution_error;
@@ -275,8 +283,6 @@ public:
         EventScanStats scan_stats;
         query.stats = &scan_stats;
         std::string mode = args.value("mode", std::string("first"));
-        if (mode == "head") mode = "first";
-        if (mode == "tail") mode = "last";
         if (mode != "first" && mode != "last" && mode != "all") {
             return event_invalid_enum_error(action_name(), "args.mode",
                                             "args.mode must be first, last, or all",
@@ -336,24 +342,27 @@ public:
         Json out;
         out["events"] = arr;
         out["summary"] = {
-            {"total_count", static_cast<int>(matched_count)},
-            {"returned_count", static_cast<int>(arr.size())},
-            {"response_truncated", mode == "all" && arr.size() < matched_count},
-            {"scan_complete", !scan_stats.sample_budget_exhausted},
-            {"analysis_complete", !scan_stats.sample_budget_exhausted},
             {"sample_count", scan_stats.sample_count},
             {"mode", mode},
             {"inline", name.empty()},
             {"sampling_mode", "clock_edge"},
             {"clock", config.clock_sample.clock},
-            {"sample_time_semantics", "time is sample_time"},
-            {"truncation_scopes", Json::array()}
+            {"sample_time_semantics", "time is sample_time"}
         };
         const bool response_truncated = mode == "all" && arr.size() < matched_count;
+        std::vector<std::string> truncation_scopes;
         if (scan_stats.sample_budget_exhausted)
-            out["summary"]["truncation_scopes"].push_back("analysis_samples");
+            truncation_scopes.push_back("analysis_samples");
         if (response_truncated)
-            out["summary"]["truncation_scopes"].push_back("response_events");
+            truncation_scopes.push_back("response_events");
+        xdebug_core::set_completeness(
+            out["summary"],
+            !scan_stats.sample_budget_exhausted,
+            !scan_stats.sample_budget_exhausted,
+            response_truncated,
+            matched_count,
+            arr.size(),
+            truncation_scopes);
         if (scan_stats.matched_count > 0) {
             out["summary"]["first"] = xdebug_core::format_time(g_fsdb_file, scan_stats.first_match_time);
             out["summary"]["last"] = xdebug_core::format_time(g_fsdb_file, scan_stats.last_match_time);

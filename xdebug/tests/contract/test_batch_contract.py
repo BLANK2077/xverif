@@ -32,6 +32,7 @@ def test_batch_continue_on_error_keeps_later_requests(
     assert result.returncode == 0
     response = result.response
     assert response["ok"] is True
+    assert response["error"] is None
     assert response["summary"] == {
         "count": 3,
         "all_ok": False,
@@ -54,6 +55,7 @@ def test_batch_stop_on_error_stops_after_first_failure(
     assert result.returncode == 0
     response = result.response
     assert response["ok"] is True
+    assert response["error"] is None
     assert response["summary"] == {
         "count": 2,
         "all_ok": False,
@@ -108,7 +110,20 @@ def test_batch_does_not_default_child_api_version(
     assert result.returncode == 0
     response = result.response
     assert response["ok"] is True
-    assert response["summary"]["all_ok"] is False
+    assert response["error"] is None
+    assert response["summary"] == {
+        "count": 3,
+        "all_ok": False,
+        "failed_count": 1,
+        "failed_indexes": [1],
+        "failed_codes": ["UNSUPPORTED_API_VERSION"],
+        "failed_layers": ["schema"],
+    }
     child = response["data"]["results"][1]
     assert child["ok"] is False
     assert child["error"]["code"] == "UNSUPPORTED_API_VERSION"
+    assert child["summary"] == {
+        "status": "error",
+        "error_code": "UNSUPPORTED_API_VERSION",
+    }
+    assert child["data"] is None
