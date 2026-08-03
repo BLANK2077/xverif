@@ -241,3 +241,9 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 - 错误现象：为临时重建仓库接入已授权的共享 fixture cache 时，另一个测试进程在“确认目标不存在”和创建软链接之间生成了同名本地目录，导致链接被创建到目录内部而未成为 FixtureStore 的缓存根。
 - 误判原因：把分离的存在性检查和 `ln -s` 当成原子操作，没有在创建后立即断言目标自身的文件类型。
 - 以后规则：共享工作树创建缓存入口时先冻结会写 cache 的测试；创建后必须用 `test -L`、`readlink` 和所需 manifest 可见性三项一起验收。若发生竞态，完整移动既有目录保留可恢复性，不覆盖或删除其中内容。
+
+### 2026-08-04 环境错误复盘
+
+- 错误现象：临时重建仓库尚未完成统一构建时先运行 `xdebug.counter_statistics` 正式 runtime suite，wrapper 因本仓库 `xdebug/xdebug` 不存在以 127 退出，未进入产品逻辑。
+- 误判原因：把 Python 合同和源码 syntax closure 当成 runtime suite 已具备可执行产物，没有先核对正式 wrapper 解析到的目标 binary。
+- 以后规则：临时重建仓库的 runtime、FSDB、NPI 或 native XOUT suite 必须在源码冻结并完成本仓库统一 clean build 后运行；启动前先核对 wrapper 与 binary 的实际路径，禁止改用其它工作树 binary fallback。
