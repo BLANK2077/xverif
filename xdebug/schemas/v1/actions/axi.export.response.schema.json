@@ -23,7 +23,9 @@
       "type": "boolean"
     },
     "action": {
-      "const": "axi.export"
+      "enum": [
+        "axi.export"
+      ]
     },
     "tool": {
       "type": "object",

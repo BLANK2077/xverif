@@ -23,7 +23,9 @@
       "type": "boolean"
     },
     "action": {
-      "const": "axi.latency_outlier"
+      "enum": [
+        "axi.latency_outlier"
+      ]
     },
     "tool": {
       "type": "object",

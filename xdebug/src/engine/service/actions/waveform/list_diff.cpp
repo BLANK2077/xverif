@@ -34,7 +34,7 @@ namespace xdebug_design {
 namespace {
 class ListDiffHandler : public EngineActionHandler {
 public:
-    const char* action_name() const override { return "list.diff"; }
+    const char* action_name() const override { return "list.first_change"; }
     bool needs_design() const override { return false; }
     bool needs_waveform() const override { return true; }
     Json run(const Json& r, EngineActionContext& ctx) const override {
@@ -44,14 +44,14 @@ public:
         std::string bs = tr.value("begin", "");
         std::string es = tr.value("end", "");
         if (n.empty())
-            return list_missing_field_error("list.diff", "args.name", "name of a list created in this session");
+            return list_missing_field_error("list.first_change", "args.name", "name of a list created in this session");
         if (bs.empty())
-            return list_missing_field_error("list.diff", "args.time_range.begin", "time range begin such as 0ns");
+            return list_missing_field_error("list.first_change", "args.time_range.begin", "time range begin such as 0ns");
         if (es.empty())
-            return list_missing_field_error("list.diff", "args.time_range.end", "time range end such as 500ns");
+            return list_missing_field_error("list.first_change", "args.time_range.end", "time range end such as 500ns");
         xdebug_waveform::SignalList lst;
         if (!read_list_storage(n, lst))
-            return list_not_found_error("list.diff", n);
+            return list_not_found_error("list.first_change", n);
         npiFsdbTime bt = 0, et = 0;
         std::string time_error;
         if (!xdebug_waveform::parse_user_time(bs.c_str(), false, bt, time_error) ||
@@ -61,7 +61,7 @@ public:
                 time_error,
                 {{"invalid_arg", "args.time_range"},
                  {"expected", "time_range.begin/end strings such as 0ns and 500ns"},
-                 {"correct_example", list_action_example("list.diff")}});
+                 {"correct_example", list_action_example("list.first_change")}});
         npiFsdbTime dt = 0;
         std::vector<xdebug_waveform::ListDiffChange> diff_changes;
         bool found = xdebug_waveform::find_first_list_changes(

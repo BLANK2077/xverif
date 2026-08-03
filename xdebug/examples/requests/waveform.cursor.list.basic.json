@@ -1,0 +1,8 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "waveform.cursor.list",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {}
+}

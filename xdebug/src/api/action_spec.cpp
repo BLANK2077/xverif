@@ -1,15 +1,15 @@
 #include "api/action_spec.h"
 
+#include <stdexcept>
+
 namespace xdebug {
 
 std::string to_string(ActionStatus status) {
     switch (status) {
     case ActionStatus::Experimental: return "experimental";
     case ActionStatus::Stable: return "stable";
-    case ActionStatus::Deprecated: return "deprecated";
-    case ActionStatus::Removed: return "removed";
     }
-    return "experimental";
+    throw std::invalid_argument("unknown ActionStatus value");
 }
 
 std::string to_string(ResourceRequirement resource) {
@@ -21,14 +21,13 @@ std::string to_string(ResourceRequirement resource) {
     case ResourceRequirement::Any: return "any";
     case ResourceRequirement::Session: return "session";
     }
-    return "none";
+    throw std::invalid_argument("unknown ResourceRequirement value");
 }
 
 ActionStatus action_status_from_string(const std::string& value) {
     if (value == "stable") return ActionStatus::Stable;
-    if (value == "deprecated") return ActionStatus::Deprecated;
-    if (value == "removed") return ActionStatus::Removed;
-    return ActionStatus::Experimental;
+    if (value == "experimental") return ActionStatus::Experimental;
+    throw std::invalid_argument("unknown action status: " + value);
 }
 
 ResourceRequirement resource_requirement_from_string(const std::string& value) {
@@ -37,7 +36,8 @@ ResourceRequirement resource_requirement_from_string(const std::string& value) {
     if (value == "combined") return ResourceRequirement::Combined;
     if (value == "any") return ResourceRequirement::Any;
     if (value == "session") return ResourceRequirement::Session;
-    return ResourceRequirement::None;
+    if (value == "none") return ResourceRequirement::None;
+    throw std::invalid_argument("unknown resource requirement: " + value);
 }
 
 Json action_spec_descriptor(const ActionSpec& spec) {
@@ -56,10 +56,19 @@ Json action_spec_descriptor(const ActionSpec& spec) {
         {"description_en", spec.description_en},
         {"description_zh", spec.description_zh},
         {"purposes", spec.purposes},
-        {"use_for", spec.use_for},
-        {"do_not_use_for", spec.do_not_use_for},
-        {"preferred_alternative", spec.preferred_alternative}
+        {"use_when", spec.use_when},
+        {"do_not_use_when", spec.do_not_use_when},
+        {"alternatives", spec.alternatives}
     };
+    descriptor["resource_variants"] = Json::array();
+    for (const ResourceVariant& variant : spec.resource_variants) {
+        descriptor["resource_variants"].push_back({
+            {"name", variant.name},
+            {"requires", to_string(variant.resource)},
+            {"required_args", variant.required_args},
+            {"forbidden_args", variant.forbidden_args}
+        });
+    }
     for (std::map<std::string, std::vector<std::string> >::const_iterator it = spec.args.allowed_values.begin();
          it != spec.args.allowed_values.end(); ++it) {
         descriptor["allowed_values"][it->first] = it->second;

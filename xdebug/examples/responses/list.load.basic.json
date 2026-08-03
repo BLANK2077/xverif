@@ -1,0 +1,26 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "list.load",
+  "summary": {
+    "loaded": 1,
+    "mode": "replace"
+  },
+  "data": {
+    "lists": [
+      "ctrl_context"
+    ],
+    "validation": [
+      {
+        "name": "ctrl_context",
+        "status": "ok",
+        "signals": [
+          {
+            "signal": "top.u.clk",
+            "status": "ok"
+          }
+        ]
+      }
+    ]
+  }
+}

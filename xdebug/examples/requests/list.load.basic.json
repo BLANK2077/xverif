@@ -1,0 +1,22 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "list.load",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {
+    "config": {
+      "lists": [
+        {
+          "name": "ctrl_context",
+          "signals": [
+            "top.u.clk",
+            "top.u.valid",
+            "top.u.ready"
+          ]
+        }
+      ]
+    },
+    "mode": "replace"
+  }
+}

@@ -1,7 +1,0 @@
-{
-  "api_version": "xdebug.v1",
-  "ok": true,
-  "action": "cursor.get",
-  "summary": {"name": "mark0", "time": "100ns", "status": "found"},
-  "data": {"cursor": {"name": "mark0", "time": "100ns", "note": "first failure", "origin": "manual"}}
-}

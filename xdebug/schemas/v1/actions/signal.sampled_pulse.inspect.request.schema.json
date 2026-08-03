@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xdebug.sampled_pulse.inspect.request.v1",
+  "title": "sampled_pulse.inspect request",
+  "type": "object",
+  "required": [
+    "api_version",
+    "action",
+    "args"
+  ],
+  "properties": {
+    "api_version": {
+      "type": "string",
+      "enum": [
+        "xdebug.v1"
+      ]
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "signal.sampled_pulse.inspect"
+      ]
+    },
+    "target": {
+      "type": "object"
+    },
+    "args": {
+      "type": "object",
+      "properties": {
+        "clock": {
+          "type": "string",
+          "description": "Action-specific clock input. Its type and accepted values are defined by this schema."
+        },
+        "edge": {
+          "type": "string",
+          "description": "Clock sampling edge. The schema default is authoritative; negedge often matches monitor semantics."
+        },
+        "line_limit": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Limits returned evidence rows only, not scanning, aggregation, or the verdict; read completeness fields as well."
+        },
+        "payload": {
+          "type": "string",
+          "description": "Action-specific payload input. Its type and accepted values are defined by this schema."
+        },
+        "payloads": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "Action-specific payloads input. Its type and accepted values are defined by this schema."
+          },
+          "description": "Ordered payloads entries. Each item must satisfy the declared item contract."
+        },
+        "rules": {
+          "type": "object",
+          "properties": {
+            "payload_changed_without_sampled_valid": {
+              "type": "string",
+              "enum": [
+                "off",
+                "summary",
+                "all"
+              ],
+              "default": "summary",
+              "description": "Action-specific payload_changed_without_sampled_valid input. Its type and accepted values are defined by this schema."
+            }
+          },
+          "additionalProperties": false,
+          "description": "Protocol or check-rule object. Nested fields define each rule default and applicability."
+        },
+        "sample_point": {
+          "type": "string",
+          "enum": [
+            "before",
+            "after"
+          ],
+          "description": "Before/after observation point for posedge or dual sampling; it does not change the raw waveform range."
+        },
+        "time_range": {
+          "type": "object",
+          "properties": {
+            "begin": {
+              "type": "string",
+              "description": "Action-specific begin input. Its type and accepted values are defined by this schema."
+            },
+            "end": {
+              "type": "string",
+              "description": "Action-specific end input. Its type and accepted values are defined by this schema."
+            }
+          },
+          "additionalProperties": false,
+          "description": "Closed analysis interval. begin and end may be omitted independently to use the available waveform bounds."
+        },
+        "time_unit": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "fs",
+            "ps",
+            "ns",
+            "us",
+            "ms",
+            "s"
+          ],
+          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
+        },
+        "valid": {
+          "type": "string",
+          "description": "Action-specific valid input. Its type and accepted values are defined by this schema."
+        },
+        "value_format": {
+          "type": "string",
+          "enum": [
+            "hex",
+            "bin",
+            "dec"
+          ],
+          "description": "Action-specific value_format input. Its type and accepted values are defined by this schema.",
+          "default": "hex"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "clock",
+        "valid"
+      ]
+    },
+    "limits": {
+      "type": "object"
+    },
+    "auth_token": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "trace_id": {
+      "type": "string"
+    },
+    "span_id": {
+      "type": "string"
+    },
+    "parent_span_id": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Inspect valid pulses that were not observed at sampling edges.",
+  "x-purpose": "检查未被 clock 采到的 valid 短脉冲。",
+  "x-how_it_works": "按 clock 采样 valid，同时扫描 valid 原始变化；若 valid 在两个采样边沿间拉高但没有采样边沿看到高电平，则报 unsampled_valid_pulse。可选 payload/payloads 用于补风险现场。",
+  "x-when_to_use": "解释仿真里“波形有脉冲但 DUT 没采到”的问题。",
+  "x-arg_contract_notes": "required: clock, valid",
+  "x-description-zh": "检查未被 clock 采到的 valid 短脉冲。",
+  "x-agent": {
+    "use_when": [
+      "需要发现未被指定 clock sample 捕获的 valid 短脉冲。"
+    ],
+    "do_not_use_when": [
+      "需要 raw glitch/stuck 扫描或 valid-ready 协议违规结论。"
+    ],
+    "alternatives": [
+      {
+        "action": "signal.anomaly.inspect",
+        "when": "需要 raw pulse/glitch/stuck 异常。"
+      },
+      {
+        "action": "protocol.handshake.inspect",
+        "when": "需要 valid-ready 协议检查。"
+      }
+    ],
+    "constraints": [
+      "required: clock, valid"
+    ]
+  }
+}

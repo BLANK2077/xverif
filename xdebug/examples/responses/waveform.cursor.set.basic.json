@@ -1,0 +1,21 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "waveform.cursor.set",
+  "summary": {
+    "name": "mark0",
+    "time": "100ns",
+    "status": "set"
+  },
+  "data": {
+    "cursor": {
+      "name": "mark0",
+      "time": "100ns",
+      "origin": "manual"
+    },
+    "resolved_time": {
+      "source": "100ns",
+      "time": "100ns"
+    }
+  }
+}

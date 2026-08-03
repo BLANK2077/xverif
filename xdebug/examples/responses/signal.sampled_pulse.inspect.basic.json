@@ -1,0 +1,256 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "signal.sampled_pulse.inspect",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
+  "summary": {},
+  "data": {
+    "clock": "ai_complex_top.clk",
+    "valid": "ai_complex_top.glitch_sig",
+    "payloads": [
+      {
+        "alias": "payload0",
+        "signal": "ai_complex_top.hs_data"
+      }
+    ],
+    "edge": "posedge",
+    "begin": "0ns",
+    "end": "200ns",
+    "sample_count": 20,
+    "sampled_high_cycles": 0,
+    "sampled_low_cycles": 20,
+    "sampled_unknown_cycles": 0,
+    "raw_valid_transition_count": 3,
+    "payload_transition_count": 8,
+    "risk_count": 6,
+    "first_sampled_high_time": null,
+    "last_sampled_high_time": null,
+    "first_risk": {
+      "type": "unsampled_valid_pulse",
+      "severity": "warning",
+      "raw_begin": "96ns",
+      "raw_end": "96.2ns",
+      "previous_sample_edge": "95ns",
+      "next_sample_edge": "105ns",
+      "nearest_sample_edge": "95ns",
+      "raw_valid": {
+        "value": "1'h1",
+        "known": true,
+        "width": 1,
+        "bits": "1"
+      },
+      "sampled_valid": {
+        "value": "1'h0",
+        "known": true,
+        "width": 1,
+        "bits": "0"
+      },
+      "sampled_payloads": [
+        {
+          "alias": "payload0",
+          "signal": "ai_complex_top.hs_data",
+          "value": {
+            "value": "8'h00",
+            "known": true,
+            "width": 8,
+            "bits": "00000000"
+          }
+        }
+      ],
+      "reason": "valid was high between sample edges but not high at any sampled edge"
+    },
+    "findings": [
+      {
+        "type": "unsampled_valid_pulse",
+        "severity": "warning",
+        "raw_begin": "96ns",
+        "raw_end": "96.2ns",
+        "previous_sample_edge": "95ns",
+        "next_sample_edge": "105ns",
+        "nearest_sample_edge": "95ns",
+        "raw_valid": {
+          "value": "1'h1",
+          "known": true,
+          "width": 1,
+          "bits": "1"
+        },
+        "sampled_valid": {
+          "value": "1'h0",
+          "known": true,
+          "width": 1,
+          "bits": "0"
+        },
+        "sampled_payloads": [
+          {
+            "alias": "payload0",
+            "signal": "ai_complex_top.hs_data",
+            "value": {
+              "value": "8'h00",
+              "known": true,
+              "width": 8,
+              "bits": "00000000"
+            }
+          }
+        ],
+        "reason": "valid was high between sample edges but not high at any sampled edge"
+      },
+      {
+        "type": "payload_changed_without_sampled_valid",
+        "severity": "warning",
+        "raw_time": "0ns",
+        "previous_sample_edge": null,
+        "next_sample_edge": "5ns",
+        "nearest_sample_edge": "5ns",
+        "payload": {
+          "alias": "payload0",
+          "signal": "ai_complex_top.hs_data",
+          "value": {
+            "value": "8'h00",
+            "known": true,
+            "width": 8,
+            "bits": "00000000"
+          }
+        },
+        "sampled_valid": {
+          "value": "1'h0",
+          "known": true,
+          "width": 1,
+          "bits": "0"
+        },
+        "sampled_payloads": [
+          {
+            "alias": "payload0",
+            "signal": "ai_complex_top.hs_data",
+            "value": {
+              "value": "8'h00",
+              "known": true,
+              "width": 8,
+              "bits": "00000000"
+            }
+          }
+        ],
+        "reason": "payload changed but valid was not sampled high by the DUT clock"
+      },
+      {
+        "type": "payload_changed_without_sampled_valid",
+        "severity": "warning",
+        "raw_time": "125ns",
+        "previous_sample_edge": "115ns",
+        "next_sample_edge": "125ns",
+        "nearest_sample_edge": "125ns",
+        "payload": {
+          "alias": "payload0",
+          "signal": "ai_complex_top.hs_data",
+          "value": {
+            "value": "8'h10",
+            "known": true,
+            "width": 8,
+            "bits": "00010000"
+          }
+        },
+        "sampled_valid": {
+          "value": "1'h0",
+          "known": true,
+          "width": 1,
+          "bits": "0"
+        },
+        "sampled_payloads": [
+          {
+            "alias": "payload0",
+            "signal": "ai_complex_top.hs_data",
+            "value": {
+              "value": "8'h10",
+              "known": true,
+              "width": 8,
+              "bits": "00010000"
+            }
+          }
+        ],
+        "reason": "payload changed but valid was not sampled high by the DUT clock"
+      },
+      {
+        "type": "payload_changed_without_sampled_valid",
+        "severity": "warning",
+        "raw_time": "135ns",
+        "previous_sample_edge": "125ns",
+        "next_sample_edge": "135ns",
+        "nearest_sample_edge": "135ns",
+        "payload": {
+          "alias": "payload0",
+          "signal": "ai_complex_top.hs_data",
+          "value": {
+            "value": "8'h11",
+            "known": true,
+            "width": 8,
+            "bits": "00010001"
+          }
+        },
+        "sampled_valid": {
+          "value": "1'h0",
+          "known": true,
+          "width": 1,
+          "bits": "0"
+        },
+        "sampled_payloads": [
+          {
+            "alias": "payload0",
+            "signal": "ai_complex_top.hs_data",
+            "value": {
+              "value": "8'h11",
+              "known": true,
+              "width": 8,
+              "bits": "00010001"
+            }
+          }
+        ],
+        "reason": "payload changed but valid was not sampled high by the DUT clock"
+      },
+      {
+        "type": "payload_changed_without_sampled_valid",
+        "severity": "warning",
+        "raw_time": "145ns",
+        "previous_sample_edge": "135ns",
+        "next_sample_edge": "145ns",
+        "nearest_sample_edge": "145ns",
+        "payload": {
+          "alias": "payload0",
+          "signal": "ai_complex_top.hs_data",
+          "value": {
+            "value": "8'h22",
+            "known": true,
+            "width": 8,
+            "bits": "00100010"
+          }
+        },
+        "sampled_valid": {
+          "value": "1'h0",
+          "known": true,
+          "width": 1,
+          "bits": "0"
+        },
+        "sampled_payloads": [
+          {
+            "alias": "payload0",
+            "signal": "ai_complex_top.hs_data",
+            "value": {
+              "value": "8'h22",
+              "known": true,
+              "width": 8,
+              "bits": "00100010"
+            }
+          }
+        ],
+        "reason": "payload changed but valid was not sampled high by the DUT clock"
+      }
+    ]
+  },
+  "error": null,
+  "meta": {
+    "truncated": true
+  },
+  "text": "@xdebug.signal.sampled_pulse.inspect.v1\ndata:\n  clock: ai_complex_top.clk\n  valid: ai_complex_top.glitch_sig\n\npayloads:\n  alias signal\n  payload0 ai_complex_top.hs_data\n  sampling: posedge\n  begin: 0ns\n  end: 200ns\n  sample_count: 20\n  sampled_high_cycles: 0\n  sampled_low_cycles: 20\n  sampled_unknown_cycles: 0\n  raw_valid_transition_count: 3\n  payload_transition_count: 8\n  risk_count: 6\n\nfirst_risk:\n  type: unsampled_valid_pulse\n  severity: warning\n  raw_begin: 96ns\n  raw_end: 96.2ns\n  previous_sample_edge: 95ns\n  next_sample_edge: 105ns\n  nearest_sample_edge: 95ns\n  raw_valid: 1'h1\n  sampled_valid: 1'h0\n\nsampled_payloads:\n  alias signal value\n  payload0 ai_complex_top.hs_data 8'h00\n  reason: valid was high between sample edges but not high at any sampled edge\n\nfindings:\n  type severity raw_begin raw_end previous_sample_edge next_sample_edge nearest_sample_edge raw_valid sampled_valid reason raw_time payload.alias payload.signal payload.value\n  unsampled_valid_pulse warning 96ns 96.2ns 95ns 105ns 95ns 1'h1 1'h0 valid was high between sample edges but not high at any sampled edge\n  payload_changed_without_sampled_valid warning 5ns 5ns 1'h0 payload changed but valid was not sampled high by the DUT clock 0ns payload0 ai_complex_top.hs_data 8'h00\n  payload_changed_without_sampled_valid warning 115ns 125ns 125ns 1'h0 payload changed but valid was not sampled high by the DUT clock 125ns payload0 ai_complex_top.hs_data 8'h10\n  payload_changed_without_sampled_valid warning 125ns 135ns 135ns 1'h0 payload changed but valid was not sampled high by the DUT clock 135ns payload0 ai_complex_top.hs_data 8'h11\n  payload_changed_without_sampled_valid warning 135ns 145ns 145ns 1'h0 payload changed but valid was not sampled high by the DUT clock 145ns payload0 ai_complex_top.hs_data 8'h22\n  truncated: true\n"
+}

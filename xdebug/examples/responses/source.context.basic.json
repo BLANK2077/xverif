@@ -1,7 +1,0 @@
-{
-  "api_version": "xdebug.v1",
-  "ok": true,
-  "action": "source.context",
-  "summary": {"file": "rtl/top.sv", "line": 42},
-  "data": {"symbol": "ready", "context_kind": "module", "enclosing": {"type": "module", "name": "top"}}
-}

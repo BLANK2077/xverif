@@ -19,20 +19,9 @@ namespace {
 
 std::set<std::string> actions_for_category(const std::string& category) {
     std::set<std::string> out;
-    std::vector<ActionSpec> specs = default_action_registry().list_specs(false);
+    std::vector<ActionSpec> specs = default_action_registry().list_specs();
     for (size_t i = 0; i < specs.size(); ++i) {
         if (specs[i].category == category) out.insert(specs[i].name);
-    }
-    return out;
-}
-
-Json action_name_array(bool include_removed) {
-    Json out = Json::array();
-    std::vector<ActionSpec> specs = default_action_registry().list_specs(include_removed);
-    for (size_t i = 0; i < specs.size(); ++i) {
-        if (!include_removed && specs[i].status == ActionStatus::Removed) continue;
-        if (include_removed && specs[i].status != ActionStatus::Removed) continue;
-        out.push_back(specs[i].name);
     }
     return out;
 }
@@ -84,7 +73,7 @@ bool action_matches_filter(const ActionSpec& spec, const Json& filter) {
 
 std::vector<ActionSpec> filtered_specs(const Json& filter) {
     std::vector<ActionSpec> out;
-    for (const auto& spec : default_action_registry().list_specs(false))
+    for (const auto& spec : default_action_registry().list_specs())
         if (action_matches_filter(spec, filter)) out.push_back(spec);
     return out;
 }
@@ -156,7 +145,7 @@ const std::set<std::string>& waveform_actions() {
 
 Json suggested_action_names(const std::string& action, size_t limit) {
     std::vector<std::pair<size_t, std::string> > ranked;
-    for (const auto& spec : default_action_registry().list_specs(false)) {
+    for (const auto& spec : default_action_registry().list_specs()) {
         size_t score = edit_distance(action, spec.name);
         const size_t dot = action.find('.');
         if (dot != std::string::npos && spec.name.compare(0, dot + 1, action, 0, dot + 1) == 0) {
@@ -248,7 +237,7 @@ Json catalog_schema_response(const Json& request) {
         {"contract", {
             {"source", "ActionRegistry"},
             {"schema_root", "xdebug/schemas/v1"},
-            {"action_count", default_action_registry().list_specs(false).size()}
+            {"action_count", default_action_registry().list_specs().size()}
         }}
     };
     return response;
@@ -262,17 +251,14 @@ Json catalog_actions_response(const Json& request) {
     Json filter = args.value("filter", Json::object());
     std::vector<ActionSpec> specs = filtered_specs(filter);
     Json actions = filtered_action_payload(specs, verbose);
-    Json removed = action_name_array(true);
     response["summary"] = {
         {"action_count", actions.size()},
-        {"total_action_count", default_action_registry().list_specs(false).size()},
-        {"removed_count", removed.size()},
+        {"total_action_count", default_action_registry().list_specs().size()},
         {"verbose", verbose},
         {"filtered", !filter.empty()}
     };
     response["data"] = {
         {"actions", actions},
-        {"removed", removed},
         {"modes", filtered_modes(specs)},
         {"filters", filter}
     };

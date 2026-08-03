@@ -24,7 +24,9 @@
       "type": "boolean"
     },
     "action": {
-      "const": "apb.statistics"
+      "enum": [
+        "apb.statistics"
+      ]
     },
     "tool": {
       "type": "object",

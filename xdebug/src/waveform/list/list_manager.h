@@ -10,6 +10,14 @@ public:
     ListManager();
     ~ListManager();
 
+    // Atomically validate and persist all named lists in one update.  append
+    // rejects name conflicts; replace updates only incoming names and keeps
+    // unrelated lists.
+    bool load_lists(const std::string& session_id,
+                    const std::vector<SignalList>& incoming,
+                    const std::string& mode,
+                    std::string& error);
+
     bool create_list(const std::string& session_id, const std::string& name);
     bool create_list(int session_id, const std::string& name) { return create_list(std::to_string(session_id), name); }
     bool delete_list(const std::string& session_id, const std::string& name);

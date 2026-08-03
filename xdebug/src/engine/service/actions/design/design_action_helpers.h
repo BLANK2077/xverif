@@ -7,13 +7,9 @@ namespace xdebug_design {
 
 inline Json design_action_example(const std::string& action) {
     Json args = Json::object();
-    if (action == "source.context") {
-        args = {{"file", "rtl/top.sv"}, {"line", 42}};
-    } else {
-        args = {{"signal", "top.u.valid"}};
-        if (action == "trace.driver" || action == "trace.load") {
-            args["line_limit"] = 16;
-        }
+    args = {{"signal", "top.u.valid"}};
+    if (action == "trace.driver" || action == "trace.load") {
+        args["line_limit"] = 16;
     }
     return Json{{"api_version", "xdebug.v1"},
                 {"action", action},

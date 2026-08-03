@@ -81,7 +81,7 @@
       "列出 APB 配置。"
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 apb.config.load、apb.cursor 的业务目标；请改用列出的同域 action。"
+      "不要把本 action 用于 apb.config.load、apb.transaction.cursor 的业务目标；请改用列出的同域 action。"
     ],
     "alternatives": [
       {
@@ -89,7 +89,7 @@
         "when": "加载 APB 配置。"
       },
       {
-        "action": "apb.cursor",
+        "action": "apb.transaction.cursor",
         "when": "在 APB transfer 间移动游标。"
       }
     ],

@@ -1,7 +1,0 @@
-{
-  "api_version": "xdebug.v1",
-  "ok": true,
-  "action": "detect_abnormal",
-  "summary": {"finding_count": 1, "truncated": false},
-  "data": {"findings": [{"type": "unknown_xz", "signal": "top.bus", "severity": "warning", "time": "85ns", "value": {"value": "8'hxx", "known": false, "has_x": true, "has_z": false}}]}
-}

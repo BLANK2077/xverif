@@ -52,7 +52,7 @@ public:
 }  // namespace
 
 std::unique_ptr<EngineActionHandler> make_cursor_list_handler() {
-    return std::unique_ptr<EngineActionHandler>(new CursorActionHandler("cursor.list"));
+    return std::unique_ptr<EngineActionHandler>(new CursorActionHandler("waveform.cursor.list"));
 }
 
 }  // namespace xdebug_design

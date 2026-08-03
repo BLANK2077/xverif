@@ -32,7 +32,7 @@ namespace xdebug_design {
 namespace {
 class RcGenerateHandler : public EngineActionHandler {
 public:
-    const char* action_name() const override { return "rc.generate"; }
+    const char* action_name() const override { return "nwave.rc.generate"; }
     bool needs_design() const override { return false; }
     bool needs_waveform() const override { return true; }
     Json run(const Json& r, EngineActionContext& ctx) const override {
@@ -49,7 +49,7 @@ public:
                  {"expected", "input config_path and output.path"},
                  {"required_any_of", Json::array({"args.config_path", "args.output.path"})},
                  {"correct_example", {{"api_version", "xdebug.v1"},
-                                      {"action", "rc.generate"},
+                                      {"action", "nwave.rc.generate"},
                                       {"target", {{"session_id", "case_a"}}},
                                       {"args", {{"config_path", "xdebug/configs/wave.rc.json"},
                                                 {"output", {{"path", "wave.rc"}}}}}}},
@@ -80,7 +80,7 @@ public:
                 "INVALID_ARGUMENT",
                 err,
                  {{"invalid_arg", "args.config_path"},
-                  {"expected", "rc config JSON matching rc.generate schema"},
+                  {"expected", "rc config JSON matching nwave.rc.generate schema"},
                   {"cause_code", "PARSE_FAILED"}});
 
         if (!xdebug_waveform::validate_rc_time_refs(cfg, g_fsdb_file, err) ||

@@ -20,6 +20,25 @@ XDEBUG_ROOT = Path(__file__).resolve().parents[1]
 SPEC_PATH = XDEBUG_ROOT / "specs" / "actions" / "actions.yaml"
 REQUEST_EXAMPLES = XDEBUG_ROOT / "examples" / "requests"
 
+RENAMED_FROM = {
+    "apb.transaction.cursor": "apb.cursor",
+    "axi.transaction.cursor": "axi.cursor",
+    "waveform.cursor.delete": "cursor.delete",
+    "waveform.cursor.get": "cursor.get",
+    "waveform.cursor.list": "cursor.list",
+    "waveform.cursor.set": "cursor.set",
+    "waveform.cursor.use": "cursor.use",
+    "signal.anomaly.inspect": "detect_abnormal",
+    "protocol.handshake.inspect": "handshake.inspect",
+    "list.first_change": "list.diff",
+    "nwave.rc.generate": "rc.generate",
+    "signal.sampled_pulse.inspect": "sampled_pulse.inspect",
+    "stream.describe": "stream.show",
+    "trace.x_origin": "trace.x",
+    "list.load": "list.create",
+    "stream.config.get": "stream.config.list",
+}
+
 
 ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
     "action": {"type": "string"},
@@ -91,6 +110,7 @@ ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         "additionalProperties": False,
     },
+    "payload": {"type": "string"},
     "packet_index": {"type": "integer"},
     "path": {"type": "string"},
     "role": {"type": "string"},
@@ -123,7 +143,7 @@ ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
 
 EXTRA_ARGS_BY_ACTION: dict[str, set[str]] = {
     "actions": {"filter", "output"},
-    "apb.cursor": {"direction"},
+    "apb.transaction.cursor": {"direction"},
     "apb.config.list": {"name"},
     "apb.config.load": {"config", "config_path"},
     "apb.query": {"direction", "address", "addr", "query", "last"},
@@ -133,7 +153,7 @@ EXTRA_ARGS_BY_ACTION: dict[str, set[str]] = {
     "axi.channel_stall": {"channel", "line_limit", "rules", "time_range"},
     "axi.config.list": {"name"},
     "axi.config.load": {"config", "config_path"},
-    "axi.cursor": {"direction"},
+    "axi.transaction.cursor": {"direction"},
     "axi.export": {"output", "time_range"},
     "axi.latency_outlier": {"direction", "line_limit", "method", "output", "threshold", "time_range", "top_n"},
     "axi.outstanding_timeline": {"direction", "line_limit", "time_range"},
@@ -142,7 +162,7 @@ EXTRA_ARGS_BY_ACTION: dict[str, set[str]] = {
     "axi.statistics": {"filter"},
     "batch": {"mode"},
     "counter.statistics": {"edge", "line_limit", "max_samples", "sample_point"},
-    "detect_abnormal": {"line_limit", "time_range", "value_format"},
+    "signal.anomaly.inspect": {"line_limit", "time_range", "value_format"},
     "event.config.list": {"line_limit", "name"},
     "event.config.load": {"config_path"},
     "event.export": {
@@ -170,14 +190,16 @@ EXTRA_ARGS_BY_ACTION: dict[str, set[str]] = {
     },
     "expr.eval_at": {"edge", "sample_point", "time_range"},
     "expr.normalize": {"line_limit", "no_statement_only", "role", "signal"},
-    "handshake.inspect": {"data", "edge", "line_limit", "rules", "sample_point", "time_range"},
+    "protocol.handshake.inspect": {"data", "edge", "line_limit", "rules", "sample_point", "time_range"},
     "list.delete": {"index"},
-    "list.diff": {"value_format"},
+    "list.first_change": {"value_format"},
+    "list.load": {"config", "config_path", "mode"},
     "list.export": {"line_limit", "output", "time_range"},
     "list.show": {"name"},
-    "sampled_pulse.inspect": {
+    "signal.sampled_pulse.inspect": {
         "edge",
         "line_limit",
+        "payload",
         "payloads",
         "rules",
         "sample_point",
@@ -194,23 +216,21 @@ EXTRA_ARGS_BY_ACTION: dict[str, set[str]] = {
     "signal.stability": {"conditions", "mode", "signals", "time_range"},
     "signal.statistics": {"clock", "conditions", "edge", "line_limit", "max_samples", "mode", "sample_point", "signals", "time_range"},
     "signal.xz_verify": {"match_mode"},
-    "source.context": {"context_lines", "symbol", "output"},
     "stream.config.load": {"config", "config_path", "file", "mode"},
     "stream.config.list": {"name", "output"},
+    "stream.config.get": set(),
     "stream.export": {"cache_scope", "channel", "line_limit", "output", "time_range"},
     "stream.query": {"cache_scope", "channel", "filter", "line_limit", "packet_index", "time_range"},
-    "stream.show": set(),
+    "stream.describe": set(),
     "stream.validate": {"cache_scope", "channel", "line_limit", "time_range"},
     "trace.active_driver": {
         "limits",
     },
     "trace.active_driver_chain": set(),
-    "trace.x": {"value_format"},
+    "trace.x_origin": {"value_format"},
     "trace.driver": {"line_limit", "no_statement_only", "role"},
     "trace.load": {"line_limit", "no_statement_only", "role"},
     "value.at": {"clock", "edge", "sample_point", "slice_hint", "value_format"},
-    "value.batch_at": {"clock", "edge", "sample_point", "slice_hint", "value_format"},
-    "list.value_at": {"edge", "sample_point", "value_format"},
     "verify.conditions": {"edge", "sample_point", "signals", "value_format"},
     "window.verify": {"edge", "line_limit", "max_samples", "sample_point", "signals", "time_range"},
 }
@@ -219,35 +239,33 @@ EXTRA_ARGS_BY_ACTION: dict[str, set[str]] = {
 # same display-only selector.  Keep this list centralized so protocol, stream,
 # event and waveform actions cannot drift independently.
 VALUE_BEARING_ACTIONS = {
-    "apb.cursor",
+    "apb.transaction.cursor",
     "apb.query",
     "apb.statistics",
     "apb.transfer_window",
     "axi.analysis",
-    "axi.cursor",
+    "axi.transaction.cursor",
     "axi.export",
     "axi.latency_outlier",
     "axi.query",
     "axi.request_response_pair",
     "axi.statistics",
     "counter.statistics",
-    "detect_abnormal",
+    "signal.anomaly.inspect",
     "event.export",
     "event.find",
     "expr.eval_at",
-    "handshake.inspect",
-    "list.diff",
-    "list.value_at",
-    "sampled_pulse.inspect",
+    "protocol.handshake.inspect",
+    "list.first_change",
+    "signal.sampled_pulse.inspect",
     "signal.changes",
     "signal.stability",
     "signal.statistics",
     "signal.xz_verify",
     "stream.export",
     "stream.query",
-    "trace.x",
+    "trace.x_origin",
     "value.at",
-    "value.batch_at",
     "verify.conditions",
     "window.verify",
 }
@@ -324,6 +342,9 @@ def collect_arg_schemas(specs: list[dict[str, Any]]) -> dict[str, dict[str, Any]
     for spec in specs:
         for kind in ("request",):
             path = XDEBUG_ROOT / spec["schemas"][kind]
+            if not path.exists() and spec["name"] in RENAMED_FROM:
+                path = path.with_name(
+                    RENAMED_FROM[spec["name"]] + ".request.schema.json")
             if not path.exists():
                 continue
             schema = load_json(path)
@@ -602,7 +623,7 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
         selected_props[key] = apply_argument_contract(action, key, arg_schemas[key])
         if key in PARAM_DESCRIPTIONS:
             selected_props[key].setdefault("description", PARAM_DESCRIPTIONS[key])
-    if action in {"value.at", "value.batch_at", "list.value_at"}:
+    if action == "value.at":
         selected_props.pop("format", None)
     if action in ("apb.query", "axi.query") and "query" in selected_props:
         selected_props["query"] = copy.deepcopy(arg_schemas["protocol_query"])
@@ -744,12 +765,6 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
                 "enum": ["transfer", "packet", "packet_beats"],
                 "description": "导出或查询的结果类型。",
             }
-    if action == "value.batch_at" and "signals" in selected_props:
-        selected_props["signals"] = {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": PARAM_DESCRIPTIONS["signals"],
-        }
     if action in VALUE_BEARING_ACTIONS and "value_format" in selected_props:
         selected_props["value_format"]["default"] = "hex"
     if action == "trace.active_driver_chain":
@@ -778,7 +793,7 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
             },
             "additionalProperties": False,
         }
-    if action == "trace.x":
+    if action == "trace.x_origin":
         properties["limits"] = {
             "type": "object",
             "properties": {
@@ -823,7 +838,7 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
             "enum": ["all", "scope", "signal"],
             "description": "只返回 scope、signal，或两者都返回。",
         }
-    if action == "handshake.inspect":
+    if action == "protocol.handshake.inspect":
         selected_props["rules"] = {
             "type": "object",
             "properties": {
@@ -838,7 +853,7 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
             },
             "additionalProperties": False,
         }
-    if action == "sampled_pulse.inspect":
+    if action == "signal.sampled_pulse.inspect":
         selected_props["rules"] = {
             "type": "object",
             "properties": {
@@ -977,7 +992,14 @@ def sync(check: bool, selected_actions: set[str] | None = None) -> list[str]:
         if selected_actions and spec["name"] not in selected_actions:
             continue
         path = XDEBUG_ROOT / spec["schemas"]["request"]
-        schema = load_json(path)
+        source_path = path
+        if not source_path.exists() and spec["name"] in RENAMED_FROM:
+            source_path = path.with_name(
+                RENAMED_FROM[spec["name"]] + ".request.schema.json")
+        if not source_path.exists():
+            errors.append(f"{spec['name']}: request schema seed is missing")
+            continue
+        schema = load_json(source_path)
         try:
             updated = sync_schema(schema, spec, arg_schemas)
         except ValueError as exc:

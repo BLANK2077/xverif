@@ -83,7 +83,6 @@ ENGINE_SRCS = src/engine/main.cpp \
               src/engine/service/actions/design/register_design_handlers.cpp \
               src/engine/service/actions/design/signal_canonicalize.cpp \
               src/engine/service/actions/design/signal_resolve.cpp \
-              src/engine/service/actions/design/source_context.cpp \
               src/engine/service/actions/design/trace_driver.cpp \
               src/engine/service/actions/design/trace_load.cpp \
               src/engine/service/actions/protocol/apb_config_list.cpp \
@@ -102,6 +101,7 @@ ENGINE_SRCS = src/engine/main.cpp \
               src/engine/service/actions/protocol/register_protocol_handlers.cpp \
               src/engine/service/actions/stream/register_stream_handlers.cpp \
               src/engine/service/actions/stream/stream_config_list.cpp \
+              src/engine/service/actions/stream/stream_config_get.cpp \
               src/engine/service/actions/stream/stream_config_load.cpp \
               src/engine/service/actions/stream/stream_export.cpp \
               src/engine/service/actions/stream/stream_query.cpp \
@@ -128,12 +128,12 @@ ENGINE_SRCS = src/engine/main.cpp \
               src/engine/service/actions/waveform/handshake_inspect.cpp \
               src/engine/service/actions/waveform/list_add.cpp \
               src/engine/service/actions/waveform/list_create.cpp \
+              src/engine/service/actions/waveform/list_load.cpp \
               src/engine/service/actions/waveform/list_delete.cpp \
               src/engine/service/actions/waveform/list_diff.cpp \
               src/engine/service/actions/waveform/list_export.cpp \
               src/engine/service/actions/waveform/list_show.cpp \
               src/engine/service/actions/waveform/list_validate.cpp \
-              src/engine/service/actions/waveform/list_value_at.cpp \
               src/engine/service/actions/waveform/rc_generate.cpp \
               src/engine/service/actions/waveform/register_waveform_handlers.cpp \
               src/engine/service/actions/waveform/sampled_pulse_inspect.cpp \
@@ -144,7 +144,6 @@ ENGINE_SRCS = src/engine/main.cpp \
               src/engine/service/actions/waveform/signal_xz_verify.cpp \
               src/engine/service/actions/waveform/signal_statistics.cpp \
               src/engine/service/actions/waveform/value_at.cpp \
-              src/engine/service/actions/waveform/value_batch_at.cpp \
               src/engine/service/actions/waveform/verify_conditions.cpp \
               src/engine/service/actions/waveform/window_verify.cpp \
               src/engine/service/design_postprocess.cpp \

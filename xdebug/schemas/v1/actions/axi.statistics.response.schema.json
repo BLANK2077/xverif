@@ -24,7 +24,9 @@
       "type": "boolean"
     },
     "action": {
-      "const": "axi.statistics"
+      "enum": [
+        "axi.statistics"
+      ]
     },
     "tool": {
       "type": "object",

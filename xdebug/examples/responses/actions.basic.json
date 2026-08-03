@@ -4,8 +4,7 @@
   "action": "actions",
   "summary": {
     "action_count": 1,
-    "total_action_count": 72,
-    "removed_count": 1,
+    "total_action_count": 73,
     "verbose": false,
     "filtered": true
   },
@@ -13,7 +12,6 @@
     "actions": [
       "schema"
     ],
-    "removed": ["signal.search"],
     "modes": {
       "design": [],
       "waveform": [],

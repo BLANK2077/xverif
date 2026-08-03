@@ -1,0 +1,11 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "apb.transaction.cursor",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {
+    "name": "if0",
+    "op": "begin"
+  }
+}

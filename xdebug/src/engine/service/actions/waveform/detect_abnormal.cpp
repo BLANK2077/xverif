@@ -74,7 +74,7 @@ public:
 }  // namespace
 
 std::unique_ptr<EngineActionHandler> make_detect_abnormal_handler() {
-    return std::unique_ptr<EngineActionHandler>(new AiActionHandler("detect_abnormal", false, true));
+    return std::unique_ptr<EngineActionHandler>(new AiActionHandler("signal.anomaly.inspect", false, true));
 }
 
 }  // namespace xdebug_design

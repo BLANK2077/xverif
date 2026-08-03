@@ -9,6 +9,8 @@
 #include <unistd.h>
 #include <sys/file.h>
 #include <cctype>
+#include <map>
+#include <set>
 
 namespace xdebug_waveform {
 
@@ -18,6 +20,63 @@ ListManager::ListManager() {
 }
 
 ListManager::~ListManager() {
+}
+
+bool ListManager::load_lists(const std::string& session_id,
+                             const std::vector<SignalList>& incoming,
+                             const std::string& mode,
+                             std::string& error) {
+    if (mode != "replace" && mode != "append") {
+        error = "list.load mode must be replace or append";
+        return false;
+    }
+    if (incoming.empty()) {
+        error = "list.load requires at least one list";
+        return false;
+    }
+    std::set<std::string> incoming_names;
+    for (const auto& list : incoming) {
+        if (list.name.empty() || !incoming_names.insert(list.name).second) {
+            error = "list names must be non-empty and unique";
+            return false;
+        }
+        std::set<std::string> signals;
+        for (const auto& signal : list.signals) {
+            if (signal.empty() || !signals.insert(signal).second) {
+                error = "signals in list " + list.name +
+                        " must be non-empty and unique";
+                return false;
+            }
+        }
+    }
+
+    std::vector<SignalList> current;
+    if (!load_session(session_id, current)) {
+        error = "failed to read existing signal lists";
+        return false;
+    }
+    if (mode == "append") {
+        std::set<std::string> names;
+        for (const auto& list : current) names.insert(list.name);
+        for (const auto& list : incoming) {
+            if (!names.insert(list.name).second) {
+                error = "signal list already exists: " + list.name;
+                return false;
+            }
+            current.push_back(list);
+        }
+    } else {
+        std::map<std::string, SignalList> by_name;
+        for (const auto& list : current) by_name[list.name] = list;
+        for (const auto& list : incoming) by_name[list.name] = list;
+        current.clear();
+        for (const auto& item : by_name) current.push_back(item.second);
+    }
+    if (!save_session(session_id, current)) {
+        error = "failed to persist signal lists";
+        return false;
+    }
+    return true;
 }
 
 static bool lock_file(int fd) {

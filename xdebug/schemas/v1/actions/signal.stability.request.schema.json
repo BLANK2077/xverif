@@ -143,16 +143,16 @@
       "检查信号窗口内是否稳定。"
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 signal.canonicalize、signal.changes 的业务目标；请改用列出的同域 action。"
+      "不要把本 action 用于 signal.anomaly.inspect、signal.sampled_pulse.inspect 的业务目标；请改用列出的同域 action。"
     ],
     "alternatives": [
       {
-        "action": "signal.canonicalize",
-        "when": "返回信号 canonical 名称。"
+        "action": "signal.anomaly.inspect",
+        "when": "扫描常见波形异常。"
       },
       {
-        "action": "signal.changes",
-        "when": "读取信号变化点。"
+        "action": "signal.sampled_pulse.inspect",
+        "when": "检查未被 clock 采到的 valid 短脉冲。"
       }
     ],
     "constraints": [

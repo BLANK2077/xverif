@@ -74,7 +74,7 @@ public:
 }  // namespace
 
 std::unique_ptr<EngineActionHandler> make_handshake_inspect_handler() {
-    return std::unique_ptr<EngineActionHandler>(new AiActionHandler("handshake.inspect", false, true));
+    return std::unique_ptr<EngineActionHandler>(new AiActionHandler("protocol.handshake.inspect", false, true));
 }
 
 }  // namespace xdebug_design

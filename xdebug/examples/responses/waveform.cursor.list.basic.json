@@ -1,0 +1,18 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "waveform.cursor.list",
+  "summary": {
+    "cursor_count": 1,
+    "active_cursor": "mark0"
+  },
+  "data": {
+    "cursors": [
+      {
+        "name": "mark0",
+        "time": "100ns",
+        "origin": "manual"
+      }
+    ]
+  }
+}

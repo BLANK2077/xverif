@@ -222,67 +222,6 @@ OrderedJson handle_local_zero_resource_action(const OrderedJson& request,
                                               const std::string& action,
                                               bool& handled) {
     handled = false;
-    if (action == "source.context") {
-        handled = true;
-        OrderedJson args = request.value("args", OrderedJson::object());
-        std::string file = args.value("file", std::string());
-        int line = args.value("line", 0);
-        if (file.empty() || line <= 0) {
-            OrderedJson example = {{"api_version", "xdebug.v1"},
-                                   {"action", "source.context"},
-                                   {"args", {{"file", "rtl/top.sv"}, {"line", 42}, {"context_lines", 8}}}};
-            return make_error(
-                request, action, "MISSING_FIELD", "args.file and args.line are required", true,
-                {{"invalid_arg", file.empty() ? "args.file" : "args.line"},
-                 {"expected", "readable source file and positive line number"},
-                 {"correct_example", example},
-                 {"example_note", "Example only; use the file and line returned by trace/source actions."}});
-        }
-
-        std::ifstream in(file.c_str());
-        if (!in) return make_error(
-            request, action, "SOURCE_NOT_FOUND", "source file not found: " + file, true,
-            {{"invalid_arg", "args.file"},
-             {"missing_name", file},
-             {"missing_resource", "source file"},
-             {"expected", "readable source file path"}});
-        std::vector<std::string> lines;
-        std::string line_text;
-        while (std::getline(in, line_text)) lines.push_back(line_text);
-        if (line > static_cast<int>(lines.size())) {
-            return make_error(
-                request, action, "INVALID_ARGUMENT", "line out of range", true,
-                {{"invalid_arg", "args.line"},
-                 {"expected", "line number within source file"},
-                 {"received", line}});
-        }
-
-        OrderedJson output = args.value("output", OrderedJson::object());
-        bool compact = !output.value("verbose", false);
-        int ctx_lines = args.value("context_lines", compact ? 3 : 8);
-        int begin = std::max(1, line - ctx_lines);
-        int end = std::min(static_cast<int>(lines.size()), line + ctx_lines);
-        nlohmann::json enclosing = detail::infer_enclosing_block(lines, line);
-
-        OrderedJson summary = {{"file", file}, {"line", line}};
-        OrderedJson data;
-        data["symbol"] = args.value("symbol", std::string());
-        data["context_kind"] = enclosing.value("type", "unknown");
-        data["enclosing"] = OrderedJson::parse(enclosing.dump());
-        if (!compact) {
-            OrderedJson context = OrderedJson::array();
-            for (int i = begin; i <= end; ++i) {
-                context.push_back({{"line", i}, {"text", lines[i - 1]}, {"hit", i == line}});
-            }
-            data["context"] = context;
-        }
-
-        OrderedJson response = make_response(request, action);
-        response["summary"] = summary;
-        response["data"] = data;
-        return response;
-    }
-
     if (action == "expr.normalize") {
         OrderedJson args = request.value("args", OrderedJson::object());
         std::string signal = args.value("signal", std::string());

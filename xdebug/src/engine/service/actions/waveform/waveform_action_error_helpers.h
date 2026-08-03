@@ -6,11 +6,7 @@ namespace xdebug_design {
 
 inline Json waveform_action_example(const std::string& action) {
     Json args = Json::object();
-    if (action == "value.batch_at") {
-        args = {{"signals", Json::array({"top.u.valid", "top.u.ready"})},
-                {"time", "10ns"},
-                {"clock", "top.u.clk"}};
-    } else if (action == "verify.conditions") {
+    if (action == "verify.conditions") {
         args = {{"clock", "top.u.clk"},
                 {"time", "10ns"},
                 {"signals", {{"valid", "top.u.valid"}, {"ready", "top.u.ready"}}},

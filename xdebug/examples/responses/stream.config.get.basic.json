@@ -1,0 +1,23 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "stream.config.get",
+  "summary": {
+    "name": "req_stream"
+  },
+  "data": {
+    "stream": {
+      "name": "req_stream",
+      "signals": {
+        "clk": "top.clk",
+        "vld": "top.req_vld",
+        "rdy": "top.req_rdy"
+      },
+      "clock": "clk",
+      "edge": "posedge",
+      "sample_point": "before",
+      "vld": "vld",
+      "rdy": "rdy"
+    }
+  }
+}

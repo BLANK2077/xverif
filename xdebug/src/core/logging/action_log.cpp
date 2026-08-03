@@ -397,8 +397,6 @@ Json allowlisted_args_for_log(const std::string& action, const Json& args) {
     if (!args.is_object()) return out;
     if (action == "value.at") {
         for (const char* k : {"signal", "time", "radix", "format"}) copy_arg_if_present(out, args, k);
-    } else if (action == "value.batch_at") {
-        for (const char* k : {"signals", "time", "radix", "format", "limit"}) copy_arg_if_present(out, args, k);
     } else if (action == "event.find") {
         for (const char* k : {"signal", "start", "end", "edge", "limit"}) copy_arg_if_present(out, args, k);
     } else if (action == "trace.active_driver") {

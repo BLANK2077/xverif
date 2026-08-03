@@ -13,9 +13,7 @@ inline Json list_action_example(const std::string& action) {
         args = {{"name", "debug_list"}, {"signal", "top.u.valid"}};
     } else if (action == "list.delete") {
         args = {{"name", "debug_list"}, {"index", 1}};
-    } else if (action == "list.value_at") {
-        args = {{"name", "debug_list"}, {"clock", "top.u.clk"}, {"time", "10ns"}};
-    } else if (action == "list.diff" || action == "list.export") {
+    } else if (action == "list.first_change" || action == "list.export") {
         args = {{"name", "debug_list"},
                 {"time_range", {{"begin", "0ns"}, {"end", "500ns"}}}};
         if (action == "list.export") {

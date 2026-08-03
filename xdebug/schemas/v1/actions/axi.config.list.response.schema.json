@@ -23,7 +23,9 @@
       "type": "boolean"
     },
     "action": {
-      "const": "axi.config.list"
+      "enum": [
+        "axi.config.list"
+      ]
     },
     "tool": {
       "type": "object",

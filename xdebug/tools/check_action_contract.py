@@ -48,7 +48,7 @@ def require_file(path, base):
 
 
 def check_spec_shape(specs, xdebug_root):
-    valid_status = {"experimental", "stable", "deprecated", "removed"}
+    valid_status = {"experimental", "stable"}
     valid_requires = {"none", "design", "waveform", "combined", "any", "session"}
     valid_purposes = {"discover", "configure", "query", "inspect", "analyze", "trace",
                       "verify", "export", "manage", "transform", "orchestrate"}
@@ -60,35 +60,46 @@ def check_spec_shape(specs, xdebug_root):
             fail("%s: invalid status %s" % (name, spec["status"]))
         if spec["requires"] not in valid_requires:
             fail("%s: invalid requires %s" % (name, spec["requires"]))
-        if spec["status"] != "removed":
-            for key in ("description_en", "description_zh"):
-                if not isinstance(spec.get(key), str) or not spec[key].strip():
-                    fail("%s: missing %s" % (name, key))
-            for key in ("purposes", "use_for", "do_not_use_for"):
-                value = spec.get(key)
-                if not isinstance(value, list) or not value:
-                    fail("%s: %s must be a non-empty array" % (name, key))
-            if set(spec["purposes"]) - valid_purposes:
-                fail("%s: invalid purposes %s" % (name, spec["purposes"]))
-            if not isinstance(spec.get("preferred_alternative"), dict):
-                fail("%s: preferred_alternative must be an object" % name)
-            schemas = spec.get("schemas", {})
-            examples = spec.get("examples", {})
-            for field in ("request", "response"):
-                ref = schemas.get(field)
-                if not isinstance(ref, str) or not ref:
-                    fail("%s: action missing %s schema" % (name, field))
-                if ref in ("schemas/v1/xdebug.request.schema.json", "schemas/v1/xdebug.response.schema.json"):
-                    fail("%s: action must not use generic %s schema" % (name, field))
-                expected = "schemas/v1/actions/%s.%s.schema.json" % (name, field)
-                if ref != expected:
-                    fail("%s: %s schema must be %s, got %s" % (name, field, expected, ref))
-                require_file(ref, xdebug_root)
-                refs = examples.get(field)
-                if not isinstance(refs, list) or not refs:
-                    fail("%s: action missing %s example" % (name, field))
-                for example in refs:
-                    require_file(example, xdebug_root)
+        for key in ("description_en", "description_zh"):
+            if not isinstance(spec.get(key), str) or not spec[key].strip():
+                fail("%s: missing %s" % (name, key))
+        for key in ("purposes", "use_when", "do_not_use_when"):
+            value = spec.get(key)
+            if not isinstance(value, list) or not value:
+                fail("%s: %s must be a non-empty array" % (name, key))
+        normalized_description = spec["description_en"].strip().rstrip(".").casefold()
+        if any(item.strip().rstrip(".").casefold() == normalized_description
+               for item in spec["use_when"]):
+            fail("%s: use_when repeats description_en instead of a decision boundary" % name)
+        if set(spec["purposes"]) - valid_purposes:
+            fail("%s: invalid purposes %s" % (name, spec["purposes"]))
+        alternatives = spec.get("alternatives")
+        if not isinstance(alternatives, list):
+            fail("%s: alternatives must be an array" % name)
+        for index, alternative in enumerate(alternatives):
+            if (not isinstance(alternative, dict)
+                    or set(alternative) != {"action", "when"}
+                    or not all(isinstance(alternative[key], str) and alternative[key].strip()
+                               for key in ("action", "when"))):
+                fail("%s: alternatives[%d] must contain action and when" % (name, index))
+            if alternative["action"] not in specs:
+                fail("%s: alternatives[%d] targets unknown action %s" %
+                     (name, index, alternative["action"]))
+        schemas = spec.get("schemas", {})
+        examples = spec.get("examples", {})
+        for field in ("request", "response"):
+            ref = schemas.get(field)
+            if not isinstance(ref, str) or not ref:
+                fail("%s: action missing %s schema" % (name, field))
+            expected = "schemas/v1/actions/%s.%s.schema.json" % (name, field)
+            if ref != expected:
+                fail("%s: %s schema must be %s, got %s" % (name, field, expected, ref))
+            require_file(ref, xdebug_root)
+            refs = examples.get(field)
+            if not isinstance(refs, list) or not refs:
+                fail("%s: action missing %s example" % (name, field))
+            for example in refs:
+                require_file(example, xdebug_root)
 
 
 def load_runtime_actions(exe, verbose=False):
@@ -114,15 +125,12 @@ def check_runtime(specs, runtime, exe):
     if not isinstance(actions, list) or not all(isinstance(name, str) for name in actions):
         fail("compact runtime data.actions must contain action name strings")
     implemented = set(actions)
-    removed = set(runtime["data"].get("removed", []))
-    spec_implemented = {name for name, spec in specs.items() if spec["status"] != "removed"}
-    spec_removed = {name for name, spec in specs.items() if spec["status"] == "removed"}
+    spec_implemented = set(specs)
     if implemented != spec_implemented:
         fail("implemented mismatch: missing=%s extra=%s" %
              (sorted(spec_implemented - implemented), sorted(implemented - spec_implemented)))
-    if removed != spec_removed:
-        fail("removed mismatch: missing=%s extra=%s" %
-             (sorted(spec_removed - removed), sorted(removed - spec_removed)))
+    if "removed" in runtime["data"]:
+        fail("runtime action catalog must not publish removed tombstones")
     verbose_runtime = load_runtime_actions(exe, verbose=True)
     descriptors = {item["name"]: item for item in verbose_runtime["data"].get("actions", [])}
     for name in sorted(spec_implemented):
@@ -134,8 +142,8 @@ def check_runtime(specs, runtime, exe):
             if spec[field] != desc.get(runtime_field):
                 fail("%s: %s mismatch spec=%s runtime=%s" %
                      (name, field, spec[field], desc.get(runtime_field)))
-        for field in ("description_en", "description_zh", "purposes", "use_for",
-                      "do_not_use_for", "preferred_alternative"):
+        for field in ("description_en", "description_zh", "purposes", "use_when",
+                      "do_not_use_when", "alternatives"):
             if spec[field] != desc.get(field):
                 fail("%s: %s metadata mismatch" % (name, field))
         schemas = spec.get("schemas", {})

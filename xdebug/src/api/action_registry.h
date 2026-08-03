@@ -18,8 +18,8 @@ public:
     const ActionSpec* find_spec(const std::string& name) const;
     ActionHandler* find_handler(const std::string& name) const;
 
-    std::vector<ActionSpec> list_specs(bool include_removed = false) const;
-    Json list_descriptors(bool include_removed = false) const;
+    std::vector<ActionSpec> list_specs() const;
+    Json list_descriptors() const;
 
 private:
     std::map<std::string, ActionSpec> specs_;
@@ -27,4 +27,3 @@ private:
 };
 
 } // namespace xdebug
-

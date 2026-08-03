@@ -16,6 +16,7 @@
 #include <chrono>
 #include <ctime>
 #include <limits.h>
+#include <stdexcept>
 #include <string>
 #include <cstring>
 #include <fstream>
@@ -34,6 +35,22 @@ namespace {
 bool has_string(const Json& object, const char* key) {
     return object.contains(key) && object[key].is_string() &&
            !object[key].get<std::string>().empty();
+}
+
+void append_recommended_actions(Json& response, const ActionSpec& spec) {
+    if (!response.value("ok", false) || spec.recommended_actions.empty()) return;
+    if (!response.contains("data") || !response["data"].is_object()) {
+        throw std::runtime_error(
+            "successful load response requires an object data payload");
+    }
+    Json recommendations = Json::array();
+    for (const ActionRecommendation& recommendation : spec.recommended_actions) {
+        recommendations.push_back({
+            {"action", recommendation.action},
+            {"purpose", recommendation.purpose},
+        });
+    }
+    response["data"]["recommended_actions"] = std::move(recommendations);
 }
 
 bool fingerprint_recorded(long mtime, long long size,
@@ -754,7 +771,7 @@ Json Dispatcher::handle_session(const Json& request, const std::string& action) 
 Json Dispatcher::dispatch_impl(const Json& request) {
     const std::string action = request.value("action", std::string());
     const ActionSpec* spec = default_action_registry().find_spec(action);
-    if (!spec || spec->status == ActionStatus::Removed) {
+    if (!spec) {
         Json suggestions = suggested_action_names(action);
         Json error = DiagnosticErrorBuilder::handler(
                          "UNKNOWN_ACTION", "unknown action: " + action)
@@ -804,6 +821,11 @@ Json Dispatcher::dispatch(const Json& request) {
     Json response;
     try {
         response = dispatch_impl(request);
+        if (!action.empty()) {
+            const ActionSpec* completed_spec =
+                default_action_registry().find_spec(action);
+            if (completed_spec) append_recommended_actions(response, *completed_spec);
+        }
     } catch (const std::exception& e) {
         response = make_error(request, action, "INTERNAL_ERROR", e.what(), false);
     } catch (...) {

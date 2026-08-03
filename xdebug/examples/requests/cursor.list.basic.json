@@ -1,8 +1,0 @@
-{
-  "api_version": "xdebug.v1",
-  "action": "cursor.list",
-  "target": {
-    "session_id": "case_a"
-  },
-  "args": {}
-}

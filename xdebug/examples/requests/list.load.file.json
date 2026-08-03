@@ -1,0 +1,11 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "list.load",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {
+    "config_path": "xdebug/configs/debug-lists.json",
+    "mode": "append"
+  }
+}

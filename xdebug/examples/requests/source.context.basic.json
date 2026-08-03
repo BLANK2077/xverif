@@ -1,8 +1,0 @@
-{
-  "api_version": "xdebug.v1",
-  "action": "source.context",
-  "args": {
-    "file": "rtl/foo.sv",
-    "line": 123
-  }
-}

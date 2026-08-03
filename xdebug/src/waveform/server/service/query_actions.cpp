@@ -441,11 +441,11 @@ Json resolved_time_json(const std::string& spec, npiFsdbTime time) {
 
 Json ai_cursor_action(const std::string& action, const Json& args, std::string& error) {
     CursorManager cm;
-    if (action == "cursor.set") {
+    if (action == "waveform.cursor.set") {
         std::string name = args.value("name", std::string());
         std::string spec = args.value("time", args.value("at", std::string()));
         if (name.empty() || spec.empty()) {
-            error = "cursor.set requires args.name and args.time";
+            error = "waveform.cursor.set requires args.name and args.time";
             return Json();
         }
         npiFsdbTime t = 0;
@@ -469,10 +469,10 @@ Json ai_cursor_action(const std::string& action, const Json& args, std::string& 
         data["metadata"] = {{"note", saved.note}, {"origin", saved.origin}, {"clock", saved.clock}};
         return data;
     }
-    if (action == "cursor.get") {
+    if (action == "waveform.cursor.get") {
         std::string name = args.value("name", std::string());
         if (name.empty()) {
-            error = "cursor.get requires args.name";
+            error = "waveform.cursor.get requires args.name";
             return Json();
         }
         Cursor c;
@@ -485,7 +485,7 @@ Json ai_cursor_action(const std::string& action, const Json& args, std::string& 
         data["metadata"] = {{"note", c.note}, {"origin", c.origin}, {"clock", c.clock}};
         return data;
     }
-    if (action == "cursor.list") {
+    if (action == "waveform.cursor.list") {
         Json arr = Json::array();
         for (const auto& c : cm.list_cursors(g_session_id)) arr.push_back(cursor_to_json(c));
         std::string active;
@@ -496,10 +496,10 @@ Json ai_cursor_action(const std::string& action, const Json& args, std::string& 
         data["cursors"] = arr;
         return data;
     }
-    if (action == "cursor.delete") {
+    if (action == "waveform.cursor.delete") {
         std::string name = args.value("name", std::string());
         if (name.empty()) {
-            error = "cursor.delete requires args.name";
+            error = "waveform.cursor.delete requires args.name";
             return Json();
         }
         if (!cm.delete_cursor(g_session_id, name)) {
@@ -510,10 +510,10 @@ Json ai_cursor_action(const std::string& action, const Json& args, std::string& 
         data["summary"] = {{"status", "deleted"}, {"name", name}, {"deleted", true}};
         return data;
     }
-    if (action == "cursor.use") {
+    if (action == "waveform.cursor.use") {
         std::string name = args.value("name", std::string());
         if (name.empty()) {
-            error = "cursor.use requires args.name";
+            error = "waveform.cursor.use requires args.name";
             return Json();
         }
         if (!cm.use_cursor(g_session_id, name)) {
@@ -559,15 +559,16 @@ Json ai_dispatch_query(const Json& req, std::string& error) {
     if (action == "signal.xz_verify") return ai_signal_xz_verify(args, error);
     if (action == "signal.statistics") return ai_signal_statistics(args, error);
     if (action == "counter.statistics") return ai_counter_statistics(args, error);
-    if (action == "sampled_pulse.inspect") return ai_sampled_pulse_inspect(args, error);
-    if (action == "detect_abnormal") return ai_detect_abnormal(args, error);
-    if (action == "handshake.inspect") return ai_handshake_inspect(args, error);
+    if (action == "signal.sampled_pulse.inspect") return ai_sampled_pulse_inspect(args, error);
+    if (action == "signal.anomaly.inspect") return ai_detect_abnormal(args, error);
+    if (action == "protocol.handshake.inspect") return ai_handshake_inspect(args, error);
     if (action == "apb.transfer_window") return ai_apb_transfer_window(args, error);
     if (action == "axi.request_response_pair") return ai_axi_transactions_window(args, error);
     if (action == "axi.latency_outlier") return ai_axi_latency_outlier(args, error);
     if (action == "axi.outstanding_timeline") return ai_axi_outstanding_timeline(args, error);
     if (action == "axi.channel_stall") return ai_axi_channel_stall(args, error);
-    if (action.compare(0, 7, "cursor.") == 0) return ai_cursor_action(action, args, error);
+    if (action.compare(0, 16, "waveform.cursor.") == 0)
+        return ai_cursor_action(action, args, error);
     error = "Unsupported AI action in server: " + action;
     return Json();
 }

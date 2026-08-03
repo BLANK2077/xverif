@@ -126,7 +126,7 @@
     ],
     "alternatives": [
       {
-        "action": "trace.x",
+        "action": "trace.x_origin",
         "when": "需要按 X 可见性进行多分支追踪。"
       }
     ],

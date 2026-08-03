@@ -23,7 +23,9 @@
       "type": "boolean"
     },
     "action": {
-      "const": "axi.query"
+      "enum": [
+        "axi.query"
+      ]
     },
     "tool": {
       "type": "object",

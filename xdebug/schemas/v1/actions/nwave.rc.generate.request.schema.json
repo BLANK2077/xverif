@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xdebug.rc.generate.request.v1",
+  "title": "rc.generate request",
+  "type": "object",
+  "required": [
+    "api_version",
+    "action",
+    "args"
+  ],
+  "properties": {
+    "api_version": {
+      "type": "string",
+      "enum": [
+        "xdebug.v1"
+      ]
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "nwave.rc.generate"
+      ]
+    },
+    "target": {
+      "type": "object"
+    },
+    "args": {
+      "type": "object",
+      "properties": {
+        "config_path": {
+          "type": "string",
+          "description": "Action-specific config_path input. Its type and accepted values are defined by this schema."
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Action-specific path input. Its type and accepted values are defined by this schema."
+            },
+            "file_format": {
+              "type": "string",
+              "description": "Action-specific file_format input. Its type and accepted values are defined by this schema."
+            },
+            "verbose": {
+              "type": "boolean",
+              "description": "Action-specific verbose input. Its type and accepted values are defined by this schema."
+            }
+          },
+          "additionalProperties": false,
+          "description": "Export destination and rendering controls. path, file_format, and verbose are supported only where this action declares them."
+        },
+        "time_unit": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "fs",
+            "ps",
+            "ns",
+            "us",
+            "ms",
+            "s"
+          ],
+          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
+        }
+      },
+      "required": [
+        "config_path",
+        "output"
+      ],
+      "additionalProperties": false
+    },
+    "limits": {
+      "type": "object"
+    },
+    "auth_token": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "trace_id": {
+      "type": "string"
+    },
+    "span_id": {
+      "type": "string"
+    },
+    "parent_span_id": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Generate a grouped waveform-view RC file.",
+  "x-purpose": "根据分组生成波形 rc。",
+  "x-how_it_works": "读取配置并写出 output.path，返回 group/signal 统计。",
+  "x-when_to_use": "把调试信号集合导入波形工具。",
+  "x-arg_contract_notes": "required: config_path, output",
+  "x-description-zh": "根据分组生成波形 rc。",
+  "x-agent": {
+    "use_when": [
+      "需要从分组信号生成可复用 waveform rc 配置。"
+    ],
+    "do_not_use_when": [
+      "需要直接导出当前 waveform evidence 或查询一个信号。"
+    ],
+    "alternatives": [
+      {
+        "action": "list.export",
+        "when": "需要导出 list 的当前数据。"
+      }
+    ],
+    "constraints": [
+      "required: config_path, output"
+    ]
+  }
+}

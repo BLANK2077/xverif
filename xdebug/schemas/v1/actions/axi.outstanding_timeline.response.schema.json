@@ -23,7 +23,9 @@
       "type": "boolean"
     },
     "action": {
-      "const": "axi.outstanding_timeline"
+      "enum": [
+        "axi.outstanding_timeline"
+      ]
     },
     "tool": {
       "type": "object",

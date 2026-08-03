@@ -32,7 +32,7 @@ Json err(const std::string& code, const std::string& message, const Json& detail
 }
 Json stream_show_example(const std::string& stream = "req_stream") {
     return Json{{"api_version", "xdebug.v1"},
-                {"action", "stream.show"},
+                {"action", "stream.describe"},
                 {"target", {{"session_id", "case_a"}}},
                 {"args", {{"stream", stream}}}};
 }
@@ -74,7 +74,7 @@ bool get_config(const Json& args, StreamConfig& config, Json& fail) {
 
 class StreamShowHandler : public EngineActionHandler {
 public:
-    const char* action_name() const override { return "stream.show"; }
+    const char* action_name() const override { return "stream.describe"; }
     bool needs_design() const override { return false; }
     bool needs_waveform() const override { return true; }
     Json run(const Json& request, EngineActionContext& ctx) const override {

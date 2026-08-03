@@ -132,7 +132,7 @@
     ],
     "alternatives": [
       {
-        "action": "detect_abnormal",
+        "action": "signal.anomaly.inspect",
         "when": "只需要发现窗口内是否曾出现 X/Z。"
       },
       {

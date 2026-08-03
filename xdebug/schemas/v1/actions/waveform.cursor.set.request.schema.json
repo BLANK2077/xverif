@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xdebug.cursor.set.request.v1",
+  "title": "cursor.set request",
+  "type": "object",
+  "required": [
+    "api_version",
+    "action",
+    "args"
+  ],
+  "properties": {
+    "api_version": {
+      "type": "string",
+      "enum": [
+        "xdebug.v1"
+      ]
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "waveform.cursor.set"
+      ]
+    },
+    "target": {
+      "type": "object"
+    },
+    "args": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
+        },
+        "time": {
+          "type": "string",
+          "description": "Target sample time. Prefer a canonical string with a unit; a bare number is interpreted only with time_unit."
+        },
+        "time_unit": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "fs",
+            "ps",
+            "ns",
+            "us",
+            "ms",
+            "s"
+          ],
+          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "time"
+      ]
+    },
+    "limits": {
+      "type": "object"
+    },
+    "auth_token": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "trace_id": {
+      "type": "string"
+    },
+    "span_id": {
+      "type": "string"
+    },
+    "parent_span_id": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Save a named waveform cursor.",
+  "x-purpose": "保存命名时间游标。",
+  "x-how_it_works": "解析 time/at 为 FSDB 时间，写入 CursorManager，可设 active。",
+  "x-when_to_use": "给后续窗口、比较和人工定位复用时间点。",
+  "x-arg_contract_notes": "required: name, time",
+  "x-description-zh": "保存命名时间游标。",
+  "x-agent": {
+    "use_when": [
+      "保存命名时间游标。"
+    ],
+    "do_not_use_when": [
+      "不要把本 action 用于 cursor.delete、cursor.get 的业务目标；请改用列出的同域 action。"
+    ],
+    "alternatives": [
+      {
+        "action": "waveform.cursor.delete",
+        "when": "删除游标。"
+      },
+      {
+        "action": "waveform.cursor.get",
+        "when": "读取命名游标。"
+      }
+    ],
+    "constraints": [
+      "required: name, time"
+    ]
+  }
+}

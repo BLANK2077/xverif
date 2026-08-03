@@ -23,21 +23,19 @@ ActionHandler* ActionRegistry::find_handler(const std::string& name) const {
     return it == handlers_.end() ? nullptr : it->second.get();
 }
 
-std::vector<ActionSpec> ActionRegistry::list_specs(bool include_removed) const {
+std::vector<ActionSpec> ActionRegistry::list_specs() const {
     std::vector<ActionSpec> specs;
     for (std::map<std::string, ActionSpec>::const_iterator it = specs_.begin(); it != specs_.end(); ++it) {
-        if (!include_removed && it->second.status == ActionStatus::Removed) continue;
         specs.push_back(it->second);
     }
     return specs;
 }
 
-Json ActionRegistry::list_descriptors(bool include_removed) const {
+Json ActionRegistry::list_descriptors() const {
     Json out = Json::array();
-    std::vector<ActionSpec> specs = list_specs(include_removed);
+    std::vector<ActionSpec> specs = list_specs();
     for (size_t i = 0; i < specs.size(); ++i) out.push_back(action_spec_descriptor(specs[i]));
     return out;
 }
 
 } // namespace xdebug
-

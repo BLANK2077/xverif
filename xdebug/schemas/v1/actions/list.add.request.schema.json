@@ -89,7 +89,7 @@
       "向信号列表追加一个信号。"
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 list.create、list.delete 的业务目标；请改用列出的同域 action。"
+      "不要把本 action 用于 list.create、list.load 的业务目标；请改用列出的同域 action。"
     ],
     "alternatives": [
       {
@@ -97,8 +97,8 @@
         "when": "创建命名信号列表。"
       },
       {
-        "action": "list.delete",
-        "when": "从信号列表删除信号或 index。"
+        "action": "list.load",
+        "when": "从 JSON 配置加载并验证一个或多个命名波形信号列表。"
       }
     ],
     "constraints": [

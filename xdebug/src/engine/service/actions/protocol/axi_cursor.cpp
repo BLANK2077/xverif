@@ -23,7 +23,7 @@ namespace {
 
 class AxiCursorHandler : public EngineActionHandler {
 public:
-    const char* action_name() const override { return "axi.cursor"; }
+    const char* action_name() const override { return "axi.transaction.cursor"; }
     bool needs_design() const override { return false; }
     bool needs_waveform() const override { return true; }
     Json run(const Json& r, EngineActionContext& ctx) const override {

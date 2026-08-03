@@ -23,7 +23,9 @@
       "type": "boolean"
     },
     "action": {
-      "const": "axi.analysis"
+      "enum": [
+        "axi.analysis"
+      ]
     },
     "tool": {
       "type": "object",

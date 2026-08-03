@@ -8,7 +8,6 @@ std::unique_ptr<EngineActionHandler> make_trace_driver_handler();
 std::unique_ptr<EngineActionHandler> make_trace_load_handler();
 std::unique_ptr<EngineActionHandler> make_signal_resolve_handler();
 std::unique_ptr<EngineActionHandler> make_signal_canonicalize_handler();
-std::unique_ptr<EngineActionHandler> make_source_context_handler();
 std::unique_ptr<EngineActionHandler> make_expr_normalize_handler();
 
 void register_design_handlers(EngineActionRegistry& r) {
@@ -16,7 +15,6 @@ void register_design_handlers(EngineActionRegistry& r) {
     r.add(make_trace_load_handler());
     r.add(make_signal_resolve_handler());
     r.add(make_signal_canonicalize_handler());
-    r.add(make_source_context_handler());
     r.add(make_expr_normalize_handler());
 }
 

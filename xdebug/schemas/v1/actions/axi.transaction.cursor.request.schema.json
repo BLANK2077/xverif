@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xdebug.axi.cursor.request.v1",
+  "title": "axi.cursor request",
+  "type": "object",
+  "required": [
+    "api_version",
+    "action",
+    "args"
+  ],
+  "properties": {
+    "api_version": {
+      "type": "string",
+      "enum": [
+        "xdebug.v1"
+      ]
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "axi.transaction.cursor"
+      ]
+    },
+    "target": {
+      "type": "object"
+    },
+    "args": {
+      "type": "object",
+      "properties": {
+        "direction": {
+          "type": "string",
+          "enum": [
+            "write",
+            "read",
+            "all"
+          ],
+          "description": "Action-specific direction input. Its type and accepted values are defined by this schema."
+        },
+        "name": {
+          "type": "string",
+          "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
+        },
+        "op": {
+          "type": "string",
+          "enum": [
+            "begin",
+            "next",
+            "prev",
+            "pre",
+            "last"
+          ],
+          "description": "Action-specific op input. Its type and accepted values are defined by this schema."
+        },
+        "time_unit": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "fs",
+            "ps",
+            "ns",
+            "us",
+            "ms",
+            "s"
+          ],
+          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
+        },
+        "value_format": {
+          "type": "string",
+          "enum": [
+            "hex",
+            "bin",
+            "dec"
+          ],
+          "description": "Action-specific value_format input. Its type and accepted values are defined by this schema.",
+          "default": "hex"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "op"
+      ]
+    },
+    "limits": {
+      "type": "object"
+    },
+    "auth_token": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "trace_id": {
+      "type": "string"
+    },
+    "span_id": {
+      "type": "string"
+    },
+    "parent_span_id": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Move a cursor across AXI transactions.",
+  "x-purpose": "在 AXI transfer 间移动游标。",
+  "x-how_it_works": "基于 AXI 查询结果按 op/direction 定位事务。",
+  "x-when_to_use": "交互式浏览 AXI 事务。",
+  "x-arg_contract_notes": "required: name, op",
+  "x-description-zh": "在 AXI transfer 间移动游标。",
+  "x-agent": {
+    "use_when": [
+      "在 AXI transfer 间移动游标。"
+    ],
+    "do_not_use_when": [
+      "不要把本 action 用于 axi.analysis、axi.export 的业务目标；请改用列出的同域 action。"
+    ],
+    "alternatives": [
+      {
+        "action": "axi.analysis",
+        "when": "汇总 AXI 行为。"
+      },
+      {
+        "action": "axi.export",
+        "when": "导出 AXI 数据。"
+      }
+    ],
+    "constraints": [
+      "required: name, op"
+    ]
+  }
+}

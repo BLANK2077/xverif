@@ -1,0 +1,620 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xdebug.trace.x_origin.response.v1",
+  "title": "trace.x_origin response",
+  "type": "object",
+  "required": [
+    "api_version",
+    "ok",
+    "action",
+    "summary",
+    "data"
+  ],
+  "properties": {
+    "api_version": {
+      "type": "string",
+      "enum": [
+        "xdebug.v1"
+      ]
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "trace.x_origin"
+      ]
+    },
+    "tool": {
+      "type": "object"
+    },
+    "session": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "signal",
+        "query_time",
+        "termination",
+        "evidence_status",
+        "chain_count",
+        "completed_chain_count",
+        "limited_chain_count",
+        "hop_count",
+        "origin_count"
+      ],
+      "properties": {
+        "signal": {
+          "type": "string"
+        },
+        "query_time": {
+          "type": "string"
+        },
+        "termination": {
+          "type": "string",
+          "enum": [
+            "not_x_at_query_time",
+            "origin_found",
+            "x_not_observable_upstream",
+            "partial",
+            "limit"
+          ]
+        },
+        "evidence_status": {
+          "type": "string",
+          "enum": [
+            "proven",
+            "best_effort",
+            "unresolved"
+          ]
+        },
+        "chain_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of returned effective semantic chains after pure port/interface/modport/ref alias routes are coalesced."
+        },
+        "completed_chain_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of complete chains in the final effective chain list."
+        },
+        "limited_chain_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of incomplete or limited chains in the final effective chain list."
+        },
+        "hop_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total raw evidence hops retained by the final effective chain representatives."
+        },
+        "origin_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of origins present in the final effective chain list."
+        },
+        "value_width_complete": {
+          "type": "boolean"
+        },
+        "width_diagnostics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "signal": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "role": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "npi_range_size_unavailable",
+                  "conflicting_signal_widths",
+                  "derived_width_unavailable"
+                ]
+              }
+            },
+            "required": [
+              "signal",
+              "role",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "query",
+        "chains",
+        "limitations"
+      ],
+      "properties": {
+        "query": {
+          "$ref": "#/$defs/query_point"
+        },
+        "chains": {
+          "type": "array",
+          "description": "Final effective semantic chains; transparent alias-only route variants are represented once.",
+          "items": {
+            "$ref": "#/$defs/chain"
+          }
+        },
+        "depth_frontiers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/frontier"
+          }
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "common_blocks": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": false
+    },
+    "suggested_next_actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/next_action"
+      }
+    },
+    "error": {},
+    "meta": {
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "logic_value": {
+      "type": "object",
+      "required": [
+        "value",
+        "known"
+      ],
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "known": {
+          "type": "boolean"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bits": {
+          "type": "string"
+        },
+        "has_x": {
+          "type": "boolean"
+        },
+        "has_z": {
+          "type": "boolean"
+        },
+        "requested_value_format": {
+          "type": "string"
+        },
+        "effective_value_format": {
+          "type": "string"
+        },
+        "value_format_reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "query_point": {
+      "type": "object",
+      "required": [
+        "signal",
+        "query_time",
+        "value",
+        "x_mask"
+      ],
+      "properties": {
+        "signal": {
+          "type": "string"
+        },
+        "query_time": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/logic_value"
+        },
+        "x_mask": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "x_onset_point": {
+      "type": "object",
+      "required": [
+        "signal",
+        "x_onset_time",
+        "value",
+        "x_mask"
+      ],
+      "properties": {
+        "signal": {
+          "type": "string"
+        },
+        "x_onset_time": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/logic_value"
+        },
+        "x_mask": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "hop": {
+      "type": "object",
+      "required": [
+        "index",
+        "chain_id",
+        "signal",
+        "x_onset_time",
+        "active_time",
+        "value",
+        "x_mask",
+        "relation",
+        "file",
+        "line",
+        "signal_path"
+      ],
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "chain_id": {
+          "type": "string"
+        },
+        "signal": {
+          "type": "string"
+        },
+        "x_onset_time": {
+          "type": "string"
+        },
+        "active_time": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/logic_value"
+        },
+        "x_mask": {
+          "type": "string"
+        },
+        "relation": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "signal_path": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "origin": {
+      "type": "object",
+      "required": [
+        "signal",
+        "x_onset_time",
+        "kind",
+        "reason",
+        "evidence_status",
+        "file",
+        "line"
+      ],
+      "properties": {
+        "signal": {
+          "type": "string"
+        },
+        "x_onset_time": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "evidence_status": {
+          "type": "string",
+          "enum": [
+            "proven",
+            "best_effort",
+            "unresolved"
+          ]
+        },
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "pending_dependency": {
+      "type": "object",
+      "required": [
+        "signal",
+        "relation"
+      ],
+      "properties": {
+        "signal": {
+          "type": "string"
+        },
+        "sample_time": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/logic_value"
+        },
+        "x_mask": {
+          "type": "string"
+        },
+        "relation": {
+          "type": "string"
+        },
+        "x_onset_time": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "branch_event": {
+      "type": "object",
+      "required": [
+        "hop_index",
+        "reason",
+        "x_dependency_count",
+        "returned_x_dependency_count",
+        "omitted_x_dependency_count",
+        "pending_x_dependencies"
+      ],
+      "properties": {
+        "hop_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "max_chains"
+          ]
+        },
+        "x_dependency_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "returned_x_dependency_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "omitted_x_dependency_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pending_x_dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pending_dependency"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "chain": {
+      "type": "object",
+      "required": [
+        "chain_id",
+        "status",
+        "termination_detail",
+        "complete",
+        "current",
+        "hops"
+      ],
+      "properties": {
+        "chain_id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "origin_found",
+            "x_not_observable_upstream",
+            "loop_detected",
+            "limit"
+          ]
+        },
+        "termination_detail": {
+          "type": "string"
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "current": {
+          "$ref": "#/$defs/x_onset_point"
+        },
+        "hops": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/hop"
+          }
+        },
+        "origin": {
+          "$ref": "#/$defs/origin"
+        },
+        "pending_x_dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pending_dependency"
+          }
+        },
+        "branch_events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/branch_event"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "frontier": {
+      "type": "object",
+      "required": [
+        "signal",
+        "continue_time",
+        "value",
+        "x_mask",
+        "chain_id",
+        "stopped_after_depth"
+      ],
+      "properties": {
+        "signal": {
+          "type": "string"
+        },
+        "continue_time": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/logic_value"
+        },
+        "x_mask": {
+          "type": "string"
+        },
+        "chain_id": {
+          "type": "string"
+        },
+        "stopped_after_depth": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "next_action": {
+      "type": "object",
+      "required": [
+        "action",
+        "reason",
+        "args",
+        "limits"
+      ],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "trace.x_origin"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "continue_from_depth_frontier",
+            "rerun_from_root_with_higher_depth"
+          ]
+        },
+        "chain_id": {
+          "type": "string"
+        },
+        "args": {
+          "type": "object",
+          "required": [
+            "signal",
+            "time",
+            "value_format"
+          ],
+          "properties": {
+            "signal": {
+              "type": "string"
+            },
+            "time": {
+              "type": "string"
+            },
+            "value_format": {
+              "type": "string",
+              "enum": [
+                "hex",
+                "bin",
+                "dec"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "max_depth": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_nodes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_time_steps": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_trace_signals": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_chains": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true,
+  "description": "Trace an X value backward through effective semantic DFS branches to its sources or observability boundaries.",
+  "x-description-zh": "从指定信号和时间按有效语义 DFS 多分支追溯 X 的产生位置或不可见边界。",
+  "x-output_notes": "返回该 action 的 summary/data/error/meta；具体字段以 response schema 和 response example 为准。"
+}

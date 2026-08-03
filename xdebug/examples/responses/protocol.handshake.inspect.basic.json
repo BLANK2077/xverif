@@ -1,0 +1,19 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "protocol.handshake.inspect",
+  "summary": {
+    "sampling_mode": "clock_edge",
+    "clock": "top.clk",
+    "edge": "negedge",
+    "sample_count": 10,
+    "transfer_count": 3,
+    "max_stall_cycles": 4,
+    "truncated": false
+  },
+  "data": {
+    "ready_without_valid_cycles": 2,
+    "data_stability_violations": 0,
+    "findings": []
+  }
+}

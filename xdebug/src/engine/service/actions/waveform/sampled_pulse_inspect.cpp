@@ -52,7 +52,7 @@ public:
 }  // namespace
 
 std::unique_ptr<EngineActionHandler> make_sampled_pulse_inspect_handler() {
-    return std::unique_ptr<EngineActionHandler>(new AiActionHandler("sampled_pulse.inspect", false, true));
+    return std::unique_ptr<EngineActionHandler>(new AiActionHandler("signal.sampled_pulse.inspect", false, true));
 }
 
 }  // namespace xdebug_design

@@ -1,0 +1,12 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "protocol.handshake.inspect",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {
+    "clock": "top.u.clk",
+    "valid": "top.u.valid",
+    "ready": "top.u.ready"
+  }
+}

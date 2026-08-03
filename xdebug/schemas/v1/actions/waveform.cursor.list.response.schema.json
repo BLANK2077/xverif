@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xdebug.waveform.cursor.list.response.v1",
+  "title": "waveform.cursor.list response",
+  "type": "object",
+  "required": [
+    "api_version",
+    "ok",
+    "action",
+    "summary",
+    "data"
+  ],
+  "properties": {
+    "api_version": {
+      "type": "string",
+      "enum": [
+        "xdebug.v1"
+      ]
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "waveform.cursor.list"
+      ]
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "data": {
+      "type": "object"
+    },
+    "findings": {
+      "type": "array"
+    },
+    "warnings": {
+      "type": "array"
+    },
+    "error": {},
+    "meta": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": true,
+  "description": "List named waveform cursors.",
+  "x-output_notes": "返回该 action 的 summary/data/error/meta；具体字段以 response schema 和 response example 为准。",
+  "x-description-zh": "列出游标。"
+}

@@ -100,7 +100,7 @@
       "列出 stream 配置。"
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 stream.config.load、stream.show 的业务目标；请改用列出的同域 action。"
+      "不要把本 action 用于 stream.config.load、stream.config.get 的业务目标；请改用列出的同域 action。"
     ],
     "alternatives": [
       {
@@ -108,8 +108,8 @@
         "when": "加载 stream 配置。"
       },
       {
-        "action": "stream.show",
-        "when": "显示 stream 定义和摘要。"
+        "action": "stream.config.get",
+        "when": "读取一个已保存的原始 stream 配置，不解析波形元数据。"
       }
     ],
     "constraints": [

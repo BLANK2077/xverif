@@ -23,7 +23,9 @@
       "type": "boolean"
     },
     "action": {
-      "const": "axi.channel_stall"
+      "enum": [
+        "axi.channel_stall"
+      ]
     },
     "tool": {
       "type": "object",

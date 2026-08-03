@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xdebug.cursor.delete.request.v1",
+  "title": "cursor.delete request",
+  "type": "object",
+  "required": [
+    "api_version",
+    "action",
+    "args"
+  ],
+  "properties": {
+    "api_version": {
+      "type": "string",
+      "enum": [
+        "xdebug.v1"
+      ]
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "waveform.cursor.delete"
+      ]
+    },
+    "target": {
+      "type": "object"
+    },
+    "args": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
+        },
+        "time_unit": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "fs",
+            "ps",
+            "ns",
+            "us",
+            "ms",
+            "s"
+          ],
+          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ]
+    },
+    "limits": {
+      "type": "object"
+    },
+    "auth_token": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "trace_id": {
+      "type": "string"
+    },
+    "span_id": {
+      "type": "string"
+    },
+    "parent_span_id": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Delete a named waveform cursor.",
+  "x-purpose": "删除游标。",
+  "x-how_it_works": "按 name 从 CursorManager 删除记录。",
+  "x-when_to_use": "清理不再需要的时间标记。",
+  "x-arg_contract_notes": "required: name",
+  "x-description-zh": "删除游标。",
+  "x-agent": {
+    "use_when": [
+      "删除游标。"
+    ],
+    "do_not_use_when": [
+      "不要把本 action 用于 cursor.get、cursor.list 的业务目标；请改用列出的同域 action。"
+    ],
+    "alternatives": [
+      {
+        "action": "waveform.cursor.get",
+        "when": "读取命名游标。"
+      },
+      {
+        "action": "waveform.cursor.list",
+        "when": "列出游标。"
+      }
+    ],
+    "constraints": [
+      "required: name"
+    ]
+  }
+}

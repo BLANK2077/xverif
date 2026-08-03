@@ -1,0 +1,14 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "list.first_change",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {
+    "name": "if0",
+    "time_range": {
+      "begin": "100ns",
+      "end": "200ns"
+    }
+  }
+}

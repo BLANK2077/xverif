@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xdebug.stream.config.list.request.v1",
+  "title": "stream.config.list request",
+  "type": "object",
+  "required": [
+    "api_version",
+    "action",
+    "args"
+  ],
+  "properties": {
+    "api_version": {
+      "type": "string",
+      "enum": [
+        "xdebug.v1"
+      ]
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "stream.config.get"
+      ]
+    },
+    "target": {
+      "type": "object"
+    },
+    "args": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
+        },
+        "time_unit": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "fs",
+            "ps",
+            "ns",
+            "us",
+            "ms",
+            "s"
+          ],
+          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ]
+    },
+    "limits": {
+      "type": "object"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "auth_token": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "trace_id": {
+      "type": "string"
+    },
+    "span_id": {
+      "type": "string"
+    },
+    "parent_span_id": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "List saved stream configurations.",
+  "x-purpose": "列出 stream 配置。",
+  "x-how_it_works": "读取已保存 stream 定义；args:{} 列全部，args.name 显示单个配置详情。",
+  "x-when_to_use": "查看可查询的 stream。",
+  "x-arg_contract_notes": "args:{} list all; optional name shows one config",
+  "x-description-zh": "列出 stream 配置。",
+  "x-agent": {
+    "use_when": [
+      "列出 stream 配置。"
+    ],
+    "do_not_use_when": [
+      "不要把本 action 用于 stream.config.load、stream.show 的业务目标；请改用列出的同域 action。"
+    ],
+    "alternatives": [
+      {
+        "action": "stream.config.load",
+        "when": "加载 stream 配置。"
+      },
+      {
+        "action": "stream.describe",
+        "when": "显示 stream 定义和摘要。"
+      }
+    ],
+    "constraints": [
+      "args:{} list all; optional name shows one config"
+    ]
+  }
+}

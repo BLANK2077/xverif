@@ -23,7 +23,9 @@
       "type": "boolean"
     },
     "action": {
-      "const": "axi.config.load"
+      "enum": [
+        "axi.config.load"
+      ]
     },
     "tool": {
       "type": "object",

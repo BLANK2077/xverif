@@ -1,7 +1,0 @@
-{
-  "api_version": "xdebug.v1",
-  "ok": true,
-  "action": "cursor.use",
-  "summary": {"active_cursor": "mark0", "status": "active"},
-  "data": {"cursor": {"name": "mark0", "time": "100ns", "origin": "manual"}}
-}

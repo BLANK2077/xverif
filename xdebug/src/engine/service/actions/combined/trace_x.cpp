@@ -380,7 +380,7 @@ Json pending_semantic_branch(const ChainState& chain,
 
 class TraceXHandler : public EngineActionHandler {
 public:
-    const char* action_name() const override { return "trace.x"; }
+    const char* action_name() const override { return "trace.x_origin"; }
     bool needs_design() const override { return true; }
     bool needs_waveform() const override { return true; }
 
@@ -745,7 +745,7 @@ public:
                 continued_limits["max_depth"] = max_depth;
                 continued_limits["max_chains"] = max_chains;
                 suggested_next_actions.push_back({
-                    {"action", "trace.x"},
+                    {"action", "trace.x_origin"},
                     {"reason", "continue_from_depth_frontier"},
                     {"chain_id", chain.chain_id},
                     {"args", {{"signal", chain.current.signal}, {"time", chain.current.time},
@@ -759,7 +759,7 @@ public:
             deeper_limits["max_depth"] = max_depth * 2;
             deeper_limits["max_chains"] = max_chains;
             suggested_next_actions.push_back({
-                {"action", "trace.x"},
+                {"action", "trace.x_origin"},
                 {"reason", "rerun_from_root_with_higher_depth"},
                 {"args", {{"signal", signal}, {"time", query_point.time},
                            {"value_format", args.value("value_format", "hex")}}},

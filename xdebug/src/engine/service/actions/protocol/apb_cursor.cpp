@@ -22,7 +22,7 @@ namespace {
 
 class ApbCursorHandler : public EngineActionHandler {
 public:
-    const char* action_name() const override { return "apb.cursor"; }
+    const char* action_name() const override { return "apb.transaction.cursor"; }
     bool needs_design() const override { return false; }
     bool needs_waveform() const override { return true; }
     Json run(const Json& r, EngineActionContext& ctx) const override {

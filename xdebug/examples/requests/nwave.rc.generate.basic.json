@@ -1,0 +1,13 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "nwave.rc.generate",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {
+    "config_path": "wave_view.json",
+    "output": {
+      "path": "signal.rc"
+    }
+  }
+}

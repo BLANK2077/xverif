@@ -322,7 +322,7 @@ std::string did_you_mean_for(const std::string& action,
         return "args.name";
     if (invalid_arg == "args.valid" && action == "counter.statistics") return "args.vld";
     if (invalid_arg == "args.count" && action == "counter.statistics") return "args.cnt";
-    if (invalid_arg == "args.signal" && (action == "value.batch_at" || action == "detect_abnormal"))
+    if (invalid_arg == "args.signal" && action == "signal.anomaly.inspect")
         return "args.signals";
     if (invalid_arg == "args.checks" && action == "verify.conditions") return "args.conditions";
     if (extra_property == "begin" || extra_property == "start" || extra_property == "from" ||

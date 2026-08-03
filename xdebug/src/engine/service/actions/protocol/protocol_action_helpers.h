@@ -150,7 +150,7 @@ inline Json protocol_example_args(const std::string& action) {
                     {"time_range", {{"begin", "0ns"}, {"end", "1000ns"}}},
                     {"output", {{"path", "xdebug-axi-export"}, {"file_format", "tsv"}}}};
     }
-    if (action == "axi.cursor" || action == "apb.cursor") {
+    if (action == "axi.transaction.cursor" || action == "apb.transaction.cursor") {
         return Json{{"name", action.rfind("axi.", 0) == 0 ? "axi0" : "apb0"},
                     {"op", "begin"},
                     {"direction", "all"}};

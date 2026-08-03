@@ -5,14 +5,13 @@
 namespace xdebug_design {
 
 std::unique_ptr<EngineActionHandler> make_value_at_handler();
-std::unique_ptr<EngineActionHandler> make_value_batch_at_handler();
 std::unique_ptr<EngineActionHandler> make_scope_list_handler();
 std::unique_ptr<EngineActionHandler> make_scope_roots_handler();
 std::unique_ptr<EngineActionHandler> make_list_create_handler();
 std::unique_ptr<EngineActionHandler> make_list_add_handler();
 std::unique_ptr<EngineActionHandler> make_list_delete_handler();
 std::unique_ptr<EngineActionHandler> make_list_show_handler();
-std::unique_ptr<EngineActionHandler> make_list_value_at_handler();
+std::unique_ptr<EngineActionHandler> make_list_load_handler();
 std::unique_ptr<EngineActionHandler> make_list_validate_handler();
 std::unique_ptr<EngineActionHandler> make_list_diff_handler();
 std::unique_ptr<EngineActionHandler> make_list_export_handler();
@@ -45,14 +44,13 @@ std::unique_ptr<EngineActionHandler> make_event_export_handler();
 
 void register_waveform_handlers(EngineActionRegistry& r) {
     r.add(make_value_at_handler());
-    r.add(make_value_batch_at_handler());
     r.add(make_scope_list_handler());
     r.add(make_scope_roots_handler());
     r.add(make_list_create_handler());
     r.add(make_list_add_handler());
     r.add(make_list_delete_handler());
     r.add(make_list_show_handler());
-    r.add(make_list_value_at_handler());
+    r.add(make_list_load_handler());
     r.add(make_list_validate_handler());
     r.add(make_list_diff_handler());
     r.add(make_list_export_handler());

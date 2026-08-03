@@ -1,0 +1,10 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "waveform.cursor.delete",
+  "summary": {
+    "name": "mark0",
+    "status": "deleted"
+  },
+  "data": {}
+}

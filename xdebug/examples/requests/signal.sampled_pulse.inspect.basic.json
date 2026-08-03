@@ -1,0 +1,18 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "signal.sampled_pulse.inspect",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {
+    "clock": "ai_complex_top.clk",
+    "valid": "ai_complex_top.glitch_sig",
+    "payload": "ai_complex_top.hs_data",
+    "time_range": {
+      "begin": "0ns",
+      "end": "200ns"
+    },
+    "edge": "posedge",
+    "line_limit": 5
+  }
+}

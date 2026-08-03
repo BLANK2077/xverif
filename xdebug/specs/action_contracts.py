@@ -128,9 +128,9 @@ ACTION_GUIDANCE: dict[str, Json] = {
     "trace.active_driver_chain": {
         "use_when": ["需要从指定 signal/time 递归展开单条 active-driver chain；limits.max_depth 默认 8。"],
         "do_not_use_when": ["查询点是 X，且需要同时追踪多个 X RHS/control 分支。"],
-        "alternatives": [{"action": "trace.x", "when": "需要按 X 可见性进行多分支追踪。"}],
+        "alternatives": [{"action": "trace.x_origin", "when": "需要按 X 可见性进行多分支追踪。"}],
     },
-    "trace.x": {
+    "trace.x_origin": {
         "use_when": ["查询点含 X，需要按 DFS 同时追踪 RHS、control、端口和时间边界；纯 port/interface/modport/ref alias 路径会归并，响应会区分 query_time、x_onset_time 与 active_time。"],
         "do_not_use_when": ["只需要静态 driver 枚举，或查询点不含 X。"],
         "alternatives": [
@@ -142,23 +142,20 @@ ACTION_GUIDANCE: dict[str, Json] = {
         "use_when": ["需要证明 raw waveform 在整个闭区间内始终为指定 X/Z 状态。"],
         "do_not_use_when": ["只需要寻找一次 X/Z，或需要 clock-edge 表达式验证。"],
         "alternatives": [
-            {"action": "detect_abnormal", "when": "只需要发现窗口内是否曾出现 X/Z。"},
+            {"action": "signal.anomaly.inspect", "when": "只需要发现窗口内是否曾出现 X/Z。"},
             {"action": "window.verify", "when": "需要按 clock edge 验证已知值表达式。"},
         ],
     },
     "counter.statistics": {"use_when": ["需要按采样 clock 统计一个 counter 的增量、回绕或活动。"],
                            "do_not_use_when": ["需要多个一般信号的活动统计或原始变化列表。"],
                            "alternatives": [{"action": "signal.statistics", "when": "需要一般信号而非 counter 语义的统计。"}]},
-    "sampled_pulse.inspect": {"use_when": ["需要发现未被指定 clock sample 捕获的 valid 短脉冲。"],
+    "signal.sampled_pulse.inspect": {"use_when": ["需要发现未被指定 clock sample 捕获的 valid 短脉冲。"],
                                "do_not_use_when": ["需要 raw glitch/stuck 扫描或 valid-ready 协议违规结论。"],
-                               "alternatives": [{"action": "detect_abnormal", "when": "需要 raw pulse/glitch/stuck 异常。"}, {"action": "handshake.inspect", "when": "需要 valid-ready 协议检查。"}]},
+                               "alternatives": [{"action": "signal.anomaly.inspect", "when": "需要 raw pulse/glitch/stuck 异常。"}, {"action": "protocol.handshake.inspect", "when": "需要 valid-ready 协议检查。"}]},
     "schema": {"use_when": ["已知 action 名称，需要其 request 或 response 合同。"],
                "do_not_use_when": ["尚未知道 action 名称，或需要实际执行一个 debug 查询。"],
                "alternatives": [{"action": "actions", "when": "需要先发现 action catalog。"}]},
-    "source.context": {"use_when": ["需要按设计 symbol 或层次路径读取对应源码上下文。"],
-                       "do_not_use_when": ["需要 driver/load 连接关系或 waveform 采样值。"],
-                       "alternatives": [{"action": "trace.driver", "when": "需要设计 driver 关系。"}, {"action": "trace.load", "when": "需要设计 load 关系。"}]},
-    "rc.generate": {"use_when": ["需要从分组信号生成可复用 waveform rc 配置。"],
+    "nwave.rc.generate": {"use_when": ["需要从分组信号生成可复用 waveform rc 配置。"],
                     "do_not_use_when": ["需要直接导出当前 waveform evidence 或查询一个信号。"],
                     "alternatives": [{"action": "list.export", "when": "需要导出 list 的当前数据。"}]},
     "verify.conditions": {"use_when": ["需要在一个采样时刻验证命名条件集合。"],
@@ -175,14 +172,6 @@ ACTION_GUIDANCE: dict[str, Json] = {
             {"action": "expr.eval_at", "when": "需要在同一采样时刻求多信号表达式。"},
         ],
     },
-    "value.batch_at": {
-        "use_when": ["需要多个最终叶子信号在同一精确时间的 raw 值，或显式 clock 采样上下文。"],
-        "do_not_use_when": ["需要原始值变化时间线。", "需要跨时间窗口验证条件。"],
-        "alternatives": [
-            {"action": "signal.changes", "when": "需要每次原始值变化。"},
-            {"action": "window.verify", "when": "需要跨 clock 窗口证明条件。"},
-        ],
-    },
     "signal.changes": {
         "use_when": ["需要一个信号的原始波形变化时间线或聚合变化统计。"],
         "do_not_use_when": ["需要按 clock edge 的协议语义采样。"],
@@ -193,15 +182,15 @@ ACTION_GUIDANCE: dict[str, Json] = {
         "do_not_use_when": ["需要原始 value-change timeline 或标准 AXI/APB transaction。"],
         "alternatives": [{"action": "signal.changes", "when": "需要原始跳变。"}],
     },
-    "handshake.inspect": {
+    "protocol.handshake.inspect": {
         "use_when": ["需要检查通用 valid-ready transfer、stall 或数据稳定性。"],
         "do_not_use_when": ["需要 AXI/APB 专用 transaction 关联。"],
         "alternatives": [{"action": "axi.query", "when": "接口是标准 AXI。"}],
     },
-    "detect_abnormal": {
+    "signal.anomaly.inspect": {
         "use_when": ["需要在 raw waveform 中检查 X/Z、短脉冲或长时间不变。"],
         "do_not_use_when": ["需要证明 valid-ready 协议违规。"],
-        "alternatives": [{"action": "handshake.inspect", "when": "需要协议层 stall 或稳定性结论。"}],
+        "alternatives": [{"action": "protocol.handshake.inspect", "when": "需要协议层 stall 或稳定性结论。"}],
     },
     "stream.query": {
         "use_when": ["已加载通用 stream 配置，需要查询 transfer、stall、packet 或字段；连续查询默认 full，一次性窄窗口可显式 range。"],
@@ -231,7 +220,7 @@ ACTION_ARG_OVERRIDES: dict[tuple[str, str], Json] = {
     ("event.find", "reset"): {
         "description": "Optional reset signal. Samples while reset is asserted do not participate in event matching.",
     },
-    ("handshake.inspect", "rules"): {
+    ("protocol.handshake.inspect", "rules"): {
         "description": "Valid-ready inspection rules. Omitted fields use their declared schema defaults.",
         "type": "object", "properties": {
             "max_wait_cycles": {"type": "integer", "minimum": 0, "description": "Maximum consecutive wait cycles from a sampled valid=1 until handshake."},
@@ -240,7 +229,7 @@ ACTION_ARG_OVERRIDES: dict[tuple[str, str], Json] = {
             "ready_without_valid": {"type": "string", "enum": ["summary", "intervals", "all"], "default": "summary", "description": "Reporting granularity for ready=1 and valid=0. This is activity information, not by itself a protocol violation."},
         }, "additionalProperties": False,
     },
-    ("handshake.inspect", "data"): {
+    ("protocol.handshake.inspect", "data"): {
         "description": "可选 payload 信号路径或路径列表；仅提供时才可检查 stalled-data stability。",
     },
     ("axi.channel_stall", "rules"): {
@@ -260,7 +249,7 @@ ACTION_ARG_OVERRIDES: dict[tuple[str, str], Json] = {
                          "description": "聚合分组 key 列表。"},
         }, "additionalProperties": False,
     },
-    ("detect_abnormal", "checks"): {
+    ("signal.anomaly.inspect", "checks"): {
         "description": "要执行的 raw-waveform 检查。省略时执行运行时默认检查集合；字符串 shorthand 不被接受。",
         "type": "array", "minItems": 1, "items": {"description": "一项由 type 判别的 abnormal 检查。", "oneOf": [
             {"type": "object", "description": "unknown_xz 检查项。", "required": ["type"], "properties": {"type": {"const": "unknown_xz", "description": "报告区间内出现的 X/Z。"}}, "additionalProperties": False},

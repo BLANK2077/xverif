@@ -23,7 +23,9 @@
       "type": "boolean"
     },
     "action": {
-      "const": "axi.request_response_pair"
+      "enum": [
+        "axi.request_response_pair"
+      ]
     },
     "tool": {
       "type": "object",

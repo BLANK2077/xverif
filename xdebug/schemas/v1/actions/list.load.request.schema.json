@@ -1,0 +1,221 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xdebug.list.create.request.v1",
+  "title": "list.create request",
+  "type": "object",
+  "required": [
+    "api_version",
+    "action"
+  ],
+  "properties": {
+    "api_version": {
+      "type": "string",
+      "enum": [
+        "xdebug.v1"
+      ]
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "list.load"
+      ]
+    },
+    "target": {
+      "type": "object"
+    },
+    "args": {
+      "type": "object",
+      "properties": {
+        "config": {
+          "type": "object",
+          "description": "Structured config configuration. Only the declared properties are accepted.",
+          "properties": {
+            "clock": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Action-specific clock input. Its type and accepted values are defined by this schema."
+            },
+            "edge": {
+              "type": "string",
+              "enum": [
+                "posedge",
+                "negedge",
+                "dual"
+              ],
+              "description": "Clock sampling edge. The schema default is authoritative; negedge often matches monitor semantics."
+            },
+            "sample_point": {
+              "type": "string",
+              "enum": [
+                "before",
+                "after"
+              ],
+              "description": "Before/after observation point for posedge or dual sampling; it does not change the raw waveform range."
+            },
+            "paddr": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Action-specific paddr input. Its type and accepted values are defined by this schema."
+            },
+            "psel": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Action-specific psel input. Its type and accepted values are defined by this schema."
+            },
+            "penable": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Action-specific penable input. Its type and accepted values are defined by this schema."
+            },
+            "pready": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Action-specific pready input. Its type and accepted values are defined by this schema."
+            },
+            "pslverr": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Action-specific pslverr input. Its type and accepted values are defined by this schema."
+            },
+            "pwrite": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Action-specific pwrite input. Its type and accepted values are defined by this schema."
+            },
+            "pwdata": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Action-specific pwdata input. Its type and accepted values are defined by this schema."
+            },
+            "prdata": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Action-specific prdata input. Its type and accepted values are defined by this schema."
+            },
+            "reset": {
+              "type": "object",
+              "required": [
+                "signal",
+                "polarity"
+              ],
+              "properties": {
+                "signal": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "One-bit final waveform signal path used as reset."
+                },
+                "polarity": {
+                  "type": "string",
+                  "enum": [
+                    "active_low",
+                    "active_high"
+                  ],
+                  "description": "Level that asserts reset. X, Z, and unavailable samples are conservatively treated as asserted."
+                }
+              },
+              "additionalProperties": false,
+              "description": "Reset definition. Both signal and polarity are required when reset is supplied."
+            }
+          },
+          "required": [
+            "clock",
+            "paddr",
+            "psel",
+            "penable",
+            "pready",
+            "pslverr",
+            "pwrite",
+            "pwdata",
+            "prdata",
+            "reset"
+          ],
+          "additionalProperties": false
+        },
+        "config_path": {
+          "type": "string",
+          "description": "Action-specific config_path input. Its type and accepted values are defined by this schema."
+        },
+        "mode": {
+          "type": "string",
+          "description": "Action processing or return mode. Its legal values, default, and interactions are action-specific."
+        },
+        "time_unit": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "fs",
+            "ps",
+            "ns",
+            "us",
+            "ms",
+            "s"
+          ],
+          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
+        }
+      },
+      "additionalProperties": false,
+      "required": [],
+      "anyOf": [
+        {
+          "required": [
+            "config"
+          ]
+        },
+        {
+          "required": [
+            "config_path"
+          ]
+        }
+      ]
+    },
+    "limits": {
+      "type": "object"
+    },
+    "auth_token": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "trace_id": {
+      "type": "string"
+    },
+    "span_id": {
+      "type": "string"
+    },
+    "parent_span_id": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Create a named waveform signal list.",
+  "x-purpose": "创建命名信号列表。",
+  "x-how_it_works": "在 ListManager 存储中创建 list，并可追加初始 signals。",
+  "x-when_to_use": "为一组信号建立可复用集合。",
+  "x-arg_contract_notes": "required: name",
+  "x-description-zh": "创建命名信号列表。",
+  "x-agent": {
+    "use_when": [
+      "创建命名信号列表。"
+    ],
+    "do_not_use_when": [
+      "不要把本 action 用于 list.add、list.delete 的业务目标；请改用列出的同域 action。"
+    ],
+    "alternatives": [
+      {
+        "action": "list.add",
+        "when": "向信号列表追加一个信号。"
+      },
+      {
+        "action": "list.delete",
+        "when": "从信号列表删除信号或 index。"
+      }
+    ],
+    "constraints": [
+      "required: name"
+    ]
+  }
+}
