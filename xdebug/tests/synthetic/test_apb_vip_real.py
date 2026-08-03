@@ -197,7 +197,9 @@ def test_apb_vip_real_wait_state_and_error_actions(
                 manifest=manifest,
                 extra={"apb_config": config, "simulation_log": log_text},
             )
-            assert queried["summary"]["count"] == expected_count
+            assert queried["summary"]["query_mode"] == "count"
+            assert queried["summary"]["total_count"] == expected_count
+            assert queried["summary"]["returned_count"] == 0
 
         all_query = _query(
             cli_runner,
@@ -212,7 +214,9 @@ def test_apb_vip_real_wait_state_and_error_actions(
             manifest=manifest,
         )
         assert all_query["summary"]["direction"] == "all"
-        assert all_query["summary"]["count"] == 10
+        assert all_query["summary"]["query_mode"] == "list"
+        assert all_query["summary"]["total_count"] == 10
+        assert all_query["summary"]["returned_count"] == 10
         transaction_times = [
             float(item["time"].removesuffix("ns"))
             for item in all_query["data"]["transactions"]
@@ -239,7 +243,12 @@ def test_apb_vip_real_wait_state_and_error_actions(
             "matched_write_count": 5,
             "unresolved_transaction_count": 0,
             "filter_applied": False,
+            "scan_complete": True,
             "analysis_complete": True,
+            "response_truncated": False,
+            "total_count": 10,
+            "returned_count": 10,
+            "truncation_scopes": [],
             "analysis_quality": "complete",
             "full_scan_count": 1,
         }
@@ -308,24 +317,6 @@ def test_apb_vip_real_wait_state_and_error_actions(
         assert mask_statistics["summary"]["matched_transaction_count"] == 4
         assert mask_statistics["summary"]["full_scan_count"] == 1
 
-        for missing_signal in ("pready", "pslverr"):
-            incomplete = dict(config)
-            incomplete.pop(missing_signal)
-            rejected_result = cli_runner.run(
-                {
-                    "api_version": "xdebug.v1",
-                    "action": "apb.config.load",
-                    "target": target,
-                    "args": {"name": "apb_missing_" + missing_signal, "config": incomplete},
-                },
-                timeout_sec=120,
-            )
-            rejected = rejected_result.response
-            assert rejected_result.returncode != 0
-            assert isinstance(rejected, dict)
-            assert rejected["ok"] is False
-            assert rejected["error"]["invalid_arg"].startswith("args.config")
-
         address_rows = _query(
             cli_runner,
             {
@@ -335,7 +326,7 @@ def test_apb_vip_real_wait_state_and_error_actions(
                 "args": {
                     "name": "apb0",
                     "direction": "write",
-                    "address": "'h4",
+                    "address": {"mode": "exact", "values": ["32'h4"]},
                     "query": {"line_limit": 10},
                 },
             },
@@ -343,7 +334,9 @@ def test_apb_vip_real_wait_state_and_error_actions(
             artifact_root=artifact_root,
             manifest=manifest,
         )
-        assert address_rows["summary"]["count"] == 2
+        assert address_rows["summary"]["query_mode"] == "list"
+        assert address_rows["summary"]["total_count"] == 2
+        assert address_rows["summary"]["returned_count"] == 2
         indexed_transactions = address_rows["data"]["transactions"]
         assert [item["addr"] for item in indexed_transactions] == [
             "32'h00000004", "32'h00000004"
@@ -363,7 +356,7 @@ def test_apb_vip_real_wait_state_and_error_actions(
                 "args": {
                     "name": "apb0",
                     "direction": "write",
-                    "address": "'h4",
+                    "address": {"mode": "exact", "values": ["32'h4"]},
                     "value_format": "dec",
                     "query": {"line_limit": 10},
                 },
@@ -375,10 +368,10 @@ def test_apb_vip_real_wait_state_and_error_actions(
         assert [item["addr"] for item in decimal_rows["data"]["transactions"]] == [
             "32'd4", "32'd4"
         ]
-        for case_name, selector, expected in (
-            ("first", {}, indexed_transactions[0]),
-            ("index", {"query": {"index": 2}}, indexed_transactions[1]),
-            ("last", {"last": True}, indexed_transactions[-1]),
+        for case_name, selector, query_mode, expected in (
+            ("first", {"query": {"index": 1}}, "index", indexed_transactions[0]),
+            ("index", {"query": {"index": 2}}, "index", indexed_transactions[1]),
+            ("last", {"last": True}, "last", indexed_transactions[-1]),
         ):
             selected = _query(
                 cli_runner,
@@ -389,7 +382,7 @@ def test_apb_vip_real_wait_state_and_error_actions(
                     "args": {
                         "name": "apb0",
                         "direction": "write",
-                        "address": "'h4",
+                        "address": {"mode": "exact", "values": ["32'h4"]},
                         **selector,
                     },
                 },
@@ -398,6 +391,7 @@ def test_apb_vip_real_wait_state_and_error_actions(
                 manifest=manifest,
             )
             assert selected["summary"]["found"] is True
+            assert selected["summary"]["query_mode"] == query_mode
             assert selected["data"]["transaction"] == expected
 
         error_txn = _query(
@@ -409,7 +403,8 @@ def test_apb_vip_real_wait_state_and_error_actions(
                 "args": {
                     "name": "apb0",
                     "direction": "read",
-                    "address": "'hf0",
+                    "address": {"mode": "exact", "values": ["32'hf0"]},
+                    "query": {"index": 1},
                 },
             },
             case_name="apb-vip-error-response",
@@ -417,6 +412,8 @@ def test_apb_vip_real_wait_state_and_error_actions(
             manifest=manifest,
             extra={"apb_config": config},
         )
+        assert error_txn["summary"]["found"] is True
+        assert error_txn["summary"]["query_mode"] == "index"
         assert error_txn["data"]["transaction"]["has_error"] is True
 
         window = _query(
@@ -469,6 +466,29 @@ def test_apb_vip_real_wait_state_and_error_actions(
         assert probe_rows and probe_rows[-1]["scanner_invocations"] == 1
         assert sum(row.get("event") == "build" for row in probe_rows) == 1
         assert sum(row.get("event") == "index_build" for row in probe_rows) >= 1
+
+        # Optional APB2/zero-error signals are checked only after the cache
+        # probe assertions so loading extra configs cannot perturb that probe.
+        for missing_signal in ("pready", "pslverr"):
+            incomplete = dict(config)
+            incomplete.pop(missing_signal)
+            accepted = _query(
+                cli_runner,
+                {
+                    "api_version": "xdebug.v1",
+                    "action": "apb.config.load",
+                    "target": target,
+                    "args": {
+                        "name": "apb_missing_" + missing_signal,
+                        "config": incomplete,
+                    },
+                },
+                case_name="apb-vip-optional-" + missing_signal,
+                artifact_root=artifact_root,
+                manifest=manifest,
+            )
+            assert accepted["summary"]["status"] == "loaded"
+            assert missing_signal not in accepted["data"]["config"]
     finally:
         cli_runner.run(
             {
