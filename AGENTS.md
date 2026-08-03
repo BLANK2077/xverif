@@ -222,7 +222,7 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 
 - 错误现象：在临时重建仓库执行 Python 校验时再次调用仓库相对路径 `.conda-xverif/bin/python`，因临时仓库不携带本地环境而未启动校验。
 - 误判原因：没有在每类 Python 校验入口执行前解析并核对解释器的绝对路径，沿用了原工作树的相对环境布局。
-- 以后规则：`/home/RD/ryan/work/tmp/` 下的重建仓库统一使用已核实的原仓库 conda Python 绝对路径，并把临时仓库置于 `PYTHONPATH` 首位；禁止静默切换系统 Python。
+- 以后规则：`<work-tmp>/` 下的重建仓库统一使用已核实的原仓库 conda Python 绝对路径，并把临时仓库置于 `PYTHONPATH` 首位；禁止静默切换系统 Python。
 
 ### 2026-08-03 环境错误复盘
 
