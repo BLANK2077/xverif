@@ -441,6 +441,19 @@ int main() {
             list_delete_spec->request_schema);
     assert(large_list_index_validation.ok);
 
+    Json bounded_large_integer_request = large_list_index_request;
+    bounded_large_integer_request["limits"] = {
+        {"timeout_ms", Json::number_unsigned_t(1ULL << 63)},
+    };
+    xdebug_core::RuntimeSchemaValidationResult bounded_large_integer_validation =
+        runtime_validator.validate_request(
+            "list.delete",
+            bounded_large_integer_request,
+            list_delete_spec->request_schema);
+    assert(!bounded_large_integer_validation.ok);
+    assert(bounded_large_integer_validation.error["invalid_arg"] ==
+           "limits.timeout_ms");
+
     xdebug_core::RuntimeSchemaValidationResult response_validation =
         runtime_validator.validate_response(
             "stream.describe",
