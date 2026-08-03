@@ -84,11 +84,28 @@ suites:
     level: unit
     intent: [contract]
     domains: [coverage]
-    runner: {kind: pytest, path: xcov/tests}
+    runner:
+      kind: pytest
+      paths:
+        - xcov/tests/test_exclusions.py
+        - xcov/tests/test_xcov.py
     capabilities: [child_process]
     hermetic: false
     deterministic: true
     cost: {class: fast, estimate_sec: 3}
+
+  - id: xcov.exclusion_npi
+    owner: xcov
+    level: system
+    intent: [contract, semantics, lifecycle]
+    domains: [coverage]
+    runner: {kind: pytest, path: xcov/tests/test_exclusions_real.py}
+    fixtures: [xcov.exclusion]
+    capabilities: [child_process, npi]
+    hermetic: false
+    deterministic: true
+    cost: {class: slow, estimate_sec: 30}
+    timeouts: {execute_sec: 180, cleanup_sec: 20}
 
   - id: xwaveform.unit
     owner: xwaveform
@@ -215,9 +232,9 @@ suites:
     owner: skills/x-npi
     level: system
     intent: [contract, semantics]
-    domains: [skill, npi, fsdb, protocol]
+    domains: [skill, npi, fsdb, coverage, protocol]
     runner: {kind: pytest, path: skills/tests/test_x_npi_real.py}
-    fixtures: [xdebug.axi_vip, xdebug.apb_vip, xdebug.stream_v1]
+    fixtures: [xdebug.axi_vip, xdebug.apb_vip, xdebug.stream_v1, xcov.exclusion]
     capabilities: [child_process, npi, fsdb]
     hermetic: false
     deterministic: true

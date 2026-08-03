@@ -1,5 +1,19 @@
 version: xverif-fixture-registry.v1
 fixtures:
+  - id: xcov.exclusion
+    build_capabilities: [make, vcs, npi]
+    source_dir: xcov/fixtures/exclusion
+    inputs: [Makefile, "*.sv"]
+    builder:
+      argv: [make, fixture, "RUN_DIR={resources}"]
+      cwd: "{source}"
+      timeout_sec: 1200
+    outputs:
+      - {name: vdb, path: exclusion.vdb, kind: dir}
+    probes:
+      - argv: [python3, "{repo}/testinfra/leaf/probe_fixture.py", --resources, "{resources}", --text-glob, exclusion.vdb/.vdb_version]
+    tool_env: [VERDI_HOME]
+
   - id: xdebug.active_driver
     build_capabilities: [make, vcs, npi]
     source_dir: xdebug/testdata/combined/active_driver

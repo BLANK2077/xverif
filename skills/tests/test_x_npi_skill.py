@@ -16,7 +16,15 @@ SKILL = ROOT / "skills" / "x-npi"
 sys.path.insert(0, str(SKILL / "scripts"))
 
 from x_npi.cli import require_output, sampling_contract  # noqa: E402
-from x_npi.coverage import coverage_summary  # noqa: E402
+from x_npi.coverage import (  # noqa: E402
+    CoverageExclusionError,
+    coverage_summary,
+    load_exclusion_files,
+    open_covdb,
+    save_exclusion_file,
+    set_report_time_excluded,
+    unload_exclusions,
+)
 from x_npi.jsonio import split_limited  # noqa: E402
 from x_npi.protocol import (  # noqa: E402
     ProtocolAnalysisError,
@@ -200,6 +208,127 @@ def test_coverage_summary_uses_score_rows_and_functional_group_average() -> None
     result = coverage_summary(rows)
     assert result["metrics"][0]["coverage_pct"] == 75.0
     assert result["functional_groups"][0]["coverage_pct"] == 75.0
+
+
+class FakeExclusionItem:
+    def __init__(self, report_time: bool = False, compile_time: bool = False,
+                 setter_result: int = 1) -> None:
+        self.report_time = report_time
+        self.compile_time = compile_time
+        self.setter_result = setter_result
+        self.setter_values: list[int] = []
+
+    def has_status_excluded_at_report_time(self, test: object) -> bool:
+        return self.report_time
+
+    def has_status_excluded_at_compile_time(self, test: object) -> bool:
+        return self.compile_time
+
+    def set_status_excluded_at_report_time(self, test: object, value: int) -> int:
+        self.setter_values.append(value)
+        if self.setter_result == 1:
+            self.report_time = bool(value)
+        return self.setter_result
+
+
+class FakeExclusionTest:
+    def __init__(self, results: dict[str, int] | None = None) -> None:
+        self.results = results or {}
+        self.calls: list[tuple[object, ...]] = []
+
+    def load_exclude_file(self, path: str) -> int:
+        self.calls.append(("load", path))
+        return self.results.get("load", 1)
+
+    def save_exclude_file(self, path: str, mode: str) -> int:
+        self.calls.append(("save", path, mode))
+        return self.results.get("save", 1)
+
+    def unload_exclusion(self) -> int:
+        self.calls.append(("unload",))
+        return self.results.get("unload", 1)
+
+
+def test_exclusion_helpers_use_strict_open_union_write_mode_and_unload(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    class FakeCov:
+        class ConfigOpt:
+            ExclusionInStrictMode = 8
+
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, int]] = []
+
+        def open(self, path: str, option: int) -> object:
+            self.calls.append((path, option))
+            return object()
+
+    fake_cov = FakeCov()
+    monkeypatch.setattr("x_npi.coverage._cov", lambda: fake_cov)
+    assert open_covdb("merged.vdb", strict=True)
+    assert fake_cov.calls == [("merged.vdb", 8)]
+
+    paths = [
+        tmp_path / "code.el",
+        tmp_path / "functional.el",
+        tmp_path / "assertion.el",
+    ]
+    for path in paths:
+        path.write_text("opaque\n", encoding="utf-8")
+    test = FakeExclusionTest()
+    assert load_exclusion_files(test, paths) == [
+        {"path": str(path), "status": "loaded"} for path in paths
+    ]
+    assert test.calls == [("load", str(path)) for path in paths]
+    assert save_exclusion_file(test, tmp_path / "current.el").endswith("current.el")
+    unload_exclusions(test)
+    assert test.calls[-2:] == [
+        ("save", str(tmp_path / "current.el"), "w"),
+        ("unload",),
+    ]
+
+
+def test_exclusion_setter_reports_before_after_idempotent_immutable_and_failed() -> None:
+    test = object()
+    item = FakeExclusionItem()
+    assert set_report_time_excluded(item, test, True) == {
+        "status": "changed", "before": False, "after": True,
+    }
+    assert set_report_time_excluded(item, test, True)["status"] == "already_in_state"
+    assert item.setter_values == [1]
+
+    immutable = FakeExclusionItem(compile_time=True)
+    assert set_report_time_excluded(immutable, test, False)["status"] == "immutable_compile_time"
+    assert immutable.setter_values == []
+
+    combined = FakeExclusionItem(report_time=True, compile_time=True)
+    assert set_report_time_excluded(combined, test, False) == {
+        "status": "immutable_compile_time", "before": True, "after": False,
+    }
+    assert combined.setter_values == [0]
+
+    failed = FakeExclusionItem(setter_result=0)
+    assert set_report_time_excluded(failed, test, True) == {
+        "status": "failed", "before": False, "after": False,
+    }
+
+
+def test_exclusion_helpers_fail_explicitly_and_preflight_all_paths(tmp_path: Path) -> None:
+    existing = tmp_path / "code.el"
+    existing.write_text("opaque\n", encoding="utf-8")
+    test = FakeExclusionTest()
+    with pytest.raises(FileNotFoundError, match="missing.el"):
+        load_exclusion_files(test, [existing, tmp_path / "missing.el"])
+    assert test.calls == []
+
+    for operation, invoke in [
+        ("load_exclude_file", lambda target: load_exclusion_files(target, [existing])),
+        ("save_exclude_file", lambda target: save_exclusion_file(target, tmp_path / "out.el")),
+        ("unload_exclusion", unload_exclusions),
+    ]:
+        key = operation.split("_")[0]
+        with pytest.raises(CoverageExclusionError, match=operation):
+            invoke(FakeExclusionTest({key: 0}))
 
 
 def test_value_and_json_helpers_are_deterministic() -> None:

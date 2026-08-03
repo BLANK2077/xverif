@@ -91,3 +91,34 @@ def test_x_npi_stream_posedge_after_cached_waveform(xverif_fixture: Any) -> None
     assert report["meta"]["sample_point"] == "after"
     assert report["summary"]["transfers"] == 20000
     assert report["summary"]["packets"] == 5000
+
+
+def test_x_npi_exclusion_helpers_against_real_vdb(
+    xverif_fixture: Any, tmp_path: Path,
+) -> None:
+    resources = xverif_fixture("xcov.exclusion")
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(SKILL / "scripts")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(Path(__file__).with_name("x_npi_exclusion_probe.py")),
+            str(resources / "exclusion.vdb"),
+            str(tmp_path / "x-npi.el"),
+        ],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=180,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr[-8000:] + "\n" + proc.stdout[-4000:]
+    result = json.loads(proc.stdout)
+    assert result["statuses"] == ["changed", "already_in_state", "changed"]
+    assert result["loaded"] == [
+        {"path": str(tmp_path / "x-npi.el"), "status": "loaded"},
+    ]
+    assert result["after_load"] is True
+    assert result["after_unload"] is False
