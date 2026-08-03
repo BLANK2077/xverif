@@ -836,54 +836,122 @@ def run_nonaxi(xdebug, fsdb):
         r.query("session.doctor", target={"session_id": r.sid})
         r.query("session.gc", expect_ok=True, allow_no_sid=True)
 
-        scope = r.query("scope.list", args={"path": "ai_complex_top", "recursive": True}, limits={"max_rows": 8})
-        require(scope["meta"]["truncated"] is True, "scope.list did not truncate")
+        scope = r.query("scope.list", args={"path": "ai_complex_top", "level": 0}, limits={"max_rows": 8})
+        require(scope["summary"]["scan_complete"] is True and
+                scope["summary"]["analysis_complete"] is True and
+                scope["summary"]["response_truncated"] is True,
+                "scope.list must distinguish complete scan from response projection")
+        require(scope["summary"]["returned_count"] == 8 and
+                scope["summary"]["total_count"] > 8 and
+                scope["summary"]["truncation_scopes"] == ["response_rows"],
+                "scope.list completeness counts/scopes are inconsistent")
         require("signals_preview" not in scope["data"], "scope.list generated redundant data.signals_preview")
         require("examples" not in scope["data"], "scope.list generated placeholder data.examples")
-        direct_scope = r.query("scope.list", args={"path": "ai_complex_top", "recursive": False}, limits={"max_rows": 100})
-        require("ai_complex_top.sig_a" in direct_scope["data"]["signals"], "non-recursive scope.list omitted sig_a")
-        require("truncated" not in direct_scope.get("summary", {}) and "truncated" not in direct_scope.get("meta", {}),
-                "complete non-recursive scope.list must omit truncated")
+        direct_scope = r.query("scope.list", args={"path": "ai_complex_top", "level": 0}, limits={"max_rows": 100})
+        require(any(item["name"] == "sig_a" and item["width"] == 8
+                    for item in direct_scope["data"]["signals"]),
+                "level-0 scope.list omitted relative sig_a or its width")
+        require(direct_scope["summary"]["scan_complete"] is True and
+                direct_scope["summary"]["analysis_complete"] is True and
+                direct_scope["summary"]["response_truncated"] is False and
+                direct_scope["summary"]["total_count"] == direct_scope["summary"]["returned_count"] and
+                direct_scope["summary"]["truncation_scopes"] == [],
+                "complete level-0 scope.list completeness contract is inconsistent")
 
         v = r.query("value.at", args={"signal": "ai_complex_top.sig_a", "clock": "ai_complex_top.clk", "time": "75ns", "value_format": "hex"})
-        require(v["data"]["value"]["value"] == "8'h22" and v["data"]["value"]["known"] is True, "unexpected sig_a value")
+        v_cell = v["data"]["samples"][0]["values"][0]
+        require(v_cell["value"]["value"] == "8'h22" and v_cell["value"]["known"] is True, "unexpected sig_a value")
         require_clock_context(v, "negedge")
+        raw_v = r.query("value.at", args={
+            "signal": "ai_complex_top.sig_a",
+            "time": "75ns",
+            "value_format": "hex",
+        })
+        require(raw_v["summary"]["sampling_mode"] == "raw_time" and
+                "clock_context" not in raw_v["data"]["samples"][0],
+                "raw value.at must not publish a clock context")
         xz = r.query("value.at", args={"signal": "ai_complex_top.xz_bus", "clock": "ai_complex_top.clk", "time": "95ns", "value_format": "bin"})
-        require(xz["data"]["value"]["known"] is False, "xz_bus should be unknown")
-        require("bits" in xz["data"]["value"] and "has_x" in xz["data"]["value"], "xz_bus lacks logic diagnostics")
-        batch = r.query(
-            "value.batch_at",
-            args={"time": "95ns", "clock": "ai_complex_top.clk", "signals": ["ai_complex_top.sig_a", "ai_complex_top.xz_bus", "ai_complex_top.no_such"], "value_format": "hex"},
-            expect_ok=True,
-        )
-        require(batch["summary"]["missing_count"] == 1 and batch["summary"]["unknown_count"] == 1, "batch missing/unknown mismatch")
-        require(batch["summary"]["missing_by_reason"]["signal_not_found"] == 1, "batch missing reason mismatch")
-        missing_rows = [row for row in batch["data"]["values"] if row["status"] != "ok"]
-        require(missing_rows and missing_rows[0]["reason"], "batch missing row lacks reason")
+        xz_value = xz["data"]["samples"][0]["values"][0]["value"]
+        require(xz_value["known"] is False, "xz_bus should be unknown")
+        require("bits" in xz_value and "has_x" in xz_value, "xz_bus lacks logic diagnostics")
         hint = r.query("value.at", args={"signal": "ai_complex_top.sig_a", "clock": "ai_complex_top.clk", "time": "75ns", "value_format": "hex", "slice_hint": {"chunk_width": 4, "count": 2}})
-        require(hint["data"]["xbit_hints"]["status"] == "ready", "xbit hints not generated")
-        batch_hint = r.query(
-            "value.batch_at",
-            args={
-                "signals": ["ai_complex_top.sig_a", "ai_complex_top.sig_b"],
-                "clock": "ai_complex_top.clk",
-                "time": "75ns",
-                "value_format": "hex",
-                "slice_hint": {"chunk_width": 4, "count": 2},
-            },
-        )
-        hinted_rows = [
-            row for row in batch_hint["data"]["values"]
-            if row["signal"] == "ai_complex_top.sig_a"
-        ]
-        require(hinted_rows and hinted_rows[0]["xbit_hints"]["status"] == "ready", "batch xbit hints not generated")
-        require(v["data"]["clock_context"] == batch_hint["data"]["clock_context"],
-                "value.at and value.batch_at must share one clock bracket contract")
+        require(hint["data"]["samples"][0]["values"][0]["xbit_hints"]["status"] == "ready", "xbit hints not generated")
         unsupported = r.query("value.at", args={"signal": "ai_complex_top.sig_a", "clock": "ai_complex_top.clk", "time": "75ns", "format": "hex"}, expect_ok=False)
         require(unsupported["error"]["code"] == "INVALID_REQUEST" and
                 unsupported["error"]["invalid_arg"] == "args.format",
                 "legacy args.format must be rejected by the public schema")
         r.query("value.at", args={"signal": "ai_complex_top.no_such", "clock": "ai_complex_top.clk", "time": "10ns"}, expect_ok=False)
+
+        loaded = r.query("list.load", args={
+            "config": {
+                "lists": [{
+                    "name": "key_context",
+                    "signals": [
+                        "ai_complex_top.sig_a",
+                        "ai_complex_top.xz_bus",
+                    ],
+                }],
+            },
+            "mode": "replace",
+        })
+        require(loaded["summary"]["loaded"] == 1 and
+                loaded["data"]["lists"] == ["key_context"],
+                "list.load inline config did not load one list")
+        raw_values = r.query("value.at", args={
+            "list": "key_context",
+            "times": ["75ns", "95ns"],
+            "value_format": "hex",
+        })
+        require(raw_values["summary"]["time_count"] == 2 and
+                [sample["time"] for sample in raw_values["data"]["samples"]] ==
+                ["75ns", "95ns"],
+                "value.at list selector did not preserve requested time order")
+        require(all(sample["sampling_mode"] == "raw_time" and
+                    "clock_context" not in sample
+                    for sample in raw_values["data"]["samples"]),
+                "raw value.at list selector published clock context")
+        clock_values = r.query("value.at", args={
+            "list": "key_context",
+            "clock": "ai_complex_top.clk",
+            "times": ["75ns", "95ns"],
+            "value_format": "hex",
+        })
+        require(all(sample["sampling_mode"] == "clock_sampled" and
+                    "clock_context" in sample
+                    for sample in clock_values["data"]["samples"]),
+                "clock-sampled value.at list selector omitted per-time context")
+        require(v["data"]["samples"][0]["clock_context"] ==
+                clock_values["data"]["samples"][0]["clock_context"],
+                "value.at selectors must share one clock bracket contract")
+        r.query("list.load", args={
+            "config": {
+                "lists": [{
+                    "name": "invalid_context",
+                    "signals": ["ai_complex_top.no_such"],
+                }],
+            },
+        }, expect_ok=False)
+        r.query("list.show", args={"name": "invalid_context"}, expect_ok=False)
+
+        with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False,
+                encoding="utf-8") as list_config:
+            json.dump({
+                "lists": [{
+                    "name": "file_context",
+                    "signals": ["ai_complex_top.sig_b"],
+                }],
+            }, list_config)
+            list_config_path = list_config.name
+        try:
+            file_loaded = r.query("list.load", args={
+                "config_path": list_config_path,
+                "mode": "append",
+            })
+            require(file_loaded["data"]["lists"] == ["file_context"],
+                    "list.load config_path did not load expected list")
+        finally:
+            os.unlink(list_config_path)
 
         created = r.query("list.create", args={"name": "basic"})
         require("summary" not in created["data"], "list.create generated nested data.summary")
@@ -894,19 +962,23 @@ def run_nonaxi(xdebug, fsdb):
         show = r.query("list.show", args={"name": "basic"})
         require(show["summary"]["signal_count"] == 2, "list.show count mismatch")
         require("count" not in show["data"], "list.show generated redundant data.count")
-        values = r.query("list.value_at", args={"name": "basic", "clock": "ai_complex_top.clk", "time": "75ns", "value_format": "hex"})
-        require("summary" not in values["data"], "list.value_at generated nested data.summary")
+        values = r.query("value.at", args={"list": "basic", "clock": "ai_complex_top.clk", "times": ["75ns"], "value_format": "hex"})
+        require("summary" not in values["data"], "value.at generated nested data.summary")
+        require(
+            values["data"]["samples"][0]["clock_context"][
+                "effective_sampling"]["edge"] == "negedge",
+            "value.at list selector clock context edge mismatch")
         validated = r.query("list.validate", args={"name": "basic"})
         require("all_found" in validated["summary"], "list.validate did not expose all_found at source")
         require("summary" not in validated["data"], "list.validate generated nested data.summary")
-        diff = r.query("list.diff", args={"name": "basic", "time_range": {"begin": "0ns", "end": "120ns"}})
-        require("ns" in diff["summary"]["diff_time"] or "ps" in diff["summary"]["diff_time"], "list.diff did not return time")
+        diff = r.query("list.first_change", args={"name": "basic", "time_range": {"begin": "0ns", "end": "120ns"}})
+        require("ns" in diff["summary"]["diff_time"] or "ps" in diff["summary"]["diff_time"], "list.first_change did not return time")
         require(diff["summary"]["changed_signal_count"] >= 1,
-                "list.diff must report signals that actually changed at diff_time")
+                "list.first_change must report signals that actually changed at diff_time")
         require(all(item["before"]["value"] != item["after"]["value"]
                     for item in diff["data"]["changed_signals"]),
-                "list.diff must not report unchanged signals")
-        require("time" not in diff["data"], "list.diff generated redundant data.time")
+                "list.first_change must not report unchanged signals")
+        require("time" not in diff["data"], "list.first_change generated redundant data.time")
         list_export_dir = tempfile.mkdtemp(prefix="xdebug_list_export_")
         list_export = r.query("list.export", args={
             "name": "basic",
@@ -1015,7 +1087,7 @@ def run_nonaxi(xdebug, fsdb):
         })
         require(len(race_after["data"]["events"]) == 1, "event.find posedge after did not observe new values")
         require_clock_sampling_contract(race_after, "posedge", "after")
-        r.query("stream.config.load", args={"streams": [
+        r.query("stream.config.load", args={"config": {"streams": [
             {
                 "name": "race_before_stream",
                 "signals": {
@@ -1048,7 +1120,7 @@ def run_nonaxi(xdebug, fsdb):
                 "rdy": "rdy",
                 "data": "payload",
             },
-        ]})
+        ]}})
         stream_before = r.query("stream.query", args={
             "stream": "race_before_stream",
             "query": "summary",
@@ -1150,7 +1222,7 @@ def run_nonaxi(xdebug, fsdb):
         require(limited_window["summary"]["sample_count"] > 1 and
                 limited_window["summary"]["scan_complete"] is True,
                 "window.verify line_limit must not cap sampled analysis")
-        require(limited_window["summary"]["returned_finding_count"] == 1 and
+        require(limited_window["summary"]["returned_count"] == 1 and
                 limited_window["summary"]["response_truncated"] is True,
                 "window.verify response evidence limit mismatch")
         require_clock_sampling_contract(win, "posedge", "after")
@@ -1185,11 +1257,20 @@ def run_nonaxi(xdebug, fsdb):
         require(bad_window_field["error"]["invalid_arg"] == "args.posedge", "legacy posedge should identify args.posedge")
 
         changes = r.query("signal.changes", args={"signal": "ai_complex_top.sig_a", "time_range": {"begin": "0ns", "end": "120ns"}, "line_limit": 2})
-        require(changes["meta"]["truncated"] is True, "signal.changes did not truncate")
+        require(changes["summary"]["analysis_complete"] is True and
+                changes["summary"]["response_truncated"] is True and
+                changes["summary"]["returned_count"] == 2 and
+                changes["summary"]["total_count"] > 2 and
+                changes["summary"]["truncation_scopes"] == ["response_changes"],
+                "signal.changes must distinguish full analysis from response projection")
         complete_changes = r.query("signal.changes", args={"signal": "ai_complex_top.sig_a", "time_range": {"begin": "0ns", "end": "120ns"}, "line_limit": 100})
         require(complete_changes["summary"]["actual_transition_count"] > 0, "signal.changes found no transitions")
-        require("truncated" not in complete_changes.get("summary", {}) and "truncated" not in complete_changes.get("meta", {}),
-                "complete signal.changes must omit truncated")
+        require(complete_changes["summary"]["scan_complete"] is True and
+                complete_changes["summary"]["analysis_complete"] is True and
+                complete_changes["summary"]["response_truncated"] is False and
+                complete_changes["summary"]["total_count"] == complete_changes["summary"]["returned_count"] and
+                complete_changes["summary"]["truncation_scopes"] == [],
+                "complete signal.changes completeness contract is inconsistent")
         stab = r.query("signal.stability", args={"signal": "ai_complex_top.stable_sig", "time_range": {"begin": "0ns", "end": "400ns"}})
         require(stab["summary"]["stable"] is True, "stable_sig should be stable")
         require(stab["summary"]["actual_transition_count"] == 0,
@@ -1275,6 +1356,14 @@ def run_nonaxi(xdebug, fsdb):
         require_clock_sampling_contract(stats, "negedge")
         require(stats["summary"]["sample_count"] > 0 and stats["summary"]["known_count"] > 0, "signal.statistics did not sample")
         require("high_cycles" in stats["data"] and "low_cycles" in stats["data"], "signal.statistics missing cycle counts")
+        raw_stats = r.query("signal.statistics", args={
+            "signal": "ai_complex_top.hs_valid",
+            "time_range": {"begin": "120ns", "end": "210ns"},
+            "line_limit": 1000,
+        })
+        require(raw_stats["summary"]["sampling_mode"] == "raw_value_changes" and
+                "sampling" not in raw_stats["data"],
+                "raw signal.statistics must not publish a clock sampling contract")
         offset_stats = r.query("signal.statistics", args={
             "signal": "ai_complex_top.hs_valid",
             "clock": "ai_complex_top.clk",
@@ -1285,30 +1374,32 @@ def run_nonaxi(xdebug, fsdb):
         })
         require_clock_sampling_contract(offset_stats, "posedge", "before")
         require(offset_stats["summary"]["sample_count"] > 0, "signal.statistics negative offset did not sample")
-        anomaly = r.query("detect_abnormal", args={
+        anomaly = r.query("signal.anomaly.inspect", args={
             "signals": ["ai_complex_top.glitch_sig", "ai_complex_top.stuck_sig", "ai_complex_top.xz_bus"],
             "time_range": {"begin": "0ns", "end": "200ns"},
             "checks": [{"type": "glitch", "min_pulse_width": "1ns"}, {"type": "stuck", "min_duration": "100ns"}, {"type": "unknown_xz"}],
             "line_limit": 10,
         })
-        require(anomaly["summary"]["finding_count"] >= 3, "detect_abnormal missing findings")
+        require(anomaly["summary"]["total_count"] >= 3 and
+                anomaly["summary"]["returned_count"] == len(anomaly["data"]["findings"]),
+                "signal.anomaly.inspect missing findings")
         require(any(f.get("type") == "glitch" for f in anomaly["data"].get("findings", [])), "glitch not detected")
         require(any(f.get("type") == "unknown_xz" and f.get("value", {}).get("value") == "8'hzz"
-                    for f in anomaly["data"].get("findings", [])), "Z finding not preserved in detect_abnormal JSON")
-        sampled_pulse = r.query("sampled_pulse.inspect", args={
+                    for f in anomaly["data"].get("findings", [])), "Z finding not preserved in signal.anomaly.inspect JSON")
+        sampled_pulse = r.query("signal.sampled_pulse.inspect", args={
             "clock": "ai_complex_top.clk",
             "valid": "ai_complex_top.glitch_sig",
-            "payload": "ai_complex_top.sig_a",
+            "payloads": ["ai_complex_top.sig_a"],
             "edge": "posedge",
             "time_range": {"begin": "0ns", "end": "140ns"},
             "line_limit": 1,
         })
         require(sampled_pulse["summary"]["analysis_complete"] is True,
                 "sampled_pulse analysis must cover the complete requested window")
-        require(sampled_pulse["summary"]["returned_finding_count"] == 1,
+        require(sampled_pulse["summary"]["returned_count"] == 1,
                 "sampled_pulse line_limit must only limit returned findings")
-        require(sampled_pulse["summary"]["risk_count"] >= sampled_pulse["summary"]["returned_finding_count"],
-                "sampled_pulse risk_count must count all analyzed findings")
+        require(sampled_pulse["summary"]["total_count"] >= sampled_pulse["summary"]["returned_count"],
+                "sampled_pulse total_count must count all analyzed findings")
         require(sampled_pulse["summary"]["payload_changed_without_sampled_valid_reporting"] == "summary",
                 "sampled_pulse payload risk reporting must default to summary")
         require(not any(item.get("type") == "payload_changed_without_sampled_valid"
@@ -1321,7 +1412,7 @@ def run_nonaxi(xdebug, fsdb):
                 "sampled_pulse previous edge must bracket the raw pulse")
         require(time_ns(finding["next_sample_edge"]) >= raw_end,
                 "sampled_pulse next edge must bracket the raw pulse")
-        bad_checks = r.query("detect_abnormal", args={
+        bad_checks = r.query("signal.anomaly.inspect", args={
             "signals": ["ai_complex_top.glitch_sig", "ai_complex_top.xz_bus"],
             "time_range": {"begin": "0ns", "end": "200ns"},
             "checks": ["unknown_xz", "glitch"],
@@ -1332,7 +1423,7 @@ def run_nonaxi(xdebug, fsdb):
                 "bad checks should explain the rejected item")
         require(bad_checks["error"]["received_type"] == "string", "bad checks should expose received_type")
         require("correct_example" in bad_checks["error"], "bad checks should expose correct_example")
-        bad_type = r.query("detect_abnormal", args={
+        bad_type = r.query("signal.anomaly.inspect", args={
             "signals": ["ai_complex_top.glitch_sig", "ai_complex_top.xz_bus"],
             "time_range": {"begin": "0ns", "end": "200ns"},
             "checks": [{"type": "unknown"}],
@@ -1342,16 +1433,16 @@ def run_nonaxi(xdebug, fsdb):
                 "unknown check type should expose the rejected check item")
         health = r.query("value.at", args={"signal": "ai_complex_top.clk", "clock": "ai_complex_top.clk",
                                             "edge": "negedge", "sample_point": "after", "time": "10ns"})
-        require(health["ok"] is True, "session should remain healthy after invalid detect_abnormal checks")
+        require(health["ok"] is True, "session should remain healthy after invalid signal.anomaly.inspect checks")
         require_clock_context(health, "negedge", "after")
-        clock_context = health["data"]["clock_context"]
+        clock_context = health["data"]["samples"][0]["clock_context"]
         require(clock_context["requested_sampling"]["sample_point"] == "after",
                 "negedge request must retain requested sample_point")
         require(clock_context["effective_sampling"]["sample_point"] is None and
                 clock_context["sample_point_applied"] is False and
                 clock_context["sample_point_ignored_for_negedge"] is True,
                 "negedge sample_point must use the existing negedge semantics")
-        hs = r.query("handshake.inspect", args={
+        hs = r.query("protocol.handshake.inspect", args={
             "clock": "ai_complex_top.clk",
             "valid": "ai_complex_top.hs_valid",
             "ready": "ai_complex_top.hs_ready",
@@ -1359,7 +1450,7 @@ def run_nonaxi(xdebug, fsdb):
             "time_range": {"begin": "120ns", "end": "210ns"},
             "rules": {"max_wait_cycles": 2, "check_data_stable_when_stalled": True},
         })
-        require(hs["summary"]["max_stall_cycles"] >= 3 and hs["summary"]["data_stability_violations"] >= 1, "handshake.inspect mismatch")
+        require(hs["summary"]["max_stall_cycles"] >= 3 and hs["summary"]["data_stability_violations"] >= 1, "protocol.handshake.inspect mismatch")
         require_clock_sampling_contract(hs, "negedge")
         require(hs["summary"]["ready_without_valid_reporting"] == "summary",
                 "handshake default ready-without-valid reporting must be summary")
@@ -1367,7 +1458,7 @@ def run_nonaxi(xdebug, fsdb):
                 "handshake must enable valid-hold checking by default")
         require(not any(item.get("type") == "ready_without_valid" for item in hs["data"]["findings"]),
                 "summary reporting must not emit one finding per ready-without-valid cycle")
-        hs_valid_drop = r.query("handshake.inspect", args={
+        hs_valid_drop = r.query("protocol.handshake.inspect", args={
             "clock": "ai_complex_top.clk",
             "valid": "ai_complex_top.event_vld",
             "ready": "ai_complex_top.event_rdy",
@@ -1378,7 +1469,7 @@ def run_nonaxi(xdebug, fsdb):
         require(any(item.get("type") == "valid_dropped_before_handshake"
                     for item in hs_valid_drop["data"]["findings"]),
                 "handshake valid-hold violation evidence missing")
-        hs_intervals = r.query("handshake.inspect", args={
+        hs_intervals = r.query("protocol.handshake.inspect", args={
             "clock": "ai_complex_top.clk",
             "valid": "ai_complex_top.hs_valid",
             "ready": "ai_complex_top.hs_ready",
@@ -1392,7 +1483,9 @@ def run_nonaxi(xdebug, fsdb):
         intervals = hs_intervals["data"].get("ready_without_valid_intervals", [])
         require(all("begin" in item and "end" in item and "cycle_count" in item for item in intervals),
                 "ready-without-valid intervals must expose begin/end/cycle_count")
-        hs_all = r.query("handshake.inspect", args={
+        require(all("cycles" not in item for item in intervals),
+                "ready-without-valid intervals must not duplicate cycle_count")
+        hs_all = r.query("protocol.handshake.inspect", args={
             "clock": "ai_complex_top.clk",
             "valid": "ai_complex_top.hs_valid",
             "ready": "ai_complex_top.hs_ready",
@@ -1560,15 +1653,17 @@ def run_axi(xdebug, fsdb, sim_log=AXI_SIM_LOG, handshake_oracle_path=AXI_HANDSHA
                 require(loaded["data"]["config"]["sample_point"] == expected_sample_point,
                         "AXI config sample_point mismatch for {}".format(name))
 
-        r.query("axi.cursor", args={"name": "axi0", "op": "begin", "direction": "all"})
-        r.query("axi.cursor", args={"name": "axi0", "op": "next", "direction": "all"})
+        r.query("axi.transaction.cursor", args={"name": "axi0", "op": "begin", "direction": "all"})
+        r.query("axi.transaction.cursor", args={"name": "axi0", "op": "next", "direction": "all"})
         tr = {"begin": "0ns", "end": "200ms"}
         pair_cold = r.query(
             "axi.request_response_pair",
             args={"name": "axi0", "time_range": tr, "line_limit": 10000},
         )
-        require(pair_cold.get("meta", {}).get("truncated", False) is False and
-                pair_cold["summary"]["transaction_count"] < 10000,
+        require(pair_cold["summary"]["analysis_complete"] is True and
+                pair_cold["summary"]["response_truncated"] is False and
+                pair_cold["summary"]["total_count"] ==
+                    pair_cold["summary"]["returned_count"] < 10000,
                 "AXI percentile oracle requires the complete transaction set")
         oracle_latencies = sorted(
             duration_fs(txn["latency"])
@@ -1608,7 +1703,7 @@ def run_axi(xdebug, fsdb, sim_log=AXI_SIM_LOG, handshake_oracle_path=AXI_HANDSHA
                 pending["data"]["pending_transactions"] == [],
                 "completed AXI VIP run must not leave pending transactions")
 
-        require(pair_cold["summary"]["transaction_count"] > 0, "AXI request_response_pair empty")
+        require(pair_cold["summary"]["total_count"] > 0, "AXI request_response_pair empty")
         require(all("beats" not in txn.get("data", {})
                     for txn in pair_cold["data"]["transactions"]),
                 "AXI compact request_response_pair must omit beat payload")
@@ -1620,9 +1715,11 @@ def run_axi(xdebug, fsdb, sim_log=AXI_SIM_LOG, handshake_oracle_path=AXI_HANDSHA
         require(any("beats" in txn.get("data", {}) for txn in pair_detailed["data"]["transactions"]),
                 "AXI include_data request_response_pair must include beat payload")
         pair_cache = r.query("axi.request_response_pair", args={"name": "axi0", "time_range": tr, "line_limit": 20})
-        require(pair_cache["summary"]["transaction_count"] > 0, "AXI cached request_response_pair empty")
+        require(pair_cache["summary"]["total_count"] > 0, "AXI cached request_response_pair empty")
         lat = r.query("axi.latency_outlier", args={"name": "axi0", "time_range": tr, "line_limit": 5})
-        require(lat["data"]["outlier_count"] > 0, "AXI latency_outlier empty")
+        require(lat["summary"]["returned_count"] ==
+                len(lat["data"]["outliers"]) > 0,
+                "AXI latency_outlier empty")
         require(all("beats" not in txn.get("data", {})
                     for txn in lat["data"]["outliers"]),
                 "AXI compact latency_outlier must omit beat payload")
@@ -1701,12 +1798,12 @@ def run_axi(xdebug, fsdb, sim_log=AXI_SIM_LOG, handshake_oracle_path=AXI_HANDSHA
                               prefix, sample_point="after")},
                 )
                 started = lru.query(
-                    "axi.cursor",
+                    "axi.transaction.cursor",
                     args={"name": "axi_before", "op": "begin",
                           "direction": "all"},
                 )
                 advanced = lru.query(
-                    "axi.cursor",
+                    "axi.transaction.cursor",
                     args={"name": "axi_before", "op": "next",
                           "direction": "all"},
                 )
@@ -1718,7 +1815,7 @@ def run_axi(xdebug, fsdb, sim_log=AXI_SIM_LOG, handshake_oracle_path=AXI_HANDSHA
                     args={"name": "axi_after", "direction": "write"},
                 )
                 resumed = lru.query(
-                    "axi.cursor",
+                    "axi.transaction.cursor",
                     args={"name": "axi_before", "op": "next",
                           "direction": "all"},
                 )
@@ -1757,7 +1854,7 @@ def run_axi(xdebug, fsdb, sim_log=AXI_SIM_LOG, handshake_oracle_path=AXI_HANDSHA
                     cache_error.get("recoverable") is True and
                     cache_error.get("hard_max_bytes") == 1 and
                     cache_error.get("protocol") == "axi" and
-                    len(cache_error.get("suggestions", [])) == 2,
+                    len(cache_error.get("next_actions", [])) == 2,
                     "AXI hard-limit error contract mismatch: {}".format(cache_error))
         finally:
             limited.cleanup()
