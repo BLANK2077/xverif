@@ -29,6 +29,7 @@
 #include <fstream>
 #include <memory>
 #include <algorithm>
+#include <cstdlib>
 #include <map>
 #include <set>
 #include <sstream>
@@ -37,9 +38,9 @@
 namespace xdebug_design {
 namespace {
 
-static Json value_object(const std::string& raw) {
+static Json value_object(const std::string& raw, int width) {
     return xdebug_core::logic_value_json(
-        xdebug_core::logic_value_from_fsdb_raw(raw, 'h'));
+        xdebug_core::logic_value_from_fsdb_raw(raw, 'h', width));
 }
 
 static Json expression_alias_error(const char* action, const std::string& message) {
@@ -321,6 +322,19 @@ public:
 
         const size_t matched_count = static_cast<size_t>(scan_stats.matched_count);
         const int response_limit = args.value("line_limit", 1000);
+        std::map<std::string, int> signal_widths;
+        for (const auto& signal : config.signals) {
+            const xdebug_waveform::FsdbSignalWidth width =
+                xdebug_waveform::fsdb_signal_width(
+                    g_fsdb_file, signal.second);
+            signal_widths[signal.first] =
+                width.reliable ? width.width : 0;
+        }
+        std::map<std::string, int> field_widths;
+        for (const auto& field : config.fields) {
+            field_widths[field.first] =
+                std::abs(field.second.left - field.second.right) + 1;
+        }
         Json arr = Json::array();
         size_t response_count = 0;
         for (auto& rec : records) {
@@ -330,10 +344,12 @@ public:
             je["time"] = xdebug_core::format_time(g_fsdb_file, rec.time);
             Json signal_values = Json::object();
             for (const auto& value : rec.signals)
-                signal_values[value.first] = value_object(value.second);
+                signal_values[value.first] = value_object(
+                    value.second, signal_widths[value.first]);
             Json field_values = Json::object();
             for (const auto& value : rec.fields)
-                field_values[value.first] = value_object(value.second);
+                field_values[value.first] = value_object(
+                    value.second, field_widths[value.first]);
             je["signals"] = signal_values;
             je["fields"] = field_values;
             arr.push_back(je);

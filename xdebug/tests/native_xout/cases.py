@@ -24,7 +24,9 @@ def case(action: str, resource: str | None = None, args: dict[str, Any] | None =
 
 
 CASES = (
-    case("actions", args={}),
+    case("actions", args={},
+         required_text=("builtin:", "session:", "design:", "waveform:", "combined:"),
+         forbidden_text=("\nactions:\n",)),
     case("apb.config.list", "P", {"name": "apb0"}, "apb", "config"),
     case("apb.config.load", "P", {"name": "apb_primary", "config": "$APB_CONFIG"}, error_family="signal/config"),
     case("apb.query", "P", {"name": "apb0", "query": {"line_limit": 2}}, "apb", "filter/config",
@@ -63,7 +65,10 @@ CASES = (
     case("list.validate", "W", {"name": "basic_validate"}, "list", "list/signal"),
     case("nwave.rc.generate", "W", {"config_path": "$RC_CONFIG", "output": {"path": "$TMP/signal.rc"}}, "rc", "file/output/signal"),
     case("protocol.handshake.inspect", "W", {"clock": "ai_complex_top.clk", "valid": "ai_complex_top.hs_valid", "ready": "ai_complex_top.hs_ready"}, error_family="signal/time"),
-    case("schema", args={"action": "value.at", "kind": "request"}, error_family="unknown action/kind"),
+    case("schema", args={"action": "value.at", "kind": "request"},
+         error_family="unknown action/kind",
+         required_text=("arguments:", "limits:", "constraints:", "examples:"),
+         forbidden_text=("additionalProperties", "\nschema:\n", "\nitems:\n")),
     case("scope.list", "W", {"path": "ai_complex_top", "level": 1, "kind": "all"}, error_family="scope/enum"),
     case("scope.roots", "C", {"source": "auto"}, error_family="resource/enum"),
     case("session.close", "W", {}, "disposable_session", "session"),
@@ -130,11 +135,15 @@ EXTERNAL_PROTECTION_CASES = {
     },
     "012": {
         "action": "trace.active_driver_chain",
+        "resource": "C",
+        "args": {"signal": "active_semantics_tb.u_dut.ambiguous_rhs_out", "time": "26ns"},
         "required_text": ("ambiguous_rhs_samples:", "signal", "time", "before", "after"),
-        "forbidden_text": ("ambiguity:", "source:", "XOUT_BEGIN", "XOUT_END"),
+        "forbidden_text": ("ambiguity:", "XOUT_BEGIN", "XOUT_END"),
     },
     "013": {
         "action": "trace.active_driver_chain",
+        "resource": "C",
+        "args": {"signal": "active_semantics_tb.u_dut.chain_out", "time": "26ns"},
         "required_text": ("source:", "active_signals:", "chain", "hop", "relation"),
         "forbidden_text": ("width_diagnostics", "active_time", "XOUT_BEGIN", "XOUT_END"),
     },

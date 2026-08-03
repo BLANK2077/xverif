@@ -10,7 +10,7 @@ import pytest
 
 from runner.raw_cli import RawCliResult, RawCliRunner
 
-from .cases import CASES, ERROR_CASES, NativeXoutCase
+from .cases import CASES, ERROR_CASES, EXTERNAL_PROTECTION_CASES, NativeXoutCase
 from .report import REPORT_PATH, verify_report, write_report
 
 
@@ -288,8 +288,17 @@ def test_all_runtime_actions_emit_native_xout(
                     semantic_failures.append(
                         f"{case.action}: retained forbidden text {forbidden!r}"
                     )
+            if case.action == "actions":
+                for catalog_action in {item.action for item in CASES}:
+                    if text.count("\n  " + catalog_action + "\n") != 1:
+                        semantic_failures.append(
+                            f"actions: catalog entry {catalog_action!r} is not unique"
+                        )
             if runner.phase == "final":
-                for redundant in (" known=", " has_x=", " has_z=", " width="):
+                for redundant in (
+                    " known=", " has_x=", " has_z=", " width=",
+                    " width_unknown",
+                ):
                     if redundant in text:
                         semantic_failures.append(
                             f"{case.action}: retained redundant value token "
@@ -298,6 +307,40 @@ def test_all_runtime_actions_emit_native_xout(
                 if re.search(r"\bbits=[01_]+\b", text):
                     semantic_failures.append(
                         f"{case.action}: retained redundant known-value bits"
+                    )
+
+        for protection_id in ("012", "013"):
+            protection = EXTERNAL_PROTECTION_CASES[protection_id]
+            request = {
+                "api_version": "xdebug.v1",
+                "action": protection["action"],
+                "target": {
+                    "session_id": runtime.session(protection["resource"])
+                },
+                "args": protection["args"],
+            }
+            result = runner.run(
+                request,
+                role="protection:" + protection_id,
+                timeout_sec=240,
+            )
+            if result.timed_out or result.returncode != 0:
+                semantic_failures.append(
+                    f"{protection['action']}: protection {protection_id} failed"
+                )
+                continue
+            text = result.stdout_text()
+            for required in protection["required_text"]:
+                if required not in text:
+                    semantic_failures.append(
+                        f"{protection['action']}: protection {protection_id} "
+                        f"missing required text {required!r}"
+                    )
+            for forbidden in protection["forbidden_text"]:
+                if forbidden in text:
+                    semantic_failures.append(
+                        f"{protection['action']}: protection {protection_id} "
+                        f"retained forbidden text {forbidden!r}"
                     )
 
         for name, resource, template in ERROR_CASES:
@@ -337,7 +380,7 @@ def test_all_runtime_actions_emit_native_xout(
                     text = result.stdout_text()
                     for redundant in (
                         " known=false", " known=true", " width=",
-                        " has_x=", " has_z=",
+                        " has_x=", " has_z=", " width_unknown",
                     ):
                         if redundant in text:
                             semantic_failures.append(

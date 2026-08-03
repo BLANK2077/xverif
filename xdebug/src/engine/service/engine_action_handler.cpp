@@ -180,9 +180,23 @@ static void render_data_value(xdebug::TextResponseBuilder& out,
         if (count > n)
             out.emit_kv("(+ " + std::to_string(count - n) + " more)", "");
     } else if (val.is_object()) {
-        out.emit_section(key);
-        for (auto it = val.begin(); it != val.end(); ++it)
-            render_data_value(out, it.key(), it.value());
+        bool has_direct_fields = false;
+        for (auto it = val.begin(); it != val.end(); ++it) {
+            if (should_emit_scalar_key(it.key(), it.value()) ||
+                (it.value().is_array() && it.value().empty())) {
+                if (!has_direct_fields) out.emit_section(key);
+                if (should_emit_scalar_key(it.key(), it.value()))
+                    out.emit_kv(it.key(), it.value());
+                else
+                    out.emit_kv(it.key(), "[empty]");
+                has_direct_fields = true;
+            }
+        }
+        for (auto it = val.begin(); it != val.end(); ++it) {
+            if (should_emit_scalar_key(it.key(), it.value()) ||
+                (it.value().is_array() && it.value().empty())) continue;
+            render_data_value(out, key + "." + it.key(), it.value());
+        }
     }
 }
 

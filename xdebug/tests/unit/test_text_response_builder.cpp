@@ -164,7 +164,28 @@ int main() {
     assert(text.find("schema_path: schemas/v1/actions/trace.driver.response.schema.json") != std::string::npos);
     assert(text.find("ai_hint") == std::string::npos);
     assert(text.find("\nschema:\n") != std::string::npos);
-    assert(text.find("\nrequired:\n") != std::string::npos);
+    assert(text.find("\nschema.required:\n") != std::string::npos);
+
+    Json nested_response = {
+        {"api_version", "xdebug.v1"},
+        {"ok", true},
+        {"action", "demo.nested"},
+        {"data", Json{{"validation", Json{
+            {"status", "ok"},
+            {"clock", Json{{"status", "ok"}, {"edge", "posedge"}}}
+        }}}}
+    };
+    text = render_xout_response(nested_response);
+    assert(text.find("\nvalidation:\n  status: ok") != std::string::npos);
+    const size_t clock_section = text.find("\nvalidation.clock:\n");
+    assert(clock_section != std::string::npos);
+    assert(text.find("edge  : posedge", clock_section) != std::string::npos);
+    assert(text.find("status: ok", clock_section) != std::string::npos);
+    const size_t first_status = text.find("status: ok");
+    assert(first_status != std::string::npos);
+    const size_t second_status = text.find("status: ok", first_status + 1);
+    assert(second_status != std::string::npos);
+    assert(text.find("status: ok", second_status + 1) == std::string::npos);
 
     Json axi_response = {
         {"api_version", "xdebug.v1"},

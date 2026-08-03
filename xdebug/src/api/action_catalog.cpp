@@ -1,5 +1,6 @@
 #include "api/action_catalog.h"
 #include "api/action_registry_init.h"
+#include "api/text_response_builder.h"
 #include "core/diagnostic_error.h"
 #include "api/response.h"
 #include "common/env_config.h"
@@ -103,6 +104,142 @@ std::string repo_root() {
     std::string home = xdebug_core::env_raw_string("XVERIF_HOME");
     if (!home.empty()) return home + "/xdebug/";
     return "xdebug/";
+}
+
+std::string schema_type_text(const Json& property) {
+    if (!property.is_object() || !property.contains("type")) return "any";
+    const Json& type = property["type"];
+    if (type.is_string()) return type.get<std::string>();
+    if (!type.is_array()) return "any";
+    std::string out;
+    for (const auto& item : type) {
+        if (!item.is_string()) continue;
+        if (!out.empty()) out += "|";
+        out += item.get<std::string>();
+    }
+    return out.empty() ? "any" : out;
+}
+
+std::string schema_property_notes(const Json& property) {
+    if (!property.is_object()) return std::string();
+    std::string notes = property.value("description", std::string());
+    if (property.contains("enum") && property["enum"].is_array()) {
+        std::string values;
+        for (const auto& item : property["enum"]) {
+            if (!item.is_string()) continue;
+            if (!values.empty()) values += "|";
+            values += item.get<std::string>();
+        }
+        if (!values.empty()) {
+            if (!notes.empty()) notes += " ";
+            notes += "values=" + values;
+        }
+    }
+    if (property.contains("default") && property["default"].is_primitive()) {
+        if (!notes.empty()) notes += " ";
+        notes += "default=" + xdebug::json_to_xout_value(property["default"]);
+    }
+    return notes;
+}
+
+void emit_schema_properties(xdebug::TextResponseBuilder& out,
+                            const std::string& section,
+                            const Json& object_schema) {
+    if (!object_schema.is_object()) return;
+    const Json properties = object_schema.value("properties", Json::object());
+    if (!properties.is_object() || properties.empty()) return;
+    std::set<std::string> required;
+    const Json required_json = object_schema.value("required", Json::array());
+    if (required_json.is_array()) {
+        for (const auto& item : required_json) {
+            if (item.is_string()) required.insert(item.get<std::string>());
+        }
+    }
+    std::vector<std::vector<std::string> > rows;
+    for (auto it = properties.begin(); it != properties.end(); ++it) {
+        rows.push_back({it.key(), schema_type_text(it.value()),
+                        required.count(it.key()) ? "yes" : "no",
+                        schema_property_notes(it.value())});
+    }
+    out.emit_section(section);
+    out.emit_table({"name", "type", "required", "description"}, rows);
+}
+
+std::string render_catalog_schema_xout(const Json& response) {
+    xdebug::TextResponseBuilder out("xdebug");
+    out.emit_header("schema");
+    const Json summary = response.value("summary", Json::object());
+    const Json data = response.value("data", Json::object());
+    const Json schema = data.value("schema", Json::object());
+    out.emit_section("summary");
+    if (summary.contains("action")) out.emit_kv("action", summary["action"]);
+    if (summary.contains("kind")) out.emit_kv("kind", summary["kind"]);
+    if (data.contains("schema_path")) out.emit_kv("schema_path", data["schema_path"]);
+    for (const char* key : {"x-purpose", "x-how_it_works", "x-when_to_use"}) {
+        if (schema.contains(key) && schema[key].is_string())
+            out.emit_kv(key, schema[key]);
+    }
+    const Json top_properties = schema.value("properties", Json::object());
+    if (top_properties.is_object() && top_properties.contains("args"))
+        emit_schema_properties(out, "arguments", top_properties["args"]);
+    else
+        emit_schema_properties(out, "fields", schema);
+    if (top_properties.is_object() && top_properties.contains("limits"))
+        emit_schema_properties(out, "limits", top_properties["limits"]);
+    const Json constraints = data.value("constraints", Json::array());
+    if (constraints.is_array() && !constraints.empty()) {
+        out.emit_section("constraints");
+        for (const auto& item : constraints) {
+            if (item.is_string()) out.emit_row({item.get<std::string>()});
+        }
+    }
+    const Json examples = data.value("examples", Json::array());
+    if (examples.is_array() && !examples.empty()) {
+        out.emit_section("examples");
+        for (const auto& example : examples) {
+            if (example.is_object() && example.contains("path") &&
+                example["path"].is_string()) {
+                out.emit_row({example["path"].get<std::string>()});
+            }
+        }
+    }
+    return out.str();
+}
+
+std::string render_catalog_actions_xout(const Json& response) {
+    xdebug::TextResponseBuilder out("xdebug");
+    out.emit_header("actions");
+    const Json summary = response.value("summary", Json::object());
+    const Json data = response.value("data", Json::object());
+    out.emit_section("summary");
+    for (const char* key : {"action_count", "total_action_count", "verbose", "filtered"}) {
+        if (summary.contains(key)) out.emit_kv(key, summary[key]);
+    }
+    const bool verbose = summary.value("verbose", false);
+    const Json actions = data.value("actions", Json::array());
+    if (verbose && actions.is_array()) {
+        std::vector<std::vector<std::string> > rows;
+        for (const auto& action : actions) {
+            if (!action.is_object()) continue;
+            rows.push_back({action.value("name", std::string()),
+                            action.value("category", std::string()),
+                            action.value("requires", std::string()),
+                            action.value("description_zh", std::string())});
+        }
+        out.emit_section("actions");
+        out.emit_table({"name", "category", "requires", "description"}, rows);
+    } else {
+        const Json modes = data.value("modes", Json::object());
+        for (const char* category : {"builtin", "session", "design", "waveform", "combined"}) {
+            if (!modes.contains(category) || !modes[category].is_array() ||
+                modes[category].empty()) continue;
+            out.emit_section(category);
+            for (const auto& action : modes[category]) {
+                if (action.is_string()) out.emit_row({action.get<std::string>()});
+            }
+        }
+    }
+    return out.str();
 }
 
 bool read_json_file(const std::string& path, Json& out) {
@@ -216,6 +353,7 @@ Json catalog_schema_response(const Json& request) {
     response["summary"] = {{"action", action}, {"kind", kind}};
     response["data"] = {{"schema", schema}, {"schema_path", rel},
                         {"examples", examples}, {"constraints", constraints}};
+    response["__xout"] = render_catalog_schema_xout(response);
     return response;
 }
 
@@ -238,6 +376,7 @@ Json catalog_actions_response(const Json& request) {
         {"modes", filtered_modes(specs)},
         {"filters", filter}
     };
+    response["__xout"] = render_catalog_actions_xout(response);
     return response;
 }
 

@@ -108,9 +108,22 @@ void render_data_value(TextResponseBuilder& out, const std::string& key,
         out.emit_json_table(value, n);
         if (count > n) out.emit_kv("(+ " + std::to_string(count - n) + " more)", "");
     } else if (value.is_object()) {
-        out.emit_section(key);
+        bool has_direct_fields = false;
         for (auto it = value.begin(); it != value.end(); ++it) {
-            render_data_value(out, it.key(), it.value());
+            if (should_emit_scalar_key(it.key(), it.value()) ||
+                (it.value().is_array() && it.value().empty())) {
+                if (!has_direct_fields) out.emit_section(key);
+                if (should_emit_scalar_key(it.key(), it.value()))
+                    out.emit_kv(it.key(), it.value());
+                else
+                    out.emit_kv(it.key(), "[empty]");
+                has_direct_fields = true;
+            }
+        }
+        for (auto it = value.begin(); it != value.end(); ++it) {
+            if (should_emit_scalar_key(it.key(), it.value()) ||
+                (it.value().is_array() && it.value().empty())) continue;
+            render_data_value(out, key + "." + it.key(), it.value());
         }
     }
 }

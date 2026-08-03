@@ -12,7 +12,7 @@ from runner.raw_cli import RawCliResult
 
 REPORT_PATH = Path("doc/XDEBUG_XOUT_REAL_OUTPUT_REVIEW_2026-08-03.md")
 SPECIAL_XOUT_ACTIONS = {
-    "apb.query", "apb.statistics", "axi.query", "axi.statistics",
+    "actions", "schema", "apb.query", "apb.statistics", "axi.query", "axi.statistics",
     "scope.list", "scope.roots", "stream.query", "trace.active_driver",
     "trace.active_driver_chain", "trace.driver", "trace.load",
     "trace.x_origin", "value.at",

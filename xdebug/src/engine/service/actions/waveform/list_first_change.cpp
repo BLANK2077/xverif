@@ -74,15 +74,19 @@ public:
             out["summary"] = {{"name", n}, {"diff_found", true}, {"diff_time", formatted}};
             Json changed = Json::array();
             for (const auto& change : first_changes) {
+                const xdebug_waveform::FsdbSignalWidth width =
+                    xdebug_waveform::fsdb_signal_width(
+                        xdebug_waveform::g_fsdb_file, change.signal);
+                const int width_hint = width.reliable ? width.width : 0;
                 changed.push_back({{"signal", change.signal},
                                    {"before_time", xdebug_core::format_time(xdebug_waveform::g_fsdb_file, bt)},
                                    {"change_time", formatted},
                                    {"before", xdebug_core::logic_value_json(
                                        xdebug_core::logic_value_from_fsdb_raw(
-                                           change.before, 'h'))},
+                                           change.before, 'h', width_hint))},
                                    {"after", xdebug_core::logic_value_json(
                                        xdebug_core::logic_value_from_fsdb_raw(
-                                           change.after, 'h'))}});
+                                           change.after, 'h', width_hint))}});
             }
             out["summary"]["changed_signal_count"] = changed.size();
             out["changed_signals"] = changed;
