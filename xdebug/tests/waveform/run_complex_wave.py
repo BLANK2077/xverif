@@ -183,6 +183,26 @@ def duration_fs(value):
     return float(match.group(1)) * scales[match.group(2)]
 
 
+def require_clock_summary(resp, edge, sample_point=None,
+                          expected_clock="ai_complex_top.clk"):
+    summary = resp["summary"]
+    require(summary["sampling_mode"] == "clock_edge", "missing clock_edge sampling mode")
+    require(summary["clock"] == expected_clock, "unexpected summary clock")
+    require(summary["edge"] == edge, "unexpected summary edge: {}".format(summary["edge"]))
+    effective_sample_point = sample_point
+    if effective_sample_point is None and edge in ("posedge", "dual"):
+        effective_sample_point = "before"
+    if effective_sample_point is None:
+        require("sample_point" not in summary,
+                "negedge summary should not expose sample_point")
+    else:
+        require(summary["sample_point"] == effective_sample_point,
+                "unexpected summary sample_point")
+    require(summary["sample_time_semantics"] == "time is sample_time",
+            "missing sample time semantics: {}".format(
+                json.dumps(summary, sort_keys=True)))
+
+
 def require_clock_sampling_contract(resp, edge, sample_point=None,
                                     expected_clock="ai_complex_top.clk"):
     summary = resp["summary"]
@@ -1131,8 +1151,8 @@ def run_nonaxi(xdebug, fsdb):
             "query": "summary",
             "time_range": {"begin": "100ns", "end": "110ns"},
         })
-        require_clock_sampling_contract(stream_before, "posedge", "before", expected_clock="clk")
-        require_clock_sampling_contract(stream_after, "posedge", "after", expected_clock="clk")
+        require_clock_summary(stream_before, "posedge", "before", expected_clock="clk")
+        require_clock_summary(stream_after, "posedge", "after", expected_clock="clk")
         require(stream_before["summary"]["transfer_count"] == 0,
                 "stream posedge before should not observe same-edge event_vld/event_race transfer")
         require(stream_after["summary"]["transfer_count"] == 1,
