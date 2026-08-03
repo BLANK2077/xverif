@@ -31,7 +31,7 @@ int main() {
         {"data", {
             {"signal", "top.clk"},
             {"time", "10ns"},
-            {"value", Json{{"value", "1"}, {"known", true}}},
+            {"value", Json{{"value", "'h1"}, {"known", true}}},
             {"known", true}
         }}
     };
@@ -41,7 +41,7 @@ int main() {
     assert(text.find("value : 'h1") != std::string::npos);
 
     Json sized_value = {
-        {"value", "0x4000000c"},
+        {"value", "32'h4000000c"},
         {"bits", "01000000000000000000000000001100"},
         {"known", true},
         {"width", 32}
@@ -49,18 +49,22 @@ int main() {
     assert(json_to_xout_value(sized_value) == "32'h4000000c");
 
     Json unsized_hex = {{"value", "'h22"}, {"known", true}};
-    assert(json_to_xout_value(unsized_hex) == "'h22");
+    assert(json_to_xout_value(unsized_hex) == "'h22 width_unknown");
 
     Json binary_value = {{"value", "'b1010"}, {"known", true}};
-    assert(json_to_xout_value(binary_value) == "'ha");
+    assert(json_to_xout_value(binary_value) == "'b1010 width_unknown");
+
+    Json decimal_value = {
+        {"value", "8'd143"}, {"known", true}, {"width", 8}};
+    assert(json_to_xout_value(decimal_value) == "8'd143");
 
     Json unknown_value = {
-        {"value", "0xx"},
+        {"value", "4'hx"},
         {"bits", "10xz"},
         {"known", false},
         {"width", 4}
     };
-    assert(json_to_xout_value(unknown_value) == "4'hx known=false bits=10xz width=4");
+    assert(json_to_xout_value(unknown_value) == "4'hx bits=10xz");
 
     Json z_value = {
         {"value", "8'hzz"},
@@ -68,13 +72,25 @@ int main() {
         {"known", false},
         {"width", 8}
     };
-    assert(json_to_xout_value(z_value) == "8'hzz known=false bits=zzzzzzzz width=8");
+    assert(json_to_xout_value(z_value) == "8'hz bits=zzzz_zzzz");
+
+    Json decimal_xz_value = {
+        {"value", "8'bx01xx10x"},
+        {"bits", "x01xx10x"},
+        {"known", false},
+        {"width", 8},
+        {"requested_value_format", "dec"},
+        {"effective_value_format", "bin"},
+        {"value_format_reason", "decimal cannot preserve per-bit X/Z"}
+    };
+    assert(json_to_xout_value(decimal_xz_value) ==
+           "8'bx01xx10x requested=dec reason=X/Z");
 
     Json field_map = {
         {"data", sized_value},
-        {"seq", Json{{"value", "0x000c"}, {"bits", "0000000000001100"}, {"known", true}, {"width", 16}}}
+        {"seq", Json{{"value", "16'h000c"}, {"bits", "0000000000001100"}, {"known", true}, {"width", 16}}}
     };
-    assert(json_to_xout_value(field_map) == "data=32'h4000000c seq=16'h000c");
+    assert(json_to_xout_value(field_map) == "data=32'h4000000c seq=16'hc");
 
     Json table_response = {
         {"api_version", "xdebug.v1"},
@@ -87,7 +103,7 @@ int main() {
         }}
     };
     text = render_xout_response(table_response);
-    assert(text.find("cycle  time   fields\n  18     185ns  data=32'h4000000c seq=16'h000c") != std::string::npos);
+    assert(text.find("cycle  time   fields\n  18     185ns  data=32'h4000000c seq=16'hc") != std::string::npos);
     assert(text.find("bits:") == std::string::npos);
     assert(text.find("known: true") == std::string::npos);
 
