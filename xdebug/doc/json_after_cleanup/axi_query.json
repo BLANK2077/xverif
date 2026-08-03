@@ -1,8 +1,31 @@
 {
-  "request_args": {
-    "name": "if0",
-    "direction": "wr",
-    "limit": 3
+  "request": {
+    "api_version": "xdebug.v1",
+    "action": "axi.query",
+    "target": {
+      "session_id": "case_a"
+    },
+    "args": {
+      "name": "if0",
+      "direction": "write",
+      "address": {
+        "mode": "range",
+        "begin": "32'h00001000",
+        "end": "32'h00001fff"
+      },
+      "id": {
+        "mode": "range",
+        "begin": "4'h1",
+        "end": "4'h7"
+      },
+      "time_range": {
+        "begin": "100ns",
+        "end": "200ns"
+      },
+      "query": {
+        "line_limit": 1
+      }
+    }
   },
   "response": {
     "api_version": "xdebug.v1",
@@ -12,13 +35,86 @@
       "name": "xdebug",
       "version": "0.1.0"
     },
-    "session": null,
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
     "summary": {
       "name": "if0",
-      "direction": "wr",
-      "count": 3160
+      "direction": "write",
+      "query_mode": "list",
+      "data_scope": "first_beat_each_with_first_transaction_full",
+      "data_hint": "Each transaction includes its first beat and the first transaction includes all beats. To inspect complete data for another transaction, narrow it with query.index, last, address, id, or time_range, then set output.include_data=true.",
+      "scan_complete": true,
+      "analysis_complete": true,
+      "response_truncated": false,
+      "total_count": 1,
+      "returned_count": 1,
+      "truncation_scopes": []
     },
-    "data": {},
+    "data": {
+      "filter": {
+        "direction": "write",
+        "address": {
+          "mode": "range",
+          "begin": "32'h00001000",
+          "end": "32'h00001fff"
+        },
+        "id": {
+          "mode": "range",
+          "begin": "4'h1",
+          "end": "4'h7"
+        },
+        "time_range": {
+          "begin": "100ns",
+          "end": "200ns"
+        }
+      },
+      "transactions": [
+        {
+          "direction": "write",
+          "latency": "40ns",
+          "phase_order": "aw_before_w",
+          "response_dependency_violation": false,
+          "address": {
+            "channel": "aw",
+            "valid_begin_time": "90ns",
+            "handshake_time": "100ns",
+            "addr": "32'h00001040",
+            "id": "4'h1",
+            "len": "8'h00",
+            "size": "3'h2",
+            "burst": "2'h1"
+          },
+          "data": {
+            "channel": "w",
+            "valid_begin_time": "105ns",
+            "first_handshake_time": "110ns",
+            "last_handshake_time": "110ns",
+            "beat_count": 1,
+            "expected_beat_count": 1,
+            "beats": [
+              {
+                "index": 1,
+                "handshake_time": "110ns",
+                "data": "32'h12345678",
+                "wstrb": "4'hf",
+                "last": true
+              }
+            ]
+          },
+          "response": {
+            "channel": "b",
+            "handshake_time": "140ns",
+            "resp": "2'h0"
+          }
+        }
+      ]
+    },
     "error": null
   },
   "stderr": ""

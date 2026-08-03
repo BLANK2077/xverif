@@ -15,7 +15,8 @@ std::string rendered(const std::string& raw, int width) {
 
 AxiJson axi_transaction_to_json(npiFsdbFileHandle file,
                                 const AxiTransaction& txn,
-                                bool include_data) {
+                                bool include_data,
+                                bool include_first_beat) {
     AxiJson out;
     out["direction"] = txn.is_write ? "write" : "read";
     if (txn.is_write) out["phase_order"] = txn.phase_order;
@@ -45,25 +46,34 @@ AxiJson axi_transaction_to_json(npiFsdbFileHandle file,
         data["last_handshake_time"] = xdebug_core::format_time(file, txn.last_data_time);
         data["beat_count"] = txn.data.size();
         data["expected_beat_count"] = txn.expected_beat_count;
+        const auto beat_json = [&](size_t i) {
+            AxiJson beat = {
+                {"index", i + 1},
+                {"handshake_time", xdebug_core::format_time(
+                    file, i < txn.data_handshake_times.size()
+                        ? txn.data_handshake_times[i]
+                        : txn.first_data_time)},
+                {"data", rendered(txn.data[i], txn.data_width)},
+            };
+            if (txn.is_write && i < txn.wstrb.size())
+                beat["wstrb"] = rendered(
+                    txn.wstrb[i], txn.wstrb_width);
+            if (!txn.is_write && i < txn.data_resp.size())
+                beat["resp"] = rendered(
+                    txn.data_resp[i], txn.resp_width);
+            beat["last"] = i < txn.data_last.size()
+                ? txn.data_last[i]
+                : i + 1 == txn.data.size();
+            return beat;
+        };
         if (include_data) {
             AxiJson beats = AxiJson::array();
             for (size_t i = 0; i < txn.data.size(); ++i) {
-                AxiJson beat = {
-                    {"index", i + 1},
-                    {"handshake_time", xdebug_core::format_time(
-                        file, i < txn.data_handshake_times.size()
-                            ? txn.data_handshake_times[i] : txn.first_data_time)},
-                    {"data", rendered(txn.data[i], txn.data_width)},
-                };
-                if (txn.is_write && i < txn.wstrb.size())
-                    beat["wstrb"] = rendered(txn.wstrb[i], txn.wstrb_width);
-                if (!txn.is_write && i < txn.data_resp.size())
-                    beat["resp"] = rendered(txn.data_resp[i], txn.resp_width);
-                beat["last"] = i < txn.data_last.size()
-                    ? txn.data_last[i] : i + 1 == txn.data.size();
-                beats.push_back(std::move(beat));
+                beats.push_back(beat_json(i));
             }
             data["beats"] = std::move(beats);
+        } else if (include_first_beat && !txn.data.empty()) {
+            data["first_beat"] = beat_json(0);
         }
         out["data"] = std::move(data);
     }

@@ -2,17 +2,54 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "stream.query",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "wave0",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/wave0.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
   "summary": {
     "stream": "req_stream",
+    "query": "summary",
+    "sampling_mode": "clock_edge",
+    "clock": "clk",
+    "edge": "posedge",
+    "sample_point": "before",
+    "sample_time_semantics": "time is sample_time",
+    "handshake": "vld/rdy",
+    "packet_enabled": true,
+    "clock_edges": 200,
+    "vld_cycles": 132,
     "transfer_count": 128,
     "stall_cycles": 4,
+    "stall_windows": 1,
     "complete_packet_count": 16,
     "partial_packet_count": 0,
     "packet_count_status": "exact",
+    "control_xz_count": 0,
+    "data_xz_count": 0,
+    "ready_bp_conflict_count": 0,
+    "packet_stable_mismatch_count": 0,
+    "requested_range": {"begin": "0ns", "end": "1us"},
+    "scanned_range": {"begin": "5ns", "end": "995ns"},
+    "first_transfer_time": "20ns",
+    "last_transfer_time": "980ns",
+    "first_stall_time": "200ns",
+    "last_stall_time": "200ns",
     "filter_applied": false,
-    "truncated": false
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 16,
+    "returned_count": 0,
+    "truncation_scopes": []
   },
-  "data": {
-    "query": "summary"
-  }
+  "data": {},
+  "error": null
 }

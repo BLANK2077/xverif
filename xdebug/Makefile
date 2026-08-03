@@ -97,6 +97,7 @@ ENGINE_SRCS = src/engine/main.cpp \
               src/engine/service/actions/protocol/axi_export.cpp \
               src/engine/service/actions/protocol/axi_query.cpp \
               src/engine/service/actions/protocol/axi_statistics.cpp \
+              src/engine/service/actions/protocol/protocol_query_filter.cpp \
               src/engine/service/actions/protocol/protocol_statistics_filter.cpp \
               src/engine/service/actions/protocol/register_protocol_handlers.cpp \
               src/engine/service/actions/stream/register_stream_handlers.cpp \
@@ -255,7 +256,7 @@ $(BUILD)/%.o: %.cpp $(BUILD_INFO)
 	mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(DEPFLAGS) -DXDEBUG_INTERNAL_ENGINE -c -o $@ $<
 
-cpp-unit-binaries: $(CORE_OBJS) $(API_SUPPORT_OBJS) $(BUILD)/src/api/response.o $(BUILD)/src/api/text_response_builder.o $(BUILD)/src/api/xout_renderer.o $(BUILD)/src/waveform/service/rc_generator.o $(BUILD)/src/waveform/filter/value_filter.o $(BUILD)/src/waveform/event/event_expr.o $(BUILD)/src/waveform/common/expression.o $(BUILD)/src/waveform/common/reset_config.o $(BUILD)/src/waveform/common/clock_sampling.o $(BUILD)/src/waveform/common/xdebug_waveform_paths.o $(BUILD)/src/waveform/value/value_collection.o $(BUILD)/src/waveform/server/fsdb_value_reader.o $(BUILD)/src/waveform/server/fsdb_scan_utils.o $(BUILD)/src/waveform/cache/analysis_probe.o $(BUILD)/src/waveform/cache/analysis_repository.o $(BUILD)/src/waveform/cache/analysis_size_estimator.o $(BUILD)/src/waveform/stream/stream_config.o $(BUILD)/src/waveform/stream/stream_manager.o $(BUILD)/src/waveform/stream/stream_expr.o $(BUILD)/src/waveform/axi/axi_transaction_tracker.o $(BUILD)/src/engine/service/actions/protocol/protocol_statistics_filter.o $(BUILD)/src/session/session_catalog.o
+cpp-unit-binaries: $(CORE_OBJS) $(API_SUPPORT_OBJS) $(BUILD)/src/api/response.o $(BUILD)/src/api/text_response_builder.o $(BUILD)/src/api/xout_renderer.o $(BUILD)/src/waveform/service/rc_generator.o $(BUILD)/src/waveform/filter/value_filter.o $(BUILD)/src/waveform/event/event_expr.o $(BUILD)/src/waveform/common/expression.o $(BUILD)/src/waveform/common/reset_config.o $(BUILD)/src/waveform/common/clock_sampling.o $(BUILD)/src/waveform/common/xdebug_waveform_paths.o $(BUILD)/src/waveform/value/value_collection.o $(BUILD)/src/waveform/server/fsdb_value_reader.o $(BUILD)/src/waveform/server/fsdb_scan_utils.o $(BUILD)/src/waveform/cache/analysis_probe.o $(BUILD)/src/waveform/cache/analysis_repository.o $(BUILD)/src/waveform/cache/analysis_size_estimator.o $(BUILD)/src/waveform/stream/stream_config.o $(BUILD)/src/waveform/stream/stream_manager.o $(BUILD)/src/waveform/stream/stream_expr.o $(BUILD)/src/waveform/axi/axi_transaction_tracker.o $(BUILD)/src/engine/service/actions/protocol/protocol_query_filter.o $(BUILD)/src/engine/service/actions/protocol/protocol_statistics_filter.o $(BUILD)/src/session/session_catalog.o
 	mkdir -p $(BUILD)/tests
 	$(CXX) $(CXXFLAGS) -o $(BUILD)/tests/test_core_types tests/unit/test_core_types.cpp $(CORE_OBJS) $(LDFLAGS)
 	$(CXX) $(CXXFLAGS) -o $(BUILD)/tests/test_env_config tests/unit/test_env_config.cpp $(CORE_OBJS) $(LDFLAGS)
@@ -268,6 +269,7 @@ cpp-unit-binaries: $(CORE_OBJS) $(API_SUPPORT_OBJS) $(BUILD)/src/api/response.o 
 	$(CXX) $(CXXFLAGS) -o $(BUILD)/tests/test_request_contract tests/unit/test_request_contract.cpp $(CORE_OBJS) $(API_SUPPORT_OBJS) $(BUILD)/src/api/response.o $(LDFLAGS)
 	$(CXX) $(CXXFLAGS) -o $(BUILD)/tests/test_text_response_builder tests/unit/test_text_response_builder.cpp $(BUILD)/src/api/text_response_builder.o $(BUILD)/src/api/xout_renderer.o $(BUILD)/src/core/value/logic_value.o
 	$(CXX) $(CXXFLAGS) -o $(BUILD)/tests/test_value_collection tests/unit/test_value_collection.cpp $(BUILD)/src/waveform/value/value_collection.o $(BUILD)/src/waveform/stream/stream_expr.o $(BUILD)/src/core/value/logic_value.o
+	$(CXX) $(CXXFLAGS) -o $(BUILD)/tests/test_protocol_query_filter tests/unit/test_protocol_query_filter.cpp $(BUILD)/src/engine/service/actions/protocol/protocol_query_filter.o $(BUILD)/src/waveform/filter/value_filter.o $(BUILD)/src/core/value/logic_value.o
 	$(CXX) $(CXXFLAGS) -o $(BUILD)/tests/test_protocol_statistics_filter tests/unit/test_protocol_statistics_filter.cpp $(BUILD)/src/engine/service/actions/protocol/protocol_statistics_filter.o $(BUILD)/src/waveform/filter/value_filter.o $(BUILD)/src/core/value/logic_value.o $(BUILD)/src/api/text_response_builder.o
 	$(CXX) $(CXXFLAGS) -o $(BUILD)/tests/test_trace_source_path_formatter tests/unit/test_trace_source_path_formatter.cpp $(BUILD)/src/engine/service/trace_source_path_formatter.o $(BUILD)/src/api/text_response_builder.o $(CORE_OBJS) $(LDFLAGS)
 	$(CXX) $(CXXFLAGS) -o $(BUILD)/tests/test_trace_x_chain_identity tests/unit/test_trace_x_chain_identity.cpp

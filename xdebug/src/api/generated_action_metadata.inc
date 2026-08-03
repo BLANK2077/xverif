@@ -71,7 +71,7 @@
     {
         ActionRecommendation recommendation;
         recommendation.action = "apb.query";
-        recommendation.purpose = "查询 APB transfer。";
+        recommendation.purpose = "按方向以及 exact、range 或 mask 地址条件查询已完成 APB transfer。";
         spec.recommended_actions.push_back(recommendation);
     }
     {
@@ -128,8 +128,8 @@
     spec.request_examples = {"examples/requests/apb.query.basic.json"};
     spec.response_examples = {"examples/responses/apb.query.basic.json"};
     spec.args.required = {"name"};
-    spec.description_en = "Query APB read and write transfers.";
-    spec.description_zh = "查询 APB transfer。";
+    spec.description_en = "Query completed APB transfers with direction and exact, range, or mask address filters.";
+    spec.description_zh = "按方向以及 exact、range 或 mask 地址条件查询已完成 APB transfer。";
     spec.purposes = {"query"};
     spec.use_when = {"Need completed APB transfer counts or rows filtered by direction and a canonical exact/range/mask address object."};
     spec.do_not_use_when = {"Do not use it for AXI channel semantics, custom valid-ready fields, or a focused signal window around one APB transfer."};
@@ -297,7 +297,7 @@
     {
         ActionRecommendation recommendation;
         recommendation.action = "axi.query";
-        recommendation.purpose = "查询 AXI channel/transaction。";
+        recommendation.purpose = "按通道握手，或按方向、地址、ID 与地址握手时间查询重建后的 AXI transaction。";
         spec.recommended_actions.push_back(recommendation);
     }
     {
@@ -428,8 +428,8 @@
     spec.request_examples = {"examples/requests/axi.query.basic.json"};
     spec.response_examples = {"examples/responses/axi.query.basic.json"};
     spec.args.required = {"name"};
-    spec.description_en = "Query AXI channels and reconstructed transactions.";
-    spec.description_zh = "查询 AXI channel/transaction。";
+    spec.description_en = "Query reconstructed AXI transactions by channel handshake or direction, address, ID, and address-handshake time filters.";
+    spec.description_zh = "按通道握手，或按方向、地址、ID 与地址握手时间查询重建后的 AXI transaction。";
     spec.purposes = {"query"};
     spec.use_when = {"Need reconstructed AXI transaction evidence, first-beat data, per-channel handshake times, or a precise channel-handshake lookup."};
     spec.do_not_use_when = {"Do not use it for custom valid-ready fields, artifact generation, or latency/outstanding aggregation."};
@@ -1618,7 +1618,7 @@
     {
         ActionRecommendation recommendation;
         recommendation.action = "stream.query";
-        recommendation.purpose = "以显式 full 或 range 基础分析缓存范围查询并按多个字段过滤 stream transfer 或 packet。";
+        recommendation.purpose = "查询通用 valid-ready transfer、stall 或 packet，并对多个自定义字段执行 exact、range 或 mask 过滤。";
         spec.recommended_actions.push_back(recommendation);
     }
     {
@@ -1728,8 +1728,8 @@
     spec.request_examples = {"examples/requests/stream.query.basic.json"};
     spec.response_examples = {"examples/responses/stream.query.basic.json"};
     spec.args.required = {"stream", "query"};
-    spec.description_en = "Query and filter stream transfers, stalls, and packets with explicit full or range base-cache scope.";
-    spec.description_zh = "以显式 full 或 range 基础分析缓存范围查询并按多个字段过滤 stream transfer 或 packet。";
+    spec.description_en = "Query generic valid-ready transfers, stalls, and packets with multi-field exact, range, or mask filters.";
+    spec.description_zh = "查询通用 valid-ready transfer、stall 或 packet，并对多个自定义字段执行 exact、range 或 mask 过滤。";
     spec.purposes = {"query"};
     spec.use_when = {"接口不是标准 APB/AXI 专用事务，且已加载通用 stream 配置，需要查询 transfer、stall、packet 或任意命名字段。"};
     spec.do_not_use_when = {"接口是标准 AXI/APB，且需要地址、ID、通道握手或协议 transaction 专用语义。"};

@@ -45,7 +45,6 @@ ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
     "analysis": {"type": "string", "enum": ["latency", "osd", "pending"]},
     "apb": {"type": "string", "minLength": 1},
     "address": {"type": "string"},
-    "addr": {"type": "string"},
     "aggregate": {"type": "object"},
     "aggregate_only": {"type": "boolean"},
     "auth_token": {"type": "string"},
@@ -169,7 +168,7 @@ EXTRA_ARGS_BY_ACTION: dict[str, set[str]] = {
     "apb.transaction.cursor": {"direction"},
     "apb.config.list": {"name"},
     "apb.config.load": {"config", "config_path"},
-    "apb.query": {"direction", "address", "addr", "query", "last"},
+    "apb.query": {"direction", "address", "query", "last"},
     "apb.statistics": {"filter"},
     "apb.transfer_window": {"line_limit", "time_range"},
     "axi.analysis": {"analysis", "direction", "line_limit"},
@@ -180,7 +179,10 @@ EXTRA_ARGS_BY_ACTION: dict[str, set[str]] = {
     "axi.export": {"output", "time_range"},
     "axi.latency_outlier": {"direction", "line_limit", "method", "output", "threshold", "time_range", "top_n"},
     "axi.outstanding_timeline": {"direction", "line_limit", "time_range"},
-    "axi.query": {"direction", "address", "addr", "id", "query", "last", "output"},
+    "axi.query": {
+        "direction", "address", "id", "query", "last", "output",
+        "time_range",
+    },
     "axi.request_response_pair": {"direction", "line_limit", "time_range", "output"},
     "axi.statistics": {"filter"},
     "batch": {"mode"},
@@ -746,6 +748,24 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
             ],
             "description": "Select transactions by 1-based index/line_limit, or exactly match an AXI channel handshake time.",
         }
+    if action in {"apb.query", "axi.query"}:
+        protocol_filter = protocol_statistics_filter_schema(allow_ids=True)
+        address_filter = copy.deepcopy(
+            protocol_filter["properties"]["address"]
+        )
+        if "address" in selected_props:
+            selected_props["address"] = address_filter
+        if action == "axi.query" and "id" in selected_props:
+            selected_props["id"] = {
+                "oneOf": copy.deepcopy(address_filter["oneOf"][:2]),
+                "description": (
+                    "Exactly one AXI ID filtering mode: exact queue or "
+                    "inclusive range."
+                ),
+                "x-description-zh": (
+                    "AXI ID 只能选择精确值队列或闭区间两种模式之一。"
+                ),
+            }
     if action in {"axi.query", "axi.request_response_pair", "axi.latency_outlier"} and "output" in selected_props:
         selected_props["output"] = {
             "type": "object",
@@ -972,9 +992,26 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
                 }
             },
         })
-    if action == "axi.query":
-        query_constraints = [
-            {
+    if action in {"apb.query", "axi.query"}:
+        query_constraints: list[dict[str, Any]] = [
+            {"not": {"required": ["last", "query"]}},
+        ]
+        if action == "axi.query":
+            query_constraints.append({
+                "if": {
+                    "required": ["output"],
+                    "properties": {
+                        "output": {"required": ["include_data"]},
+                    },
+                },
+                "then": {
+                    "anyOf": [
+                        {"required": ["last"]},
+                        {"required": ["query"]},
+                    ]
+                },
+            })
+            query_constraints.append({
                 "if": {
                     "required": ["query"],
                     "properties": {"query": {"required": ["channel"]}},
@@ -983,13 +1020,14 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
                     "not": {
                         "anyOf": [
                             {"required": [key]}
-                            for key in ("direction", "address", "addr", "id", "last")
+                            for key in (
+                                "direction", "address", "id", "time_range",
+                                "last",
+                            )
                         ]
                     }
                 },
-            },
-            {"not": {"required": ["address", "addr"]}},
-        ]
+            })
         args["allOf"] = list(args.get("allOf", [])) + query_constraints
     if action == "event.find":
         args["allOf"] = list(args.get("allOf", [])) + [
@@ -1099,6 +1137,33 @@ def scope_roots_schema_has_source_selection(schema: dict[str, Any]) -> bool:
             source.get("default") == "auto")
 
 
+def protocol_query_schema_is_current(
+    action: str,
+    schema: dict[str, Any],
+) -> bool:
+    properties = schema.get("properties", {}).get(
+        "args", {}).get("properties", {})
+    if action == "apb.query":
+        address = properties.get("address", {})
+        return ("addr" not in properties and
+                len(address.get("oneOf", [])) == 3)
+    if action == "axi.query":
+        address = properties.get("address", {})
+        identifier = properties.get("id", {})
+        output = properties.get("output", {}).get("properties", {})
+        return ("addr" not in properties and
+                len(address.get("oneOf", [])) == 3 and
+                len(identifier.get("oneOf", [])) == 2 and
+                "time_range" in properties and
+                "include_data" in output)
+    if action == "stream.query":
+        fields = properties.get("filter", {}).get(
+            "properties", {}).get("fields", {})
+        return ("cache_scope" in properties and
+                fields.get("type") == "object")
+    return False
+
+
 def sync(check: bool, selected_actions: set[str] | None = None) -> list[str]:
     specs = [spec for spec in action_specs() if spec.get("status") != "removed"]
     arg_schemas = collect_arg_schemas(specs)
@@ -1123,6 +1188,8 @@ def sync(check: bool, selected_actions: set[str] | None = None) -> list[str]:
             continue
         if (spec["name"] == "scope.roots" and
                 scope_roots_schema_has_source_selection(schema)):
+            continue
+        if protocol_query_schema_is_current(spec["name"], schema):
             continue
         try:
             updated = sync_schema(schema, spec, arg_schemas)

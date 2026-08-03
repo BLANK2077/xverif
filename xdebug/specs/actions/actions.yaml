@@ -200,8 +200,8 @@
       "required_args": [
         "name"
       ],
-      "description_en": "Query APB read and write transfers.",
-      "description_zh": "查询 APB transfer。",
+      "description_en": "Query completed APB transfers with direction and exact, range, or mask address filters.",
+      "description_zh": "按方向以及 exact、range 或 mask 地址条件查询已完成 APB transfer。",
       "purposes": [
         "query"
       ],
@@ -690,8 +690,8 @@
       "required_args": [
         "name"
       ],
-      "description_en": "Query AXI channels and reconstructed transactions.",
-      "description_zh": "查询 AXI channel/transaction。",
+      "description_en": "Query reconstructed AXI transactions by channel handshake or direction, address, ID, and address-handshake time filters.",
+      "description_zh": "按通道握手，或按方向、地址、ID 与地址握手时间查询重建后的 AXI transaction。",
       "purposes": [
         "query"
       ],
@@ -3178,8 +3178,8 @@
         "stream",
         "query"
       ],
-      "description_en": "Query and filter stream transfers, stalls, and packets with explicit full or range base-cache scope.",
-      "description_zh": "以显式 full 或 range 基础分析缓存范围查询并按多个字段过滤 stream transfer 或 packet。",
+      "description_en": "Query generic valid-ready transfers, stalls, and packets with multi-field exact, range, or mask filters.",
+      "description_zh": "查询通用 valid-ready transfer、stall 或 packet，并对多个自定义字段执行 exact、range 或 mask 过滤。",
       "purposes": [
         "query"
       ],

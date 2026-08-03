@@ -6,7 +6,8 @@
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -22,7 +23,44 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
@@ -38,11 +76,11 @@
             "range"
           ],
           "default": "full",
-          "description": "Base-analysis cache scope. full (default) caches the complete FSDB while the response still honors time_range; range caches only that normalized closed interval. range without time_range reuses full. The engine never falls back automatically."
+          "description": "Base-analysis cache scope. full (default) caches the complete FSDB while the response still honors time_range; range requires a non-empty time_range and caches only that normalized closed interval."
         },
         "channel": {
           "type": "string",
-          "description": "Action-specific channel input. Its type and accepted values are defined by this schema."
+          "description": "协议或 stream 的逻辑 channel 选择；可用值由本 action 的 enum 决定。"
         },
         "filter": {
           "type": "object",
@@ -56,7 +94,7 @@
                 "sop",
                 "eop"
               ],
-              "description": "Action-specific position input. Its type and accepted values are defined by this schema."
+              "description": "packet filter 的边界位置；sop/eop 决定字段在哪个 packet beat 取值。"
             },
             "fields": {
               "type": "object",
@@ -65,6 +103,7 @@
                 "oneOf": [
                   {
                     "type": "object",
+                    "description": "Exact-match branch: at least one listed value must equal the sampled stream field.",
                     "required": [
                       "mode",
                       "values"
@@ -81,16 +120,34 @@
                         "items": {
                           "type": "string",
                           "minLength": 1,
-                          "description": "Known unsigned integer or SystemVerilog literal of arbitrary width; X/Z and 0x are rejected."
+                          "oneOf": [
+                            {
+                              "pattern": "^[0-9]+$",
+                              "description": "地址或字段过滤的候选值列表；候选之间按 OR 匹配，空列表不合法。"
+                            },
+                            {
+                              "pattern": "^(?:[1-9][0-9]*)?'[bB][01](?:_?[01])*$",
+                              "description": "地址或字段过滤的候选值列表；候选之间按 OR 匹配，空列表不合法。"
+                            },
+                            {
+                              "pattern": "^(?:[1-9][0-9]*)?'[dD][0-9](?:_?[0-9])*$",
+                              "description": "地址或字段过滤的候选值列表；候选之间按 OR 匹配，空列表不合法。"
+                            },
+                            {
+                              "pattern": "^(?:[1-9][0-9]*)?'[hH][0-9a-fA-F](?:_?[0-9a-fA-F])*$",
+                              "description": "地址或字段过滤的候选值列表；候选之间按 OR 匹配，空列表不合法。"
+                            }
+                          ],
+                          "description": "Known unsigned decimal or b/d/h SystemVerilog literal; X/Z and C-style 0x are rejected."
                         },
-                        "description": "Ordered values entries. Each item must satisfy the declared item contract."
+                        "description": "地址或字段过滤的候选值列表；候选之间按 OR 匹配，空列表不合法。"
                       }
                     },
-                    "additionalProperties": false,
-                    "description": "Structured * configuration. Only the declared properties are accepted."
+                    "additionalProperties": false
                   },
                   {
                     "type": "object",
+                    "description": "Inclusive-range branch: the sampled stream field must lie between begin and end.",
                     "required": [
                       "mode",
                       "begin",
@@ -104,19 +161,55 @@
                       "begin": {
                         "type": "string",
                         "minLength": 1,
-                        "description": "Known unsigned integer or SystemVerilog literal of arbitrary width; X/Z and 0x are rejected."
+                        "oneOf": [
+                          {
+                            "pattern": "^[0-9]+$",
+                            "description": "闭区间起点；省略时使用可用波形窗口起点。"
+                          },
+                          {
+                            "pattern": "^(?:[1-9][0-9]*)?'[bB][01](?:_?[01])*$",
+                            "description": "闭区间起点；省略时使用可用波形窗口起点。"
+                          },
+                          {
+                            "pattern": "^(?:[1-9][0-9]*)?'[dD][0-9](?:_?[0-9])*$",
+                            "description": "闭区间起点；省略时使用可用波形窗口起点。"
+                          },
+                          {
+                            "pattern": "^(?:[1-9][0-9]*)?'[hH][0-9a-fA-F](?:_?[0-9a-fA-F])*$",
+                            "description": "闭区间起点；省略时使用可用波形窗口起点。"
+                          }
+                        ],
+                        "description": "Known unsigned decimal or b/d/h SystemVerilog literal; X/Z and C-style 0x are rejected."
                       },
                       "end": {
                         "type": "string",
                         "minLength": 1,
-                        "description": "Known unsigned integer or SystemVerilog literal of arbitrary width; X/Z and 0x are rejected."
+                        "oneOf": [
+                          {
+                            "pattern": "^[0-9]+$",
+                            "description": "闭区间终点；省略时使用可用波形窗口终点。"
+                          },
+                          {
+                            "pattern": "^(?:[1-9][0-9]*)?'[bB][01](?:_?[01])*$",
+                            "description": "闭区间终点；省略时使用可用波形窗口终点。"
+                          },
+                          {
+                            "pattern": "^(?:[1-9][0-9]*)?'[dD][0-9](?:_?[0-9])*$",
+                            "description": "闭区间终点；省略时使用可用波形窗口终点。"
+                          },
+                          {
+                            "pattern": "^(?:[1-9][0-9]*)?'[hH][0-9a-fA-F](?:_?[0-9a-fA-F])*$",
+                            "description": "闭区间终点；省略时使用可用波形窗口终点。"
+                          }
+                        ],
+                        "description": "Known unsigned decimal or b/d/h SystemVerilog literal; X/Z and C-style 0x are rejected."
                       }
                     },
-                    "additionalProperties": false,
-                    "description": "Structured * configuration. Only the declared properties are accepted."
+                    "additionalProperties": false
                   },
                   {
                     "type": "object",
+                    "description": "Masked-match branch: compare only stream-field bits selected by mask against value.",
                     "required": [
                       "mode",
                       "value",
@@ -130,22 +223,50 @@
                       "value": {
                         "type": "string",
                         "minLength": 1,
-                        "description": "Known unsigned integer or SystemVerilog literal of arbitrary width; X/Z and 0x are rejected."
+                        "oneOf": [
+                          {
+                            "pattern": "^[0-9]+$"
+                          },
+                          {
+                            "pattern": "^(?:[1-9][0-9]*)?'[bB][01](?:_?[01])*$"
+                          },
+                          {
+                            "pattern": "^(?:[1-9][0-9]*)?'[dD][0-9](?:_?[0-9])*$"
+                          },
+                          {
+                            "pattern": "^(?:[1-9][0-9]*)?'[hH][0-9a-fA-F](?:_?[0-9a-fA-F])*$"
+                          }
+                        ],
+                        "description": "Known unsigned decimal or b/d/h SystemVerilog literal; X/Z and C-style 0x are rejected."
                       },
                       "mask": {
                         "type": "string",
                         "minLength": 1,
-                        "description": "Known unsigned integer or SystemVerilog literal of arbitrary width; X/Z and 0x are rejected."
+                        "oneOf": [
+                          {
+                            "pattern": "^[0-9]+$"
+                          },
+                          {
+                            "pattern": "^(?:[1-9][0-9]*)?'[bB][01](?:_?[01])*$"
+                          },
+                          {
+                            "pattern": "^(?:[1-9][0-9]*)?'[dD][0-9](?:_?[0-9])*$"
+                          },
+                          {
+                            "pattern": "^(?:[1-9][0-9]*)?'[hH][0-9a-fA-F](?:_?[0-9a-fA-F])*$"
+                          }
+                        ],
+                        "description": "Known unsigned decimal or b/d/h SystemVerilog literal; X/Z and C-style 0x are rejected."
                       }
                     },
-                    "additionalProperties": false,
-                    "description": "Structured * configuration. Only the declared properties are accepted."
+                    "additionalProperties": false
                   }
                 ],
-                "description": "Value for a caller-defined fields key.",
-                "x-dynamic-contract": "The property name is caller-defined; the value must follow this declared schema."
+                "description": "Value for a caller-defined fields key."
               },
-              "description": "Structured fields configuration. Only the declared properties are accepted."
+              "description": "按 stream field 名组织的过滤条件；每个 key 必须是配置中声明的 beat 或 packet field。",
+              "x-dynamic-map": true,
+              "x-dynamic-contract": "The property name is caller-defined; the value must follow this declared schema."
             }
           },
           "additionalProperties": false,
@@ -159,10 +280,10 @@
         "packet_index": {
           "type": "integer",
           "minimum": 0,
-          "description": "Action-specific packet_index input. Its type and accepted values are defined by this schema."
+          "description": "当前请求窗口内从 0 开始的 packet 位置；只在 packet 查询模式中有效。"
         },
         "query": {
-          "description": "Action-specific query selector. Do not copy index, channel, or filter forms from another action.",
+          "description": "查询种类。beat stream 支持 summary、first/last_transfer、transfer_window、first/last_stall、stall_window；packet stream 还支持 first/last_packet、packet_at、packet_window。启用 filter 时可用集合进一步受 packet 边界限制。",
           "type": "string",
           "enum": [
             "summary",
@@ -178,37 +299,37 @@
             "packet_window"
           ]
         },
+        "render_time_unit": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "ps",
+            "ns",
+            "us"
+          ],
+          "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
+        },
         "stream": {
           "type": "string",
-          "description": "Action-specific stream input. Its type and accepted values are defined by this schema."
+          "description": "已加载的 stream 配置名称。"
         },
         "time_range": {
           "type": "object",
+          "minProperties": 1,
           "properties": {
             "begin": {
               "type": "string",
-              "description": "Action-specific begin input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "闭区间起点；省略时使用可用波形窗口起点。"
             },
             "end": {
               "type": "string",
-              "description": "Action-specific end input. Its type and accepted values are defined by this schema."
+              "minLength": 1,
+              "description": "闭区间终点；省略时使用可用波形窗口终点。"
             }
           },
           "additionalProperties": false,
           "description": "Closed analysis interval. begin and end may be omitted independently to use the available waveform bounds."
-        },
-        "time_unit": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "fs",
-            "ps",
-            "ns",
-            "us",
-            "ms",
-            "s"
-          ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
         },
         "value_format": {
           "type": "string",
@@ -217,52 +338,90 @@
             "bin",
             "dec"
           ],
-          "description": "Action-specific value_format input. Its type and accepted values are defined by this schema.",
-          "default": "hex"
+          "default": "hex",
+          "description": "返回 LogicValue 的显示格式；不改变比较、采样或底层四态值。"
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "cache_scope"
+            ],
+            "properties": {
+              "cache_scope": {
+                "const": "range"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "time_range"
+            ],
+            "properties": {
+              "time_range": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "begin"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "end"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
         }
       },
       "additionalProperties": false
     },
-    "limits": {
-      "type": "object"
-    },
     "request_id": {
-      "type": "string"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     }
   },
   "additionalProperties": false,
-  "description": "Query and filter stream transfers, stalls, and packets with explicit full or range base-cache scope.",
+  "description": "Query generic valid-ready transfers, stalls, and packets with multi-field exact, range, or mask filters.",
   "x-purpose": "查询并过滤 stream transfer/packet。",
   "x-how_it_works": "无 sop/eop 时按 transfer 在线过滤；packet stream 必须用 filter.position=sop/eop 选择边界拍并返回整包；默认 full base 仍只投影 time_range response。",
   "x-when_to_use": "按多个 data/beat/stable 字段筛选流事务并复用基础分析。",
   "x-arg_contract_notes": "required: stream, query; cache_scope: full(default) / range; filter.fields conditions AND; each mode exact/range/mask; packet filter requires position sop/eop",
-  "x-description-zh": "以显式 full 或 range 基础分析缓存范围查询并按多个字段过滤 stream transfer 或 packet。",
+  "x-description-zh": "查询通用 valid-ready transfer、stall 或 packet，并对多个自定义字段执行 exact、range 或 mask 过滤。",
   "x-agent": {
     "use_when": [
-      "已加载通用 stream 配置，需要查询 transfer、stall、packet 或字段；连续查询默认 full，一次性窄窗口可显式 range。"
+      "接口不是标准 APB/AXI 专用事务，且已加载通用 stream 配置，需要查询 transfer、stall、packet 或任意命名字段。"
     ],
     "do_not_use_when": [
-      "接口是 AXI/APB 且需要其标准专用语义。"
+      "接口是标准 AXI/APB，且需要地址、ID、通道握手或协议 transaction 专用语义。"
     ],
     "alternatives": [
       {
         "action": "event.find",
         "when": "只需一次性表达式找点。"
+      },
+      {
+        "action": "apb.query",
+        "when": "查询标准 APB completed transfer。"
+      },
+      {
+        "action": "axi.query",
+        "when": "查询标准 AXI channel 或 reconstructed transaction。"
       }
     ],
     "constraints": [

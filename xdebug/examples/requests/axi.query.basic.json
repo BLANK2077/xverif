@@ -6,12 +6,23 @@
   },
   "args": {
     "name": "if0",
-    "query": {
-      "channel": "aw",
-      "handshake_time": "100ns"
+    "direction": "write",
+    "address": {
+      "mode": "range",
+      "begin": "32'h00001000",
+      "end": "32'h00001fff"
     },
-    "output": {
-      "include_data": false
+    "id": {
+      "mode": "range",
+      "begin": "4'h1",
+      "end": "4'h7"
+    },
+    "time_range": {
+      "begin": "100ns",
+      "end": "200ns"
+    },
+    "query": {
+      "line_limit": 1
     }
   }
 }

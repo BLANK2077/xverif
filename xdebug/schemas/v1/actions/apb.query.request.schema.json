@@ -6,7 +6,8 @@
   "required": [
     "api_version",
     "action",
-    "args"
+    "args",
+    "target"
   ],
   "properties": {
     "api_version": {
@@ -16,7 +17,8 @@
       ]
     },
     "request_id": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "action": {
       "type": "string",
@@ -25,18 +27,215 @@
       ]
     },
     "target": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "session_id"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "session_id"
+            ]
+          },
+          "required": [
+            "fsdb"
+          ]
+        }
+      ],
+      "additionalProperties": false
     },
     "args": {
       "type": "object",
+      "required": [
+        "name"
+      ],
       "properties": {
-        "addr": {
-          "type": "string",
-          "description": "Action-specific addr input. Its type and accepted values are defined by this schema."
-        },
         "address": {
-          "type": "string",
-          "description": "Action-specific address input. Its type and accepted values are defined by this schema."
+          "oneOf": [
+            {
+              "type": "object",
+              "description": "Exact-match branch: at least one listed value must equal the sampled field value.",
+              "required": [
+                "mode",
+                "values"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "exact",
+                  "description": "Action processing or return mode. Its legal values, default, and interactions are action-specific."
+                },
+                "values": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "oneOf": [
+                      {
+                        "pattern": "^[0-9]+$",
+                        "description": "地址或字段过滤的候选值列表；候选之间按 OR 匹配，空列表不合法。"
+                      },
+                      {
+                        "pattern": "^(?:[1-9][0-9]*)?'[bB][01](?:_?[01])*$",
+                        "description": "地址或字段过滤的候选值列表；候选之间按 OR 匹配，空列表不合法。"
+                      },
+                      {
+                        "pattern": "^(?:[1-9][0-9]*)?'[dD][0-9](?:_?[0-9])*$",
+                        "description": "地址或字段过滤的候选值列表；候选之间按 OR 匹配，空列表不合法。"
+                      },
+                      {
+                        "pattern": "^(?:[1-9][0-9]*)?'[hH][0-9a-fA-F](?:_?[0-9a-fA-F])*$",
+                        "description": "地址或字段过滤的候选值列表；候选之间按 OR 匹配，空列表不合法。"
+                      }
+                    ],
+                    "description": "Known unsigned decimal or b/d/h SystemVerilog literal up to 64 bits; X/Z and C-style 0x are rejected."
+                  },
+                  "description": "地址或字段过滤的候选值列表；候选之间按 OR 匹配，空列表不合法。"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "description": "Inclusive-range branch: the sampled field value must lie between begin and end.",
+              "required": [
+                "mode",
+                "begin",
+                "end"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "range",
+                  "description": "Action processing or return mode. Its legal values, default, and interactions are action-specific."
+                },
+                "begin": {
+                  "type": "string",
+                  "minLength": 1,
+                  "oneOf": [
+                    {
+                      "pattern": "^[0-9]+$",
+                      "description": "闭区间起点；省略时使用可用波形窗口起点。"
+                    },
+                    {
+                      "pattern": "^(?:[1-9][0-9]*)?'[bB][01](?:_?[01])*$",
+                      "description": "闭区间起点；省略时使用可用波形窗口起点。"
+                    },
+                    {
+                      "pattern": "^(?:[1-9][0-9]*)?'[dD][0-9](?:_?[0-9])*$",
+                      "description": "闭区间起点；省略时使用可用波形窗口起点。"
+                    },
+                    {
+                      "pattern": "^(?:[1-9][0-9]*)?'[hH][0-9a-fA-F](?:_?[0-9a-fA-F])*$",
+                      "description": "闭区间起点；省略时使用可用波形窗口起点。"
+                    }
+                  ],
+                  "description": "Known unsigned decimal or b/d/h SystemVerilog literal up to 64 bits; X/Z and C-style 0x are rejected."
+                },
+                "end": {
+                  "type": "string",
+                  "minLength": 1,
+                  "oneOf": [
+                    {
+                      "pattern": "^[0-9]+$",
+                      "description": "闭区间终点；省略时使用可用波形窗口终点。"
+                    },
+                    {
+                      "pattern": "^(?:[1-9][0-9]*)?'[bB][01](?:_?[01])*$",
+                      "description": "闭区间终点；省略时使用可用波形窗口终点。"
+                    },
+                    {
+                      "pattern": "^(?:[1-9][0-9]*)?'[dD][0-9](?:_?[0-9])*$",
+                      "description": "闭区间终点；省略时使用可用波形窗口终点。"
+                    },
+                    {
+                      "pattern": "^(?:[1-9][0-9]*)?'[hH][0-9a-fA-F](?:_?[0-9a-fA-F])*$",
+                      "description": "闭区间终点；省略时使用可用波形窗口终点。"
+                    }
+                  ],
+                  "description": "Known unsigned decimal or b/d/h SystemVerilog literal up to 64 bits; X/Z and C-style 0x are rejected."
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "description": "Masked-match branch: compare only the bits selected by mask against value.",
+              "required": [
+                "mode",
+                "value",
+                "mask"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "mask",
+                  "description": "Action processing or return mode. Its legal values, default, and interactions are action-specific."
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 1,
+                  "oneOf": [
+                    {
+                      "pattern": "^[0-9]+$"
+                    },
+                    {
+                      "pattern": "^(?:[1-9][0-9]*)?'[bB][01](?:_?[01])*$"
+                    },
+                    {
+                      "pattern": "^(?:[1-9][0-9]*)?'[dD][0-9](?:_?[0-9])*$"
+                    },
+                    {
+                      "pattern": "^(?:[1-9][0-9]*)?'[hH][0-9a-fA-F](?:_?[0-9a-fA-F])*$"
+                    }
+                  ],
+                  "description": "Known unsigned decimal or b/d/h SystemVerilog literal up to 64 bits; X/Z and C-style 0x are rejected."
+                },
+                "mask": {
+                  "type": "string",
+                  "minLength": 1,
+                  "oneOf": [
+                    {
+                      "pattern": "^[0-9]+$"
+                    },
+                    {
+                      "pattern": "^(?:[1-9][0-9]*)?'[bB][01](?:_?[01])*$"
+                    },
+                    {
+                      "pattern": "^(?:[1-9][0-9]*)?'[dD][0-9](?:_?[0-9])*$"
+                    },
+                    {
+                      "pattern": "^(?:[1-9][0-9]*)?'[hH][0-9a-fA-F](?:_?[0-9a-fA-F])*$"
+                    }
+                  ],
+                  "description": "Known unsigned decimal or b/d/h SystemVerilog literal up to 64 bits; X/Z and C-style 0x are rejected."
+                }
+              },
+              "additionalProperties": false
+            }
+          ],
+          "description": "Exactly one address filtering mode: exact queue, inclusive range, or value/mask."
         },
         "direction": {
           "type": "string",
@@ -45,11 +244,11 @@
             "read",
             "all"
           ],
-          "description": "Action-specific direction input. Its type and accepted values are defined by this schema."
+          "description": "协议 transaction 的方向过滤；read/write/all 的可用性以本 action enum 为准。"
         },
         "last": {
-          "type": "boolean",
-          "description": "Action-specific last input. Its type and accepted values are defined by this schema."
+          "const": true,
+          "description": "Select the final transaction matching the other transaction filters."
         },
         "name": {
           "type": "string",
@@ -57,6 +256,7 @@
         },
         "query": {
           "type": "object",
+          "minProperties": 1,
           "properties": {
             "line_limit": {
               "type": "integer",
@@ -69,21 +269,32 @@
               "description": "One-based query, cursor, or list position; the action schema defines its exact reference set."
             }
           },
+          "anyOf": [
+            {
+              "required": [
+                "line_limit"
+              ],
+              "description": "Closed query selector; use only the index, channel, time, or filter branches declared by this action's schema."
+            },
+            {
+              "required": [
+                "index"
+              ],
+              "description": "Closed query selector; use only the index, channel, time, or filter branches declared by this action's schema."
+            }
+          ],
           "additionalProperties": false,
-          "description": "Action-specific query selector. Do not copy index, channel, or filter forms from another action."
+          "description": "Protocol query controls; use 1-based query.index and query.line_limit; legacy quantity fields are rejected."
         },
-        "time_unit": {
+        "render_time_unit": {
           "type": "string",
           "enum": [
             "auto",
-            "fs",
             "ps",
             "ns",
-            "us",
-            "ms",
-            "s"
+            "us"
           ],
-          "description": "Interprets only unitless time numbers; it never overrides a time string that already has a unit."
+          "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
         },
         "value_format": {
           "type": "string",
@@ -92,60 +303,61 @@
             "bin",
             "dec"
           ],
-          "description": "Action-specific value_format input. Its type and accepted values are defined by this schema.",
-          "default": "hex"
+          "default": "hex",
+          "description": "返回 LogicValue 的显示格式；不改变比较、采样或底层四态值。"
         }
       },
       "additionalProperties": false,
-      "required": [
-        "name"
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "last",
+              "query"
+            ]
+          }
+        }
       ]
     },
     "limits": {
-      "type": "object"
-    },
-    "auth_token": {
-      "type": "string"
-    },
-    "id": {
-      "type": "string"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "span_id": {
-      "type": "string"
-    },
-    "parent_span_id": {
-      "type": "string"
+      "type": "object",
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Positive public frontend-to-engine request timeout in milliseconds. Omit limits.timeout_ms to disable the public watchdog."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false,
-  "description": "Query APB read and write transfers.",
+  "description": "Query completed APB transfers with direction and exact, range, or mask address filters.",
   "x-purpose": "查询 APB transfer。",
-  "x-how_it_works": "按 APB 配置扫描 PSEL/PENABLE/PREADY 等握手和地址数据；第 N 个 transfer 用 1-based query.index，多条用 query.line_limit。",
-  "x-when_to_use": "抽取 APB 读写访问。",
-  "x-arg_contract_notes": "required: name; use query.index / query.line_limit; do not use legacy quantity fields",
-  "x-description-zh": "查询 APB transfer。",
+  "x-how_it_works": "direction 与 address exact/range/mask 取 AND；先过滤再应用 1-based query.index、query.line_limit 或 last。旧 addr 和标量 address 被拒绝。",
+  "x-when_to_use": "抽取标准 APB completed transfer。",
+  "x-arg_contract_notes": "required: name; address is exact/range/mask object",
+  "x-description-zh": "按方向以及 exact、range 或 mask 地址条件查询已完成 APB transfer。",
   "x-agent": {
     "use_when": [
-      "查询 APB transfer。"
+      "Need completed APB transfer counts or rows filtered by direction and a canonical exact/range/mask address object."
     ],
     "do_not_use_when": [
-      "不要把本 action 用于 apb.config.list、apb.config.load 的业务目标；请改用列出的同域 action。"
+      "Do not use it for AXI channel semantics, custom valid-ready fields, or a focused signal window around one APB transfer."
     ],
     "alternatives": [
       {
-        "action": "apb.config.list",
-        "when": "列出 APB 配置。"
+        "action": "apb.statistics",
+        "when": "Need aggregate APB counts and unresolved-filter diagnostics without transaction rows."
       },
       {
-        "action": "apb.config.load",
-        "when": "加载 APB 配置。"
+        "action": "apb.transfer_window",
+        "when": "Inspect signal evidence around one APB transfer."
       }
     ],
     "constraints": [
-      "required: name; use query.index / query.line_limit; do not use legacy quantity fields"
+      "required: name; address is exact/range/mask object"
     ]
   }
 }
