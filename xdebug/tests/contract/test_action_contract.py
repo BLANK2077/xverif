@@ -11,7 +11,7 @@ from typing import Any, Dict
 import jsonschema
 import pytest
 
-from runner import CliRunner
+from runner import CliRunner, StdioLoopRunner
 
 
 def _load_json(path: Path) -> Any:
@@ -624,9 +624,17 @@ def test_bad_parameter_schema_errors_include_ai_repair_hints(
 
 @pytest.mark.contract
 def test_all_actions_unknown_args_report_correct_example(
-    cli_runner: CliRunner,
+    stateless_stdio_loop: StdioLoopRunner,
 ) -> None:
-    catalog = _runtime_catalog(cli_runner)
+    catalog_result = stateless_stdio_loop.request(
+        {
+            "api_version": "xdebug.v1",
+            "action": "actions",
+            "args": {"output": {"verbose": True}},
+        }
+    )
+    assert catalog_result.ok, catalog_result.stderr_raw
+    catalog = catalog_result.response
     for descriptor in catalog["data"]["actions"]:
         action = descriptor["name"]
         request = {
@@ -634,7 +642,7 @@ def test_all_actions_unknown_args_report_correct_example(
             "action": action,
             "args": {"__bad_param__": True},
         }
-        result = cli_runner.run(request, output_format="json")
+        result = stateless_stdio_loop.request(request)
         assert not result.ok, action
         error = result.response["error"]
         assert error["code"] == "INVALID_REQUEST", action
@@ -1501,18 +1509,25 @@ def test_action_inventory_matches_specs(xdebug_root: Path) -> None:
 
 @pytest.mark.contract
 def test_runtime_schema_action_returns_exact_checked_in_schema(
-    cli_runner: CliRunner, xdebug_root: Path
+    stateless_stdio_loop: StdioLoopRunner, xdebug_root: Path
 ) -> None:
-    catalog = _runtime_catalog(cli_runner)
+    catalog_result = stateless_stdio_loop.request(
+        {
+            "api_version": "xdebug.v1",
+            "action": "actions",
+            "args": {"output": {"verbose": True}},
+        }
+    )
+    assert catalog_result.ok, catalog_result.stderr_raw
+    catalog = catalog_result.response
     for descriptor in catalog["data"]["actions"]:
         for kind in ("request", "response"):
-            result = cli_runner.run(
+            result = stateless_stdio_loop.request(
                 {
                     "api_version": "xdebug.v1",
                     "action": "schema",
                     "args": {"action": descriptor["name"], "kind": kind},
-                },
-                output_format="json",
+                }
             )
             assert result.ok, (descriptor["name"], kind, result.response)
             schema_path = xdebug_root / descriptor["%s_schema" % kind]

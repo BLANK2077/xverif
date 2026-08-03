@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from runner import ArtifactWriter, CliRunner, CommandRunner
+from runner import ArtifactWriter, CliRunner, CommandRunner, StdioLoopRunner
 
 
 TESTS_ROOT = Path(__file__).resolve().parent
@@ -118,6 +118,28 @@ def cli_runner(
         cwd=repo_root,
         base_env={"HOME": str(isolated_home), "XVERIF_HOME": str(repo_root)},
     )
+
+
+@pytest.fixture(scope="module")
+def stateless_stdio_loop(
+    xdebug_bin: Path,
+    repo_root: Path,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> StdioLoopRunner:
+    home = tmp_path_factory.mktemp("stateless-stdio-loop-home")
+    loop = StdioLoopRunner(
+        xdebug_bin,
+        cwd=repo_root,
+        env={"HOME": str(home), "XVERIF_HOME": str(repo_root)},
+        default_json=True,
+        wait_for_stderr_idle=False,
+    )
+    loop.start()
+    try:
+        yield loop
+    finally:
+        loop.quit()
+        loop.terminate()
 
 
 @pytest.fixture

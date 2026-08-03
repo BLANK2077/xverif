@@ -30,6 +30,7 @@ class StdioLoopRunner:
         cwd: Optional[Path] = None,
         env: Optional[Mapping[str, str]] = None,
         default_json: bool = False,
+        wait_for_stderr_idle: bool = True,
         extra_args: Sequence[str] = (),
         normalize_options: Optional[NormalizeOptions] = None,
     ) -> None:
@@ -43,6 +44,7 @@ class StdioLoopRunner:
         if env:
             self.env.update(env)
         self.normalize_options = normalize_options or NormalizeOptions()
+        self.wait_for_stderr_idle = wait_for_stderr_idle
         self.proc: Optional[subprocess.Popen[str]] = None
         self.stdout_queue: "queue.Queue[str]" = queue.Queue()
         self.stderr_tail: Deque[str] = deque(maxlen=4096)
@@ -149,10 +151,12 @@ class StdioLoopRunner:
             self.proc.stdin.write(encoded + "\n")
             self.proc.stdin.flush()
             envelope = self._read_message(timeout_sec)
-            self._wait_for_stderr_idle()
+            if self.wait_for_stderr_idle:
+                self._wait_for_stderr_idle()
             timed_out = False
         except StdioLoopError as exc:
-            self._wait_for_stderr_idle()
+            if self.wait_for_stderr_idle:
+                self._wait_for_stderr_idle()
             timed_out = "timeout" in str(exc).lower()
             elapsed_ms = int((time.monotonic() - start) * 1000)
             if timed_out:
