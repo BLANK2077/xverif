@@ -1,33 +1,47 @@
-"""Unified config / path resolution for xverif stateful loop wrappers."""
+"""Immutable runtime configuration for xverif stateful loop owners."""
 from __future__ import annotations
 
-import os
 import math
-from dataclasses import dataclass
+import os
+import shlex
+import sys
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Mapping
 
 
 class ConfigError(ValueError):
+    """A typed failure for one invalid public environment setting."""
+
     def __init__(self, env_name: str, value: str, expected: str) -> None:
         self.env_name = env_name
         self.value = value
         self.expected = expected
-        super().__init__(f"invalid {env_name}={value!r}; expected {expected}")
+        super().__init__(
+            f"invalid {env_name}={value!r}; expected {expected}"
+        )
 
 
-def validate_positive_timeout(value: object, *, source: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ConfigError(source, str(value), "a finite positive number")
-    result = float(value)
-    if not math.isfinite(result) or result <= 0:
-        raise ConfigError(source, str(value), "a finite positive number")
-    return result
+@dataclass(frozen=True)
+class RuntimeEnvNames:
+    """The exact public environment namespace owned by one runtime."""
+
+    backend: str
+    timeout: str
+    startup_timeout: str
+    request_timeout: str
+    close_timeout: str
+    bkill_timeout: str
+    fake_lsf: str
+    log_dir: str
 
 
 @dataclass(frozen=True)
 class RuntimeConfig:
+    """One composition-root snapshot; runtime code never re-reads its env."""
+
     owner: str
+    env_names: RuntimeEnvNames
     backend: str
     default_timeout_sec: float
     startup_timeout_sec: float
@@ -41,91 +55,241 @@ class RuntimeConfig:
     session_resource: str | None
     log_root: Path
 
+    def with_overrides(
+        self,
+        *,
+        backend: str | None = None,
+        startup_timeout_sec: float | None = None,
+        request_timeout_sec: float | None = None,
+    ) -> "RuntimeConfig":
+        """Return another frozen snapshot for explicit constructor overrides."""
 
-def _strict_env_float(environ: Mapping[str, str], name: str, default: float) -> float:
-    raw = environ.get(name)
+        return replace(
+            self,
+            backend=(
+                self.backend
+                if backend is None
+                else validate_backend(backend, source="mode")
+            ),
+            startup_timeout_sec=(
+                self.startup_timeout_sec
+                if startup_timeout_sec is None
+                else validate_positive_timeout(
+                    startup_timeout_sec,
+                    source="startup_timeout_sec",
+                )
+            ),
+            request_timeout_sec=(
+                self.request_timeout_sec
+                if request_timeout_sec is None
+                else validate_positive_timeout(
+                    request_timeout_sec,
+                    source="request_timeout_sec",
+                )
+            ),
+        )
+
+
+MCP_ENV_NAMES = RuntimeEnvNames(
+    backend="XVERIF_MCP_BACKEND",
+    timeout="XVERIF_MCP_TIMEOUT_SEC",
+    startup_timeout="XVERIF_MCP_STARTUP_TIMEOUT_SEC",
+    request_timeout="XVERIF_MCP_REQUEST_TIMEOUT_SEC",
+    close_timeout="XVERIF_MCP_CLOSE_TIMEOUT_SEC",
+    bkill_timeout="XVERIF_MCP_BKILL_TIMEOUT_SEC",
+    fake_lsf="XVERIF_MCP_FAKE_LSF",
+    log_dir="XVERIF_MCP_LOG_DIR",
+)
+
+LOOP_WRAPPER_ENV_NAMES = RuntimeEnvNames(
+    backend="XVERIF_LOOP_BACKEND",
+    timeout="XVERIF_LOOP_TIMEOUT_SEC",
+    startup_timeout="XVERIF_LOOP_STARTUP_TIMEOUT_SEC",
+    request_timeout="XVERIF_LOOP_REQUEST_TIMEOUT_SEC",
+    close_timeout="XVERIF_LOOP_CLOSE_TIMEOUT_SEC",
+    bkill_timeout="XVERIF_LOOP_BKILL_TIMEOUT_SEC",
+    fake_lsf="XVERIF_LOOP_FAKE_LSF",
+    log_dir="XVERIF_LOOP_LOG_DIR",
+)
+
+
+def validate_backend(value: str, *, source: str = "backend") -> str:
+    if value not in {"direct", "lsf"}:
+        raise ConfigError(source, value, "'direct' or 'lsf'")
+    return value
+
+
+def validate_positive_timeout(value: object, *, source: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigError(source, str(value), "a finite positive number")
+    result = float(value)
+    if not math.isfinite(result) or result <= 0:
+        raise ConfigError(source, str(value), "a finite positive number")
+    return result
+
+
+def _env_float(
+    environ: Mapping[str, str],
+    env_name: str,
+    default: float,
+) -> float:
+    raw = environ.get(env_name)
     if raw is None:
         return default
     if not raw or raw != raw.strip():
-        raise ConfigError(name, raw, "a finite positive number")
+        raise ConfigError(env_name, raw, "a finite positive number")
     try:
         value = float(raw)
     except ValueError as exc:
-        raise ConfigError(name, raw, "a finite positive number") from exc
-    return validate_positive_timeout(value, source=name)
+        raise ConfigError(
+            env_name,
+            raw,
+            "a finite positive number",
+        ) from exc
+    if not math.isfinite(value) or value <= 0:
+        raise ConfigError(env_name, raw, "a finite positive number")
+    return value
+
+
+def _env_bool(
+    environ: Mapping[str, str],
+    env_name: str,
+    default: bool = False,
+) -> bool:
+    raw = environ.get(env_name)
+    if raw is None:
+        return default
+    if raw == "1":
+        return True
+    if raw == "0":
+        return False
+    raise ConfigError(env_name, raw, "'0' or '1'")
+
+
+def _resolved_log_root(
+    environ: Mapping[str, str],
+    *,
+    names: RuntimeEnvNames,
+    default_subdir: str,
+) -> Path:
+    configured = environ.get(names.log_dir)
+    if configured:
+        return Path(configured)
+    test_tmp = environ.get("XVERIF_TEST_TMPDIR")
+    if test_tmp:
+        return Path(test_tmp) / ".xverif" / default_subdir
+    return Path(environ.get("HOME", str(Path.home()))) / ".xverif" / default_subdir
+
+
+def _env_command(
+    environ: Mapping[str, str],
+    env_name: str,
+    default: str,
+) -> str:
+    raw = environ.get(env_name)
+    if raw is None:
+        return default
+    expected = "a non-empty shell command with valid quoting"
+    if not raw or raw != raw.strip():
+        raise ConfigError(env_name, raw, expected)
+    try:
+        argv = shlex.split(raw)
+    except ValueError as exc:
+        raise ConfigError(env_name, raw, expected) from exc
+    if not argv or not argv[0]:
+        raise ConfigError(env_name, raw, expected)
+    return raw
+
+
+def _resolved_lsf_commands(
+    environ: Mapping[str, str],
+    *,
+    fake_lsf: bool,
+) -> tuple[str, str]:
+    if fake_lsf:
+        default_bsub = shlex.join(
+            [sys.executable, "-m", "xverif_loop.lsf.fake_bsub"]
+        )
+        default_bkill = shlex.join(
+            [sys.executable, "-m", "xverif_loop.lsf.fake_bkill"]
+        )
+    else:
+        default_bsub = "bsub"
+        default_bkill = "bkill"
+    return (
+        _env_command(environ, "XVERIF_LSF_BSUB", default_bsub),
+        _env_command(environ, "XVERIF_LSF_BKILL", default_bkill),
+    )
+
+
+def _resolve_runtime_config(
+    *,
+    owner: str,
+    names: RuntimeEnvNames,
+    default_subdir: str,
+    environ: Mapping[str, str] | None,
+) -> RuntimeConfig:
+    snapshot = dict(os.environ if environ is None else environ)
+    fake_lsf = _env_bool(snapshot, names.fake_lsf)
+    lsf_bsub_command, lsf_bkill_command = _resolved_lsf_commands(
+        snapshot,
+        fake_lsf=fake_lsf,
+    )
+    return RuntimeConfig(
+        owner=owner,
+        env_names=names,
+        backend=validate_backend(
+            snapshot.get(names.backend, "direct"),
+            source=names.backend,
+        ),
+        default_timeout_sec=_env_float(snapshot, names.timeout, 360.0),
+        startup_timeout_sec=_env_float(
+            snapshot,
+            names.startup_timeout,
+            180.0,
+        ),
+        request_timeout_sec=_env_float(
+            snapshot,
+            names.request_timeout,
+            360.0,
+        ),
+        close_timeout_sec=_env_float(snapshot, names.close_timeout, 30.0),
+        bkill_timeout_sec=_env_float(snapshot, names.bkill_timeout, 30.0),
+        fake_lsf=fake_lsf,
+        lsf_bsub_command=lsf_bsub_command,
+        lsf_bkill_command=lsf_bkill_command,
+        session_queue=snapshot.get(
+            "XVERIF_LSF_SESSION_QUEUE",
+            "interactive",
+        ),
+        session_resource=snapshot.get("XVERIF_LSF_SESSION_RESOURCE"),
+        log_root=_resolved_log_root(
+            snapshot,
+            names=names,
+            default_subdir=default_subdir,
+        ),
+    )
 
 
 def resolve_mcp_runtime_config(
     environ: Mapping[str, str] | None = None,
 ) -> RuntimeConfig:
-    snapshot = dict(os.environ if environ is None else environ)
-    backend = snapshot.get("XVERIF_MCP_BACKEND", "direct")
-    if backend not in {"direct", "lsf"}:
-        raise ConfigError("XVERIF_MCP_BACKEND", backend, "'direct' or 'lsf'")
-    fake_raw = snapshot.get("XVERIF_MCP_FAKE_LSF", "0")
-    if fake_raw not in {"0", "1"}:
-        raise ConfigError("XVERIF_MCP_FAKE_LSF", fake_raw, "'0' or '1'")
-    return RuntimeConfig(
+    return _resolve_runtime_config(
         owner="mcp",
-        backend=backend,
-        default_timeout_sec=_strict_env_float(snapshot, "XVERIF_MCP_TIMEOUT_SEC", 360.0),
-        startup_timeout_sec=_strict_env_float(snapshot, "XVERIF_MCP_STARTUP_TIMEOUT_SEC", 180.0),
-        request_timeout_sec=_strict_env_float(snapshot, "XVERIF_MCP_REQUEST_TIMEOUT_SEC", 360.0),
-        close_timeout_sec=_strict_env_float(snapshot, "XVERIF_MCP_CLOSE_TIMEOUT_SEC", 30.0),
-        bkill_timeout_sec=_strict_env_float(snapshot, "XVERIF_MCP_BKILL_TIMEOUT_SEC", 30.0),
-        fake_lsf=fake_raw == "1",
-        lsf_bsub_command=snapshot.get("XVERIF_LSF_BSUB", "bsub"),
-        lsf_bkill_command=snapshot.get("XVERIF_LSF_BKILL", "bkill"),
-        session_queue=snapshot.get("XVERIF_LSF_SESSION_QUEUE", "interactive"),
-        session_resource=snapshot.get("XVERIF_LSF_SESSION_RESOURCE"),
-        log_root=Path(snapshot.get("XVERIF_MCP_LOG_DIR", Path(snapshot.get("HOME", str(Path.home()))) / ".xverif/mcp")),
+        names=MCP_ENV_NAMES,
+        default_subdir="mcp",
+        environ=environ,
     )
 
-_BACKEND_ENV = "XVERIF_MCP_BACKEND"
-_TIMEOUT_ENV = "XVERIF_MCP_TIMEOUT_SEC"
-_STARTUP_TIMEOUT_ENV = "XVERIF_MCP_STARTUP_TIMEOUT_SEC"
-_REQUEST_TIMEOUT_ENV = "XVERIF_MCP_REQUEST_TIMEOUT_SEC"
-_CLOSE_TIMEOUT_ENV = "XVERIF_MCP_CLOSE_TIMEOUT_SEC"
-_BKILL_TIMEOUT_ENV = "XVERIF_MCP_BKILL_TIMEOUT_SEC"
-_FAKE_LSF_ENV = "XVERIF_MCP_FAKE_LSF"
 
-
-def configure_environment(
-    *,
-    backend_env: str = "XVERIF_MCP_BACKEND",
-    timeout_env: str = "XVERIF_MCP_TIMEOUT_SEC",
-    startup_timeout_env: str = "XVERIF_MCP_STARTUP_TIMEOUT_SEC",
-    request_timeout_env: str = "XVERIF_MCP_REQUEST_TIMEOUT_SEC",
-    close_timeout_env: str = "XVERIF_MCP_CLOSE_TIMEOUT_SEC",
-    bkill_timeout_env: str = "XVERIF_MCP_BKILL_TIMEOUT_SEC",
-    fake_lsf_env: str = "XVERIF_MCP_FAKE_LSF",
-) -> None:
-    """Configure process-wide environment variable names for loop wrappers."""
-    global _BACKEND_ENV, _TIMEOUT_ENV, _STARTUP_TIMEOUT_ENV
-    global _REQUEST_TIMEOUT_ENV, _CLOSE_TIMEOUT_ENV, _BKILL_TIMEOUT_ENV
-    global _FAKE_LSF_ENV
-    _BACKEND_ENV = backend_env
-    _TIMEOUT_ENV = timeout_env
-    _STARTUP_TIMEOUT_ENV = startup_timeout_env
-    _REQUEST_TIMEOUT_ENV = request_timeout_env
-    _CLOSE_TIMEOUT_ENV = close_timeout_env
-    _BKILL_TIMEOUT_ENV = bkill_timeout_env
-    _FAKE_LSF_ENV = fake_lsf_env
-
-
-def configure_mcp_environment() -> None:
-    configure_environment()
-
-
-def configure_loop_wrapper_environment() -> None:
-    configure_environment(
-        backend_env="XVERIF_LOOP_BACKEND",
-        timeout_env="XVERIF_LOOP_TIMEOUT_SEC",
-        startup_timeout_env="XVERIF_LOOP_STARTUP_TIMEOUT_SEC",
-        request_timeout_env="XVERIF_LOOP_REQUEST_TIMEOUT_SEC",
-        close_timeout_env="XVERIF_LOOP_CLOSE_TIMEOUT_SEC",
-        bkill_timeout_env="XVERIF_LOOP_BKILL_TIMEOUT_SEC",
-        fake_lsf_env="XVERIF_LOOP_FAKE_LSF",
+def resolve_loop_wrapper_runtime_config(
+    environ: Mapping[str, str] | None = None,
+) -> RuntimeConfig:
+    return _resolve_runtime_config(
+        owner="loop-wrapper",
+        names=LOOP_WRAPPER_ENV_NAMES,
+        default_subdir="loop-wrapper",
+        environ=environ,
     )
 
 
@@ -140,40 +304,12 @@ def default_xdebug_bin() -> str:
 
 
 def default_xcov_bin() -> str:
-    return os.environ.get("XVERIF_XCOV_BIN") or os.path.join(repo_root(), "tools", "xcov")
+    return os.environ.get("XVERIF_XCOV_BIN") or os.path.join(
+        repo_root(),
+        "tools",
+        "xcov",
+    )
 
 
 def default_tool_path(tool: str) -> str:
     return os.path.join(repo_root(), "tools", tool)
-
-
-def loop_backend() -> str:
-    return os.environ.get(_BACKEND_ENV, "direct")
-
-
-def mcp_backend() -> str:
-    return loop_backend()
-
-
-def default_timeout() -> float:
-    return float(os.environ.get(_TIMEOUT_ENV, "360"))
-
-
-def startup_timeout() -> float:
-    return float(os.environ.get(_STARTUP_TIMEOUT_ENV, "180"))
-
-
-def request_timeout() -> float:
-    return float(os.environ.get(_REQUEST_TIMEOUT_ENV, "360"))
-
-
-def close_timeout() -> float:
-    return float(os.environ.get(_CLOSE_TIMEOUT_ENV, "30"))
-
-
-def bkill_timeout() -> float:
-    return float(os.environ.get(_BKILL_TIMEOUT_ENV, "30"))
-
-
-def fake_lsf_enabled() -> bool:
-    return os.environ.get(_FAKE_LSF_ENV) == "1" or os.environ.get("XVERIF_MCP_FAKE_LSF") == "1"

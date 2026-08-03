@@ -9,7 +9,8 @@ from dataclasses import dataclass
 from typing import Iterable, List, Optional
 
 from .protocol import JsonlProcess
-from xverif_loop.logging import argv_hash, log_lsf_event
+from xverif_loop.config import RuntimeConfig
+from xverif_loop.logging import StructuredLogger, argv_hash
 
 
 # LSF typical output: "Job <123456> is submitted to queue <interactive>."
@@ -57,13 +58,21 @@ class BsubRunner:
         return base
 
     def start(self, command: Iterable[str], opts: Optional[BsubOptions] = None,
+              *,
+              runtime: RuntimeConfig,
+              logger: StructuredLogger,
               log_context: Optional[dict] = None) -> JsonlProcess:
         opts = opts or BsubOptions()
         argv = self.build(command, opts)
         alias = (log_context or {}).get("alias")
-        log_lsf_event(alias, "bsub.start", True,
-                      argv_hash=argv_hash(argv), queue=opts.queue,
-                      resource=opts.resource, job_name=opts.job_name)
-        proc = JsonlProcess.start(argv, log_context=log_context)
+        logger.lsf(alias, "bsub.start", True,
+                   argv_hash=argv_hash(argv), queue=opts.queue,
+                   resource=opts.resource, job_name=opts.job_name)
+        proc = JsonlProcess.start(
+            argv,
+            runtime=runtime,
+            logger=logger,
+            log_context=log_context,
+        )
         proc.job_name = opts.job_name
         return proc

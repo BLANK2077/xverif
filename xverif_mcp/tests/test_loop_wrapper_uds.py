@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import socket
 import stat
 import sys
@@ -12,16 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from xverif_loop.config import configure_mcp_environment
-from xverif_loop.logging import configure_mcp_logging
 from xverif_loop.wrapper import LoopWrapperServer, LoopWrapperService, send_requests
-
-
-@pytest.fixture(autouse=True)
-def _restore_shared_defaults():
-    yield
-    configure_mcp_environment()
-    configure_mcp_logging()
 
 
 def _make_fake_loop(path: Path, *, protocol: str, api_version: str, slow_query: bool = False) -> str:
@@ -42,18 +34,72 @@ for line in sys.stdin:
     output = req.get("output", {{}})
     wants_json = (output.get("format") == "json" or
                   output.get("response_format") == "json" or
-                  req.get("__xverif_loop_payload_format") == "json")
+                  req.get("payload_format") == "json")
     if action == "stdio.quit":
         rsp = {{"id": rid, "ok": True, "payload_format": "json", "json": {{"ok": True, "action": "stdio.quit"}}}}
         print(json.dumps(rsp)); sys.stdout.flush(); sys.exit(0)
     if action == "session.open":
         name = req.get("args", {{}}).get("name", "fake")
-        result = {{"ok": True, "action": action, "summary": {{"session_id": name, "mode": "fake"}}}}
+        if {api_version!r} == "xcov":
+            result = {{
+                "ok": True,
+                "api_version": "xcov.v1",
+                "request_id": rid,
+                "action": action,
+                "summary": {{
+                    "total_count": 1,
+                    "returned_count": 1,
+                    "response_truncated": False,
+                    "scan_complete": True,
+                    "analysis_complete": True,
+                    "truncation_scopes": [],
+                }},
+                "data": {{
+                    "session": {{
+                        "session_id": name,
+                        "state": "alive",
+                        "vdb": req.get("target", {{}}).get("vdb"),
+                        "test_count": 1,
+                        "top_scope_count": 1,
+                        "worker": "fake",
+                    }},
+                    "resource_snapshot": {{
+                        "vdb": req.get("target", {{}}).get("vdb"),
+                        "run_manifest": None,
+                    }},
+                }},
+                "warnings": [],
+            }}
+        else:
+            result = {{"ok": True, "action": action,
+                       "session": {{"session_id": name, "mode": "fake"}},
+                       "summary": {{"status": "opened"}}}}
     else:
         if {slow_query!r}:
             time.sleep(999)
-        result = {{"ok": True, "action": action, "summary": {{"echo_args": req.get("args", {{}})}}}}
-    if wants_json:
+        if {api_version!r} == "xcov":
+            result = {{
+                "ok": True,
+                "api_version": "xcov.v1",
+                "request_id": rid,
+                "action": action,
+                "summary": {{
+                    "total_count": 0,
+                    "returned_count": 0,
+                    "response_truncated": False,
+                    "scan_complete": True,
+                    "analysis_complete": True,
+                    "truncation_scopes": [],
+                }},
+                "data": {{"echo_args": req.get("args", {{}})}},
+                "warnings": [],
+            }}
+        else:
+            result = {{"ok": True, "action": action, "summary": {{"echo_args": req.get("args", {{}})}}}}
+    if {api_version!r} == "xcov":
+        rsp = {{"id": rid, "ok": True, "payload_format": "xout",
+               "json": result, "xout": "@xcov.v1 ok action=" + action + " request_id=unit\\n"}}
+    elif wants_json:
         rsp = {{"id": rid, "ok": True, "payload_format": "json", "json": result}}
     else:
         rsp = {{"id": rid, "ok": True, "payload_format": "xout", "xout": "@{api_version}." + action + ".v1\\n"}}
@@ -147,15 +193,24 @@ def test_loop_wrapper_debug_session_lifecycle(tmp_path, monkeypatch):
         responses = send_requests(sock, [
             {"id": "open", "method": "debug.session.open", "params": {
                 "name": "d0", "fsdb": "wave.fsdb", "run_manifest": "debug-run-manifest.json"}},
-            {"id": "doctor", "method": "debug.session.doctor", "params": {"session": "d0"}},
+            {
+                "id": "doctor",
+                "method": "debug.session.doctor",
+                "params": {"session_id": "d0"},
+            },
             {"id": "query", "method": "debug.query", "params": {
-                "session": "d0", "action": "value.at", "args": {"signal": "clk"}, "output_format": "json"}},
+                "session_id": "d0", "action": "value.at", "args": {"signal": "clk"}, "output_format": "json"}},
             {"id": "list", "method": "debug.session.list", "params": {}},
-            {"id": "close", "method": "debug.session.close", "params": {"name": "d0"}},
+            {
+                "id": "close",
+                "method": "debug.session.close",
+                "params": {"session_id": "d0"},
+            },
             {"id": "gc", "method": "debug.session.gc", "params": {}},
         ])
         assert [r["ok"] for r in responses] == [True, True, True, True, True, True]
-        assert responses[0]["result"]["session"]["alias"] == "d0"
+        assert responses[0]["result"]["session"]["session_id"] == "d0"
+        assert "alias" not in responses[0]["result"]["session"]
         assert responses[1]["result"]["summary"]["read_only"] is True
         assert responses[2]["result"]["action"] == "value.at"
         assert responses[3]["result"]["sessions"]
@@ -175,16 +230,24 @@ def test_loop_wrapper_cov_session_lifecycle(tmp_path, monkeypatch):
         responses = send_requests(sock, [
             {"id": "open", "method": "cov.session.open", "params": {
                 "name": "c0", "vdb": "merged.vdb", "run_manifest": "cov-run-manifest.json"}},
-            {"id": "doctor", "method": "cov.session.doctor", "params": {"session": "c0"}},
+            {
+                "id": "doctor",
+                "method": "cov.session.doctor",
+                "params": {"session_id": "c0"},
+            },
             {"id": "query", "method": "cov.query", "params": {
-                "session": "c0", "action": "coverage.summary", "output_format": "json"}},
-            {"id": "kill", "method": "cov.session.kill", "params": {"name": "c0"}},
+                "session_id": "c0", "action": "code_coverage.summary", "output_format": "json"}},
+            {
+                "id": "kill",
+                "method": "cov.session.kill",
+                "params": {"session_id": "c0"},
+            },
             {"id": "gc", "method": "cov.session.gc", "params": {}},
         ])
         assert [r["ok"] for r in responses] == [True, True, True, True, True]
         assert responses[0]["result"]["session"]["vdb"] == "merged.vdb"
         assert responses[1]["result"]["summary"]["read_only"] is True
-        assert responses[2]["result"]["action"] == "coverage.summary"
+        assert responses[2]["result"]["action"] == "code_coverage.summary"
         assert responses[3]["result"]["data"]["cleanup"]["native_kill"] == "not_supported"
         assert responses[4]["result"]["summary"]["removed_count"] == 1
     finally:
@@ -199,29 +262,179 @@ def test_loop_wrapper_reports_bad_requests(tmp_path, monkeypatch):
     service = LoopWrapperService(mode="direct", xdebug_bin=debug, xcov_bin=cov)
     server, thread, sock = _start_server(tmp_path, service)
     try:
-        invalid = _send_raw(sock, "{not-json")
+        invalid = _send_raw(sock, "{private-invalid-json")
         assert invalid["ok"] is False
         assert invalid["error"]["code"] == "INVALID_JSON"
+        assert invalid["error"]["message"] == (
+            "request must be one strict JSON object"
+        )
+        non_finite = _send_raw(
+            sock,
+            '{"id":"private-request-id","method":"server.ping",'
+            '"params":{"value":NaN}}',
+        )
+        assert non_finite["ok"] is False
+        assert non_finite["error"]["code"] == "INVALID_JSON"
         unknown = send_requests(sock, [{"id": "u", "method": "missing.method", "params": {}}])[0]
         assert unknown["ok"] is False
         assert unknown["error"]["code"] == "UNKNOWN_METHOD"
-        missing = send_requests(sock, [{"id": "m", "method": "debug.query", "params": {"session": "d0"}}])[0]
+        missing = send_requests(
+            sock,
+            [{
+                "id": "m",
+                "method": "debug.query",
+                "params": {"session_id": "d0"},
+            }],
+        )[0]
         assert missing["ok"] is False
         assert missing["error"]["code"] == "INVALID_PARAMS"
         unsupported_output = send_requests(sock, [{
             "id": "o",
             "method": "debug.query",
             "params": {
-                "session": "d0",
+                "session_id": "d0",
                 "action": "value.at",
                 "output": {"response_format": "json"},
             },
         }])[0]
         assert unsupported_output["ok"] is False
         assert unsupported_output["error"]["code"] == "INVALID_PARAMS"
+        for method, params in (
+            ("debug.session.doctor", {"session": "d0"}),
+            ("debug.session.close", {"name": "d0"}),
+            ("debug.session.kill", {"session": "d0"}),
+            ("debug.query", {"session": "d0", "action": "value.at"}),
+            ("cov.session.doctor", {"session": "c0"}),
+            ("cov.session.close", {"name": "c0"}),
+            ("cov.session.kill", {"session": "c0"}),
+            ("cov.query", {"session": "c0", "action": "code_coverage.summary"}),
+        ):
+            legacy = send_requests(
+                sock,
+                [{"id": "legacy", "method": method, "params": params}],
+            )[0]
+            assert legacy["ok"] is False
+            assert legacy["error"]["code"] == "INVALID_PARAMS"
+            assert "unexpected params" in legacy["error"]["message"]
+        invalid_shutdown = send_requests(
+            sock,
+            [{
+                "id": "shutdown-invalid",
+                "method": "server.shutdown",
+                "params": False,
+            }],
+        )[0]
+        assert invalid_shutdown["ok"] is False
+        assert invalid_shutdown["error"]["code"] == "INVALID_REQUEST"
+        still_running = send_requests(
+            sock,
+            [{"id": "still-running", "method": "server.ping", "params": {}}],
+        )[0]
+        assert still_running["ok"] is True
     finally:
         server.shutdown()
         thread.join(timeout=5)
+
+
+@pytest.mark.parametrize(
+    "request_payload",
+    [
+        False,
+        [],
+        {"id": "case", "method": "server.ping"},
+        {"id": "case", "params": {}},
+        {"method": "server.ping", "params": {}},
+        {
+            "id": "case",
+            "method": "server.ping",
+            "params": {},
+            "unknown": True,
+        },
+        {"id": 1, "method": "server.ping", "params": {}},
+        {"id": False, "method": "server.ping", "params": {}},
+        {"id": "case", "method": False, "params": {}},
+        {"id": "case", "method": "server.ping", "params": False},
+        {"id": "case", "method": "server.ping", "params": []},
+    ],
+)
+def test_loop_wrapper_envelope_is_exact_and_closed(request_payload):
+    service = LoopWrapperService(
+        mode="direct",
+        xdebug_bin="false",
+        xcov_bin="false",
+    )
+    rsp = service.dispatch(request_payload)
+    assert rsp["ok"] is False
+    assert rsp["error"]["code"] == "INVALID_REQUEST"
+
+
+@pytest.mark.parametrize(
+    ("method", "params"),
+    [
+        ("server.ping", {"unknown": True}),
+        ("debug.session.list", {"verbose": 1}),
+        ("debug.session.list", {"include_tombstones": "false"}),
+        ("debug.session.open", {"name": 1, "fsdb": "wave.fsdb"}),
+        ("debug.session.open", {"name": "case", "fsdb": False}),
+        ("debug.session.open", {"name": "case", "fsdb": ""}),
+        (
+            "debug.query",
+            {"session_id": "case", "action": "value.at", "args": False},
+        ),
+        (
+            "debug.query",
+            {"session_id": "case", "action": "value.at", "args": []},
+        ),
+        (
+            "debug.query",
+            {"session_id": "case", "action": "value.at", "args": None},
+        ),
+        (
+            "debug.query",
+            {"session_id": "case", "action": "value.at", "limits": False},
+        ),
+        (
+            "debug.query",
+            {
+                "session_id": "case",
+                "action": "value.at",
+                "output_format": 1,
+            },
+        ),
+        (
+            "debug.query",
+            {
+                "session_id": "case",
+                "action": "value.at",
+                "output_format": "yaml",
+            },
+        ),
+        (
+            "cov.query",
+            {
+                "session_id": "case",
+                "action": "code_coverage.summary",
+                "args": False,
+            },
+        ),
+        (
+            "cov.session.doctor",
+            {"session_id": 1, "verbose": False},
+        ),
+        ("cov.session.gc", {"verbose": 0}),
+    ],
+)
+def test_loop_wrapper_method_params_use_exact_types(method, params):
+    service = LoopWrapperService(
+        mode="direct",
+        xdebug_bin="false",
+        xcov_bin="false",
+    )
+    rsp = service.dispatch(
+        {"id": "contract", "method": method, "params": params},
+    )
+    assert rsp["ok"] is False
+    assert rsp["error"]["code"] == "INVALID_PARAMS"
 
 
 def test_loop_wrapper_query_timeout_returns_error(tmp_path, monkeypatch):
@@ -248,7 +461,7 @@ def test_loop_wrapper_query_timeout_returns_error(tmp_path, monkeypatch):
         assert open_rsp["ok"] is True
         query_rsp = send_requests(sock, [
             {"id": "query", "method": "debug.query", "params": {
-                "session": "slow", "action": "value.at", "args": {"signal": "clk"}, "output_format": "json"}}
+                "session_id": "slow", "action": "value.at", "args": {"signal": "clk"}, "output_format": "json"}}
         ], timeout_sec=2.0)[0]
         assert query_rsp["ok"] is False
         assert query_rsp["error"]["code"] == "SESSION_LOST"
@@ -268,8 +481,12 @@ def test_loop_wrapper_writes_direct_structured_logs(tmp_path, monkeypatch):
         responses = send_requests(sock, [
             {"id": "open", "method": "debug.session.open", "params": {"name": "logcase", "fsdb": "wave.fsdb"}},
             {"id": "query", "method": "debug.query", "params": {
-                "session": "logcase", "action": "value.at", "args": {"signal": "clk"}, "output_format": "json"}},
-            {"id": "close", "method": "debug.session.close", "params": {"name": "logcase"}},
+                "session_id": "logcase", "action": "value.at", "args": {"signal": "clk"}, "output_format": "json"}},
+            {
+                "id": "close",
+                "method": "debug.session.close",
+                "params": {"session_id": "logcase"},
+            },
         ])
         assert all(r["ok"] for r in responses)
     finally:
@@ -298,14 +515,19 @@ def test_loop_wrapper_logs_invalid_json_and_redacts_paths(tmp_path, monkeypatch)
     private_dir.mkdir(parents=True)
     private_fsdb = private_dir / "wave.fsdb"
     monkeypatch.setenv("XVERIF_LOOP_LOG_DIR", str(log_root))
-    monkeypatch.setenv("XDEBUG_LOG_PATH_MODE", "basename")
     debug = _make_fake_loop(tmp_path / "fake_xdebug", protocol="xdebug-stdio-loop", api_version="xdebug")
     cov = _make_fake_loop(tmp_path / "fake_xcov", protocol="xcov-stdio-loop", api_version="xcov")
     service = LoopWrapperService(mode="direct", xdebug_bin=debug, xcov_bin=cov)
     server, thread, sock = _start_server(tmp_path, service)
     try:
-        invalid = _send_raw(sock, "{not-json")
+        invalid = _send_raw(sock, "{private-invalid-json")
         assert invalid["ok"] is False
+        non_finite = _send_raw(
+            sock,
+            '{"id":"private-request-id","method":"server.ping",'
+            '"params":{"value":NaN}}',
+        )
+        assert non_finite["ok"] is False
         opened = send_requests(sock, [
             {"id": "open", "method": "debug.session.open", "params": {"name": "redact", "fsdb": str(private_fsdb)}}
         ])[0]
@@ -317,6 +539,8 @@ def test_loop_wrapper_logs_invalid_json_and_redacts_paths(tmp_path, monkeypatch)
     uds_text = (log_root / "logs" / "uds.ndjson").read_text(encoding="utf-8")
     session_text = (log_root / "sessions" / "redact" / "session.ndjson").read_text(encoding="utf-8")
     assert "uds.request.invalid_json" in uds_text
+    assert "private-invalid-json" not in uds_text
+    assert "private-request-id" not in uds_text
     assert "wave.fsdb" in session_text
     assert str(private_dir) not in session_text
     assert str(tmp_path) not in uds_text
@@ -327,6 +551,10 @@ def test_loop_wrapper_fake_lsf_logs_job_and_cleanup(tmp_path, monkeypatch):
     monkeypatch.setenv("XVERIF_LOOP_LOG_DIR", str(log_root))
     monkeypatch.setenv("XVERIF_LOOP_FAKE_LSF", "1")
     monkeypatch.setenv("FAKE_BSUB_STDOUT_NOISE_BEFORE_READY", "1")
+    monkeypatch.setenv(
+        "XVERIF_LSF_BKILL",
+        shlex.join([sys.executable, "-c", "raise SystemExit(0)"]),
+    )
     debug = _make_fake_loop(tmp_path / "fake_xdebug", protocol="xdebug-stdio-loop", api_version="xdebug")
     cov = _make_fake_loop(tmp_path / "fake_xcov", protocol="xcov-stdio-loop", api_version="xcov")
     service = LoopWrapperService(
@@ -340,7 +568,11 @@ def test_loop_wrapper_fake_lsf_logs_job_and_cleanup(tmp_path, monkeypatch):
     try:
         responses = send_requests(sock, [
             {"id": "open", "method": "debug.session.open", "params": {"name": "lsfcase", "fsdb": "wave.fsdb"}},
-            {"id": "close", "method": "debug.session.close", "params": {"name": "lsfcase"}},
+            {
+                "id": "close",
+                "method": "debug.session.close",
+                "params": {"session_id": "lsfcase"},
+            },
         ], timeout_sec=10.0)
         assert [r["ok"] for r in responses] == [True, True]
     finally:

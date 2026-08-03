@@ -2,22 +2,28 @@
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from xverif_loop.lsf.bsub import BsubOptions, BsubRunner
 from xverif_loop.lsf.protocol import JsonlProcess
 
-from xverif_loop.config import bkill_timeout, fake_lsf_enabled
-from xverif_loop.logging import argv_hash, log_lsf_event, log_stdio_event
+from xverif_loop.config import RuntimeConfig
+from xverif_loop.logging import StructuredLogger, argv_hash
+
+Json = dict[str, Any]
 
 
 @dataclass
 class LaunchConfig:
     alias: str
     xdebug_bin: str
+    runtime: RuntimeConfig
+    logger: StructuredLogger
     backend: str = "xdebug"
     tool_bin: Optional[str] = None
     queue: Optional[str] = None
@@ -26,13 +32,115 @@ class LaunchConfig:
     startup_timeout_sec: float = 60.0
 
 
-def _bkill_by_id(job_id: str) -> None:
-    bkill_cmd = os.environ.get("XVERIF_LSF_BKILL", "bkill")
+class LauncherTerminationError(RuntimeError):
+    """Termination failed after all applicable cleanup stages were attempted."""
+
+    def __init__(self, message: str, result: Json) -> None:
+        self.result = result
+        super().__init__(message)
+
+
+def _terminate_process(handle: JsonlProcess) -> Json:
+    started = time.monotonic()
     try:
-        subprocess.run([bkill_cmd, job_id], timeout=bkill_timeout(), check=False,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
+        result = handle.terminate()
+    except LauncherTerminationError:
+        raise
+    except Exception as exc:
+        structured = {
+            "ok": False,
+            "stage": "process",
+            "error_type": type(exc).__name__,
+            "elapsed_ms": int((time.monotonic() - started) * 1000),
+        }
+        raise LauncherTerminationError(
+            "loop process termination failed",
+            structured,
+        ) from exc
+    if (
+        not isinstance(result, dict)
+        or not isinstance(result.get("ok"), bool)
+    ):
+        raise LauncherTerminationError(
+            "loop process termination returned an invalid result",
+            {
+                "ok": False,
+                "stage": "process",
+                "error_type": "InvalidTerminationResult",
+                "elapsed_ms": int((time.monotonic() - started) * 1000),
+            },
+        )
+    if not result["ok"]:
+        raise LauncherTerminationError(
+            "loop process termination was not confirmed",
+            result,
+        )
+    return result
+
+
+def _run_bkill(*, job_id: str | None = None,
+               job_name: str | None = None,
+               alias: str | None = None,
+               runtime: RuntimeConfig,
+               logger: StructuredLogger) -> Json:
+    if (job_id is None) == (job_name is None):
+        raise ValueError("exactly one of job_id or job_name is required")
+    command = shlex.split(runtime.lsf_bkill_command)
+    if not command:
+        raise LauncherTerminationError(
+            "XVERIF_LSF_BKILL resolved to an empty command",
+            {"ok": False, "stage": "bkill", "error_type": "EmptyCommand"},
+        )
+    target_type = "job_id" if job_id is not None else "job_name"
+    target = job_id if job_id is not None else job_name
+    argv = command + ([str(job_id)] if job_id is not None else ["-J", str(job_name)])
+    started = time.monotonic()
+    try:
+        completed = subprocess.run(
+            argv,
+            timeout=runtime.bkill_timeout_sec,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except Exception as exc:
+        result = {
+            "ok": False,
+            "stage": "bkill",
+            "target_type": target_type,
+            "target": target,
+            "error_type": type(exc).__name__,
+            "elapsed_ms": int((time.monotonic() - started) * 1000),
+        }
+        logger.try_lsf(
+            alias,
+            f"bkill.by_{target_type}",
+            False,
+            **{key: value for key, value in result.items() if key != "ok"},
+        )
+        raise LauncherTerminationError("LSF bkill invocation failed", result) from exc
+    result = {
+        "ok": completed.returncode == 0,
+        "stage": "bkill",
+        "target_type": target_type,
+        "target": target,
+        "returncode": completed.returncode,
+        "stdout_present": bool(completed.stdout),
+        "stderr_present": bool(completed.stderr),
+        "elapsed_ms": int((time.monotonic() - started) * 1000),
+    }
+    logger.try_lsf(
+        alias,
+        f"bkill.by_{target_type}",
+        result["ok"],
+        **{key: value for key, value in result.items() if key != "ok"},
+    )
+    if not result["ok"]:
+        raise LauncherTerminationError(
+            f"LSF bkill exited with status {completed.returncode}",
+            result,
+        )
+    return result
 
 
 def _loop_cmd(cfg: LaunchConfig) -> list[str]:
@@ -48,8 +156,13 @@ class Launcher:
     def start(self, cfg: LaunchConfig) -> JsonlProcess:
         raise NotImplementedError
 
-    def terminate(self, handle: JsonlProcess) -> None:
-        handle.terminate()
+    def terminate(self, handle: JsonlProcess) -> Json:
+        return {
+            "ok": True,
+            "launcher": self.mode,
+            "process": _terminate_process(handle),
+            "scheduler": {"status": "not_applicable"},
+        }
 
 
 class DirectLauncher(Launcher):
@@ -57,14 +170,19 @@ class DirectLauncher(Launcher):
 
     def start(self, cfg: LaunchConfig) -> JsonlProcess:
         cmd = _loop_cmd(cfg)
-        log_stdio_event(cfg.alias, "launcher.direct.start", True,
-                        backend=cfg.backend, launcher=self.mode,
-                        argv_hash=argv_hash(cmd))
-        proc = JsonlProcess.start(cmd, log_context={
-            "alias": cfg.alias,
-            "backend": cfg.backend,
-            "launcher": self.mode,
-        })
+        cfg.logger.stdio(cfg.alias, "launcher.direct.start", True,
+                         backend=cfg.backend, launcher=self.mode,
+                         argv_hash=argv_hash(cmd))
+        proc = JsonlProcess.start(
+            cmd,
+            runtime=cfg.runtime,
+            logger=cfg.logger,
+            log_context={
+                "alias": cfg.alias,
+                "backend": cfg.backend,
+                "launcher": self.mode,
+            },
+        )
         proc.job_name = None
         proc.job_id = None
         return proc
@@ -73,18 +191,15 @@ class DirectLauncher(Launcher):
 class LsfLauncher(Launcher):
     mode = "lsf"
 
-    def __init__(self, bsub: Optional[BsubRunner] = None) -> None:
-        bsub_cmd = os.environ.get("XVERIF_LSF_BSUB")
-        if bsub is None and fake_lsf_enabled() and not bsub_cmd:
-            bsub_cmd = f"{sys.executable} -m xverif_loop.lsf.fake_bsub"
-        self.bsub = bsub or BsubRunner(bsub_cmd)
+    def __init__(self, bsub: BsubRunner) -> None:
+        self.bsub = bsub
 
     def start(self, cfg: LaunchConfig) -> JsonlProcess:
         cmd = _loop_cmd(cfg)
-        log_lsf_event(cfg.alias, "launcher.lsf.start", True,
-                      backend=cfg.backend, launcher=self.mode,
-                      queue=cfg.queue, resource=cfg.resource,
-                      job_name=cfg.job_name, argv_hash=argv_hash(cmd))
+        cfg.logger.lsf(cfg.alias, "launcher.lsf.start", True,
+                       backend=cfg.backend, launcher=self.mode,
+                       queue=cfg.queue, resource=cfg.resource,
+                       job_name=cfg.job_name, argv_hash=argv_hash(cmd))
         proc = self.bsub.start(
             cmd,
             BsubOptions(
@@ -92,6 +207,8 @@ class LsfLauncher(Launcher):
                 resource=cfg.resource,
                 job_name=cfg.job_name,
             ),
+            runtime=cfg.runtime,
+            logger=cfg.logger,
             log_context={
                 "alias": cfg.alias,
                 "backend": cfg.backend,
@@ -100,22 +217,62 @@ class LsfLauncher(Launcher):
         )
         return proc
 
-    def terminate(self, handle: JsonlProcess) -> None:
+    def terminate(self, handle: JsonlProcess) -> Json:
+        result: Json = {
+            "ok": True,
+            "launcher": self.mode,
+            "process": None,
+            "scheduler": {"status": "not_attempted"},
+        }
+        errors: Json = {}
         try:
-            handle.terminate()
-        finally:
-            jid = getattr(handle, "job_id", None)
-            jname = getattr(handle, "job_name", None)
+            result["process"] = _terminate_process(handle)
+        except LauncherTerminationError as exc:
+            errors["process"] = exc.result
+            result["process"] = exc.result
+        jid = getattr(handle, "job_id", None)
+        jname = getattr(handle, "job_name", None)
+        try:
             if jid:
-                log_lsf_event(getattr(handle, "log_alias", None), "bkill.by_id", True,
-                              job_id=jid, job_name=jname)
-                _bkill_by_id(jid)
+                result["scheduler"] = _run_bkill(
+                    job_id=jid,
+                    alias=getattr(handle, "log_alias", None),
+                    runtime=handle.runtime,
+                    logger=handle.logger,
+                )
             elif jname:
-                bkill_cmd = os.environ.get("XVERIF_LSF_BKILL", "bkill")
-                try:
-                    log_lsf_event(getattr(handle, "log_alias", None), "bkill.by_name", True,
-                                  job_name=jname)
-                    subprocess.run([bkill_cmd, "-J", jname], timeout=bkill_timeout(), check=False,
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                except Exception:
-                    pass
+                result["scheduler"] = _run_bkill(
+                    job_name=jname,
+                    alias=getattr(handle, "log_alias", None),
+                    runtime=handle.runtime,
+                    logger=handle.logger,
+                )
+            else:
+                result["scheduler"] = {
+                    "ok": False,
+                    "status": "job_identity_missing",
+                }
+                errors["scheduler"] = result["scheduler"]
+        except LauncherTerminationError as exc:
+            errors["scheduler"] = exc.result
+            result["scheduler"] = exc.result
+        if errors:
+            result["ok"] = False
+            result["errors"] = errors
+            handle.logger.try_lsf(
+                getattr(handle, "log_alias", None),
+                "launcher.lsf.terminate",
+                False,
+                result=result,
+            )
+            raise LauncherTerminationError(
+                "LSF launcher termination was only partially confirmed",
+                result,
+            )
+        handle.logger.try_lsf(
+            getattr(handle, "log_alias", None),
+            "launcher.lsf.terminate",
+            True,
+            result=result,
+        )
+        return result

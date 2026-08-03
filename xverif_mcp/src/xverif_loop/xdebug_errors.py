@@ -1,8 +1,7 @@
 """xdebug response shaping shared by SDK-free loop clients."""
 from __future__ import annotations
 
-import json
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 Json = Dict[str, Any]
 FORBIDDEN_NATIVE_SESSION_ACTIONS = {"session.open", "session.close", "session.kill", "session.gc", "session.doctor", "session.status", "session.list"}
@@ -27,7 +26,11 @@ def forbidden_native_session_error(action: str | None, backend: str = "debug") -
     return {"ok": False, "error": {"code": "NATIVE_SESSION_ACTION_FORBIDDEN", "message": f"MCP {backend} query does not allow native lifecycle action {action or 'session.*'}; use {prefix}_session_* tools for managed session lifecycle", "recoverable": True, "error_layer": "wrapper", "example_note": f"不要在 {prefix}_query 中调用 native session.* action。", "correct_example": {"tool": tool, "args": args}}}
 
 
-def translate_native_example_for_query(response: Json, *, session_id: str) -> Json:
+def translate_native_example_for_query(
+    response: Json,
+    *,
+    session_id: Optional[str],
+) -> Json:
     out = dict(response)
     error = out.get("error")
     if not isinstance(error, dict):
@@ -35,7 +38,16 @@ def translate_native_example_for_query(response: Json, *, session_id: str) -> Js
     example = error.get("correct_example")
     if not isinstance(example, dict):
         return out
-    args: Json = {"session_id": session_id, "action": example.get("action") or out.get("action"), "args": example.get("args") if isinstance(example.get("args"), dict) else {}}
+    args: Json = {
+        "action": example.get("action") or out.get("action"),
+        "args": (
+            example.get("args")
+            if isinstance(example.get("args"), dict)
+            else {}
+        ),
+    }
+    if session_id is not None:
+        args["session_id"] = session_id
     for key in ("limits", "output"):
         if isinstance(example.get(key), dict):
             args[key] = example[key]
@@ -44,18 +56,3 @@ def translate_native_example_for_query(response: Json, *, session_id: str) -> Js
     error["example_note"] = "示例仅说明 xverif_debug_query 的 MCP 参数形态；不要把 api_version/target 写进 MCP args。"
     out["error"] = error
     return out
-
-
-def xout_error(response: Json) -> str:
-    error = response.get("error") if isinstance(response.get("error"), dict) else {}
-    lines = ["@xdebug.error.v1", f"action: {response.get('action') or 'error'}"]
-    for key in ("code", "message", "recoverable", "error_layer", "invalid_arg", "expected", "received", "received_type", "allowed_values", "available_values", "missing_name", "missing_resource", "did_you_mean", "example_note"):
-        if key in error:
-            value = error[key]
-            rendered = (
-                json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-                if isinstance(value, (dict, list))
-                else str(value).replace("\n", "\\n")
-            )
-            lines.append(f"{key}: {rendered}")
-    return "\n".join(lines).rstrip() + "\n"

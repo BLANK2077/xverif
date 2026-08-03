@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import sys
 import time
 from pathlib import Path
@@ -20,11 +21,13 @@ from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator
 
-from xverif_mcp.lsf.bsub import BsubRunner
-from xverif_mcp.sessions.launchers import DirectLauncher, LsfLauncher
-from xverif_mcp.sessions.loop_session import XdebugLoopSession
-from xverif_mcp.sessions.session_manager import McpSessionManager
-from xverif_mcp.lsf.protocol import JsonlProcess
+from xverif_loop.config import resolve_mcp_runtime_config
+from xverif_loop.lsf.bsub import BsubRunner
+from xverif_loop.lsf.protocol import JsonlProcess, ProtocolError
+from xverif_loop.logging import resolve_logger
+from xverif_loop.sessions.launchers import DirectLauncher, LsfLauncher
+from xverif_loop.sessions.loop_session import XdebugLoopSession
+from xverif_loop.sessions.session_manager import McpSessionManager
 
 
 # ---------------------------------------------------------------------------
@@ -74,17 +77,46 @@ def _fake_loop_script(dirpath: Path, fail_open: bool = False, fail_query: bool =
         "",
         '    wants_json = (req.get("output", {}).get("format") == "json" or',
         '                  req.get("output", {}).get("response_format") == "json" or',
-        '                  req.get("__xverif_loop_payload_format") == "json")',
-        "    if wants_json:",
+        '                  req.get("payload_format") == "json")',
+        '    if req.get("api_version") == "xcov.v1":',
+        '        completeness = {"total_count": 1 if action == "session.open" else 0,',
+        '                        "returned_count": 1 if action == "session.open" else 0,',
+        '                        "response_truncated": False, "scan_complete": True,',
+        '                        "analysis_complete": True, "truncation_scopes": []}',
+        '        if action == "session.open":',
+        '            name = req.get("args", {}).get("name", "test")',
+        '            result = {"ok": True, "api_version": "xcov.v1", "request_id": rid,',
+        '                      "action": action, "summary": completeness,',
+        '                      "data": {"session": {"session_id": name, "state": "alive",',
+        '                                           "vdb": req.get("target", {}).get("vdb"),',
+        '                                           "test_count": 1, "top_scope_count": 1,',
+        '                                           "worker": "fake"},',
+        '                               "resource_snapshot": {',
+        '                                   "vdb": req.get("target", {}).get("vdb"),',
+        '                                   "run_manifest": None}}, "warnings": []}',
+        '        else:',
+        '            result = {"ok": True, "api_version": "xcov.v1", "request_id": rid,',
+        '                      "action": action, "summary": completeness,',
+        '                      "data": {}, "warnings": []}',
+        '        rsp = {"id": rid, "ok": True, "payload_format": "xout",',
+        '               "json": result, "xout": "@xcov.v1 ok action=" + action + " request_id=unit\\n"}',
+        "    elif wants_json:",
         '        if action == "session.open":',
         '            result = {"ok": True, "action": action,',
-        '                      "summary": {"session_id": req.get("args", {}).get("name", "test"), "mode": "waveform"}}',
+        '                      "session": {"session_id": req.get("args", {}).get("name", "test"), "mode": "waveform"},',
+        '                      "summary": {"status": "opened"}}',
         '        else:',
         '            result = {"ok": True, "action": action, "summary": {"echo": action}}',
         '        rsp = {"id": rid, "ok": True, "payload_format": "json", "json": result}',
         "    else:",
+        '        if action == "session.open":',
+        '            result = {"ok": True, "action": action,',
+        '                      "session": {"session_id": req.get("args", {}).get("name", "test"), "mode": "waveform"},',
+        '                      "summary": {"status": "opened"}}',
+        '        else:',
+        '            result = {"ok": True, "action": action, "summary": {"echo": action}}',
         '        xout = "@xdebug." + action + ".v1\\n"',
-        '        rsp = {"id": rid, "ok": True, "payload_format": "xout", "xout": xout}',
+        '        rsp = {"id": rid, "ok": True, "payload_format": "xout", "json": result, "xout": xout}',
         "    print(json.dumps(rsp))",
         "    sys.stdout.flush()",
     ])
@@ -108,8 +140,10 @@ def _fake_loop_dead_session(dirpath: Path) -> str:
         '    if action == "stdio.quit":',
         "        sys.exit(0)",
         '    if action == "session.open":',
+        '        name = req.get("args", {}).get("name", "test")',
         '        result = {"ok": True, "action": "session.open",',
-        '                  "summary": {"session_id": "dead_test", "mode": "combined"}}',
+        '                  "session": {"session_id": name, "mode": "combined"},',
+        '                  "summary": {"status": "opened"}}',
         '        rsp = {"id": rid, "ok": True, "payload_format": "json", "json": result}',
         "    else:",
         '        rsp = {"id": rid, "ok": False,',
@@ -141,10 +175,40 @@ def _fake_native_admin_cli(dirpath: Path, capture_path: Path) -> str:
 
 
 def _new_session(fake_bin: str, alias: str = "test") -> XdebugLoopSession:
+    runtime = _runtime()
     return XdebugLoopSession(
         alias=alias, fsdb="t.fsdb", daidir=None,
-        launcher=DirectLauncher(), xdebug_bin=fake_bin,
-        startup_timeout_sec=3.0, request_timeout_sec=3.0,
+        launcher=DirectLauncher(), runtime=runtime,
+        logger=resolve_logger(runtime), xdebug_bin=fake_bin,
+    )
+
+
+def _runtime(
+    *,
+    backend: str = "direct",
+    request_timeout_sec: float = 3.0,
+):
+    return resolve_mcp_runtime_config().with_overrides(
+        backend=backend,
+        startup_timeout_sec=3.0,
+        request_timeout_sec=request_timeout_sec,
+    )
+
+
+def _new_manager(
+    *,
+    backend: str = "xdebug",
+    request_timeout_sec: float = 3.0,
+    **kwargs,
+) -> McpSessionManager:
+    runtime = _runtime(
+        request_timeout_sec=request_timeout_sec,
+    )
+    return McpSessionManager(
+        runtime=runtime,
+        backend=backend,
+        logger=resolve_logger(runtime),
+        **kwargs,
     )
 
 
@@ -183,7 +247,7 @@ def _session_events(tmp_path: Path, alias: str, name: str = "session") -> list[d
 
 class TestOpenFailure:
     def test_missing_resource_is_rejected_before_launch(self):
-        mgr = McpSessionManager(mode="direct")
+        mgr = _new_manager()
         r = mgr.open_session("missing_resource")
         assert not r.get("ok")
         assert r["error"]["code"] == "RESOURCE_REQUIRED"
@@ -205,23 +269,140 @@ class TestOpenFailure:
 
     def test_no_session_after_failure(self, tmp_path):
         fake = _fake_loop_script(tmp_path, fail_open=True)
-        mgr = McpSessionManager(mode="direct")
+        mgr = _new_manager()
         mgr.xdebug_bin = fake
         r = mgr.open_session("doomed", fsdb="test.fsdb")
         assert not r.get("ok")
         assert "doomed" not in mgr.sessions
 
-    def test_mcp_log_path_redaction_basename(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("XDEBUG_LOG_PATH_MODE", "basename")
+    def test_mcp_log_path_uses_stable_safe_evidence(self, tmp_path):
         fake = _fake_loop_script(tmp_path)
-        mgr = McpSessionManager(mode="direct")
+        mgr = _new_manager()
         mgr.xdebug_bin = fake
         r = mgr.open_session("redact_case", fsdb="/very/private/wave.fsdb")
         assert r.get("ok"), r
         events = _session_events(tmp_path, "redact_case")
         begin = next(e for e in events if e["phase"] == "manager.open.begin")
-        assert begin["fsdb"] == "wave.fsdb"
+        assert begin["fsdb"]["basename"] == "wave.fsdb"
+        assert len(begin["fsdb"]["sha256"]) == 64
         assert "/very/private" not in json.dumps(events)
+
+
+class TestStrictJsonlProtocol:
+    def test_ready_rejects_non_json_stdout_without_echoing_it(self, tmp_path):
+        fake = _make_fake_script(tmp_path / "polluted_ready", [
+            "import sys, time",
+            "print('private stdout pollution', flush=True)",
+            "time.sleep(10)",
+        ])
+        runtime = _runtime()
+        handle = JsonlProcess.start(
+            [fake],
+            runtime=runtime,
+            logger=resolve_logger(runtime),
+        )
+        try:
+            with pytest.raises(ProtocolError) as caught:
+                handle.wait_ready("xdebug-stdio-loop", timeout_sec=2.0)
+            assert str(caught.value) == (
+                "non-JSON stdout before the ready envelope"
+            )
+            assert "private stdout pollution" not in str(caught.value)
+        finally:
+            handle.terminate()
+
+    def test_ready_rejects_non_finite_json_extension(self, tmp_path):
+        fake = _make_fake_script(tmp_path / "nan_ready", [
+            "import time",
+            "print('{\"type\":\"ready\",\"protocol\":\"xdebug-stdio-loop\","
+            "\"version\":NaN}', flush=True)",
+            "time.sleep(10)",
+        ])
+        runtime = _runtime()
+        handle = JsonlProcess.start(
+            [fake],
+            runtime=runtime,
+            logger=resolve_logger(runtime),
+        )
+        try:
+            with pytest.raises(
+                ProtocolError,
+                match="non-JSON stdout before the ready envelope",
+            ):
+                handle.wait_ready("xdebug-stdio-loop", timeout_sec=2.0)
+        finally:
+            handle.terminate()
+
+    def test_request_rejects_missing_id_and_non_finite_value_before_write(
+        self,
+        tmp_path,
+    ):
+        fake = _make_fake_script(tmp_path / "strict_request", [
+            "import json, os, sys, time",
+            "print(json.dumps({'type':'ready',"
+            "'protocol':'xdebug-stdio-loop','version':1,'pid':os.getpid()}),"
+            "flush=True)",
+            "time.sleep(10)",
+        ])
+        runtime = _runtime()
+        handle = JsonlProcess.start(
+            [fake],
+            runtime=runtime,
+            logger=resolve_logger(runtime),
+        )
+        try:
+            handle.wait_ready("xdebug-stdio-loop", timeout_sec=2.0)
+            with pytest.raises(
+                ProtocolError,
+                match="non-empty string request_id or id",
+            ):
+                handle.request({"action": "actions"}, timeout_sec=1.0)
+            with pytest.raises(
+                ProtocolError,
+                match="JSONL message is not strict JSON",
+            ):
+                handle.request(
+                    {
+                        "request_id": "nan",
+                        "action": "actions",
+                        "args": {"value": float("nan")},
+                    },
+                    timeout_sec=1.0,
+                )
+        finally:
+            handle.terminate()
+
+    def test_response_rejects_non_finite_json_without_echoing_output(
+        self,
+        tmp_path,
+    ):
+        fake = _make_fake_script(tmp_path / "nan_response", [
+            "import json, os, sys",
+            "print(json.dumps({'type':'ready',"
+            "'protocol':'xdebug-stdio-loop','version':1,'pid':os.getpid()}),"
+            "flush=True)",
+            "for line in sys.stdin:",
+            "    request = json.loads(line)",
+            "    print('{\"id\":' + json.dumps(request['request_id']) + "
+            "',\"ok\":true,\"private\":NaN}', flush=True)",
+        ])
+        runtime = _runtime()
+        handle = JsonlProcess.start(
+            [fake],
+            runtime=runtime,
+            logger=resolve_logger(runtime),
+        )
+        try:
+            handle.wait_ready("xdebug-stdio-loop", timeout_sec=2.0)
+            with pytest.raises(ProtocolError) as caught:
+                handle.request(
+                    {"request_id": "nan-response", "action": "actions"},
+                    timeout_sec=2.0,
+                )
+            assert str(caught.value) == "non-JSON stdout after ready"
+            assert "private" not in str(caught.value)
+        finally:
+            handle.terminate()
 
 
 class TestQueryFailure:
@@ -285,7 +466,7 @@ class TestOrdinaryError:
 class TestManagerEvict:
     def test_dead_session_evicted_after_query(self, tmp_path):
         fake = _fake_loop_dead_session(tmp_path)
-        mgr = McpSessionManager(mode="direct")
+        mgr = _new_manager()
         mgr.xdebug_bin = fake
         mgr.open_session("evict_me", fsdb="test.fsdb")
         assert "evict_me" in mgr.sessions
@@ -297,7 +478,7 @@ class TestManagerEvict:
 
     def test_stale_alive_open_returns_session_stale(self, tmp_path):
         fake = _fake_loop_script(tmp_path)
-        mgr = McpSessionManager(mode="direct")
+        mgr = _new_manager()
         mgr.xdebug_bin = fake
 
         # First open
@@ -318,7 +499,7 @@ class TestManagerEvict:
 
     def test_close_dead_session(self, tmp_path):
         fake = _fake_loop_script(tmp_path)
-        mgr = McpSessionManager(mode="direct")
+        mgr = _new_manager()
         mgr.xdebug_bin = fake
         mgr.open_session("close_me", fsdb="test.fsdb")
         s = mgr.sessions["close_me"]
@@ -333,7 +514,7 @@ class TestManagerEvict:
 
     def test_close_all_closes_each_live_session_normally(self, tmp_path):
         fake = _fake_loop_script(tmp_path)
-        mgr = McpSessionManager(mode="direct")
+        mgr = _new_manager()
         mgr.xdebug_bin = fake
         mgr.open_session("close_all_a", fsdb="a.fsdb")
         mgr.open_session("close_all_b", fsdb="b.fsdb")
@@ -351,7 +532,7 @@ class TestManagerEvict:
 
     def test_native_close_failure_is_tombstoned_with_manager_layer(self, tmp_path):
         fake = _fake_loop_script(tmp_path)
-        mgr = McpSessionManager(mode="direct")
+        mgr = _new_manager()
         mgr.xdebug_bin = fake
         mgr.open_session("partial_close", fsdb="test.fsdb")
         session = mgr.sessions["partial_close"]
@@ -375,8 +556,7 @@ class TestManagerEvict:
 
     def test_cov_gc_confirms_dead_loop_without_native_fallback(self, tmp_path):
         fake = _fake_loop_script(tmp_path)
-        mgr = McpSessionManager(
-            mode="direct",
+        mgr = _new_manager(
             backend="xcov",
             api_version="xcov.v1",
             ready_protocol="xdebug-stdio-loop",
@@ -399,7 +579,7 @@ class TestManagerEvict:
 class TestOpenAfterLost:
     def test_open_after_session_lost_eviction(self, tmp_path):
         fake = _fake_loop_dead_session(tmp_path)
-        mgr = McpSessionManager(mode="direct")
+        mgr = _new_manager()
         mgr.xdebug_bin = fake
 
         mgr.open_session("reopen_me", fsdb="test.fsdb")
@@ -413,7 +593,9 @@ class TestOpenAfterLost:
         assert not r.get("ok"), r
         assert r["error"]["code"] == "SESSION_TOMBSTONE_EXISTS"
         tombstone = mgr.tombstones["reopen_me"]
-        tombstone._call_native_admin = lambda action: {"ok": True, "action": action}
+        tombstone._call_native_admin = (
+            lambda action, **kwargs: {"ok": True, "action": action}
+        )
         killed = mgr.kill_session("reopen_me")
         assert killed.get("ok"), killed
         gc = mgr.gc_sessions()
@@ -429,6 +611,8 @@ class TestFixedNativeAdminPath:
         session = _new_session(_fake_native_admin_cli(tmp_path, capture_path), alias="dead_admin")
         session.session_id = "native-session"
         session.state = "dead"
+        token = "ab" * 32
+        session._ownership_token = token
 
         doctor = session.doctor(verbose=True)
         killed = session.kill()
@@ -444,12 +628,20 @@ class TestFixedNativeAdminPath:
             "session.doctor",
             "session.kill",
         ]
+        assert requests[0] == {
+            "api_version": "xdebug.v1",
+            "action": "session.doctor",
+            "target": {"session_id": "native-session"},
+        }
+        assert requests[1] == {
+            "api_version": "xdebug.v1",
+            "action": "session.kill",
+            "target": {"session_id": "native-session"},
+            "args": {"ownership_token": token},
+        }
+        assert token not in json.dumps(doctor, sort_keys=True)
+        assert token not in json.dumps(killed, sort_keys=True)
         for request in requests:
-            assert request == {
-                "api_version": "xdebug.v1",
-                "action": request["action"],
-                "target": {"session_id": "native-session"},
-            }
             schema_path = (
                 Path(__file__).resolve().parents[2]
                 / "xdebug"
@@ -498,8 +690,10 @@ def _fake_slow_script(dirpath: Path) -> str:
         "        sys.exit(0)",
         "",
         '    if action == "session.open":',
+        '        name = req.get("args", {}).get("name", "slow")',
         '        result = {"ok": True, "action": "session.open",',
-        '                  "summary": {"session_id": "slow_test", "mode": "combined"}}',
+        '                  "session": {"session_id": name, "mode": "combined"},',
+        '                  "summary": {"status": "opened"}}',
         '        rsp = {"id": rid, "ok": True, "payload_format": "json", "json": result}',
         "        print(json.dumps(rsp))",
         "        sys.stdout.flush()",
@@ -514,9 +708,8 @@ class TestTimeoutSessionLost:
 
     def test_timeout_during_query(self, tmp_path):
         fake = _fake_slow_script(tmp_path)
-        mgr = McpSessionManager(mode="direct")
+        mgr = _new_manager(request_timeout_sec=0.5)
         mgr.xdebug_bin = fake
-        mgr.request_timeout_sec = 0.5  # short timeout
 
         r = mgr.open_session("slow", fsdb="test.fsdb")
         assert r.get("ok"), r
@@ -541,11 +734,16 @@ class TestLsfStructuredLog:
     def test_fake_lsf_logs_bsub_job_and_cleanup(self, tmp_path, monkeypatch):
         fake = _fake_loop_script(tmp_path)
         monkeypatch.setenv("FAKE_BSUB_STDOUT_NOISE_BEFORE_READY", "1")
-        runner = BsubRunner(f"{sys.executable} -m xverif_mcp.lsf.fake_bsub")
+        monkeypatch.setenv(
+            "XVERIF_LSF_BKILL",
+            shlex.join([sys.executable, "-c", "raise SystemExit(0)"]),
+        )
+        runner = BsubRunner(f"{sys.executable} -m xverif_loop.lsf.fake_bsub")
+        runtime = _runtime(backend="lsf")
         s = XdebugLoopSession(
             alias="lsf_log", fsdb="t.fsdb", daidir=None,
-            launcher=LsfLauncher(runner), xdebug_bin=fake,
-            startup_timeout_sec=3.0, request_timeout_sec=3.0,
+            launcher=LsfLauncher(runner), runtime=runtime,
+            logger=resolve_logger(runtime), xdebug_bin=fake,
             queue="interactive", resource="select[type==any]",
             job_name="xverif_lsf_log_test",
         )

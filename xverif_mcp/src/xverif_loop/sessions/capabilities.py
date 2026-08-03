@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -18,6 +18,9 @@ class BackendLifecycleCapability:
     fixed_admin_path: bool
     json_request_style: str
     managed_transport: Optional[str]
+    accepts_trace_id: bool
+    supports_conditional_cleanup_token: bool
+    session_id_path: Tuple[str, ...]
 
 
 CAPABILITIES = {
@@ -32,6 +35,9 @@ CAPABILITIES = {
         fixed_admin_path=True,
         json_request_style="loop_marker",
         managed_transport="uds",
+        accepts_trace_id=True,
+        supports_conditional_cleanup_token=True,
+        session_id_path=("session", "session_id"),
     ),
     "xcov": BackendLifecycleCapability(
         backend="xcov",
@@ -42,8 +48,11 @@ CAPABILITIES = {
         native_gc_action=None,
         backend_survives_loop=False,
         fixed_admin_path=False,
-        json_request_style="output_response_format",
+        json_request_style="transport_envelope",
         managed_transport=None,
+        accepts_trace_id=False,
+        supports_conditional_cleanup_token=False,
+        session_id_path=("data", "session", "session_id"),
     ),
 }
 

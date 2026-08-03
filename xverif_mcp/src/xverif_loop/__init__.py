@@ -1,6 +1,13 @@
 """SDK-free shared loop backend support for xverif stateful wrappers."""
 
-from .config import configure_environment
-from .logging import configure_logging
+from .config import (
+    RuntimeConfig,
+    resolve_loop_wrapper_runtime_config,
+    resolve_mcp_runtime_config,
+)
 
-__all__ = ["configure_environment", "configure_logging"]
+__all__ = [
+    "RuntimeConfig",
+    "resolve_loop_wrapper_runtime_config",
+    "resolve_mcp_runtime_config",
+]
