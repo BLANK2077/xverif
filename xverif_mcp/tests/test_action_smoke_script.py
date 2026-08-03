@@ -124,3 +124,30 @@ def test_open_session_does_not_send_removed_reuse_arg():
         "daidir": "simv.daidir",
         "fsdb": "waves.fsdb",
     }]
+
+
+def test_query_args_follow_canonical_resource_variant():
+    script = _load_script()
+
+    expression = script._debug_query_args(
+        "expr.normalize",
+        {"expr": "a && b"},
+        "case_a",
+    )
+    design_signal = script._debug_query_args(
+        "expr.normalize",
+        {"signal": "top.a"},
+        "case_a",
+    )
+
+    assert expression == {
+        "action": "expr.normalize",
+        "args": {"expr": "a && b"},
+        "output_format": "json",
+    }
+    assert design_signal == {
+        "action": "expr.normalize",
+        "session_id": "case_a",
+        "args": {"signal": "top.a"},
+        "output_format": "json",
+    }

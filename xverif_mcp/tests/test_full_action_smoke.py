@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -25,6 +26,17 @@ def test_full_action_smoke_uses_published_combined_fixture(tmp_path, xverif_fixt
         ),
         encoding="utf-8",
     )
+    isolated_home = tmp_path / "home"
+    isolated_state = tmp_path / "xdebug-state"
+    isolated_home.mkdir()
+    isolated_state.mkdir()
+    child_env = os.environ.copy()
+    child_env.update({
+        "HOME": str(isolated_home),
+        "XVERIF_TEST_TMPDIR": str(isolated_state),
+        "XVERIF_MCP_LOG_DIR": str(tmp_path / "mcp-logs"),
+        "XVERIF_LOOP_LOG_DIR": str(tmp_path / "loop-logs"),
+    })
     result = subprocess.run(
         [
             sys.executable,
@@ -34,6 +46,7 @@ def test_full_action_smoke_uses_published_combined_fixture(tmp_path, xverif_fixt
             "--runtime-only",
         ],
         cwd=ROOT,
+        env=child_env,
         text=True,
         capture_output=True,
         timeout=600,

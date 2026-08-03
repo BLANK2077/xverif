@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import shutil
 import sys
 import time
 from typing import Dict, List, Optional
 
-from xverif_mcp.config import default_xdebug_bin
-from xverif_mcp.sessions.launchers import DirectLauncher, LaunchConfig
-from xverif_mcp.lsf.bsub import parse_lsf_job_id
-from xverif_mcp.lsf.protocol import JsonlProcess
+from xverif_loop.config import default_xdebug_bin, resolve_mcp_runtime_config
+from xverif_loop.lsf.bsub import BsubRunner, parse_lsf_job_id
+from xverif_loop.lsf.protocol import JsonlProcess
+from xverif_loop.logging import resolve_logger
+from xverif_loop.sessions.launchers import DirectLauncher, LaunchConfig, LsfLauncher
 
 
 def _check_mcp_sdk() -> str:
@@ -34,7 +36,13 @@ def _check_xdebug_bin() -> str:
 
 def run(fake: bool = False) -> Dict[str, object]:
     started = time.time()
-    mode = "lsf" if (fake or os.environ.get("XVERIF_MCP_BACKEND") == "lsf") else "direct"
+    environment = dict(os.environ)
+    if fake:
+        environment["XVERIF_MCP_BACKEND"] = "lsf"
+        environment["XVERIF_MCP_FAKE_LSF"] = "1"
+    runtime = resolve_mcp_runtime_config(environment)
+    logger = resolve_logger(runtime)
+    mode = runtime.backend
     out: Dict[str, object] = {
         "python_version": sys.version.split()[0],
         "mcp_sdk_import": _check_mcp_sdk(),
@@ -42,22 +50,19 @@ def run(fake: bool = False) -> Dict[str, object]:
         "xdebug_bin": _check_xdebug_bin(),
     }
 
-    old_fake = os.environ.get("XVERIF_MCP_FAKE_LSF")
-    if fake:
-        os.environ["XVERIF_MCP_FAKE_LSF"] = "1"
-
     try:
         if mode == "lsf":
-            from xverif_mcp.sessions.launchers import LsfLauncher
-            launcher = LsfLauncher()
-            out["bsub"] = "fake" if fake else ("ok" if shutil.which("bsub") else "missing")
+            launcher = LsfLauncher(BsubRunner(runtime.lsf_bsub_command))
+            out["bsub"] = "fake" if runtime.fake_lsf else ("ok" if shutil.which("bsub") else "missing")
         else:
             launcher = DirectLauncher()
 
         cfg = LaunchConfig(
             alias="doctor",
             xdebug_bin=default_xdebug_bin(),
-            queue=os.environ.get("XVERIF_LSF_SESSION_QUEUE"),
+            runtime=runtime,
+            logger=logger,
+            queue=runtime.session_queue,
             job_name=f"xverif_doctor_{os.getpid()}" if mode == "lsf" else None,
             startup_timeout_sec=30.0,
         )
@@ -95,17 +100,16 @@ def run(fake: bool = False) -> Dict[str, object]:
                 "action": "stdio.quit",
             }, timeout_sec=10.0)
             out["quit_ok"] = rsp2.get("ok", False)
-            out["stderr_tail"] = list(handle.stderr_tail)[-5:]
+            stderr_text = "\n".join(list(handle.stderr_tail)[-5:])
+            out["stderr_evidence"] = {
+                "line_count": len(stderr_text.splitlines()),
+                "sha256": hashlib.sha256(stderr_text.encode("utf-8", errors="replace")).hexdigest(),
+            }
         finally:
             launcher.terminate(handle)
 
     except Exception as exc:
-        out["error"] = str(exc)
-    finally:
-        if old_fake is None:
-            os.environ.pop("XVERIF_MCP_FAKE_LSF", None)
-        else:
-            os.environ["XVERIF_MCP_FAKE_LSF"] = old_fake
+        out["error"] = {"code": "DOCTOR_FAILED", "error_type": type(exc).__name__}
 
     out["elapsed_ms"] = int((time.time() - started) * 1000)
     return out

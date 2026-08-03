@@ -193,3 +193,9 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 - 错误现象：沙箱外 AXI VIP 回归运行期间，沙箱内并发链接同一个 `xdebug/xdebug` 可执行文件，测试进程短暂遇到 `Permission denied`。
 - 误判原因：把编译和真实回归视为互不影响，忽略它们共享工作区中的同一可执行产物。
 - 以后规则：真实 xdebug/NPI/VIP 回归运行期间禁止并发构建或链接 xdebug；先完成构建，再串行启动宿主回归。
+
+### 2026-08-03 环境错误复盘
+
+- 错误现象：在临时仓库重建时，通过 functions.exec 嵌套调用 apply_patch，误以为 apply_patch 会继承 exec_command 的 workdir，短暂作用到原始参考仓库；已立即原样恢复并确认参考仓库相关文件干净。
+- 误判原因：混淆了 exec_command 子调用工作目录与 apply_patch 工具基于会话 cwd 解析相对路径的规则。
+- 以后规则：对工作区外临时仓库使用 apply_patch 时，patch 文件路径必须从会话 cwd 写成经核对的显式相对路径；每次首次修改后立即分别检查参考仓库与临时仓库 status。

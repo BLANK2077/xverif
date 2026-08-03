@@ -33,6 +33,8 @@ sys.path.insert(0, ROOT)
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from xverif_mcp.framing import validate_xout_text
+from xverif_mcp.xdebug_contracts import query_session_requirement
 
 # ---------------------------------------------------------------------------
 # Config
@@ -58,19 +60,31 @@ def build_action_args(sig: str, clk: str, session_name: str) -> dict[str, dict]:
     """根据信号名构建 L2 测试用 action 参数表。"""
     list_name = f"l2_test_list_{int(time.time())}"
     return {
-    "scope.list": {"path": "", "recursive": True, "max_depth": 3},
+    "scope.list": {"path": "", "level": 1},
     "signal.resolve": {"signal": sig},
     "expr.normalize": {"expr": "a && b"},
-    "handshake.inspect": {"clock": clk, "valid": sig, "ready": sig},
-    "detect_abnormal": {"signals": [sig, clk], "time_range": {"begin": "0ns", "end": "200ns"}},
+    "protocol.handshake.inspect": {"clock": clk, "valid": sig, "ready": sig},
+    "signal.anomaly.inspect": {"signals": [sig, clk], "time_range": {"begin": "0ns", "end": "200ns"}},
     "signal.xz_verify": {
         "signal": sig,
         "expected_state": "x",
         "time_range": {"begin": "0ns", "end": "200ns"},
     },
     "event.config.list": {},
-    "cursor.list": {},
+    "waveform.cursor.list": {},
     "list.create": {"name": list_name, "signals": [sig]},
+    "list.load": {
+        "config": {
+            "lists": [{
+                "name": f"{list_name}_loaded",
+                "signals": [sig, clk],
+            }],
+        },
+    },
+    "value.at": {
+        "list": f"{list_name}_loaded",
+        "times": ["1ns", "2ns"],
+    },
     "event.export": {"expr": "clk == 1", "clock": clk, "signals": {"clk": clk}, "line_limit": 2},
     "trace.load": {"signal": sig},
 }
@@ -144,6 +158,31 @@ async def discover_actions(session) -> list[str]:
     return sorted(actions)
 
 
+def _debug_query_args(
+    action: str,
+    args: dict,
+    session_id: str,
+    *,
+    output_format: str = "json",
+) -> dict:
+    """Construct one MCP call from the canonical resource contract."""
+    contract, variant = query_session_requirement(action, args)
+    if contract is None:
+        raise RuntimeError(f"action missing from canonical registry: {action}")
+    if contract["mode"] == "conditional":
+        if variant is None:
+            raise RuntimeError(
+                f"args do not match exactly one resource variant: {action}"
+            )
+        state = variant["session_id"]
+    else:
+        state = contract["session_id"]
+    call = {"action": action, "args": args, "output_format": output_format}
+    if state == "required":
+        call["session_id"] = session_id
+    return call
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -173,7 +212,10 @@ async def _open_session(session, cfg):
 
 
 async def _close_session(session, cfg):
-    result = await session.call_tool("xverif_debug_session_close", {"name": cfg["session_name"]})
+    result = await session.call_tool(
+        "xverif_debug_session_close",
+        {"session_id": cfg["session_name"]},
+    )
     data = json.loads(result.content[0].text)
     if not data.get("ok"):
         raise RuntimeError(
@@ -227,9 +269,10 @@ async def test_l2_basic(session: ClientSession, cfg: dict, action_args: dict) ->
         return 0, 1
 
     for action, args in action_args.items():
-        result = await session.call_tool("xverif_debug_query", {
-            "action": action, "session_id": sn, "args": args, "output_format": "json",
-        })
+        result = await session.call_tool(
+            "xverif_debug_query",
+            _debug_query_args(action, args, sn),
+        )
         data = json.loads(result.content[0].text)
         if isinstance(data, dict) and data.get("ok") is True:
             passed += 1
@@ -253,27 +296,41 @@ async def test_with_signal(session: ClientSession, cfg: dict, signal: str) -> tu
     if not await _open_session(session, cfg):
         return 0, 1
 
-    l3_actions = {
-        "value.at": {"signal": signal, "time": "1ns", "clock": clk},
-        "value.batch_at": {"signals": [signal], "time": "1ns", "clock": clk},
-        "signal.statistics": {"signal": signal},
-        "counter.statistics": {"clock": clk, "time_range": {"begin": "0ns", "end": "200ns"}, "vld": signal, "cnt": signal},
-        "signal.changes": {"signal": signal, "time_range": {"begin": "0ns", "end": "200ns"}, "aggregate_only": True},
-        "signal.stability": {"signal": signal, "time_range": {"begin": "0ns", "end": "200ns"}},
-        "signal.canonicalize": {"signal": signal},
-        "trace.driver": {"signal": signal},
-        "trace.active_driver": {"signal": signal, "time": "1ns"},
-        "expr.eval_at": {"expr": "sig == 1", "time": "1ns", "signals": {"sig": signal}, "clock": clk},
-        "event.find": {"expr": "clk == 1", "clock": clk, "signals": {"clk": clk}, "mode": "all", "line_limit": 3},
-        "window.verify": {"conditions": [
+    list_name = f"l3_signal_context_{int(time.time())}"
+    l3_actions = [
+        ("value.at", {"signal": signal, "time": "1ns", "clock": clk}),
+        ("list.load", {
+            "config": {
+                "lists": [{
+                    "name": list_name,
+                    "signals": [signal, clk],
+                }],
+            },
+        }),
+        ("value.at", {
+            "list": list_name,
+            "times": ["1ns", "2ns"],
+            "clock": clk,
+        }),
+        ("signal.statistics", {"signal": signal}),
+        ("counter.statistics", {"clock": clk, "time_range": {"begin": "0ns", "end": "200ns"}, "vld": signal, "cnt": signal}),
+        ("signal.changes", {"signal": signal, "time_range": {"begin": "0ns", "end": "200ns"}, "mode": "summary"}),
+        ("signal.stability", {"signal": signal, "time_range": {"begin": "0ns", "end": "200ns"}}),
+        ("signal.canonicalize", {"signal": signal}),
+        ("trace.driver", {"signal": signal}),
+        ("trace.active_driver", {"signal": signal, "time": "1ns"}),
+        ("expr.eval_at", {"expr": "sig == 1", "time": "1ns", "signals": {"sig": signal}, "clock": clk}),
+        ("event.find", {"expr": "clk == 1", "clock": clk, "signals": {"clk": clk}, "mode": "all", "line_limit": 3}),
+        ("window.verify", {"conditions": [
             {"expr": "sig == 1"}
-        ], "signals": {"sig": signal}, "time_range": {"begin": "0ns", "end": "1us"}, "clock": clk},
-    }
+        ], "signals": {"sig": signal}, "time_range": {"begin": "0ns", "end": "1us"}, "clock": clk}),
+    ]
 
-    for action, args in l3_actions.items():
-        result = await session.call_tool("xverif_debug_query", {
-            "action": action, "session_id": sn, "args": args, "output_format": "json",
-        })
+    for action, args in l3_actions:
+        result = await session.call_tool(
+            "xverif_debug_query",
+            _debug_query_args(action, args, sn),
+        )
         data = json.loads(result.content[0].text)
         if isinstance(data, dict) and data.get("ok") is True:
             passed += 1
@@ -285,15 +342,34 @@ async def test_with_signal(session: ClientSession, cfg: dict, signal: str) -> tu
 
     # XOUT format test
     print(f"\n{Colors.CYAN}--- 输出格式测试 ---{Colors.RESET}")
-    result = await session.call_tool("xverif_debug_query", {
-        "action": "value.at", "session_id": sn, "args": {"signal": signal, "time": "1ns", "clock": clk},
-    })
+    result = await session.call_tool(
+        "xverif_debug_query",
+        _debug_query_args(
+            "value.at",
+            {"signal": signal, "time": "1ns", "clock": clk},
+            sn,
+            output_format="xout",
+        ),
+    )
     xout_text = result.content[0].text
-    if xout_text.startswith("@xdebug."):
-        print(f"  {Colors.GREEN}OK{Colors.RESET} xout_format: starts with @xdebug.")
+    try:
+        validate_xout_text(xout_text)
+        xout_ok = (
+            xout_text.startswith("@xdebug.value.at.v1\n")
+            and signal in xout_text
+            and "pointer\tkind\tvalue" not in xout_text
+        )
+    except ValueError as exc:
+        xout_ok = False
+        xout_error = type(exc).__name__
+    if xout_ok:
+        print(f"  {Colors.GREEN}OK{Colors.RESET} xout_format: compact token-efficient text.")
         passed += 1
     else:
-        print(f"  {Colors.RED}FAIL{Colors.RESET} xout_format: {xout_text[:80]}")
+        print(
+            f"  {Colors.RED}FAIL{Colors.RESET} "
+            f"xout_format: {locals().get('xout_error', 'text contract')}"
+        )
         failed += 1
 
     await _close_session(session, cfg)
@@ -310,20 +386,28 @@ async def discover_signal(session: ClientSession, cfg: dict) -> str | None:
     for key in ("signal", "clock"):
         sig = cfg.get(key)
         if sig:
-            result = await session.call_tool("xverif_debug_query", {
-                "action": "value.at", "session_id": sn,
-                "args": {"signal": sig, "time": "1ns", "clock": cfg.get("clock", sig)}, "output_format": "json",
-            })
+            result = await session.call_tool(
+                "xverif_debug_query",
+                _debug_query_args(
+                    "value.at",
+                    {"signal": sig, "time": "1ns", "clock": cfg.get("clock", sig)},
+                    sn,
+                ),
+            )
             d = json.loads(result.content[0].text)
             if isinstance(d, dict) and d.get("ok"):
                 await _close_session(session, cfg)
                 return sig
 
     # Strategy 1: scope.list
-    result = await session.call_tool("xverif_debug_query", {
-        "action": "scope.list", "session_id": sn,
-        "args": {"path": "", "recursive": True, "max_depth": 5}, "output_format": "json",
-    })
+    result = await session.call_tool(
+        "xverif_debug_query",
+        _debug_query_args(
+            "scope.list",
+            {"path": "", "level": 1},
+            sn,
+        ),
+    )
     d = json.loads(result.content[0].text)
     if isinstance(d, dict):
         scopes = d.get("data", {}).get("scopes", d.get("data", {}).get("signals_preview", []))

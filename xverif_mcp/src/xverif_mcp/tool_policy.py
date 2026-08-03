@@ -1,13 +1,12 @@
-"""Tool exposure policy for xverif MCP."""
+"""Strict tool exposure policy for xverif MCP."""
 
 from __future__ import annotations
 
 import os
-from typing import Any, Iterable, Optional
+from dataclasses import dataclass
+from typing import Any, Iterable, Mapping, Optional
 
-
-TRUE_VALUES = {"1", "true", "yes", "on"}
-FALSE_VALUES = {"0", "false", "no", "off"}
+from xverif_loop.config import ConfigError
 
 GROUP_ENV = {
     "common": ("XVERIF_MCP_ENABLE_COMMON", True),
@@ -20,64 +19,48 @@ GROUP_ENV = {
 }
 
 
-def _parse_bool(raw: Optional[str], default: bool) -> bool:
+@dataclass(frozen=True)
+class ToolPolicy:
+    """One immutable tool-exposure snapshot."""
+
+    groups: tuple[tuple[str, bool], ...]
+    write_enabled: bool = False
+
+    def group_enabled(self, group: str) -> bool:
+        return dict(self.groups).get(group, False)
+
+    def tool_enabled(self, group: str, *, write: bool = False) -> bool:
+        if write and not self.write_enabled:
+            return False
+        return self.group_enabled(group)
+
+    def summary(self) -> dict[str, Any]:
+        return {"groups": dict(self.groups), "write_enabled": self.write_enabled}
+
+
+def _strict_env_flag(environ: Mapping[str, str], name: str, default: bool) -> bool:
+    raw = environ.get(name)
     if raw is None:
         return default
-    value = raw.strip().lower()
-    if value in TRUE_VALUES:
+    if raw == "1":
         return True
-    if value in FALSE_VALUES:
+    if raw == "0":
         return False
-    return default
+    raise ConfigError(name, raw, "'0' or '1'")
 
 
-def env_bool(name: str, default: bool = True) -> bool:
-    return _parse_bool(os.environ.get(name), default)
-
-
-def _invalid_bool_warning(name: str, default: bool) -> Optional[str]:
-    raw = os.environ.get(name)
-    if raw is None:
-        return None
-    value = raw.strip().lower()
-    if value in TRUE_VALUES or value in FALSE_VALUES:
-        return None
-    return f"{name}={raw!r} is not a boolean; using default {int(default)}"
-
-
-def policy_warnings() -> list[str]:
-    warnings: list[str] = []
-    for name, default in GROUP_ENV.values():
-        warning = _invalid_bool_warning(name, default)
-        if warning:
-            warnings.append(warning)
-    return warnings
-
-
-def group_enabled(group: str) -> bool:
-    item = GROUP_ENV.get(group)
-    if item is None:
-        return False
-    name, default = item
-    return env_bool(name, default)
-
-
-def tool_enabled(group: str, write: bool = False) -> bool:
-    if write:
-        return False
-    return group_enabled(group)
-
-
-def policy_summary() -> dict[str, Any]:
-    groups = {group: group_enabled(group) for group in GROUP_ENV}
-    return {
-        "groups": groups,
-        "write_enabled": False,
-        "warnings": policy_warnings(),
-    }
+def resolve_tool_policy(environ: Mapping[str, str] | None = None) -> ToolPolicy:
+    snapshot = dict(os.environ if environ is None else environ)
+    return ToolPolicy(
+        groups=tuple(
+            (group, _strict_env_flag(snapshot, env_name, default))
+            for group, (env_name, default) in GROUP_ENV.items()
+        )
+    )
 
 
 def filtered_catalog(
+    policy: ToolPolicy,
     catalog: Iterable[dict[str, Any]],
     category: Optional[str] = None,
     include_write: bool = False,
@@ -86,11 +69,11 @@ def filtered_catalog(
     for item in catalog:
         if category and item.get("category") != category:
             continue
-        write = bool(item.get("write"))
+        write = bool(item.get("write", False))
         if write and not include_write:
             continue
         group = str(item.get("group") or item.get("category") or "")
-        if not tool_enabled(group, write=write):
+        if not policy.tool_enabled(group, write=write):
             continue
         tools.append(dict(item))
     return tools
