@@ -6,6 +6,7 @@
 #include "logging/action_log.h"
 #include "runtime/work_dir.h"
 
+#include <limits>
 #include <string>
 
 namespace xdebug {
@@ -13,6 +14,7 @@ namespace xdebug {
 namespace {
 
 const int kDirectResourceTerminationGraceMs = 5000;
+const int kSessionDiagnosticCompletionGraceMs = 250;
 
 std::string request_session_id_for_log(const Json& request) {
     Json target = request.value("target", Json::object());
@@ -95,8 +97,10 @@ bool EngineAdapter::invoke(const Json& public_request,
     process_req.argv = {"ai", "query", "-"};
     process_req.stdin_text = stdin_text;
     process_req.working_dir = workdir;
-    process_req.timeout_ms = public_request.value("limits", Json::object())
-                                 .value("timeout_ms", 0);
+    const int public_timeout_ms =
+        public_request.value("limits", Json::object())
+            .value("timeout_ms", 0);
+    process_req.timeout_ms = public_timeout_ms;
     const bool direct_resource =
         !resolved_target.contains("session_id") &&
         (resolved_target.contains("daidir") ||
@@ -104,6 +108,16 @@ bool EngineAdapter::invoke(const Json& public_request,
     if (direct_resource) {
         process_req.termination_grace_ms =
             kDirectResourceTerminationGraceMs;
+    } else if (resolved_target.contains("session_id") &&
+               public_timeout_ms > 0 &&
+               public_timeout_ms <=
+                   std::numeric_limits<int>::max() -
+                       kSessionDiagnosticCompletionGraceMs) {
+        // The helper enforces the public deadline on its session socket.  Give
+        // it a small, non-operational completion window to persist the timeout
+        // event and serialize the canonical error before the parent kills it.
+        process_req.timeout_ms =
+            public_timeout_ms + kSessionDiagnosticCompletionGraceMs;
     }
 
     xdebug_core::log_lifecycle_event(
@@ -127,9 +141,10 @@ bool EngineAdapter::invoke(const Json& public_request,
                     "ENGINE_TIMEOUT",
                     message)
                     .to_json();
-        error["timeout_ms"] = process_req.timeout_ms;
+        error["timeout_ms"] = public_timeout_ms;
         xdebug_core::log_lifecycle_event(component, log_sid, "engine.process_timeout", false,
-                                         {{"timeout_ms", process_req.timeout_ms},
+                                         {{"timeout_ms", public_timeout_ms},
+                                          {"process_timeout_ms", process_req.timeout_ms},
                                           {"message", message}, {"engine_path", path},
                                           {"stderr_bytes", result.stderr_text.size()}});
         return false;

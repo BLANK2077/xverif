@@ -9,6 +9,7 @@
 #include "logging/action_log.h"
 #include "session/transport_timeout.h"
 
+#include <cerrno>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -175,12 +176,21 @@ bool send_request_capture(const std::string& session_id,
             session.auth_token);
     }
     Json response;
-    bool received =
+    errno = 0;
+    const bool received =
         write_json_line(fd, rpc) && read_bounded_json_line(fd, response);
+    const int exchange_errno = errno;
     close(fd);
     if (!received) {
-        status = "transport_failed";
-        message = "failed to exchange JSON request with session";
+        const bool public_timeout =
+            timeout_override_ms.present &&
+            (exchange_errno == EAGAIN || exchange_errno == EWOULDBLOCK);
+        status = public_timeout
+                     ? "transport_timeout"
+                     : "transport_failed";
+        message = public_timeout
+                      ? "session transport exceeded limits.timeout_ms"
+                      : "failed to exchange JSON request with session";
         xdebug_core::log_transport_event("engine", session_id, "send_request.exchange_failed", false,
                                          transport_timeout_log_context(
                                              {{"action", action},

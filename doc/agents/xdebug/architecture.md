@@ -107,6 +107,11 @@ frontend 不直接承载 NPI 重逻辑；NPI/FSDB/engine 能力集中在内部 e
 - 原生 request 使用 `target.session_id` 选择已打开 session。
 - MCP debug query 使用 `session_id` 参数。
 - session 失效后不能继续复用，需要重新 open。
+- session transport 使用 public `limits.timeout_ms` 作为 socket deadline；发生
+  `EAGAIN/EWOULDBLOCK` 时记录一次 `send_request.exchange_failed` 并返回
+  `ENGINE_TIMEOUT`。frontend 只可给短命 helper 一个固定的诊断序列化收尾窗口，
+  不得在该窗口重试、切换 transport 或扩大传给 session server 的执行预算；公开错误
+  仍报告原始 `timeout_ms`。
 
 ## Backend Engine Adapter 层
 

@@ -856,6 +856,23 @@ OrderedJson handle_engine_forward(
                 request,
                 action,
                 OrderedJson::parse(engine_error.dump()));
+        } else if (status == "transport_timeout") {
+            OrderedJson evidence = {
+                {"error_layer", "transport"},
+                {"session_id", sid}
+            };
+            const OrderedJson limits =
+                request.value("limits", OrderedJson::object());
+            if (limits.contains("timeout_ms")) {
+                evidence["timeout_ms"] = limits["timeout_ms"];
+            }
+            pending_error = make_error(
+                request,
+                action,
+                "ENGINE_TIMEOUT",
+                "internal engine request exceeded limits.timeout_ms",
+                true,
+                evidence);
         } else {
             OrderedJson evidence =
                 session_error_evidence(session_info);
