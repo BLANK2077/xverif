@@ -229,11 +229,15 @@ json enrich_trace_payload(const json& request, const json& trace) {
         });
     }
     for (const auto& r : trace.value("control_dependencies", json::array())) {
+        const bool evidence_complete = r.at("evidence_complete").get<bool>();
         edges.push_back({
             {"from", r.value("signal", "")}, {"to", query}, {"type", "control_dependency"},
             {"relation", "controls_assignment"}, {"file", r.value("file", "")},
             {"line", r.value("line", 0)}, {"source", r.value("source", "")},
-            {"resolution", r.value("resolution", "")}, {"confidence", "medium"}
+            {"resolution", r.value("resolution", "")},
+            {"evidence_kind", r.at("evidence_kind").get<std::string>()},
+            {"evidence_complete", evidence_complete},
+            {"confidence", evidence_complete ? "medium" : "low"}
         });
     }
     std::string confidence = confidence_for_trace(trace);
@@ -243,7 +247,7 @@ json enrich_trace_payload(const json& request, const json& trace) {
     out["confidence_reason"] =
         confidence == "high" ? "exact signal references with source locations were resolved" :
         confidence == "medium" ? "trace records were resolved but structured expression is incomplete" :
-        confidence == "low" ? "trace contains statement_only or fallback records" :
+        confidence == "low" ? "trace contains unresolved statement_only records" :
         "no reliable trace result was resolved";
     if (!records.empty()) {
         std::string source = records[0].value("source", "");
@@ -262,7 +266,7 @@ json make_trace_summary(const json& trace) {
     return {{"query", trace.value("query", "")}, {"mode", trace.value("mode", "")},
         {"result_count", trace.value("result_count", 0)},
         {"control_dependency_count", trace.value("control_dependency_count", 0)},
-        {"truncated", trace.value("truncated", false)},
+        {"analysis_complete", trace.value("analysis_complete", false)},
         {"confidence", trace.value("confidence", "unknown")}};
 }
 

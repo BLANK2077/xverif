@@ -24,9 +24,7 @@ json normalize_trace_error(const json& trace) {
     return {
         {"code", code},
         {"message", message},
-        {"recoverable", true},
-        {"candidates", json::array()},
-        {"suggested_actions", json::array()}
+        {"recoverable", true}
     };
 }
 
@@ -70,14 +68,16 @@ BfsResult run_trace_bfs(const BfsOptions& opts, const SingleTraceFn& trace_fn) {
             result.first_confidence = trace.value("confidence", "unknown");
 
         json trace_edges = trace.value("dependency_edges", json::array());
+        const bool trace_analysis_complete =
+            trace.at("analysis_complete").get<bool>();
         result.expanded_queries.push_back({
             {"query", current}, {"depth", depth},
             {"edge_count", trace_edges.size()},
-            {"truncated", trace.value("truncated", false)},
+            {"analysis_complete", trace_analysis_complete},
             {"confidence", trace.value("confidence", "unknown")}
         });
 
-        if (trace.value("truncated", false)) result.truncated = true;
+        if (!trace_analysis_complete) result.truncated = true;
 
         for (const auto& e : trace_edges) {
             if (!edge_type_allowed(opts.edge_type_filter, e)) continue;

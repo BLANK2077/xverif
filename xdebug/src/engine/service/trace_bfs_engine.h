@@ -37,7 +37,8 @@ struct BfsResult {
 };
 
 // Callback: signal name → enriched trace JSON.
-// The returned json should contain: dependency_edges[], confidence, truncated.
+// The returned json should contain: dependency_edges[], confidence,
+// analysis_complete.
 // On failure, return json with "error" key or empty object.
 using SingleTraceFn = std::function<json(const std::string& signal)>;
 

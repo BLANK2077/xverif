@@ -5,6 +5,7 @@
 #include "core/npi/time_contract.h"
 #include "runtime/work_dir.h"
 #include "waveform/common/clock_sampling.h"
+#include "waveform/server/fsdb_value_reader.h"
 
 #include <algorithm>
 #include <set>
@@ -141,12 +142,16 @@ std::vector<std::string> rhs_signal_names(const drvLoadStmt_s& statement,
 ValueEvidence value_evidence(const xdebug_waveform::ClockPointCell& cell,
                              npiFsdbFileHandle fsdb,
                              const std::string& active_time,
-                             bool is_before) {
+                             bool is_before,
+                             int width_hint) {
     ValueEvidence evidence;
     evidence.status = cell.status.empty() ? "missing_value" : cell.status;
     if (evidence.status != "ok") return evidence;
-    evidence.value = cell.raw_value;
-    evidence.known = cell.raw_value.find_first_of("xXzZ") == std::string::npos;
+    const xdebug_core::LogicValue value =
+        xdebug_core::logic_value_from_fsdb_raw(
+            cell.raw_value, 'b', width_hint);
+    evidence.value = xdebug_core::render_logic_value(value);
+    evidence.known = value.known;
     evidence.value_time = is_before && cell.has_value_time
         ? xdebug_core::format_time(fsdb, cell.value_time) : active_time;
     return evidence;
@@ -163,8 +168,13 @@ RhsSample sample_rhs(npiFsdbFileHandle fsdb,
         fsdb, nullptr, signal, active_tick, npiFsdbBinStrVal, '\0', before_cell);
     xdebug_waveform::ClockValueReader::read_current(
         fsdb, nullptr, signal, active_tick, npiFsdbBinStrVal, '\0', after_cell);
-    sample.before = value_evidence(before_cell, fsdb, active_time, true);
-    sample.after = value_evidence(after_cell, fsdb, active_time, false);
+    const xdebug_waveform::FsdbSignalWidth width =
+        xdebug_waveform::fsdb_signal_width(fsdb, signal);
+    const int width_hint = width.reliable ? width.width : 0;
+    sample.before =
+        value_evidence(before_cell, fsdb, active_time, true, width_hint);
+    sample.after =
+        value_evidence(after_cell, fsdb, active_time, false, width_hint);
     sample.has_changed = sample.before.status == "ok" && sample.after.status == "ok";
     sample.changed = sample.has_changed && sample.before.value != sample.after.value;
     return sample;
@@ -448,7 +458,6 @@ Json chain_to_json(const ChainResult& r) {
         j["index"] = n.index; j["signal"] = n.signal;
         j["time"] = n.time; j["active_time"] = n.active_time;
         j["requested_time"] = n.time;
-        j["driver_last_change_time"] = n.active_time;
         j["value"] = n.value_str; j["value_known"] = n.value_known;
         j["driver_kind"] = n.driver_kind; j["driver"] = n.driver;
         j["file"] = n.file; j["line"] = n.line;
@@ -511,9 +520,9 @@ Json chain_to_json(const ChainResult& r) {
             {"rhs_signal_count", evidence.rhs_signal_count},
             {"returned_rhs_signal_count", evidence.returned_rhs_signal_count},
             {"omitted_rhs_signal_count", evidence.omitted_rhs_signal_count},
-            {"complete", evidence.complete},
-            {"truncation_scope", evidence.truncation_scope.empty()
-                ? Json(nullptr) : Json(evidence.truncation_scope)},
+            {"analysis_complete", evidence.complete},
+            {"truncation_scopes", evidence.truncation_scope.empty()
+                ? Json::array() : Json::array({evidence.truncation_scope})},
             {"statements", statements}
         };
     }
@@ -521,7 +530,7 @@ Json chain_to_json(const ChainResult& r) {
     data["evidence_source"] = r.evidence_source.empty() ? Json(nullptr) : Json(r.evidence_source);
     data["static_candidate_count"] = r.static_candidate_count;
     data["active_check_count"] = r.active_check_count;
-    data["truncated"] = r.truncated;
+    data["analysis_complete"] = !r.truncated;
     return data;
 }
 
@@ -574,9 +583,16 @@ nlohmann::ordered_json build_active_driver_chain_payload(const Json& request,
         {"evidence_status", result.active_check_count > 0 ? "active_driver_checked" : "static_or_unavailable"},
         {"time_semantics", {
             {"requested_time", "the user query time"},
-            {"driver_last_change_time", "per-chain-node time attached to active-driver evidence"},
-            {"active_time", "compatibility alias of driver_last_change_time"}
-        }}
+            {"active_time", "per-chain-node time attached to active-driver evidence"}
+        }},
+        {"scan_complete", !result.truncated},
+        {"analysis_complete", !result.truncated},
+        {"response_truncated", false},
+        {"total_count", result.chain.size()},
+        {"returned_count", result.chain.size()},
+        {"truncation_scopes", result.truncated
+            ? nlohmann::ordered_json::array({"analysis_trace"})
+            : nlohmann::ordered_json::array()}
     };
     resp["chain"] = chain_to_json(result);
     if (result.has_depth_frontier) {
@@ -601,7 +617,6 @@ nlohmann::ordered_json build_active_driver_chain_payload(const Json& request,
             }
         });
     }
-    resp["truncated"] = result.truncated;
     append_common_blocks_to_payload(resp);
     return resp;
 }

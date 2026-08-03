@@ -11,6 +11,7 @@ namespace xdebug {
 nlohmann::ordered_json build_active_driver_payload(const Json& request,
                                                    const std::string& daidir,
                                                    const std::string& fsdb_path,
-                                                   npiFsdbFileHandle fsdb);
+                                                   npiFsdbFileHandle fsdb,
+                                                   bool include_trace);
 
 } // namespace xdebug

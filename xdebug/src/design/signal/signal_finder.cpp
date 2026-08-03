@@ -89,8 +89,14 @@ std::string SignalFinder::render_json(const SignalResolveResult& result) const {
     payload["query"] = result.query;
     payload["status"] = result.status;
     payload["message"] = result.message;
-    payload["count"] = result.matches.size();
-    payload["truncated"] = result.truncated;
+    payload["scan_complete"] = !result.truncated;
+    payload["analysis_complete"] = !result.truncated;
+    payload["response_truncated"] = false;
+    payload["total_count"] = result.matches.size();
+    payload["returned_count"] = result.matches.size();
+    payload["truncation_scopes"] = result.truncated
+        ? json::array({"analysis_matches"})
+        : json::array();
     payload["matches"] = json::array();
     for (const auto& match : result.matches) {
         payload["matches"].push_back({

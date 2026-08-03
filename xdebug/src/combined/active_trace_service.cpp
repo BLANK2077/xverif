@@ -97,21 +97,6 @@ std::string direct_rhs_signal_name(const drvLoadStmt_s& statement) {
     return "";
 }
 
-std::string passthrough_sigvec_candidate(const drvLoadStmt_s& statement,
-                                         const std::string& current_signal) {
-    if (!statement.isPassThrough) return "";
-    std::vector<std::string> candidates;
-    for (const auto& handle : statement.sigHdlVec) {
-        std::string name = normalized_signal_name(handle);
-        if (name.empty()) continue;
-        if (name == current_signal) continue;
-        if (std::find(candidates.begin(), candidates.end(), name) == candidates.end()) {
-            candidates.push_back(name);
-        }
-    }
-    return candidates.size() == 1 ? candidates.front() : "";
-}
-
 Json value_map(npiFsdbFileHandle fsdb,
                const std::vector<std::string>& signals,
                const std::string& time_spec,
@@ -145,17 +130,12 @@ struct ActiveTraceLimits {
     int max_depth = 8;
     int max_nodes = 50;
     int max_time_steps = 128;
-    int max_alias_candidates = 8;
     int max_trace_signals = 64;
 };
 
 struct ActiveTraceOptions {
     ActiveTraceLimits limits;
-    bool include_control = true;
-    bool include_parity = false;
     bool include_trace = false;
-    bool include_alias_candidates = false;
-    bool include_compat_fields = false;
 };
 
 struct AliasCandidate {
@@ -241,7 +221,6 @@ Json to_json(const TraceNode& node) {
         {"line", node.line},
         {"text", node.text},
         {"active_time", node.active_time},
-        {"driver_last_change_time", node.active_time},
         {"value", node.value},
         {"next_signal", node.next_signal},
         {"alias_kind", node.alias_kind}
@@ -273,11 +252,9 @@ Json alias_candidates_to_json(const std::vector<AliasCandidate>& candidates) {
 }
 
 ActiveTraceLimits parse_limits(const Json& request, const Json& args) {
+    (void)args;
     ActiveTraceLimits limits;
-    Json limits_json = args.value("limits", Json::object());
-    if (limits_json.empty()) {
-        limits_json = request.value("limits", Json::object());
-    }
+    Json limits_json = request.value("limits", Json::object());
     if (limits_json.contains("max_depth") && limits_json["max_depth"].is_number()) {
         limits.max_depth = std::max(1, limits_json["max_depth"].get<int>());
     }
@@ -287,29 +264,18 @@ ActiveTraceLimits parse_limits(const Json& request, const Json& args) {
     if (limits_json.contains("max_time_steps") && limits_json["max_time_steps"].is_number()) {
         limits.max_time_steps = std::max(1, limits_json["max_time_steps"].get<int>());
     }
-    if (limits_json.contains("max_alias_candidates") && limits_json["max_alias_candidates"].is_number()) {
-        limits.max_alias_candidates = std::max(0, limits_json["max_alias_candidates"].get<int>());
-    }
     if (limits_json.contains("max_trace_signals") && limits_json["max_trace_signals"].is_number()) {
         limits.max_trace_signals = std::max(1, limits_json["max_trace_signals"].get<int>());
     }
     return limits;
 }
 
-ActiveTraceOptions parse_options(const Json& request, const Json& args) {
+ActiveTraceOptions parse_options(const Json& request,
+                                 const Json& args,
+                                 bool include_trace) {
     ActiveTraceOptions options;
     options.limits = parse_limits(request, args);
-    options.include_control = args.value("include_control", true);
-    options.include_parity = args.value("include_parity", false);
-    options.include_trace = args.value("include_trace", false);
-    options.include_alias_candidates = args.value("include_alias_candidates", false);
-    options.include_compat_fields = args.value("include_compat_fields", false);
-
-    std::string verbosity = request.value("output", Json::object()).value("verbosity", "compact");
-    if (verbosity == "full" || verbosity == "debug") {
-        options.include_trace = true;
-        options.include_compat_fields = true;
-    }
+    options.include_trace = include_trace;
     return options;
 }
 
@@ -337,24 +303,13 @@ TraceNode trace_node_from_statement(const drvLoadStmt_s& statement,
         signals.push_back(name);
     }
 
-    // Determine next_signal for pass-through using NPI's classification plus
-    // the RHS AST, not statement text heuristics.
+    // A dependency edge is published only when the NPI RHS relation names the
+    // exact signal.  sigHdlVec is intentionally not guessed into a dependency.
     if (kind == "assignment") {
         std::string candidate = direct_rhs_signal_name(statement);
         if (!candidate.empty() && candidate != current_signal) {
             NpiHandleGuard verify(npi_handle_by_name(candidate.c_str(), nullptr));
             if (verify) next_signal = candidate;
-        }
-        if (next_signal.empty()) {
-            std::string fallback = passthrough_sigvec_candidate(statement, current_signal);
-            if (!fallback.empty()) {
-                NpiHandleGuard verify(npi_handle_by_name(fallback.c_str(), nullptr));
-                if (verify) {
-                    next_signal = fallback;
-                    next_relation = "heuristic_rhs_dependency";
-                    next_confidence = "medium";
-                }
-            }
         }
     }
 
@@ -380,11 +335,6 @@ TraceNode trace_node_from_statement(const drvLoadStmt_s& statement,
 
 // ─── alias resolver ─────────────────────────────────────────────────────────
 
-// Candidate modport names that are commonly output/source side.
-static const char* kCommonSourceModports[] = {
-    "source", "master", "mst", "producer", "tx", "drv", "driver", nullptr
-};
-
 // Split a hierarchical name into segments.
 static std::vector<std::string> split_hier(const std::string& path) {
     std::vector<std::string> parts;
@@ -398,17 +348,6 @@ static std::vector<std::string> split_hier(const std::string& path) {
     }
     if (!current.empty()) parts.push_back(current);
     return parts;
-}
-
-static std::string join_hier(const std::vector<std::string>& parts,
-                             size_t begin,
-                             size_t end) {
-    std::string out;
-    for (size_t i = begin; i < end && i < parts.size(); ++i) {
-        if (!out.empty()) out += ".";
-        out += parts[i];
-    }
-    return out;
 }
 
 AliasCandidate make_alias_candidate(const std::string& from,
@@ -428,8 +367,7 @@ AliasCandidate make_alias_candidate(const std::string& from,
 // Try to resolve a signal through interface/modport aliases.
 // Returns array of candidate objects.
 std::vector<AliasCandidate> resolve_alias_candidates(npiHandle signal_handle,
-                                                     const std::string& signal_name,
-                                                     const ActiveTraceLimits& limits) {
+                                                     const std::string& signal_name) {
     std::vector<AliasCandidate> candidates;
     if (!signal_handle) return candidates;
 
@@ -544,155 +482,15 @@ std::vector<AliasCandidate> resolve_alias_candidates(npiHandle signal_handle,
             }
         }
 
-        // Strategy 2a-ii: Reverse resolution for modport_port/ref_obj.
-        // First try the observed interface-member shape:
-        //   if_root_tb.link.data -> if_root_tb.link.source.data
-        // Active trace can then resolve the source modport port to the
-        // concrete producer assignment.
-        if (candidates.empty()) {
-            auto mp_parts = split_hier(signal_name);
-            if (mp_parts.size() >= 2) {
-                std::string member = mp_parts.back();
-                std::string iface_path = join_hier(mp_parts, 0, mp_parts.size() - 1);
-                for (int mi = 0; kCommonSourceModports[mi] != nullptr; ++mi) {
-                    std::string probe = iface_path + "." +
-                        kCommonSourceModports[mi] + "." + member;
-                    if (probe == signal_name) continue;
-                    npiHandle probe_hdl = npi_handle_by_name(probe.c_str(), nullptr);
-                    if (probe_hdl) {
-                        candidates.push_back(make_alias_candidate(
-                            signal_name,
-                            probe,
-                            "interface_modport",
-                            "high",
-                            std::string("mapped interface member through source modport '") +
-                                kCommonSourceModports[mi] + "'"));
-                        npi_release_handle(probe_hdl);
-                        break;
-                    }
-                }
-            }
-        }
-
-        // If the source-modport alias is not available, probe common producer
-        // instance/port patterns under the interface instance's parent scope.
-        if (candidates.empty() && (is_mp_port || hdl_type == 608)) {
-            // Strategy 2a-ii: Simple heuristic reverse resolution.
-            // Parse signal_name to get interface parent scope + last path
-            // element, then probe common instance/port patterns.
-            auto mp_parts = split_hier(signal_name);
-            if (mp_parts.size() >= 2) {
-                // Build parent scope (all but interface instance + member).
-                // For if_root_tb.link.data, parent_scope is if_root_tb.
-                std::string parent_scope = mp_parts.size() >= 3
-                    ? join_hier(mp_parts, 0, mp_parts.size() - 2)
-                    : join_hier(mp_parts, 0, mp_parts.size() - 1);
-                std::string member = mp_parts.back();
-
-                // Try common bus port patterns under known instance names
-                static const char* kInstNames[] = {
-                    "u_src", "u_sink", "u_dut", "u_mst", "u_slv",
-                    "i_source", "i_sink", "i_src", "i_dst", nullptr
-                };
-                static const char* kPortNames[] = {
-                    "bus", "intf", "vif", "mp", nullptr
-                };
-
-                if (!parent_scope.empty()) {
-                    for (int ii = 0; kInstNames[ii] != nullptr; ++ii) {
-                        for (int pi = 0; kPortNames[pi] != nullptr; ++pi) {
-                            std::string probe = parent_scope + "." +
-                                kInstNames[ii] + "." + kPortNames[pi] + "." + member;
-                            npiHandle probe_hdl = npi_handle_by_name(probe.c_str(), nullptr);
-                            if (probe_hdl) {
-                                candidates.push_back(make_alias_candidate(
-                                    signal_name,
-                                    probe,
-                                    "interface_modport",
-                                    "medium",
-                                    std::string("probe: ") + probe));
-                                npi_release_handle(probe_hdl);
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 
-    // Strategy 2b: Try modport resolution for interface members.
-    // Skip if this is already a modport_port (handled by Strategy 2a).
-    if (!is_mp_port && parts.size() >= 2) {
-        // The interface instance is the second-to-last path element before the member
-        // Actually, for link.data, the interface is "link" and member is "data"
-        // We need to find the parent scope
-
-        // Try: if the signal itself is a simple interface member (e.g., link.data)
-        // construct modport candidates
-        for (size_t iface_end = parts.size(); iface_end >= 2; --iface_end) {
-            std::string iface_path;
-            for (size_t i = 0; i < iface_end; ++i) {
-                if (i > 0) iface_path += ".";
-                iface_path += parts[i];
-            }
-
-            npiHandle iface = npi_handle_by_name(iface_path.c_str(), nullptr);
-            if (!iface) continue;
-
-            int iface_type = npi_get(npiType, iface);
-            // Check if this is an interface instance or modport port
-            bool is_interface = (iface_type == npiInterface || iface_type == npiInterfaceArray);
-            bool is_modport_port = false;
-#ifdef npiMpPort
-            is_modport_port = (iface_type == npiMpPort);
-#else
-            is_modport_port = (iface_type == 697);
-#endif
-
-            if (is_interface || is_modport_port) {
-                // This looks like an interface/modport — try source modport variants
-                std::string member_suffix;
-                for (size_t i = iface_end; i < parts.size(); ++i) {
-                    if (!member_suffix.empty()) member_suffix += ".";
-                    member_suffix += parts[i];
-                }
-
-                // Try each common source modport name
-                for (int mi = 0; kCommonSourceModports[mi] != nullptr; ++mi) {
-                    std::string candidate_path = iface_path + "." + kCommonSourceModports[mi];
-                    if (!member_suffix.empty()) candidate_path += "." + member_suffix;
-
-                    npiHandle cand = npi_handle_by_name(candidate_path.c_str(), nullptr);
-                    if (cand) {
-                        candidates.push_back(make_alias_candidate(
-                            signal_name,
-                            candidate_path,
-                            "interface_modport",
-                            "medium",
-                            std::string("matched modport '") +
-                                kCommonSourceModports[mi] +
-                                "' on interface " + iface_path));
-                        npi_release_handle(cand);
-                    }
-                }
-
-                npi_release_handle(iface);
-                break; // Found the interface level, stop searching upward
-            }
-
-            npi_release_handle(iface);
-        }
-    }
-
-    // Strategy 3: If the signal is a ref_obj, try resolving through the
-    // reference directly.
-    // Check if any candidate exists at the signal path without the instance prefix.
-    // e.g., if_root_tb.u_sink.bus.data internally references link.data
+    // If the signal is a ref_obj, resolve only through the explicit NPI
+    // reference relation.
     if (candidates.empty()) {
 #ifdef npiRefObj
         if (hdl_type == npiRefObj) {
 #else
-        if (hdl_type == 608) {  // npiRefObj numeric fallback
+        if (hdl_type == 608) {  // npiRefObj value in NPI versions without the symbol
 #endif
             // For ref_obj, the NPI full name should give us the underlying object
             // Try to get the actual reference target
@@ -712,14 +510,6 @@ std::vector<AliasCandidate> resolve_alias_candidates(npiHandle signal_handle,
         }
     }
 
-    // Truncate to limits
-    if (static_cast<int>(candidates.size()) > limits.max_alias_candidates) {
-        std::vector<AliasCandidate> truncated;
-        for (int i = 0; i < limits.max_alias_candidates; ++i) {
-            truncated.push_back(candidates[i]);
-        }
-        return truncated;
-    }
     return candidates;
 }
 
@@ -730,8 +520,7 @@ TraceBuildResult build_active_trace(
     const std::string& root_signal,
     const std::string& requested_time,
     const trcOption_t& options,
-    const ActiveTraceLimits& limits,
-    bool include_control) {
+    const ActiveTraceLimits& limits) {
 
     TraceBuildResult result;
 
@@ -831,7 +620,7 @@ TraceBuildResult build_active_trace(
             std::string alias_kind_str = statement_kind(signal_type);
             if (is_alias_kind(alias_kind_str)) {
                 std::vector<AliasCandidate> candidates =
-                    resolve_alias_candidates(signal_hdl.get(), current.signal, limits);
+                    resolve_alias_candidates(signal_hdl.get(), current.signal);
                 if (candidates.size() == 1 && candidates[0].confidence == "high") {
                     std::string target = candidates[0].to;
                     if (!target.empty() && visited.find(vkey(target, current.time)) == visited.end() &&
@@ -1138,7 +927,7 @@ TraceBuildResult build_active_trace(
                 npiHandle stmt_hdl = stmt.useHdl;
                 if (stmt_hdl) {
                     std::vector<AliasCandidate> candidates =
-                        resolve_alias_candidates(stmt_hdl, current.signal, limits);
+                        resolve_alias_candidates(stmt_hdl, current.signal);
                     if (candidates.size() == 1 && candidates[0].confidence == "high") {
                         std::string target = candidates[0].to;
 
@@ -1169,9 +958,7 @@ TraceBuildResult build_active_trace(
                     }
                 }
             } else if (is_control_kind(kind)) {
-                if (include_control) {
-                    result.controls.push_back(node);
-                }
+                result.controls.push_back(node);
             } else if (kind == "event_control") {
                 result.events.push_back(node);
             }
@@ -1211,7 +998,8 @@ TraceBuildResult build_active_trace(
 nlohmann::ordered_json build_active_driver_payload(const Json& request,
                                                    const std::string& daidir,
                                                    const std::string& fsdb_path,
-                                                   npiFsdbFileHandle fsdb) {
+                                                   npiFsdbFileHandle fsdb,
+                                                   bool include_trace) {
     (void)daidir;
     (void)fsdb_path;
     const std::string action = "trace.active_driver";
@@ -1227,17 +1015,18 @@ nlohmann::ordered_json build_active_driver_payload(const Json& request,
         return make_error(request, action, "FSDB_NOT_OPEN", "FSDB handle is null");
     }
 
-    ActiveTraceOptions request_options = parse_options(request, args);
+    ActiveTraceOptions request_options =
+        parse_options(request, args, include_trace);
     NpiHandleGuard signal(npi_handle_by_name(signal_name.c_str(), nullptr));
     if (!signal) {
         return nlohmann::ordered_json{{"error","SIGNAL_NOT_FOUND"}};
     }
     trcOption_t options = trcOptionDefault;
-    options.reportControl = request_options.include_control;
+    options.reportControl = true;
 
     TraceBuildResult trace_result = build_active_trace(
         fsdb, signal_name, requested_time, options,
-        request_options.limits, request_options.include_control);
+        request_options.limits);
 
     std::vector<std::string> limitations = trace_result.limitations;
     std::vector<std::string> value_signals;
@@ -1267,11 +1056,9 @@ nlohmann::ordered_json build_active_driver_payload(const Json& request,
         {"time", requested_time},
         {"requested_time", requested_time},
         {"active_time", first_active_time},
-        {"driver_last_change_time", first_active_time},
         {"time_semantics", {
             {"requested_time", "the user query time"},
-            {"driver_last_change_time", "the time attached to the active-driver evidence"},
-            {"active_time", "compatibility alias of driver_last_change_time"}
+            {"active_time", "the time attached to the active-driver evidence"}
         }},
         {"driver_status", driver_status},
         {"termination", trace_result.termination},
@@ -1284,7 +1071,15 @@ nlohmann::ordered_json build_active_driver_payload(const Json& request,
         {"active_check_count", trace_result.active_check_count},
         {"evidence_scope", "static_hdl_and_fsdb_active_driver"},
         {"evidence_status", trace_result.active_check_count > 0 ? "active_driver_checked" : "static_or_unavailable"},
-        {"trace_node_count", trace_result.node_count}
+        {"trace_node_count", trace_result.node_count},
+        {"scan_complete", !trace_result.truncated},
+        {"analysis_complete", !trace_result.truncated},
+        {"response_truncated", false},
+        {"total_count", trace_result.nodes.size()},
+        {"returned_count", trace_result.nodes.size()},
+        {"truncation_scopes", trace_result.truncated
+            ? nlohmann::ordered_json::array({"analysis_trace"})
+            : nlohmann::ordered_json::array()}
     };
     resp["driver"] = trace_result.current_driver.is_null()
         ? nlohmann::ordered_json(nullptr) : trace_result.current_driver;
@@ -1295,7 +1090,7 @@ nlohmann::ordered_json build_active_driver_payload(const Json& request,
     resp["values"] = {{"requested", requested_values}, {"active", active_values}};
     resp["limitations"] = strings_to_json(limitations);
 
-    if (request_options.include_alias_candidates || !trace_result.alias_candidates.empty())
+    if (!trace_result.alias_candidates.empty())
         resp["alias_candidates"] = alias_candidates_to_json(trace_result.alias_candidates);
 
     if (request_options.include_trace) {
@@ -1307,7 +1102,6 @@ nlohmann::ordered_json build_active_driver_payload(const Json& request,
                              ? nlohmann::ordered_json(trace_result.termination)
                              : nlohmann::ordered_json(trace_result.termination_detail)}};
     }
-    resp["truncated"] = trace_result.truncated;
     append_common_blocks_to_payload(resp);
     return resp;
 }
