@@ -55,7 +55,8 @@ public:
             domain_request,
             g_daidir_path,
             g_fsdb_path,
-            g_fsdb_file);
+            g_fsdb_file,
+            true);
         if (raw.contains("error")) return raw;
         Json out = simplify_active_driver_payload(raw,
                                                   signal,
