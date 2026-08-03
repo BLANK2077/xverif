@@ -566,15 +566,11 @@ bool ClockPointSampler::sample(npiFsdbTime requested_time,
         spec_.edge != ClockEdgeKind::Negedge &&
         spec_.sample_point == ClockSamplePointKind::Before;
 
-    result.context.clock = spec_.clock;
-    result.context.edge = spec_.edge;
     result.context.requested_time = requested_time;
     result.context.clock_edge_hit = clock_edge_hit;
     result.context.clock_edge_kind = actual_edge;
     result.context.has_clock_edge_kind = clock_edge_hit;
     result.context.target_edge_hit = target_edge_hit;
-    result.context.sample_point = spec_.sample_point;
-    result.context.sample_point_applied = target_edge_hit && spec_.edge != ClockEdgeKind::Negedge;
     result.context.previous_sample_time = prev_point.sample_time;
     result.context.has_previous_sample_time = have_prev;
     result.context.next_sample_time = next_point.sample_time;

@@ -103,7 +103,7 @@ struct StreamAnalysis {
     StreamPacket first_matched_packet;
     StreamPacket last_matched_packet;
     bool has_matched_packet_evidence = false;
-    bool truncated = false;
+    bool response_truncated = false;
     bool analysis_complete = true;
     npiFsdbTime requested_begin = 0;
     npiFsdbTime requested_end = 0;

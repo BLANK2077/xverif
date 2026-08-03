@@ -14,14 +14,13 @@ std::string trim_unsigned_bits(const std::string& bits) {
 bool parse_literal(const std::string& text, const std::string& path,
                    const ValueFilterParseOptions& options,
                    std::string& bits, ValueFilterError& error) {
-    LogicValue value = options.allow_legacy_0x && is_legacy_0x_literal(text)
-        ? logic_value_from_fsdb_raw(text, 'h')
-        : parse_user_logic_literal(text);
+    xdebug_core::LogicValue value =
+        xdebug_core::parse_user_logic_literal(text);
     if (!value.valid) {
         error = {path, value.error, "known integer, hexadecimal, or SystemVerilog literal"};
         return false;
     }
-    if (logic_value_has_xz(value)) {
+    if (xdebug_core::logic_value_has_xz(value)) {
         error = {path, "value literal must not contain X/Z: " + text,
                  "known integer, hexadecimal, or SystemVerilog literal"};
         return false;
@@ -112,7 +111,7 @@ bool parse_value_filter(const Json& spec, const std::string& path,
 }
 
 ValueFilterMatch match_value_filter(const ValueFilter& filter,
-                                    const LogicValue& value) {
+                                    const xdebug_core::LogicValue& value) {
     if (filter.mode == ValueFilterMode::Mask) {
         const size_t width = std::max(value.bits.size(),
             std::max(filter.value.size(), filter.mask.size()));
@@ -127,7 +126,8 @@ ValueFilterMatch match_value_filter(const ValueFilter& filter,
         }
         return ValueFilterMatch::Yes;
     }
-    if (!value.valid || logic_value_has_xz(value)) return ValueFilterMatch::Unresolved;
+    if (!value.valid || xdebug_core::logic_value_has_xz(value))
+        return ValueFilterMatch::Unresolved;
     if (filter.mode == ValueFilterMode::Exact) {
         for (const auto& expected : filter.values) {
             if (compare_unsigned_filter_bits(value.bits, expected) == 0)

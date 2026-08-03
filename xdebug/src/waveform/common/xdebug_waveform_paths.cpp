@@ -147,26 +147,6 @@ std::string xdebug_waveform_cursors_path(const std::string& session_id) {
     return xdebug_waveform_session_dir(session_id) + "/cursors.json";
 }
 
-std::string xdebug_waveform_legacy_registry_path() {
-    return xdebug_home_dir() + "/waveform/legacy.registry";
-}
-
-std::string xdebug_waveform_legacy_lists_path() {
-    return xdebug_home_dir() + "/waveform/legacy.lists";
-}
-
-std::string xdebug_waveform_legacy_apb_path() {
-    return xdebug_home_dir() + "/waveform/legacy.apb";
-}
-
-std::string xdebug_waveform_legacy_axi_path() {
-    return xdebug_home_dir() + "/waveform/legacy.axi";
-}
-
-std::string xdebug_waveform_legacy_events_path() {
-    return xdebug_home_dir() + "/waveform/legacy.events";
-}
-
 bool xdebug_waveform_ensure_home() {
     return ensure_dir(xdebug_home_dir()) &&
            ensure_dir(xdebug_waveform_home_dir()) &&
@@ -200,25 +180,6 @@ bool xdebug_waveform_remove_session_dir(const std::string& session_id) {
     remove_file_if_exists(dir + "/endpoint.json");
     // Preserve debug.log and logs/ for post-failure diagnostics.
     return true;
-}
-
-bool xdebug_waveform_legacy_registry_has_session(int session_id) {
-    FILE* fp = fopen(xdebug_waveform_legacy_registry_path().c_str(), "r");
-    if (!fp) return false;
-
-    char line[4096];
-    bool found = false;
-    while (fgets(line, sizeof(line), fp)) {
-        char* end = nullptr;
-        long sid = strtol(line, &end, 10);
-        if (end != line && sid == session_id && *end == '|') {
-            found = true;
-            break;
-        }
-    }
-
-    fclose(fp);
-    return found;
 }
 
 } // namespace xdebug_waveform

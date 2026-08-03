@@ -77,15 +77,11 @@ struct ClockPointRow {
 };
 
 struct ClockPointContext {
-    std::string clock;
-    ClockEdgeKind edge = ClockEdgeKind::Negedge;
     npiFsdbTime requested_time = 0;
     bool clock_edge_hit = false;
     ClockEdgeKind clock_edge_kind = ClockEdgeKind::Negedge;
     bool has_clock_edge_kind = false;
     bool target_edge_hit = false;
-    ClockSamplePointKind sample_point = ClockSamplePointKind::Before;
-    bool sample_point_applied = false;
     npiFsdbTime previous_sample_time = 0;
     bool has_previous_sample_time = false;
     npiFsdbTime next_sample_time = 0;

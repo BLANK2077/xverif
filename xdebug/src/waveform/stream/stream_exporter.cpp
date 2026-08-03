@@ -58,7 +58,6 @@ bool write_meta(const std::string& output_file,
     meta["handshake"] = stream_handshake_text(config);
     meta["packet_enabled"] = stream_packet_enabled(config);
     meta["row_count"] = kind == "packet" ? analysis.packets.size() : analysis.transfers.size();
-    meta["truncated"] = false;
     meta["summary"] = stream_summary_json(config, analysis);
     meta["fields"] = Json::array();
     if (!config.data.empty()) meta["fields"].push_back(Json{{"name", "data"}, {"expr", config.data}});

@@ -123,11 +123,21 @@ bool ApbAnalyzer::analyze(const std::string& name, npiFsdbFileHandle file,
 
     std::vector<std::string> signals = {
         config.reset.signal, config.psel, config.penable,
-        config.pwrite, config.paddr, config.pwdata, config.prdata,
-        config.pready, config.pslverr
+        config.pwrite, config.paddr, config.pwdata, config.prdata
     };
-    const int pready_index = 7;
-    const int pslverr_index = 8;
+    int pready_index = -1;
+    int pslverr_index = -1;
+    // APB2 has neither signal: an access completes without a PREADY sample
+    // and cannot report a slave error.  Optional APB3/APB4 signals are only
+    // added to the scanner when the interface contract names them.
+    if (!config.pready.empty()) {
+        pready_index = static_cast<int>(signals.size());
+        signals.push_back(config.pready);
+    }
+    if (!config.pslverr.empty()) {
+        pslverr_index = static_cast<int>(signals.size());
+        signals.push_back(config.pslverr);
+    }
     std::vector<npiFsdbSigHandle> sig_handles;
     sig_handles.reserve(signals.size());
     for (const auto& signal : signals) {
@@ -150,7 +160,7 @@ bool ApbAnalyzer::analyze(const std::string& name, npiFsdbFileHandle file,
     const int prdata_width = fsdb_signal_width(sig_handles[6]).width;
 
     auto process_edge = [&](npiFsdbTime t, const std::vector<std::string>& values) {
-        if (values.size() < 9) return;
+        if (values.size() < signals.size()) return;
 
         const std::string& reset_value = values[0];
         const std::string& psel_val = values[1];
@@ -174,10 +184,13 @@ bool ApbAnalyzer::analyze(const std::string& name, npiFsdbFileHandle file,
             completion_seen = false;
             return;
         }
-        const std::string& pready_val = values[static_cast<size_t>(pready_index)];
-        if (pready_val.empty() || pready_val == "0" ||
-            pready_val == "X" || pready_val == "Z") {
-            return;
+        if (pready_index >= 0) {
+            const std::string& pready_val =
+                values[static_cast<size_t>(pready_index)];
+            if (pready_val.empty() || pready_val == "0" ||
+                pready_val == "X" || pready_val == "Z") {
+                return;
+            }
         }
         if (completion_seen) return;
         completion_seen = true;
@@ -194,10 +207,14 @@ bool ApbAnalyzer::analyze(const std::string& name, npiFsdbFileHandle file,
         txn.addr_signal = config.paddr;
         txn.data_signal = is_write ? config.pwdata : config.prdata;
         txn.has_numeric_addr = parse_hex_value(txn.addr, txn.numeric_addr);
-        const std::string& pslverr_val =
-            values[static_cast<size_t>(pslverr_index)];
-        txn.has_error = !(pslverr_val.empty() || pslverr_val == "0" ||
-                          pslverr_val == "X" || pslverr_val == "Z");
+        txn.has_error = false;
+        if (pslverr_index >= 0) {
+            const std::string& pslverr_val =
+                values[static_cast<size_t>(pslverr_index)];
+            txn.has_error =
+                !(pslverr_val.empty() || pslverr_val == "0" ||
+                  pslverr_val == "X" || pslverr_val == "Z");
+        }
 
         if (is_write) {
             result.writes.push_back(txn);
