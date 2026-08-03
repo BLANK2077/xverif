@@ -11,11 +11,11 @@
 
 ## 启动顺序与审计约束
 
-1. 在 `/home/RD/ryan/work/tmp/` 创建独立重建仓库，从 `53a9556` 建立分支。
+1. 在 `$WORK/tmp/` 创建独立重建仓库，从 `53a9556` 建立分支。
 2. 第一项修改必须是把本计划全文写入本文件，并作为单独的中文 commit 提交。
 3. 提交计划书后，以计划书全文原样创建 Goal；Goal 建立前不得开始代码修改。
 4. Goal 模式下按阶段工作，每阶段使用多个边界清楚的中文 commit。
-5. 子 agent 在另一个 `/home/RD/ryan/work/tmp/` 临时仓库 checkout `53a9556`，独立检查旧架构、历史真实输出和最终差异；不修改主重建仓库。
+5. 子 agent 在另一个 `$WORK/tmp/` 临时仓库 checkout `53a9556`，独立检查旧架构、历史真实输出和最终差异；不修改主重建仓库。
 6. 建立机器可检查的 commit ledger：输入精确等于 `git rev-list --reverse 53a9556..1c3ffc8` 的 27 个 SHA；每个 SHA 只出现一次；每个变更 hunk 标记为 `rebuild`、`superseded`、`xout-repair-drop` 或 `regenerate`；未分类 hunk、重复 SHA 或遗漏 SHA 阻止提交和推送。
 
 ## 27 个提交的最终处置

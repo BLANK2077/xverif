@@ -2,7 +2,7 @@
 
 证据来自子 agent 建立的独立临时 clone：
 
-- 路径：`/home/RD/ryan/work/tmp/xverif-pre-a3-architecture.phTN2g/repo`
+- 路径：`$WORK/tmp/<baseline-clone>/repo`
 - 提交：`53a955616257db17335dfb639a3bcbdbcafcb7c1`
 - 状态：detached HEAD、工作树干净、未运行 EDA
 
