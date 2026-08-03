@@ -223,3 +223,15 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 - 错误现象：在临时重建仓库执行 Python 校验时再次调用仓库相对路径 `.conda-xverif/bin/python`，因临时仓库不携带本地环境而未启动校验。
 - 误判原因：没有在每类 Python 校验入口执行前解析并核对解释器的绝对路径，沿用了原工作树的相对环境布局。
 - 以后规则：`/home/RD/ryan/work/tmp/` 下的重建仓库统一使用已核实的原仓库 conda Python 绝对路径，并把临时仓库置于 `PYTHONPATH` 首位；禁止静默切换系统 Python。
+
+### 2026-08-03 环境错误复盘
+
+- 错误现象：在仓库根目录执行 xdebug C++ `-fsyntax-only` 时直接复用了 Makefile 中以 `xdebug/` 为工作目录的 `src/...` 相对输入，三个源文件均在编译前报路径不存在。
+- 误判原因：只复用了编译 flags，没有同步 Makefile 目标所依赖的工作目录语义。
+- 以后规则：手工复用 xdebug Makefile 编译参数时必须把工作目录固定为 `<repo>/xdebug`，或先把 `src/`、`build/`、`third_party/` 等全部解析成经核对的绝对路径。
+
+### 2026-08-03 环境错误复盘
+
+- 错误现象：共享重建工作树中另一个 owner 已暂存 runtime 文件时，主线程仅检查了目标文档的 status 便执行提交，错误地把共享 index 中既有的 29 个文件纳入文档 commit；在推送前发现并原样保留工作树后重写提交边界。
+- 误判原因：把“显式 `git add` 当前文件”等同于“index 只包含当前文件”，提交前虽打印了 staged 清单，却没有在看到额外路径时中止。
+- 以后规则：共享工作树并发阶段每次提交前必须验证 `git diff --cached --name-only` 精确等于本 owner 白名单；发现任何额外 staged 路径立即停止并协调 owner，不能继续 commit。
