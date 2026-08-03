@@ -132,7 +132,10 @@ ProcessResult ProcessRunner::run(const ProcessRequest& request) const {
                 termination_time = now;
                 stdin_pipe.write_end.reset();
             } else if (std::chrono::duration_cast<std::chrono::milliseconds>(
-                           now - termination_time).count() >= 200) {
+                           now - termination_time).count() >=
+                       (request.termination_grace_ms > 0
+                            ? request.termination_grace_ms
+                            : 0)) {
                 kill(-pid, SIGKILL);
             }
         }

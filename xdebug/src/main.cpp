@@ -47,6 +47,14 @@ void print_response(const xdebug::Json& response, OutputFormat format) {
     }
 }
 
+void print_response(const xdebug::Json& response, OutputFormat format,
+                    const std::string& handler_xout) {
+    if (format == OutputFormat::Json)
+        std::cout << response.dump(2) << "\n";
+    else
+        std::cout << xdebug::render_xout_response(response, handler_xout);
+}
+
 std::string executable_dir() {
     char path[4096] = {};
     ssize_t length = readlink("/proc/self/exe", path, sizeof(path) - 1);
@@ -300,7 +308,7 @@ int main(int argc, char** argv) {
     if (argc == 2) {
         std::string arg(argv[1]);
         if (arg == "-h" || arg == "-help") {
-            std::cout << xdebug::help_text(executable_dir());
+            std::cout << xdebug::help_text();
             return 0;
         }
     }
@@ -374,6 +382,6 @@ int main(int argc, char** argv) {
 
     xdebug::Dispatcher dispatcher(executable_dir());
     xdebug::Json response = dispatcher.dispatch(request);
-    print_response(response, options.format);
+    print_response(response, options.format, dispatcher.last_xout());
     return response.value("ok", false) ? 0 : 1;
 }

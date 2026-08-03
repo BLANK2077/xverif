@@ -11,9 +11,11 @@ public:
     explicit EngineAdapter(const std::string& executable_dir);
 
     // Invoke the unified xdebug-engine subprocess.
-    bool invoke(const Json& xdebug_request,
+    bool invoke(const Json& public_request,
+                const Json& resolved_target,
+                const Json& observability,
                 Json& response,
-                std::string& error) const;
+                Json& error) const;
 
 private:
     std::string engine_path() const;
