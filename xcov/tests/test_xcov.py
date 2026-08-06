@@ -122,7 +122,7 @@ def test_cli_json_flag_outputs_json_not_xout(tmp_path):
     assert json.loads(proc.stdout)["ok"] is True
 
 
-def test_cli_default_xout_is_human_readable(tmp_path):
+def test_cli_default_xout_is_token_efficient(tmp_path):
     proc = _run_proc({
         "api_version": "xcov.v1",
         "request_id": "actions-xout",
@@ -135,7 +135,7 @@ def test_cli_default_xout_is_human_readable(tmp_path):
     assert "pointer\tkind\tvalue" not in proc.stdout
 
 
-def test_cli_default_error_xout_is_human_readable(
+def test_cli_default_error_xout_is_token_efficient(
     tmp_path,
 ):
     proc = subprocess.run(
@@ -1273,7 +1273,7 @@ def test_scope_children_direct_vs_recursive():
     assert "top.u_dut.u_fifo" in {i["full_name"] for i in recursive["data"]["items"]}
 
 
-def test_scope_summary_xout_is_human_readable_and_path_aware():
+def test_scope_summary_xout_is_compact_and_path_aware():
     dispatcher = _dispatch_opened()
     rsp = dispatcher.dispatch({
         "api_version": "xcov.v1", "request_id": "scope-xout",
@@ -1328,7 +1328,7 @@ def test_export_code_coverage_writes_markdown_only(tmp_path, monkeypatch):
     assert "x-npi" in rsp["summary"]["note"]
     text = (tmp_path / ".xverif/xcov_exports/code.md").read_text(encoding="utf-8")
     assert "# Code Coverage Holes" in text
-    assert "| scope | signal | bit | 0->1 covered | 1->0 covered | coverage_pct | file:line |" in text
+    assert "| scope | signal | bit | 0->1 covered | 1->0 covered | file:line |" in text
 
 
 def test_functional_levels_filter():

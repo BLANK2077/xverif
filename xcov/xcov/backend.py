@@ -1536,7 +1536,7 @@ def _code_coverage_path(api: NpiApiBinding, metric: str, typ: Any,
     short = str(name)
     if metric == "toggle":
         if typ == "npiCovSignal":
-            path["toggle_signal"] = label
+            path["toggle_signal"] = short
             is_port = _optional_flag(
                 api,
                 "coverage.is_port",
@@ -1546,10 +1546,10 @@ def _code_coverage_path(api: NpiApiBinding, metric: str, typ: Any,
             if is_port not in (None, -1, "-1"):
                 path["toggle_is_port"] = bool(is_port)
         elif typ == "npiCovSignalBit":
-            path["toggle_bit"] = label
-            parent = _parent_from_bit(label)
-            if parent:
-                path.setdefault("toggle_signal", parent)
+            path["toggle_bit"] = short
+            if short and short != "None":
+                parent = _parent_from_bit(short)
+                path.setdefault("toggle_signal", parent if parent else short)
             is_port = _optional_flag(
                 api,
                 "coverage.is_port",
@@ -1589,7 +1589,7 @@ def _code_coverage_path(api: NpiApiBinding, metric: str, typ: Any,
             path.setdefault("assert_bin", short)
     elif metric == "condition":
         if typ == "npiCovCondition":
-            path["condition"] = label
+            path["condition"] = short
             terms = _term_summary(
                 api,
                 hdl,
@@ -1604,7 +1604,7 @@ def _code_coverage_path(api: NpiApiBinding, metric: str, typ: Any,
             path["condition_bin"] = value if value is not None else short
     elif metric == "branch":
         if typ == "npiCovBranch":
-            path["branch"] = label
+            path["branch"] = short
             terms = _term_summary(
                 api,
                 hdl,
@@ -1937,7 +1937,7 @@ def _status_flags(api: NpiApiBinding, hdl: Any, test_hdl: Any,
             flags.append(flag)
     if covered >= coverable and coverable > 0:
         flags.insert(0, "covered")
-    else:
+    elif covered >= 0 or coverable > 0 or not flags:
         flags.insert(0, "not_covered")
     return flags
 
