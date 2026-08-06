@@ -229,10 +229,11 @@ def functional_group_scores(rows: Iterable[Json]) -> List[Json]:
 
 def coverage_pct(covered: Any, coverable: Any) -> float | None:
     try:
+        c = int(covered or 0)
         denom = int(coverable or 0)
-        if denom <= 0:
+        if c < 0 or denom <= 0:
             return None
-        return round(100.0 * int(covered or 0) / denom, 4)
+        return round(100.0 * c / denom, 4)
     except Exception:
         return None
 
@@ -301,8 +302,14 @@ def _walk_children(
                 "name": row_source.get("name"),
                 "full_name": row_source.get("full_name"),
             }
-        if not holes_only or int(row.get("missing") or 0) > 0:
+        if not holes_only:
             rows.append(row)
+        else:
+            missing = row.get("missing")
+            covered_val = row.get("covered")
+            if (missing is None and isinstance(covered_val, int) and covered_val < 0) or \
+               (isinstance(missing, int) and missing > 0):
+                rows.append(row)
     for child in _safe_list(hdl, "child_handles"):
         try:
             _walk_children(child, metric, scope, test, holes_only, rows, next_path, own_source or parent_source)
@@ -404,7 +411,7 @@ def _row(
 
 def _path_update(metric: str, typ: Any, name: Any, full_name: Any, path: Json) -> Json:
     out = dict(path)
-    label = full_name or name
+    label = name or full_name
     if metric == "toggle":
         if typ == "npiCovSignal":
             out["toggle_signal"] = label
@@ -469,7 +476,11 @@ def _release(hdl: Any) -> None:
 
 def _missing(covered: Any, coverable: Any) -> int | None:
     try:
-        return max(int(coverable or 0) - int(covered or 0), 0)
+        c = int(covered or 0)
+        v = int(coverable or 0)
+        if c < 0 or v < 0:
+            return None
+        return max(v - c, 0)
     except Exception:
         return None
 
@@ -487,9 +498,21 @@ def _status_flags(hdl: Any, test: Any, covered: Any, coverable: Any) -> List[str
         if _safe_call(hdl, method, test):
             flags.append(flag)
     try:
-        base = "covered" if int(covered or 0) >= int(coverable or 0) and int(coverable or 0) > 0 else "not_covered"
+        c = int(covered or 0)
+        v = int(coverable or 0)
+        if c >= v and v > 0:
+            base = "covered"
+        elif c >= 0 or v > 0:
+            base = "not_covered"
+        else:
+            base = None
     except Exception:
         base = "not_covered"
+    if base is None and not flags:
+        flags.append("not_covered")
+        return flags
+    if base is None:
+        return flags
     return [base, *flags]
 
 

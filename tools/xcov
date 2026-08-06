@@ -11,5 +11,15 @@ command -v "$python_bin" >/dev/null 2>&1 || {
   exit 2
 }
 
+if [[ -n "${VERDI_HOME:-}" ]]; then
+  npi_lib="$VERDI_HOME/share/NPI/lib/LINUX64"
+  if [[ ! -d "$npi_lib" ]]; then
+    npi_lib="$VERDI_HOME/share/NPI/lib/linux64"
+  fi
+  if [[ -d "$npi_lib" ]]; then
+    export LD_LIBRARY_PATH="$npi_lib:${LD_LIBRARY_PATH:-}"
+  fi
+fi
+
 export PYTHONPATH="$root/xcov${PYTHONPATH:+:${PYTHONPATH}}"
 exec "$python_bin" -m xcov.cli "$@"

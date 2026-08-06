@@ -297,7 +297,7 @@ class JsonlProcess:
                         request_id=request_id,
                     )
                     raise ProtocolError("response envelope must be a JSON object")
-                msg_id = msg.get("id")
+                msg_id = msg.get("request_id") or msg.get("id")
                 if not isinstance(msg_id, str) or not msg_id:
                     self._try_log_stdio(
                         "response.missing_id",

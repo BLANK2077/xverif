@@ -600,7 +600,8 @@ class Dispatcher:
     def _export(self, req: Json, sess) -> Json:
         action = req["action"]
         args = action_args(req)
-        threshold = float(args.get("threshold_pct", 100.0))
+        raw = args.get("threshold_pct")
+        threshold = float(raw) if raw is not None else None
         output_path = _export_output_path(args)
         if action == "export.code_coverage":
             rows = _coverage_score_rows(sess.backend.items(
@@ -628,11 +629,10 @@ class Dispatcher:
             raise XcovError("UNKNOWN_ACTION", "unknown export action", action=action)
         resolved = _write_markdown_artifact(output_path, markdown,
                                             bool((args.get("output") or {}).get("allow_absolute_path")))
-        summary = {
+        summary: Json = {
             "session_id": sess.session_id,
             "scope": args.get("scope"),
             "test": args.get("test", "merged"),
-            "threshold_pct": threshold,
             **completeness_summary(exported_count, 0),
             "output_mode": "file",
             "output_path": resolved,
@@ -640,6 +640,8 @@ class Dispatcher:
             "note": ("Markdown export only. For complex processing, use x-npi and "
                      "learn the pynpi coverage APIs."),
         }
+        if threshold is not None:
+            summary["threshold_pct"] = threshold
         return ok_response(req, summary, {})
 
     def _exclude_list(self, req: Json, sess) -> Json:
@@ -1350,9 +1352,16 @@ def _toggle_transition_summary(rows: List[Json]) -> Json:
             continue
         covered = sum(row["covered"] for row in matching)
         coverable = sum(row["coverable"] for row in matching)
+        status: List[str] = []
+        for row in matching:
+            for s in (row.get("status") or []):
+                if s not in status:
+                    status.append(s)
         key = {"npiCovToggle01": "0 -> 1", "npiCovToggle10": "1 -> 0"}.get(wanted, wanted)
         out[key] = {"covered": covered, "coverable": coverable,
-                    "missing": coverable - covered, "coverage_pct": coverage_pct(covered, coverable)}
+                    "missing": coverable - covered,
+                    "coverage_pct": coverage_pct(covered, coverable),
+                    "status": status}
     return out
 
 
@@ -1495,7 +1504,9 @@ def _coverage_sort_key(row: Json) -> tuple[bool, float, str]:
     )
 
 
-def _below_threshold(row: Json, threshold: float) -> bool:
+def _below_threshold(row: Json, threshold: float | None) -> bool:
+    if threshold is None:
+        return True
     pct = row.get("coverage_pct")
     if pct is None:
         return False
@@ -1524,9 +1535,16 @@ def _md(value: Any) -> str:
     return text.replace("|", "\\|").replace("\n", " ")
 
 
-def _yes_no_covered(value: Any) -> str:
+def _yes_no_covered(value: Any, status: List[str] | None = None) -> str:
     if value is None:
-        return "unknown"
+        if status:
+            for s in status:
+                if s not in ("covered", "not_covered"):
+                    return s
+            if "not_covered" in status:
+                return "no_collected"
+            return status[0]
+        return "no_collected"
     if not isinstance(value, int) or isinstance(value, bool):
         raise XcovError(
             "INTERNAL_CONTRACT_ERROR",
@@ -1536,13 +1554,13 @@ def _yes_no_covered(value: Any) -> str:
     return "yes" if value > 0 else "no"
 
 
-def _code_coverage_markdown(rows: List[Json], threshold: float) -> tuple[str, int]:
+def _code_coverage_markdown(rows: List[Json], threshold: float | None) -> tuple[str, int]:
     rows = [row for row in rows if row.get("metric") in _code_metrics() and _below_threshold(row, threshold)]
     rows.sort(key=_coverage_sort_key)
     lines = [
         "# Code Coverage Holes",
         "",
-        f"Threshold: {threshold:g}%",
+        f"Threshold: {threshold:g}%" if threshold is not None else "Threshold: none",
         "",
     ]
     exported = 0
@@ -1550,42 +1568,80 @@ def _code_coverage_markdown(rows: List[Json], threshold: float) -> tuple[str, in
         subset = [row for row in rows if row.get("metric") == metric]
         lines.extend([f"## {metric}", ""])
         if not subset:
-            lines.extend(["No items below threshold.", ""])
+            if threshold is None:
+                lines.extend(["No items found.", ""])
+            else:
+                lines.extend(["No items below threshold.", ""])
             continue
         if metric == "toggle":
             lines.extend([
-                "| scope | signal | bit | 0->1 covered | 1->0 covered | coverage_pct | file:line |",
-                "|---|---|---|---|---|---:|---|",
+                "> **no_collected**: the toggle transition direction was not collected ",
+                "> in the coverage database (not present in the VDB), rather than being ",
+                "> uncovered by the test stimulus.",
+                "",
+                "| scope | signal | bit | 0->1 covered | 1->0 covered | file:line |",
+                "|---|---|---|---|---|---|",
             ])
             for item in _toggle_export_rows(subset):
                 exported += 1
                 lines.append(
                     f"| {_md(item.get('scope'))} | {_md(item.get('signal'))} | {_md(item.get('bit'))} | "
                     f"{_md(item.get('0_to_1_covered'))} | {_md(item.get('1_to_0_covered'))} | "
-                    f"{_md(item.get('coverage_pct'))} | {_md(item.get('location'))} |"
+                    f"{_md(item.get('location'))} |"
                 )
-        elif metric in {"branch", "condition", "fsm"}:
-            label = {"branch": "branch/bin", "condition": "condition/bin", "fsm": "state/transition"}[metric]
+        elif metric in {"branch", "condition"}:
+            label = {"branch": "branch/bin", "condition": "condition/bin"}[metric]
             lines.extend([
-                f"| scope | {label} | covered | coverage_pct | file:line |",
-                "|---|---|---|---:|---|",
+                f"| scope | {label} | covered | file:line |",
+                "|---|---|---|---|",
             ])
             for row in subset:
                 exported += 1
                 lines.append(
                     f"| {_md(row.get('scope'))} | {_md(_code_item_label(row))} | "
-                    f"{_yes_no_covered(row.get('covered'))} | {_md(row.get('coverage_pct'))} | {_md(_evidence_loc(row))} |"
+                    f"{_yes_no_covered(row.get('covered'), row.get('status'))} | "
+                    f"{_md(_evidence_loc(row))} |"
                 )
-        else:
+        elif metric == "fsm":
             lines.extend([
-                "| scope | object | covered | coverage_pct | file:line |",
-                "|---|---|---|---:|---|",
+                "| scope | state/transition | covered | file:line |",
+                "|---|---|---|---|",
+            ])
+            for row in subset:
+                exported += 1
+                raw = str(row.get("full_name") or row.get("fsm") or row.get("name") or "")
+                label = raw.rsplit(".", 1)[-1] if "." in raw else raw
+                lines.append(
+                    f"| {_md(row.get('scope'))} | {_md(label)} | "
+                    f"{_yes_no_covered(row.get('covered'), row.get('status'))} | "
+                    f"{_md(_evidence_loc(row))} |"
+                )
+        elif metric == "line":
+            lines.extend([
+                "| scope | covered | file:line |",
+                "|---|---|---|",
             ])
             for row in subset:
                 exported += 1
                 lines.append(
-                    f"| {_md(row.get('scope'))} | {_md(row.get('full_name') or row.get('name'))} | "
-                    f"{_yes_no_covered(row.get('covered'))} | {_md(row.get('coverage_pct'))} | {_md(_evidence_loc(row))} |"
+                    f"| {_md(row.get('scope'))} | "
+                    f"{_yes_no_covered(row.get('covered'), row.get('status'))} | "
+                    f"{_md(_evidence_loc(row))} |"
+                )
+        else:
+            lines.extend([
+                "| object | covered | file:line |",
+                "|---|---|---|",
+            ])
+            for row in subset:
+                exported += 1
+                scope = str(row.get("scope") or "")
+                nm = str(row.get("name") or row.get("full_name") or "")
+                obj = f"{scope}.{nm}" if scope and nm else (scope or nm)
+                lines.append(
+                    f"| {_md(obj)} | "
+                    f"{_yes_no_covered(row.get('covered'), row.get('status'))} | "
+                    f"{_md(_evidence_loc(row))} |"
                 )
         lines.append("")
     return "\n".join(lines), exported
@@ -1602,12 +1658,19 @@ def _toggle_export_rows(rows: List[Json]) -> List[Json]:
         transitions = _toggle_transition_summary(subset)
         covered = sum(row["covered"] for row in subset)
         coverable = sum(row["coverable"] for row in subset)
+        subset_status = subset[0].get("status") if subset else None
         out.append({
             "scope": subset[0].get("scope"),
             "signal": signal,
             "bit": bit,
-            "0_to_1_covered": _yes_no_covered((transitions.get("0 -> 1") or {}).get("covered")),
-            "1_to_0_covered": _yes_no_covered((transitions.get("1 -> 0") or {}).get("covered")),
+            "0_to_1_covered": _yes_no_covered(
+                (transitions.get("0 -> 1") or {}).get("covered"),
+                (transitions.get("0 -> 1") or {}).get("status") or subset_status,
+            ),
+            "1_to_0_covered": _yes_no_covered(
+                (transitions.get("1 -> 0") or {}).get("covered"),
+                (transitions.get("1 -> 0") or {}).get("status") or subset_status,
+            ),
             "coverage_pct": coverage_pct(covered, coverable),
             "location": _evidence_loc(_first_evidence_row(subset)),
         })
@@ -1630,7 +1693,7 @@ def _code_item_label(row: Json) -> str:
     return str(row.get("full_name") or row.get("name") or "")
 
 
-def _functional_coverage_markdown(rows: List[Json], threshold: float,
+def _functional_coverage_markdown(rows: List[Json], threshold: float | None,
                                 covergroup_filter: Any = None) -> tuple[str, int]:
     if covergroup_filter:
         rows = [row for row in rows if _covergroup_matches(row.get("covergroup"), str(covergroup_filter))]
@@ -1642,7 +1705,7 @@ def _functional_coverage_markdown(rows: List[Json], threshold: float,
     lines = [
         "# Functional Coverage Holes",
         "",
-        f"Threshold: {threshold:g}%",
+        f"Threshold: {threshold:g}%" if threshold is not None else "Threshold: none",
         "",
     ]
     exported = 0
@@ -1666,7 +1729,10 @@ def _functional_coverage_markdown(rows: List[Json], threshold: float,
                 and _below_threshold(row, threshold)
             ]
             if not bins:
-                lines.extend(["No bins below threshold.", ""])
+                if threshold is None:
+                    lines.extend(["No bins found.", ""])
+                else:
+                    lines.extend(["No bins below threshold.", ""])
                 continue
             lines.extend([
                 "| bin | covered | coverable | count | coverage_pct |",
@@ -1730,7 +1796,10 @@ def _assert_markdown(rows: List[Json], sections: Json, threshold: float) -> tupl
                 f"{_md(row.get('first_match'))} | {_md(row.get('coverage_pct'))} | {_md(_evidence_loc(row))} |"
             )
     else:
-        lines.append("No assertion items below threshold.")
+        if threshold is None:
+            lines.append("No assertion items found.")
+        else:
+            lines.append("No assertion items below threshold.")
     lines.append("")
     return "\n".join(lines), len(selected)
 
