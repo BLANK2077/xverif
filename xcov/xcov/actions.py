@@ -185,14 +185,9 @@ ACTION_REGISTRY: Dict[str, ActionContract] = {
         "Do not use as an implementation of single-object removal.",
     ),
     "exclude.csv.validate": ActionContract(
-        "exclude.csv.validate", "_exclude_csv_validate", False,
-        "Validate the three grouped exclusion CSV source files.",
-        "Do not use to access a VDB or mutate CSV files.",
-    ),
-    "exclude.csv.resolve": ActionContract(
-        "exclude.csv.resolve", "_exclude_csv_resolve", True,
-        "Read-only resolve every CSV selector against the current merged VDB.",
-        "Do not use to apply exclusions.",
+        "exclude.csv.validate", "_exclude_csv_validate", True,
+        "逐行校验 CSV 格式、selector 语句格式、VDB object 存在性。最多返回前 10 条错误。",
+        "Do not use to apply or compile exclusions.",
     ),
     "exclude.csv.apply": ActionContract(
         "exclude.csv.apply", "_exclude_csv_apply", True,
@@ -650,24 +645,109 @@ class Dispatcher:
             {"items": [{"before_count": before, "after_count": after, "status": "changed"}]},
         )
 
-    def _exclude_csv_validate(self, req: Json) -> Json:
-        documents = parse_directory(_csv_directory(req))
-        rows = [
-            {
-                "coverage_kind": document.kind,
-                "path": str(document.path),
-                "group_count": len(document.groups),
-                "record_count": document.row_count,
-                "status": "valid",
-            }
-            for document in documents
-        ]
-        return _items_ok(req, rows)
+    def _exclude_csv_validate(self, req: Json, sess) -> Json:
+        from xcov.backend import _VALID_METRICS, _SELECTOR_FIELDS, _selector_note
 
-    def _exclude_csv_resolve(self, req: Json, sess) -> Json:
-        documents, rows = _resolve_csv(req, sess)
-        del documents
-        return _items_ok(req, rows)
+        documents = parse_directory(_csv_directory(req))
+        # 先做 object 级解析（复用 _resolve_csv）
+        _discard, resolutions = _resolve_csv(req, sess)
+
+        # 按 source_file + csv_line 索引 resolution 结果
+        resolved_map: dict[tuple, dict] = {}
+        for r in resolutions:
+            resolved_map[(r["coverage_kind"], r["source_file"], r["csv_line"])] = r
+
+        all_errors: list = []
+        stats = {"csv_format": 0, "selector_format": 0, "object_not_found": 0,
+                  "total_rows": 0, "matched": 0}
+
+        for doc in documents:
+            for group in doc.groups:
+                for i, row in enumerate(group.rows):
+                    stats["total_rows"] += 1
+                    kind = doc.kind
+                    csv_line = i + 1  # 1-based
+
+                    # Level 1: CSV format check
+                    err = _check_csv_row_format(kind, row, csv_line)
+                    if err:
+                        all_errors.append(err)
+                        stats["csv_format"] += 1
+                        continue
+
+                    # Level 2: Selector format check
+                    metric = (row.get("metric") or "").strip()
+                    if not metric:
+                        err = {
+                            "status": "error", "row": csv_line, "coverage_kind": kind,
+                            "source_file": group.source_file,
+                            "error_type": "CSV_FORMAT", "field": "metric",
+                            "message": "metric 列不能为空",
+                        }
+                        all_errors.append(err)
+                        stats["csv_format"] += 1
+                        continue
+
+                    if metric not in _VALID_METRICS:
+                        err = {
+                            "status": "error", "row": csv_line, "coverage_kind": kind,
+                            "source_file": group.source_file,
+                            "error_type": "SELECTOR_FORMAT", "field": "metric",
+                            "message": f"不支持的 metric: {metric}。合法值: {', '.join(sorted(_VALID_METRICS))}",
+                            "note": _selector_note(metric),
+                        }
+                        all_errors.append(err)
+                        stats["selector_format"] += 1
+                        continue
+
+                    # Level 3: Object existence (from resolutions)
+                    key = (kind, group.source_file, csv_line)
+                    resolution = resolved_map.get(key)
+                    if resolution is None:
+                        stats["object_not_found"] += 1
+                        err = {
+                            "status": "error", "row": csv_line, "coverage_kind": kind,
+                            "source_file": group.source_file,
+                            "error_type": "OBJECT_NOT_FOUND", "field": None,
+                            "message": "CSV 行在 VDB 中无匹配对象",
+                            "note": _selector_note(metric),
+                        }
+                        all_errors.append(err)
+                    elif resolution["status"] == "matched":
+                        stats["matched"] += 1
+                    else:
+                        stats["object_not_found"] += 1
+                        err = {
+                            "status": "error", "row": csv_line, "coverage_kind": kind,
+                            "source_file": group.source_file,
+                            "error_type": "OBJECT_NOT_FOUND", "field": None,
+                            "message": f"解析状态: {resolution['status']} — {resolution.get('validity', resolution.get('reason', ''))}",
+                            "note": _selector_note(metric),
+                        }
+                        all_errors.append(err)
+
+        shown = all_errors[:10]
+        summary = {
+            "total_rows": stats["total_rows"],
+            "total_errors": len(all_errors),
+            "matched_count": stats["matched"],
+            "csv_format_errors": stats["csv_format"],
+            "selector_format_errors": stats["selector_format"],
+            "object_not_found_errors": stats["object_not_found"],
+            "returned_count": len(shown),
+            "response_truncated": len(all_errors) > 10,
+            "note": (
+                "仅显示前 10 条错误。完整统计见 summary。"
+                "CSV_FORMAT: CSV 格式/列值错误。"
+                "SELECTOR_FORMAT: metric 不支持或字段缺失。"
+                "OBJECT_NOT_FOUND: CSV 行在 VDB 中无匹配对象。"
+                "运行 export action 获取 modinfo/grpinfo 确认准确的 scope/signal/branch/condition/coverpoint/bin 名称。"
+            ),
+        }
+        if len(all_errors) > 10:
+            summary["note"] += f" 另有 {len(all_errors) - 10} 条错误未显示。"
+
+        return ok_response(req, completeness_summary(len(shown), len(all_errors)), {"items": shown})
 
     def _exclude_csv_apply(self, req: Json, sess) -> Json:
         _documents, resolutions = _resolve_csv(req, sess)
@@ -823,6 +903,36 @@ def _existing_input_path(path: str, args: Json) -> str:
     return str(resolved)
 def _csv_directory(req: Json) -> str:
     return str(action_args(req).get("directory", "coverage_exclusions"))
+
+
+def _check_csv_row_format(kind: str, row: dict, csv_line: int) -> dict | None:
+    """校验单行 CSV 格式。返回 error dict 或 None。"""
+    scope = (row.get("scope") or "").strip()
+    if not scope:
+        return {
+            "status": "error", "row": csv_line, "coverage_kind": kind,
+            "source_file": row.get("_source_file") or "",
+            "error_type": "CSV_FORMAT", "field": "scope",
+            "message": "scope 列不能为空",
+        }
+    line_val = row.get("line", "")
+    if line_val == "" or line_val is None:
+        return {
+            "status": "error", "row": csv_line, "coverage_kind": kind,
+            "source_file": row.get("_source_file") or "",
+            "error_type": "CSV_FORMAT", "field": "line",
+            "message": "line 列不能为空",
+        }
+    try:
+        int(line_val)
+    except (ValueError, TypeError):
+        return {
+            "status": "error", "row": csv_line, "coverage_kind": kind,
+            "source_file": row.get("_source_file") or "",
+            "error_type": "CSV_FORMAT", "field": "line",
+            "message": f"line 列值 '{line_val}' 不是合法数字",
+        }
+    return None
 
 
 def _resolve_csv(req: Json, sess) -> tuple[List[Any], List[Json]]:
@@ -1221,7 +1331,7 @@ def _count_by(rows: List[Json], field: str) -> List[Json]:
 def _kind_summary(rows: List[Json], kind: str) -> Json:
     subset = [row for row in rows if row.get("kind") == kind]
     return {
-        "kind": kind,
+        "coverage_kind": kind,
         "total": len(subset),
         "success": sum(1 for row in subset if row["missing"] == 0),
         "failure": sum(1 for row in subset if row["failures"] > 0),

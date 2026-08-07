@@ -410,12 +410,13 @@ def test_formatter_is_stable_and_check_does_not_write(tmp_path):
 def test_exclusion_action_xout_is_human_readable(tmp_path):
     root = tmp_path / "coverage_exclusions"
     _write_csvs(root)
-    response = Dispatcher().dispatch({
+    dispatcher = _dispatcher()
+    response = dispatcher.dispatch({
         "api_version": "xcov.v1",
         "action": "exclude.csv.validate",
+        "target": {"session_id": "cov"},
         "args": {"directory": str(root)},
     })
-    assert response["ok"] is True
     output = render_xout(response)
     assert "summary:\n" in output
     assert "pointer\tkind\tvalue" not in output

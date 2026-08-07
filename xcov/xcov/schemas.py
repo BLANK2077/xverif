@@ -773,6 +773,7 @@ CSV_WORKFLOW_ITEM = _object({
     "source_commit": _string(min_length=1),
     "current_commit": NULLABLE_STRING,
     "csv_line": _integer(1),
+    "row": _integer(1),
     "status": _string(min_length=1),
     "validity": _string(enum=[
         "still_valid",
@@ -780,6 +781,10 @@ CSV_WORKFLOW_ITEM = _object({
         "coverage_object_missing",
         "ambiguous",
     ]),
+    "error_type": _string(enum=["CSV_FORMAT", "SELECTOR_FORMAT", "OBJECT_NOT_FOUND"]),
+    "field": NULLABLE_STRING,
+    "message": _string(min_length=1),
+    "note": _string(min_length=1),
     "match_count": _integer(0),
     "reason": _string(min_length=1),
     "coverage_refs": _array(_string(min_length=1)),
@@ -844,7 +849,7 @@ def _query_summary(extra: Json | None = None) -> Json:
 def _csv_workflow_args(action: str) -> Json:
     props: Json = {"directory": _string(min_length=1)}
     if action in {
-        "exclude.csv.resolve",
+        "exclude.csv.validate",
         "exclude.csv.apply",
         "exclude.csv.compile",
     }:
@@ -1307,13 +1312,13 @@ SCHEMAS: Dict[str, Json] = {
             _request(
                 action,
                 target=SESSION_TARGET if action in {
-                    "exclude.csv.resolve",
+                    "exclude.csv.validate",
                     "exclude.csv.apply",
                     "exclude.csv.compile",
                 } else _target(),
                 args=_csv_workflow_args(action),
                 require_target=action in {
-                    "exclude.csv.resolve",
+                    "exclude.csv.validate",
                     "exclude.csv.apply",
                     "exclude.csv.compile",
                 },
@@ -1327,7 +1332,6 @@ SCHEMAS: Dict[str, Json] = {
         )
         for action in (
             "exclude.csv.validate",
-            "exclude.csv.resolve",
             "exclude.csv.apply",
             "exclude.csv.compile",
             "exclude.csv.format",
