@@ -74,78 +74,6 @@ def _call_server_tool(server, name: str, args: dict | None = None):
     return anyio.run(_run)
 
 
-class _InjectedFakeCoverageLoopManager:
-    """Explicit test-only coverage manager; no public VDB value selects it."""
-
-    def __init__(self) -> None:
-        from xcov.actions import Dispatcher
-        from xcov.backend import FakeCoverageBackend
-        from xcov.session import SessionManager
-
-        self._dispatcher = Dispatcher(
-            SessionManager(backend_factory=lambda vdb: FakeCoverageBackend(vdb))
-        )
-        self._request_seq = 0
-
-    def _dispatch(self, action: str, *, target: dict | None = None, args: dict | None = None) -> dict:
-        self._request_seq += 1
-        request = {
-            "api_version": "xcov.v1",
-            "request_id": f"mcp-fake-{self._request_seq}",
-            "action": action,
-        }
-        if target:
-            request["target"] = target
-        if args:
-            request["args"] = args
-        return self._dispatcher.dispatch(request)
-
-    def open_session(self, name: str, fsdb: str, run_manifest: str | None = None, **kwargs) -> dict:
-        assert not any(value is not None for value in kwargs.values())
-        target = {"vdb": fsdb}
-        if run_manifest is not None:
-            target["run_manifest"] = run_manifest
-        return self._dispatch("session.open", target=target, args={"name": name})
-
-    def query(self, session_id: str, action: str, args: dict, output_format: str, **kwargs):
-        assert kwargs == {}
-        payload = self._dispatch(action, target={"session_id": session_id}, args=args)
-        if output_format == "json":
-            return payload
-        if output_format == "xout":
-            from xcov.protocol import render_xout
-            return render_xout(payload)
-        return {"ok": True, "payload_format": "json", "json": payload}
-
-    def close_session(self, session: str) -> dict:
-        return self._dispatch("session.close", target={"session_id": session})
-
-    def list_sessions(self, **kwargs) -> dict:
-        del kwargs
-        rows = [item.public_json() for item in self._dispatcher.sessions.sessions.values()]
-        return {"ok": True, "sessions": rows, "tombstones": []}
-
-    def doctor_session(self, session: str, verbose: bool = False) -> dict:
-        del verbose
-        return self._dispatch("session.status", target={"session_id": session})
-
-    def kill_session(self, session: str) -> dict:
-        return self.close_session(session)
-
-    def gc_sessions(self, verbose: bool = False) -> dict:
-        del verbose
-        return {"ok": True, "data": {"removed": [], "unresolved": []}}
-
-    def close_all(self) -> dict:
-        responses = [self.close_session(session) for session in list(self._dispatcher.sessions.sessions)]
-        return {"ok": all(response["ok"] for response in responses)}
-
-
-def _inject_fake_coverage(server) -> None:
-    from xverif_mcp.adapters.xcov import XverifCoverageAdapter
-    server.cov = XverifCoverageAdapter(mode="direct", session_manager=_InjectedFakeCoverageLoopManager())
-
-
 def test_mcp_server_initialize(monkeypatch: pytest.MonkeyPatch):
     server = _server(monkeypatch)
     assert server.mcp.name == "xverif"
@@ -569,34 +497,48 @@ def test_tool_group_disable_cov(monkeypatch: pytest.MonkeyPatch):
     assert "xverif_debug_query" in names
 
 
-def test_cov_session_fake_lifecycle(monkeypatch: pytest.MonkeyPatch):
+def _resolve_smoke_test_vdb() -> str:
+    xverif_home = os.environ.get("XVERIF_HOME") or str(
+        Path(__file__).resolve().parents[2]
+    )
+    candidates = [
+        os.path.join(xverif_home, "xcov", "fixtures", "comprehensive", "out", "comprehensive.vdb"),
+    ]
+    for c in candidates:
+        if os.path.isdir(c):
+            return c
+    pytest.skip("comprehensive VDB not found; run: pytest --xverif-prepare xcov.comprehensive")
+
+
+def test_cov_session_real_lifecycle(monkeypatch: pytest.MonkeyPatch):
+    """通过真实 xcov --stdio-loop 子进程测试 session 生命周期."""
     overrides = {
         "XVERIF_HOME": str(Path(__file__).resolve().parents[2]),
         "XVERIF_MCP_BACKEND": "direct",
     }
+    test_vdb = _resolve_smoke_test_vdb()
     server = _server(monkeypatch, overrides)
-    _inject_fake_coverage(server)
 
     async def _run():
         opened = await server.mcp.call_tool(
             "xverif_cov_session_open",
-            {"name": "cov_fake", "vdb": "unit-test.vdb"},
+            {"name": "cov_real", "vdb": test_vdb},
         )
         queried_json = await server.mcp.call_tool(
             "xverif_cov_query",
-            {"session_id": "cov_fake", "action": "code_coverage.holes",
+            {"session_id": "cov_real", "action": "code_coverage.holes",
              "args": {"metrics": ["toggle", "branch"], "limits": {"max_items": 1}},
              "output_format": "json"},
         )
         queried_xout = await server.mcp.call_tool(
             "xverif_cov_query",
-            {"session_id": "cov_fake", "action": "code_coverage.summary",
+            {"session_id": "cov_real", "action": "code_coverage.summary",
              "args": {"group_by": "metric"},
              "output_format": "xout"},
         )
         closed = await server.mcp.call_tool(
             "xverif_cov_session_close",
-            {"session_id": "cov_fake"},
+            {"session_id": "cov_real"},
         )
         return opened, queried_json, queried_xout, closed
 
@@ -605,10 +547,9 @@ def test_cov_session_fake_lifecycle(monkeypatch: pytest.MonkeyPatch):
     queried_payload = json.loads(queried_json[0].text)
     queried_xout_text = queried_xout[0].text
     assert opened_payload["ok"] is True
-    assert queried_payload["summary"]["total_count"] == 1
+    assert opened_payload["session"]["state"] == "alive"
     assert queried_payload["summary"]["returned_count"] == 1
-    assert queried_xout_text.startswith("@xcov.v1")
-    assert "action=code_coverage.summary" in queried_xout_text.splitlines()[0]
+    assert queried_xout_text.startswith("@xcov.code_coverage.summary.v1")
     assert "XOUT_BEGIN" not in queried_xout_text
     assert "XOUT_END" not in queried_xout_text
 
@@ -722,8 +663,8 @@ def test_output_path_invalid_dir_returns_structured_failure(monkeypatch: pytest.
     assert content.structuredContent is None
 
 
-def test_batch_fake_lifecycle(tmp_path, monkeypatch: pytest.MonkeyPatch):
-    """xverif_batch with fake cov session + ping + bit_eval in one file."""
+def test_batch_real_lifecycle(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    """xverif_batch with real cov session + ping + bit_eval in one file."""
     batch_file = tmp_path / "batch.ndjson"
     output_file = tmp_path / "results.ndjson"
 
@@ -731,18 +672,18 @@ def test_batch_fake_lifecycle(tmp_path, monkeypatch: pytest.MonkeyPatch):
         "XVERIF_HOME": str(Path(__file__).resolve().parents[2]),
         "XVERIF_MCP_BACKEND": "direct",
     }
+    test_vdb = _resolve_smoke_test_vdb()
     server = _server(monkeypatch, overrides)
-    _inject_fake_coverage(server)
 
     batch_file.write_text("\n".join([
         json.dumps({"tool": "xverif_cov_session_open",
-                     "args": {"name": "cov_fake", "vdb": "unit-test.vdb"}}),
+                     "args": {"name": "cov_real", "vdb": test_vdb}}),
         json.dumps({"tool": "xverif_cov_query",
-                     "args": {"session_id": "cov_fake", "action": "code_coverage.holes",
+                     "args": {"session_id": "cov_real", "action": "code_coverage.holes",
                               "args": {"metrics": ["line"], "limits": {"max_items": 2}},
                               "output_format": "json"}}),
         json.dumps({"tool": "xverif_cov_session_close",
-                     "args": {"session_id": "cov_fake"}}),
+                     "args": {"session_id": "cov_real"}}),
         json.dumps({"tool": "xverif_ping", "args": {}}),
         json.dumps({"tool": "xverif_bit_eval",
                      "args": {"expr": "2 + 3"}}),

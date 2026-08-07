@@ -101,14 +101,6 @@ QUERY_FIELD_CONTRACTS: Dict[str, Dict[str, Any]] = {
             "bin",
         ),
     },
-    "source.map": {
-        "default": "full_name",
-        "allowed": _COVERAGE_FACT_QUERY_FIELDS,
-    },
-    "source.annotate": {
-        "default": "full_name",
-        "allowed": _COVERAGE_FACT_QUERY_FIELDS,
-    },
     "assert.summary": {
         "default": "full_name",
         "allowed": ("kind", "name", "full_name", "category", "severity"),
@@ -818,14 +810,6 @@ ANNOTATION = _object({
     "status", "file", "line",
 ])
 
-ANNOTATED_SOURCE_ITEM = _object({
-    "file": _string(),
-    "line": _integer(),
-    "source": NULLABLE_STRING,
-    "annotations": _array(ANNOTATION),
-    "annotation_count": _integer(0),
-}, required=["file", "line", "source", "annotations", "annotation_count"])
-
 ASSERT_SUMMARY_ITEM = _object({
     "name": NULLABLE_STRING,
     "full_name": NULLABLE_STRING,
@@ -914,6 +898,7 @@ SCHEMAS: Dict[str, Json] = {
             args=_args({
                 "name": _string(min_length=1),
                 "exclusion_policy": _string(enum=["default", "strict"]),
+                "cache_dir": _string(min_length=1),
             }),
             require_target=True,
         ),
@@ -1114,62 +1099,6 @@ SCHEMAS: Dict[str, Json] = {
             filters_action="functional_coverage.holes",
         ),
     ),
-    "source.map": _schema_entry(
-        "source.map",
-        _request(
-            "source.map",
-            target=SESSION_TARGET,
-            args=_args({
-                "file": _string(min_length=1),
-                "line": _integer(1),
-                "window": _integer(0),
-                "metrics": _string_array(METRICS, min_items=1),
-                "test": _string(min_length=1),
-                "query": _query("source.map"),
-                "limits": _limits(),
-            }, required=["file", "line"]),
-            require_target=True,
-            require_args=True,
-        ),
-        _query_summary({
-            "session_id": _string(min_length=1),
-            "file": _string(min_length=1),
-            "line": _integer(1),
-            "window": _integer(0),
-        }),
-        _items_data(COVERAGE_ITEM, filters_action="source.map"),
-    ),
-    "source.annotate": _schema_entry(
-        "source.annotate",
-        _request(
-            "source.annotate",
-            target=SESSION_TARGET,
-            args=_args({
-                "file": _string(min_length=1),
-                "line": _integer(1),
-                "window": _integer(0),
-                "metrics": _string_array(METRICS, min_items=1),
-                "test": _string(min_length=1),
-                "query": _query("source.annotate"),
-                "limits": _limits(),
-                "include_source_text": _bool(),
-                "include_covered": _bool(),
-            }, required=["file", "line"]),
-            require_target=True,
-            require_args=True,
-        ),
-        _query_summary({
-            "session_id": _string(min_length=1),
-            "file": _string(min_length=1),
-            "line": _integer(1),
-            "window": _integer(0),
-            "include_source_text": _bool(),
-        }),
-        _items_data(
-            ANNOTATED_SOURCE_ITEM,
-            filters_action="source.annotate",
-        ),
-    ),
     "assert.summary": _schema_entry(
         "assert.summary",
         _request(
@@ -1198,9 +1127,6 @@ SCHEMAS: Dict[str, Json] = {
             target=SESSION_TARGET,
             args=_args({
                 "scope": _string(min_length=1),
-                "test": _string(min_length=1),
-                "metrics": _string_array(CODE_METRICS, min_items=1),
-                "threshold_pct": _number(0.0, 100.0),
                 "output": _export_output(),
             }, required=["output"]),
             require_target=True,
@@ -1209,11 +1135,9 @@ SCHEMAS: Dict[str, Json] = {
         _completeness_summary({
             "session_id": _string(min_length=1),
             "scope": NULLABLE_STRING,
-            "test": _string(min_length=1),
-            "threshold_pct": _number(0.0, 100.0),
             "output_mode": {"const": "file"},
-            "output_path": _string(min_length=1),
-            "artifact_format": {"const": "md"},
+            "output_dir": _string(min_length=1),
+            "artifact_format": {"const": "urg_text"},
             "note": _string(min_length=1),
         }),
         _object(),
@@ -1225,9 +1149,7 @@ SCHEMAS: Dict[str, Json] = {
             target=SESSION_TARGET,
             args=_args({
                 "scope": _string(min_length=1),
-                "test": _string(min_length=1),
                 "covergroup": _string(min_length=1),
-                "threshold_pct": _number(0.0, 100.0),
                 "output": _export_output(),
             }, required=["output"]),
             require_target=True,
@@ -1236,11 +1158,9 @@ SCHEMAS: Dict[str, Json] = {
         _completeness_summary({
             "session_id": _string(min_length=1),
             "scope": NULLABLE_STRING,
-            "test": _string(min_length=1),
-            "threshold_pct": _number(0.0, 100.0),
             "output_mode": {"const": "file"},
-            "output_path": _string(min_length=1),
-            "artifact_format": {"const": "md"},
+            "output_dir": _string(min_length=1),
+            "artifact_format": {"const": "urg_text"},
             "note": _string(min_length=1),
         }),
         _object(),
@@ -1252,8 +1172,6 @@ SCHEMAS: Dict[str, Json] = {
             target=SESSION_TARGET,
             args=_args({
                 "scope": _string(min_length=1),
-                "test": _string(min_length=1),
-                "threshold_pct": _number(0.0, 100.0),
                 "output": _export_output(),
             }, required=["output"]),
             require_target=True,
@@ -1262,31 +1180,12 @@ SCHEMAS: Dict[str, Json] = {
         _completeness_summary({
             "session_id": _string(min_length=1),
             "scope": NULLABLE_STRING,
-            "test": _string(min_length=1),
-            "threshold_pct": _number(0.0, 100.0),
             "output_mode": {"const": "file"},
-            "output_path": _string(min_length=1),
-            "artifact_format": {"const": "md"},
+            "output_dir": _string(min_length=1),
+            "artifact_format": {"const": "urg_text"},
             "note": _string(min_length=1),
         }),
         _object(),
-    ),
-    "exclude.list": _schema_entry(
-        "exclude.list",
-        _request(
-            "exclude.list",
-            target=SESSION_TARGET,
-            args=_args({
-                "test": {"const": "merged"},
-                "limits": _limits(),
-            }),
-            require_target=True,
-        ),
-        _query_summary({
-            "session_id": _string(min_length=1),
-            "test": {"const": "merged"},
-        }),
-        _items_data(EXCLUSION_ITEM),
     ),
     "exclude.load": _schema_entry(
         "exclude.load",
@@ -1811,13 +1710,6 @@ def _validate_response_semantics(rsp: Json) -> None:
                 "$.summary.truncation_scopes",
                 "must be exactly ['data.items'] when data.items is truncated",
             )
-        if action == "source.annotate":
-            for index, item in enumerate(items):
-                if item["annotation_count"] != len(item["annotations"]):
-                    raise SchemaValidationError(
-                        f"$.data.items[{index}].annotation_count",
-                        "must equal the number of annotations",
-                    )
         return
 
     if action == "schema" or action in {

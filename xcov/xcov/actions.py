@@ -145,16 +145,6 @@ ACTION_REGISTRY: Dict[str, ActionContract] = {
         "List uncovered functional coverage items at selected levels.",
         "Do not use for code coverage or full Markdown export.",
     ),
-    "source.map": ActionContract(
-        "source.map", "_source_map", True,
-        "Map a source file and line window to raw coverage objects.",
-        "Do not use when source text plus per-line annotations are needed.",
-    ),
-    "source.annotate": ActionContract(
-        "source.annotate", "_source_annotate", True,
-        "Return source-window rows with coverage annotations.",
-        "Do not use for a compact raw object lookup without source rows.",
-    ),
     "assert.summary": ActionContract(
         "assert.summary", "_assert_report", True,
         "Summarize assertion attempts, successes, and basic coverage.",
@@ -174,11 +164,6 @@ ACTION_REGISTRY: Dict[str, ActionContract] = {
         "export.assert", "_export", True,
         "Write detailed assertion coverage evidence to a Markdown artifact.",
         "Do not use for the compact assertion summary.",
-    ),
-    "exclude.list": ActionContract(
-        "exclude.list", "_exclude_list", True,
-        "List compile-time and report-time exclusions with session-local coverage references.",
-        'Do not use with a concrete test; P0 exclusion management requires test="merged".',
     ),
     "exclude.load": ActionContract(
         "exclude.load", "_exclude_load", True,
@@ -379,10 +364,12 @@ class Dispatcher:
             raise XcovError("VDB_OPEN_FAILED", "target.vdb is required")
         self.sessions.require_available(args.get("name"))
         manifest_details = validate_run_manifest(target)
+        cache_dir = args.get("cache_dir") or target.get("cache_dir")
         sess = self.sessions.open(
             str(vdb),
             name=args.get("name"),
             exclusion_policy=str(args.get("exclusion_policy", "default")),
+            cache_dir=str(cache_dir) if cache_dir else None,
         )
         session_json = sess.public_json()
         update_session_manifest(sess.session_id, session_json)
@@ -515,74 +502,6 @@ class Dispatcher:
         summary.update({"session_id": sess.session_id, "test": args.get("test", "merged")})
         return ok_response(req, summary, {"filters": filters_summary(query), "items": inline}, warnings)
 
-    def _source_map(self, req: Json, sess) -> Json:
-        args = action_args(req)
-        query = query_args("source.map", args)
-        file_name = args.get("file")
-        line = args.get("line")
-        window = int(args.get("window", 0))
-        if file_name is None or line is None:
-            raise XcovError("SCHEMA_INVALID", "source.map requires file and line")
-        metrics = args.get("metrics")
-        lo, hi = int(line) - window, int(line) + window
-        rows = []
-        items = sess.backend.items(metrics=metrics, test=str(args.get("test", "merged")))
-        for item in _coverage_score_rows(items):
-            ev = item["evidence"]
-            if (
-                _file_matches(ev["file"], file_name)
-                and ev["line"] is not None
-                and lo <= ev["line"] <= hi
-            ):
-                rows.append(item)
-        rows = filter_items(rows, query)
-        summary, inline, warnings = apply_output("source.map", args, rows)
-        summary.update({"session_id": sess.session_id, "file": file_name, "line": line,
-                        "window": window})
-        return ok_response(req, summary, {"filters": filters_summary(query), "items": inline}, warnings)
-
-    def _source_annotate(self, req: Json, sess) -> Json:
-        args = action_args(req)
-        query = query_args("source.annotate", args)
-        file_name = args.get("file")
-        line = args.get("line")
-        window = int(args.get("window", 3))
-        include_source_text = bool(args.get("include_source_text", True))
-        include_covered = bool(args.get("include_covered", True))
-        if file_name is None or line is None:
-            raise XcovError("SCHEMA_INVALID", "source.annotate requires file and line")
-        metrics = args.get("metrics")
-        lo, hi = int(line) - window, int(line) + window
-        items = sess.backend.items(metrics=metrics, test=str(args.get("test", "merged")))
-        rows = []
-        by_line: Dict[int, List[Json]] = defaultdict(list)
-        source_path = str(file_name)
-        for item in _coverage_score_rows(items):
-            ev = item["evidence"]
-            if not _file_matches(ev["file"], file_name) or ev["line"] is None:
-                continue
-            item_line = ev["line"]
-            if lo <= item_line <= hi:
-                if ev["file"] is not None:
-                    source_path = ev["file"]
-                if include_covered or item["missing"] > 0:
-                    by_line[item_line].append(item)
-        source_lines = _read_source_window(source_path, lo, hi) if include_source_text else {}
-        for line_no in range(lo, hi + 1):
-            line_items = filter_items(by_line.get(line_no, []), query)
-            if line_items or line_no in source_lines:
-                rows.append({
-                    "file": str(file_name),
-                    "line": line_no,
-                    "source": source_lines.get(line_no),
-                    "annotations": [_source_annotation(item) for item in line_items],
-                    "annotation_count": len(line_items),
-                })
-        summary, inline, warnings = apply_output("source.annotate", args, rows)
-        summary.update({"session_id": sess.session_id, "file": file_name, "line": line,
-                        "window": window, "include_source_text": include_source_text})
-        return ok_response(req, summary, {"filters": filters_summary(query), "items": inline}, warnings)
-
     def _assert_report(self, req: Json, sess) -> Json:
         args = action_args(req)
         query = query_args("assert.summary", args)
@@ -600,64 +519,51 @@ class Dispatcher:
     def _export(self, req: Json, sess) -> Json:
         action = req["action"]
         args = action_args(req)
-        raw = args.get("threshold_pct")
-        threshold = float(raw) if raw is not None else None
-        output_path = _export_output_path(args)
-        if action == "export.code_coverage":
-            rows = _coverage_score_rows(sess.backend.items(
-                metrics=_selector_or_default(
-                    args,
-                    "metrics",
-                    _code_metrics(),
-                ),
-                scope=args.get("scope"),
-                test=str(args.get("test", "merged"))))
-            markdown, exported_count = _code_coverage_markdown(rows, threshold)
-        elif action == "export.functional_coverage":
-            rows = sess.backend.items(metrics=["functional"], scope=args.get("scope"),
-                                      test=str(args.get("test", "merged")),
-                                      functional_only=True)
-            markdown, exported_count = _functional_coverage_markdown(
-                rows, threshold, covergroup_filter=args.get("covergroup"))
-        elif action == "export.assert":
-            rows, sections = _assert_report_rows(sess.backend.items(
-                metrics=["assert"], scope=args.get("scope"),
-                test=str(args.get("test", "merged"))),
-                include_source=True)
-            markdown, exported_count = _assert_markdown(rows, sections, threshold)
-        else:
+        output_dir = (args.get("output") or {}).get("path") or args.get("output_dir")
+        if not output_dir:
+            raise XcovError("SCHEMA_INVALID", "export requires output.path or output_dir")
+        os.makedirs(output_dir, exist_ok=True)
+
+        urgentric = {
+            "export.code_coverage": "line+tgl+cond+branch+fsm",
+            "export.functional_coverage": "group",
+            "export.assert": "assert",
+        }
+        metric = urgentric.get(action)
+        if metric is None:
             raise XcovError("UNKNOWN_ACTION", "unknown export action", action=action)
-        resolved = _write_markdown_artifact(output_path, markdown,
-                                            bool((args.get("output") or {}).get("allow_absolute_path")))
+
+        urg_args = ["urg", "-dir", sess.vdb, "-report", output_dir,
+                    "-format", "text", "-show", "brief", "-metric", metric]
+        urg_args.extend(sess.el_file_arg)
+        scope = args.get("scope")
+        if scope:
+            hier_file = os.path.join(output_dir, ".xcov_hier.txt")
+            with open(hier_file, "w") as f:
+                f.write(scope + "\n")
+            urg_args.extend(["-hier", hier_file])
+
+        from .urg_runner import UrgRunner
+        result = UrgRunner().run(urg_args, timeout=300)
+        if result.returncode != 0:
+            raise XcovError("URG_FAILED", f"URG export failed (exit {result.returncode})",
+                            detail={"stderr": result.stderr[:500]})
+
         summary: Json = {
             "session_id": sess.session_id,
             "scope": args.get("scope"),
-            "test": args.get("test", "merged"),
-            **completeness_summary(exported_count, 0),
             "output_mode": "file",
-            "output_path": resolved,
-            "artifact_format": "md",
-            "note": ("Markdown export only. For complex processing, use x-npi and "
-                     "learn the pynpi coverage APIs."),
+            "output_dir": output_dir,
+            "artifact_format": "urg_text",
+            "total_count": 0,
+            "returned_count": 0,
+            "response_truncated": False,
+            "scan_complete": True,
+            "analysis_complete": True,
+            "truncation_scopes": [],
+            "note": "URG text report written to output_dir. See modinfo.txt for details.",
         }
-        if threshold is not None:
-            summary["threshold_pct"] = threshold
         return ok_response(req, summary, {})
-
-    def _exclude_list(self, req: Json, sess) -> Json:
-        args = action_args(req)
-        _require_merged(args)
-        rows = [
-            _exclusion_row(row)
-            for row in sess.backend.items(test="merged")
-            if (
-                "excluded_at_compile_time" in row["status"]
-                or "excluded_at_report_time" in row["status"]
-            )
-        ]
-        summary, inline, warnings = apply_output("exclude.list", args, rows)
-        summary.update({"session_id": sess.session_id, "test": "merged"})
-        return ok_response(req, summary, {"items": inline}, warnings)
 
     def _exclude_load(self, req: Json, sess) -> Json:
         args = action_args(req)
@@ -672,6 +578,8 @@ class Dispatcher:
                 sess.backend.unload_exclusions(test="merged")
                 sess.backend.load_exclusions([str(baseline)], test="merged")
                 raise
+        sess.set_el_path(None)  # EL paths loaded via NPI — re-export on next URG call
+        sess.mark_exclusion_dirty()
         return ok_response(
             req,
             completeness_summary(len(rows), len(rows)),
@@ -686,6 +594,7 @@ class Dispatcher:
             sess.backend.set_exclusion(ref, excluded, test="merged")
             for ref in args["coverage_refs"]
         ]
+        sess.mark_exclusion_dirty()
         return ok_response(
             req,
             completeness_summary(len(rows), len(rows)),
@@ -730,6 +639,7 @@ class Dispatcher:
             if "excluded_at_report_time" in row["status"]
         ])
         sess.backend.unload_exclusions(test="merged")
+        sess.clear_exclusions()
         after = len([
             row for row in sess.backend.items(test="merged")
             if "excluded_at_report_time" in row["status"]
@@ -951,25 +861,6 @@ def _existing_input_path(path: str, args: Json) -> str:
             path=str(resolved),
         )
     return str(resolved)
-
-
-def _exclusion_row(row: Json) -> Json:
-    evidence = row["evidence"]
-    return {
-        "coverage_ref": row["coverage_ref"],
-        "metric": row["metric"],
-        "type": row["type"],
-        "scope": row["scope"],
-        "name": row["name"],
-        "full_name": row["full_name"],
-        "file": evidence.get("file"),
-        "line": evidence.get("line"),
-        "compile_time": "excluded_at_compile_time" in row["status"],
-        "report_time": "excluded_at_report_time" in row["status"],
-        "status": row["status"],
-    }
-
-
 def _csv_directory(req: Json) -> str:
     return str(action_args(req).get("directory", "coverage_exclusions"))
 
@@ -1291,80 +1182,6 @@ def _summary_from_items(items: List[Json], group_by: str) -> List[Json]:
     return rows
 
 
-def _file_matches(actual: Any, requested: Any) -> bool:
-    if actual is None or requested is None:
-        return False
-    actual_s = str(actual)
-    requested_s = str(requested)
-    return actual_s == requested_s or actual_s.endswith(requested_s)
-
-
-def _read_source_window(path: str, lo: int, hi: int) -> Dict[int, str]:
-    out: Dict[int, str] = {}
-    if lo < 1:
-        lo = 1
-    try:
-        with open(path, "r", encoding="utf-8", errors="replace") as fh:
-            for idx, text in enumerate(fh, start=1):
-                if idx < lo:
-                    continue
-                if idx > hi:
-                    break
-                out[idx] = text.rstrip("\n")
-    except OSError as exc:
-        raise XcovError(
-            "SOURCE_READ_FAILED",
-            "failed to read requested source text",
-            path=path,
-            cause_type=type(exc).__name__,
-            cause_message=str(exc),
-        ) from exc
-    return out
-
-
-def _source_annotation(item: Json) -> Json:
-    ev = item["evidence"]
-    out: Json = {
-        "metric": item["metric"],
-        "type": item["type"],
-        "name": item["name"],
-        "full_name": item["full_name"],
-        "covered": item["covered"],
-        "coverable": item["coverable"],
-        "missing": item["missing"],
-        "status": item["status"],
-        "file": ev["file"],
-        "line": ev["line"],
-    }
-    for key in ("branch", "branch_bin", "branch_terms", "condition", "condition_bin",
-                "condition_terms", "toggle_signal", "toggle_bit", "toggle_transition",
-                "assert_kind", "assert_object"):
-        if item.get(key) not in (None, ""):
-            out[key] = item.get(key)
-    return out
-
-
-def _toggle_transition_summary(rows: List[Json]) -> Json:
-    out: Json = {}
-    for wanted in ("0 -> 1", "1 -> 0", "npiCovToggle01", "npiCovToggle10"):
-        matching = [row for row in rows if str(row.get("toggle_transition")) == wanted]
-        if not matching:
-            continue
-        covered = sum(row["covered"] for row in matching)
-        coverable = sum(row["coverable"] for row in matching)
-        status: List[str] = []
-        for row in matching:
-            for s in (row.get("status") or []):
-                if s not in status:
-                    status.append(s)
-        key = {"npiCovToggle01": "0 -> 1", "npiCovToggle10": "1 -> 0"}.get(wanted, wanted)
-        out[key] = {"covered": covered, "coverable": coverable,
-                    "missing": coverable - covered,
-                    "coverage_pct": coverage_pct(covered, coverable),
-                    "status": status}
-    return out
-
-
 ASSERT_OBJECT_TYPES = {"npiCovAssert", "npiCovCoverProperty", "npiCovCoverSequence"}
 ASSERT_BIN_TO_FIELD = {
     "npiCovAttemptBin": "attempts",
@@ -1470,59 +1287,6 @@ def _export_output_path(args: Json) -> str:
     if not path:
         raise XcovError("OUTPUT_PATH_REQUIRED", "output.path is required")
     return str(path)
-
-
-def _write_markdown_artifact(path: str, text: str, allow_absolute_path: bool) -> str:
-    resolved = resolve_artifact_path(path, allow_absolute_path=allow_absolute_path)
-    parent = os.path.dirname(resolved)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-    try:
-        with open(resolved, "w", encoding="utf-8") as fh:
-            fh.write(text)
-            if not text.endswith("\n"):
-                fh.write("\n")
-    except OSError as exc:
-        raise XcovError("OUTPUT_WRITE_FAILED", str(exc), path=resolved) from exc
-    return resolved
-
-
-def _coverage_sort_key(row: Json) -> tuple[bool, float, str]:
-    pct = row.get("coverage_pct")
-    if pct is not None and (
-        not isinstance(pct, (int, float)) or isinstance(pct, bool)
-    ):
-        raise XcovError(
-            "INTERNAL_CONTRACT_ERROR",
-            "derived coverage percentage is not numeric",
-            field="coverage_pct",
-        )
-    return (
-        pct is None,
-        0.0 if pct is None else float(pct),
-        str(row.get("full_name") or row.get("name") or ""),
-    )
-
-
-def _below_threshold(row: Json, threshold: float | None) -> bool:
-    if threshold is None:
-        return True
-    pct = row.get("coverage_pct")
-    if pct is None:
-        return False
-    if not isinstance(pct, (int, float)) or isinstance(pct, bool):
-        raise XcovError(
-            "INTERNAL_CONTRACT_ERROR",
-            "derived coverage percentage is not numeric",
-            field="coverage_pct",
-        )
-    return float(pct) < threshold
-
-
-def _evidence_loc(row: Json) -> str:
-    ev = row.get("evidence") if isinstance(row.get("evidence"), dict) else {}
-    file_name = ev.get("file")
-    line = ev.get("line")
     if file_name and line is not None:
         return f"{file_name}:{line}"
     if file_name:
@@ -1552,133 +1316,6 @@ def _yes_no_covered(value: Any, status: List[str] | None = None) -> str:
             field="covered",
         )
     return "yes" if value > 0 else "no"
-
-
-def _code_coverage_markdown(rows: List[Json], threshold: float | None) -> tuple[str, int]:
-    rows = [row for row in rows if row.get("metric") in _code_metrics() and _below_threshold(row, threshold)]
-    rows.sort(key=_coverage_sort_key)
-    lines = [
-        "# Code Coverage Holes",
-        "",
-        f"Threshold: {threshold:g}%" if threshold is not None else "Threshold: none",
-        "",
-    ]
-    exported = 0
-    for metric in _code_metrics():
-        subset = [row for row in rows if row.get("metric") == metric]
-        lines.extend([f"## {metric}", ""])
-        if not subset:
-            if threshold is None:
-                lines.extend(["No items found.", ""])
-            else:
-                lines.extend(["No items below threshold.", ""])
-            continue
-        if metric == "toggle":
-            lines.extend([
-                "> **no_collected**: the toggle transition direction was not collected ",
-                "> in the coverage database (not present in the VDB), rather than being ",
-                "> uncovered by the test stimulus.",
-                "",
-                "| scope | signal | bit | 0->1 covered | 1->0 covered | file:line |",
-                "|---|---|---|---|---|---|",
-            ])
-            for item in _toggle_export_rows(subset):
-                exported += 1
-                lines.append(
-                    f"| {_md(item.get('scope'))} | {_md(item.get('signal'))} | {_md(item.get('bit'))} | "
-                    f"{_md(item.get('0_to_1_covered'))} | {_md(item.get('1_to_0_covered'))} | "
-                    f"{_md(item.get('location'))} |"
-                )
-        elif metric in {"branch", "condition"}:
-            label = {"branch": "branch/bin", "condition": "condition/bin"}[metric]
-            lines.extend([
-                f"| scope | {label} | covered | file:line |",
-                "|---|---|---|---|",
-            ])
-            for row in subset:
-                exported += 1
-                lines.append(
-                    f"| {_md(row.get('scope'))} | {_md(_code_item_label(row))} | "
-                    f"{_yes_no_covered(row.get('covered'), row.get('status'))} | "
-                    f"{_md(_evidence_loc(row))} |"
-                )
-        elif metric == "fsm":
-            lines.extend([
-                "| scope | state/transition | covered | file:line |",
-                "|---|---|---|---|",
-            ])
-            for row in subset:
-                exported += 1
-                raw = str(row.get("full_name") or row.get("fsm") or row.get("name") or "")
-                label = raw.rsplit(".", 1)[-1] if "." in raw else raw
-                lines.append(
-                    f"| {_md(row.get('scope'))} | {_md(label)} | "
-                    f"{_yes_no_covered(row.get('covered'), row.get('status'))} | "
-                    f"{_md(_evidence_loc(row))} |"
-                )
-        elif metric == "line":
-            lines.extend([
-                "| scope | covered | file:line |",
-                "|---|---|---|",
-            ])
-            for row in subset:
-                exported += 1
-                lines.append(
-                    f"| {_md(row.get('scope'))} | "
-                    f"{_yes_no_covered(row.get('covered'), row.get('status'))} | "
-                    f"{_md(_evidence_loc(row))} |"
-                )
-        else:
-            lines.extend([
-                "| object | covered | file:line |",
-                "|---|---|---|",
-            ])
-            for row in subset:
-                exported += 1
-                scope = str(row.get("scope") or "")
-                nm = str(row.get("name") or row.get("full_name") or "")
-                obj = f"{scope}.{nm}" if scope and nm else (scope or nm)
-                lines.append(
-                    f"| {_md(obj)} | "
-                    f"{_yes_no_covered(row.get('covered'), row.get('status'))} | "
-                    f"{_md(_evidence_loc(row))} |"
-                )
-        lines.append("")
-    return "\n".join(lines), exported
-
-
-def _toggle_export_rows(rows: List[Json]) -> List[Json]:
-    grouped: Dict[tuple[str, str], List[Json]] = defaultdict(list)
-    for row in rows:
-        signal = str(row.get("toggle_signal") or row.get("full_name") or row.get("name") or "")
-        bit = str(row.get("toggle_bit") or signal)
-        grouped[(signal, bit)].append(row)
-    out: List[Json] = []
-    for (signal, bit), subset in grouped.items():
-        transitions = _toggle_transition_summary(subset)
-        covered = sum(row["covered"] for row in subset)
-        coverable = sum(row["coverable"] for row in subset)
-        subset_status = subset[0].get("status") if subset else None
-        out.append({
-            "scope": subset[0].get("scope"),
-            "signal": signal,
-            "bit": bit,
-            "0_to_1_covered": _yes_no_covered(
-                (transitions.get("0 -> 1") or {}).get("covered"),
-                (transitions.get("0 -> 1") or {}).get("status") or subset_status,
-            ),
-            "1_to_0_covered": _yes_no_covered(
-                (transitions.get("1 -> 0") or {}).get("covered"),
-                (transitions.get("1 -> 0") or {}).get("status") or subset_status,
-            ),
-            "coverage_pct": coverage_pct(covered, coverable),
-            "location": _evidence_loc(_first_evidence_row(subset)),
-        })
-    return sorted(out, key=_coverage_sort_key)
-
-
-def _first_evidence_row(rows: List[Json]) -> Json:
-    ev = _first_evidence(rows)
     return {"evidence": ev}
 
 
@@ -1691,117 +1328,6 @@ def _code_item_label(row: Json) -> str:
     if metric == "fsm":
         return str(row.get("fsm_transition") or row.get("full_name") or row.get("name") or "")
     return str(row.get("full_name") or row.get("name") or "")
-
-
-def _functional_coverage_markdown(rows: List[Json], threshold: float | None,
-                                covergroup_filter: Any = None) -> tuple[str, int]:
-    if covergroup_filter:
-        rows = [row for row in rows if _covergroup_matches(row.get("covergroup"), str(covergroup_filter))]
-    groups: Dict[str, List[Json]] = defaultdict(list)
-    for row in rows:
-        cg = row.get("covergroup")
-        if cg:
-            groups[str(cg)].append(row)
-    lines = [
-        "# Functional Coverage Holes",
-        "",
-        f"Threshold: {threshold:g}%" if threshold is not None else "Threshold: none",
-        "",
-    ]
-    exported = 0
-    for cg in sorted(groups):
-        subset = groups[cg]
-        cg_row = next((row for row in subset if _functional_level(row) == "covergroup"), None)
-        loc = _evidence_loc(cg_row or {})
-        header = f"## {cg}"
-        if loc:
-            header += f" ({loc})"
-        lines.extend([header, ""])
-        parents = [row for row in subset if _functional_level(row) in {"coverpoint", "cross"}]
-        for parent in sorted(parents, key=lambda r: str(r.get("full_name") or r.get("name") or "")):
-            parent_name = parent.get("coverpoint") or parent.get("cross") or parent.get("name")
-            lines.extend([f"### {parent_name}", ""])
-            bins = [
-                row for row in subset
-                if _functional_level(row) == "bin"
-                and (row.get("coverpoint") == parent.get("coverpoint")
-                     or row.get("cross") == parent.get("cross"))
-                and _below_threshold(row, threshold)
-            ]
-            if not bins:
-                if threshold is None:
-                    lines.extend(["No bins found.", ""])
-                else:
-                    lines.extend(["No bins below threshold.", ""])
-                continue
-            lines.extend([
-                "| bin | covered | coverable | count | coverage_pct |",
-                "|---|---:|---:|---:|---:|",
-            ])
-            for row in sorted(bins, key=_coverage_sort_key):
-                exported += 1
-                lines.append(
-                    f"| {_md(row.get('bin') or row.get('name'))} | {_md(row.get('covered'))} | "
-                    f"{_md(row.get('coverable'))} | {_md(row.get('count'))} | {_md(row.get('coverage_pct'))} |"
-                )
-            lines.append("")
-    if not groups:
-        lines.extend(["No covergroups matched.", ""])
-    return "\n".join(lines), exported
-
-
-def _covergroup_matches(covergroup: Any, pattern: str) -> bool:
-    if covergroup is None:
-        return False
-    import fnmatch
-    return fnmatch.fnmatchcase(str(covergroup), pattern)
-
-
-def _assert_markdown(rows: List[Json], sections: Json, threshold: float) -> tuple[str, int]:
-    selected = [
-        row for row in rows
-        if _below_threshold(row, threshold)
-        or row["failures"] > 0
-        or row["incomplete"] > 0
-        or row["without_attempts"] > 0
-    ]
-    selected.sort(key=_coverage_sort_key)
-    lines = [
-        "# Assertion Coverage",
-        "",
-        f"Threshold: {threshold:g}%",
-        "",
-        "## Summary",
-        "",
-    ]
-    for key in ("assert_summary", "cover_property_summary", "cover_sequence_summary"):
-        row = sections.get(key) if isinstance(sections, dict) else None
-        if isinstance(row, dict):
-            lines.append(
-                f"- {key}: total={row.get('total')} success={row.get('success')} "
-                f"failure={row.get('failure')} incomplete={row.get('incomplete')} "
-                f"without_attempts={row.get('without_attempts')}"
-            )
-    lines.extend(["", "## Items", ""])
-    if selected:
-        lines.extend([
-            "| kind | object | attempts | real_successes | failures | incomplete | first_match | coverage_pct | file:line |",
-            "|---|---|---:|---:|---:|---:|---:|---:|---|",
-        ])
-        for row in selected:
-            lines.append(
-                f"| {_md(row.get('kind'))} | {_md(row.get('full_name') or row.get('name'))} | "
-                f"{_md(row.get('attempts'))} | {_md(row.get('real_successes'))} | "
-                f"{_md(row.get('failures'))} | {_md(row.get('incomplete'))} | "
-                f"{_md(row.get('first_match'))} | {_md(row.get('coverage_pct'))} | {_md(_evidence_loc(row))} |"
-            )
-    else:
-        if threshold is None:
-            lines.append("No assertion items found.")
-        else:
-            lines.append("No assertion items below threshold.")
-    lines.append("")
-    return "\n".join(lines), len(selected)
 
 
 def _functional_summary_rows(rows: List[Json], group_by: str) -> List[Json]:

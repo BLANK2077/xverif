@@ -297,7 +297,7 @@ class JsonlProcess:
                         request_id=request_id,
                     )
                     raise ProtocolError("response envelope must be a JSON object")
-                msg_id = msg.get("id")
+                msg_id = msg.get("id") or msg.get("request_id")
                 if not isinstance(msg_id, str) or not msg_id:
                     self._try_log_stdio(
                         "response.missing_id",
@@ -305,7 +305,7 @@ class JsonlProcess:
                         request_id=request_id,
                     )
                     raise ProtocolError(
-                        "response envelope requires a non-empty string id"
+                        "response envelope requires a non-empty string id or request_id"
                     )
                 if not isinstance(msg.get("ok"), bool):
                     self._try_log_stdio(

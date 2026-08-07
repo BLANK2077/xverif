@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import os
+import secrets
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 from .backend import (
@@ -8,6 +12,7 @@ from .backend import (
     CoverageBackend,
     NpiCoverageBackend,
 )
+from .urg_backend import UrgAggBackend
 from .errors import XcovError
 from .logging import log_lifecycle_event
 
@@ -23,10 +28,16 @@ class XcovSession:
     worker: str
     exclusion_policy: str = "default"
     state: str = "alive"
+    cache_dir: Optional[str] = None
+
+    _el_path: Optional[str] = None
+    _el_dirty: bool = False
 
     def close(self) -> None:
         self.backend.close()
         self.state = "closed"
+        self._el_path = None
+        self._el_dirty = False
 
     def public_json(self) -> Json:
         summary = self.backend.summary()
@@ -40,11 +51,37 @@ class XcovSession:
             "exclusion_policy": self.exclusion_policy,
         }
 
+    def mark_exclusion_dirty(self) -> None:
+        self._el_dirty = True
+
+    def set_el_path(self, path: Optional[str]) -> None:
+        self._el_path = path
+        self._el_dirty = False
+
+    def clear_exclusions(self) -> None:
+        self._el_path = None
+        self._el_dirty = False
+
+    def ensure_el_ready(self) -> Optional[str]:
+        if self._el_dirty:
+            if self.cache_dir is None:
+                self.cache_dir = tempfile.mkdtemp(prefix=".xcov-cache-")
+            new_path = os.path.join(self.cache_dir, "current.el")
+            self.backend.save_exclusions(new_path, test="merged")
+            self._el_path = new_path
+            self._el_dirty = False
+        return self._el_path
+
+    @property
+    def el_file_arg(self) -> list:
+        el = self.ensure_el_ready()
+        return ["-elfile", el] if el else []
+
 
 class SessionManager:
     def __init__(
         self,
-        backend_factory: BackendFactory = NpiCoverageBackend,
+        backend_factory: BackendFactory = UrgAggBackend,
     ) -> None:
         self.sessions: Dict[str, XcovSession] = {}
         self._backend_factory = backend_factory
@@ -73,12 +110,27 @@ class SessionManager:
         vdb: str,
         name: Optional[str] = None,
         exclusion_policy: str = "default",
+        cache_dir: Optional[str] = None,
     ) -> XcovSession:
         sid = self.require_available(name)
+        if cache_dir is not None:
+            cache_path = Path(cache_dir)
+            if not cache_path.exists():
+                raise XcovError(
+                    "CACHE_DIR_NOT_FOUND",
+                    "cache_dir does not exist; create it before session.open",
+                    cache_dir=cache_dir,
+                )
+            if not os.access(str(cache_path), os.W_OK):
+                raise XcovError(
+                    "CACHE_DIR_NOT_WRITABLE",
+                    "cache_dir is not writable",
+                    cache_dir=cache_dir,
+                )
         log_lifecycle_event(sid, "session.open.begin", True, {"vdb": vdb})
         backend = (
             self._backend_factory(vdb, exclusion_policy=exclusion_policy)
-            if self._backend_factory is NpiCoverageBackend
+            if getattr(self._backend_factory, '__name__', '') in ('NpiCoverageBackend', 'UrgAggBackend')
             else self._backend_factory(vdb)
         )
         if hasattr(backend, "exclusion_policy"):
@@ -109,6 +161,7 @@ class SessionManager:
             backend=canonical_backend,
             worker=worker,
             exclusion_policy=exclusion_policy,
+            cache_dir=cache_dir,
         )
         self.sessions[sid] = sess
         log_lifecycle_event(sid, "session.open.ok", True, {"vdb": vdb, "worker": worker})

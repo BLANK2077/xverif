@@ -15,13 +15,32 @@ from xcov import cli as xcov_cli
 from xcov.backend import (
     CanonicalCoverageBackend,
     CoverageBackend,
-    FakeCoverageBackend,
     NpiApiBinding,
     NpiCallFailure,
     NpiContractViolation,
     NpiCoverageBackend,
     _validate_functional_identity,
 )
+from xcov.backend import CoverageBackend as _CoverageBackend
+
+class _TestBackend(_CoverageBackend):
+    """Minimal test-only backend. Not a production VDB selector."""
+    worker_kind = "test"
+    def __init__(self, vdb="test.vdb", exclusion_policy="default"):
+        self.vdb = vdb; self.exclusion_policy = exclusion_policy
+        self._items = [
+            {"metric":"line","type":"npiCovStmtBin","scope":"top.u_dut","name":"s1","full_name":"top.u_dut.s1","covered":1,"coverable":1,"missing":0,"count":1,"coverage_pct":100.0,"status":["covered"],"evidence":{"file":"a.sv","line":1}},
+            {"metric":"toggle","type":"npiCovToggleBin","scope":"top.u_dut","name":"t1","full_name":"top.u_dut.t1","toggle_signal":"s","toggle_bit":"s[0]","toggle_transition":"0->1","covered":0,"coverable":1,"missing":1,"count":0,"coverage_pct":0.0,"status":["not_covered"],"evidence":{"file":"a.sv","line":2}},
+        ]
+    def tests(self): return [{"name": f"{self.vdb}/test"}]
+    def summary(self): return {"test_count":1,"top_scope_count":1}
+    def top_scopes(self): return [{"name":"top","full_name":"top","parent":None,"depth":0,"type":"instance"}]
+    def scopes(self): return self.top_scopes()
+    def items(self,**kw): return list(self._items)
+    def load_exclusions(self,paths,test="merged"): return [{"path":p,"status":"loaded"} for p in paths]
+    def set_exclusion(self,ref,excluded,test="merged"): return {"coverage_ref":ref,"status":"changed","before":False,"after":excluded}
+    def save_exclusions(self,path,test="merged"): pass
+    def unload_exclusions(self,test="merged"): pass
 from xcov.errors import XcovError
 from xcov.logging import log_root, sanitize_for_log
 from xcov.provenance import resource_sha256
@@ -82,7 +101,7 @@ def _read_last_json_line(path: Path) -> dict:
 def _fake_dispatcher() -> Dispatcher:
     return Dispatcher(
         SessionManager(
-            backend_factory=lambda vdb: FakeCoverageBackend(vdb),
+            backend_factory=lambda vdb: _TestBackend(vdb),
         )
     )
 
@@ -377,7 +396,7 @@ def test_run_manifest_contract_fails_before_backend_and_session_side_effects(
 
     def factory(path):
         opened_vdbs.append(path)
-        return FakeCoverageBackend(path)
+        return _TestBackend(path)
 
     dispatcher = Dispatcher(SessionManager(backend_factory=factory))
     rsp = dispatcher.dispatch({
@@ -427,7 +446,7 @@ def test_run_manifest_rejects_noncanonical_json_before_backend_open(
 
     dispatcher = Dispatcher(SessionManager(
         backend_factory=lambda path: (
-            opened_vdbs.append(path) or FakeCoverageBackend(path)
+            opened_vdbs.append(path) or _TestBackend(path)
         ),
     ))
     rsp = dispatcher.dispatch({
@@ -467,7 +486,7 @@ def test_duplicate_session_name_fails_before_manifest_or_backend_work(tmp_path):
 
     def factory(vdb):
         opened_vdbs.append(vdb)
-        return FakeCoverageBackend(vdb)
+        return _TestBackend(vdb)
 
     dispatcher = Dispatcher(SessionManager(backend_factory=factory))
     first = dispatcher.dispatch({
@@ -505,7 +524,7 @@ def test_fake_backend_is_not_a_production_vdb_selector():
 
     def factory(vdb):
         opened_vdbs.append(vdb)
-        return FakeCoverageBackend(vdb)
+        return _TestBackend(vdb)
 
     injected = SessionManager(backend_factory=factory)
     session = injected.open("fake", name="literal-fake")
@@ -515,7 +534,7 @@ def test_fake_backend_is_not_a_production_vdb_selector():
     source = (ROOT / "xcov" / "xcov" / "session.py").read_text(
         encoding="utf-8"
     )
-    assert "FakeCoverageBackend" not in source
+    assert "_TestBackend" not in source
     assert 'vdb == "fake"' not in source
 
 
@@ -894,7 +913,7 @@ def test_explicit_empty_selectors_are_rejected_instead_of_defaulted(
 
 
 def test_backend_empty_metric_selector_means_no_metrics_not_all_metrics():
-    assert FakeCoverageBackend("unit.vdb").items(metrics=[]) == []
+    assert _TestBackend("unit.vdb").items(metrics=[]) == []
 
 
 @pytest.mark.parametrize(
@@ -2053,7 +2072,7 @@ def test_npi_backend_source_has_no_safe_call_or_arity_fallback():
     assert "return fn()" not in source
 
 
-class MutatingCoverageBackend(FakeCoverageBackend):
+class MutatingCoverageBackend(_TestBackend):
     def __init__(self, vdb, mutate, *, worker_kind="custom") -> None:
         super().__init__(vdb)
         self._mutate = mutate
@@ -2210,7 +2229,7 @@ def test_absent_evidence_is_canonical_empty_evidence_and_not_an_error():
     assert row["evidence"] == {"file": None, "line": None}
 
 
-class InvalidSummaryBackend(FakeCoverageBackend):
+class InvalidSummaryBackend(_TestBackend):
     worker_kind = "custom"
 
     def summary(self):
@@ -2235,7 +2254,7 @@ def test_backend_summary_shape_is_validated_before_session_publication():
     assert dispatcher.sessions.sessions == {}
 
 
-class InvalidTestsBackend(FakeCoverageBackend):
+class InvalidTestsBackend(_TestBackend):
     worker_kind = "custom"
 
     def tests(self):
@@ -2266,7 +2285,7 @@ def test_backend_test_identity_is_fail_closed():
     assert rsp["error"]["detail.field"] == "tests.name"
 
 
-class InvalidScopesBackend(FakeCoverageBackend):
+class InvalidScopesBackend(_TestBackend):
     worker_kind = "custom"
 
     def scopes(self):
@@ -2299,7 +2318,7 @@ def test_backend_scope_hierarchy_is_fail_closed():
     assert rsp["error"]["detail.field"] == "scopes.depth"
 
 
-class InvalidScopeParentBackend(FakeCoverageBackend):
+class InvalidScopeParentBackend(_TestBackend):
     worker_kind = "custom"
 
     def scopes(self):

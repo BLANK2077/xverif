@@ -107,6 +107,32 @@ suites:
     cost: {class: slow, estimate_sec: 30}
     timeouts: {execute_sec: 180, cleanup_sec: 20}
 
+  - id: xcov.urg_backend
+    owner: xcov
+    level: system
+    intent: [contract, semantics, lifecycle]
+    domains: [coverage]
+    runner: {kind: pytest, path: xcov/tests/test_urg_backend.py}
+    fixtures: [xcov.comprehensive]
+    capabilities: [child_process, npi]
+    hermetic: false
+    deterministic: true
+    cost: {class: slow, estimate_sec: 60}
+    timeouts: {execute_sec: 300, cleanup_sec: 20}
+
+  - id: xcov.mcp_integration
+    owner: xcov
+    level: system
+    intent: [contract, lifecycle, integration]
+    domains: [coverage, mcp]
+    runner: {kind: pytest, path: xverif_mcp/tests/test_xcov_mcp_integration.py}
+    fixtures: [xcov.comprehensive]
+    capabilities: [child_process, npi]
+    hermetic: false
+    deterministic: true
+    cost: {class: slow, estimate_sec: 120}
+    timeouts: {execute_sec: 600, cleanup_sec: 30}
+
   - id: xwaveform.unit
     owner: xwaveform
     level: unit
