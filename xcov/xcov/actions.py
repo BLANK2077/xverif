@@ -12,16 +12,10 @@ from .backend import METRICS
 from .coverage_contract import is_score_bearing_row
 from .errors import XcovError, error_response
 from .exclusions_csv import (
-    apply_rebase_suggestions,
     exclusion_paths,
     format_directory,
-    git_group_status,
     parse_directory,
-    rebase_suggestions,
     resolve_documents,
-    review_markdown,
-    stamp_documents,
-    suggested_patches,
 )
 from .logging import (log_action_event, request_summary_for_log,
                       response_summary_for_log, update_session_manifest)
@@ -589,11 +583,37 @@ class Dispatcher:
     def _exclude_set(self, req: Json, sess) -> Json:
         args = action_args(req)
         _require_merged(args)
+        refs = args.get("coverage_refs") or []
+        selectors = args.get("selectors") or []
+        if not refs and not selectors:
+            raise XcovError(
+                "SCHEMA_INVALID",
+                "至少需要 coverage_refs 或 selectors 之一",
+                path="$.args",
+            )
         excluded = req["action"] == "exclude.add"
-        rows = [
-            sess.backend.set_exclusion(ref, excluded, test="merged")
-            for ref in args["coverage_refs"]
-        ]
+        rows: list = []
+
+        # 向后兼容: coverage_refs
+        for ref in refs:
+            rows.append(sess.backend.set_exclusion(ref, excluded, test="merged"))
+
+        # 新 selector 路径
+        for sel in selectors:
+            resolved = sess.backend.resolve_selector(sel)
+            if not resolved["valid"]:
+                rows.append({
+                    "coverage_ref": None,
+                    "status": "invalid",
+                    "errors": resolved["errors"],
+                    "note": resolved.get("note", ""),
+                })
+            else:
+                result = sess.backend.set_exclusion(
+                    resolved["coverage_ref"], excluded, test="merged"
+                )
+                rows.append(result)
+
         sess.mark_exclusion_dirty()
         return ok_response(
             req,

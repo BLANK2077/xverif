@@ -507,6 +507,174 @@ class CanonicalCoverageBackend(CoverageBackend):
     def unload_exclusions(self, test: str = "merged") -> None:
         self._delegate.unload_exclusions(test=test)
 
+    def resolve_selector(self, selector: dict) -> dict:
+        return self._delegate.resolve_selector(selector)
+
+
+# ── Selector resolution constants ──
+
+_VALID_METRICS = {"line", "toggle", "branch", "condition", "fsm", "assert", "functional"}
+
+_SELECTOR_FIELDS: dict[str, frozenset[str]] = {
+    "line": frozenset({"metric", "scope", "file", "line"}),
+    "toggle": frozenset({"metric", "scope", "signal", "transition"}),
+    "branch": frozenset({"metric", "scope", "branch", "arm"}),
+    "condition": frozenset({"metric", "scope", "condition", "term"}),
+    "fsm": frozenset({"metric", "scope", "fsm", "transition"}),
+    "assert": frozenset({"metric", "scope", "name"}),
+    "functional": frozenset({"metric", "scope", "covergroup", "coverpoint", "bin"}),
+}
+
+_SELECTOR_EXAMPLES: dict[str, list[str]] = {
+    "line": [
+        '{"metric":"line","scope":"top.u_dut","file":"ctrl.sv","line":42}',
+    ],
+    "toggle": [
+        '{"metric":"toggle","scope":"top.u_dut","signal":"clk","transition":"0->1"}',
+        '{"metric":"toggle","scope":"top.u_dut","signal":"rst_n","transition":"1->0"}',
+    ],
+    "branch": [
+        '{"metric":"branch","scope":"top.u_dut","branch":"case (state)","arm":"-3-"}',
+        '{"metric":"branch","scope":"top.u_dut","branch":"if (enable)","arm":"else"}',
+    ],
+    "condition": [
+        '{"metric":"condition","scope":"top.u_dut","condition":"(en && (sel == 2\'b1))","term":"-2-"}',
+    ],
+    "fsm": [
+        '{"metric":"fsm","scope":"top.u_dut","fsm":"state","transition":"IDLE->RUN"}',
+    ],
+    "assert": [
+        '{"metric":"assert","scope":"top.u_dut","name":"a_no_unknown"}',
+    ],
+    "functional": [
+        '{"metric":"functional","scope":"top","covergroup":"top::behavior_cg","coverpoint":"sel_cp","bin":"other"}',
+    ],
+}
+
+_SELECTOR_EXPORT_HINT: dict[str, str] = {
+    "line": "通过 export.code_coverage action 导出 modinfo.txt 查看准确的 scope、file、line。",
+    "toggle": (
+        "通过 export.code_coverage action 导出 modinfo.txt 查看准确的 signal 名和 transition 方向。"
+        "URG modinfo Toggle 列: Toggle 0->1, Toggle 1->0"
+    ),
+    "branch": (
+        "通过 export.code_coverage action 导出 modinfo.txt 查看准确的 branch 表达式和 arm 名。"
+        "URG modinfo Branch arm 列: -1-, -2-, -3-, -4-（对应 case/if 的每个 arm）"
+    ),
+    "condition": (
+        "通过 export.code_coverage action 导出 modinfo.txt 查看准确的 condition 表达式和 term 名。"
+        "URG modinfo Condition term 列: -1-, -2-（对应表达式的每个 term）"
+    ),
+    "fsm": (
+        "通过 export.code_coverage action 导出 modinfo.txt 查看准确的 FSM 状态名和转换。"
+    ),
+    "assert": (
+        "通过 export.assert action 导出 asserts.txt 查看准确的 assertion 名。"
+    ),
+    "functional": (
+        "通过 export.functional_coverage action 导出 grpinfo.txt 查看准确的 covergroup、coverpoint、bin 名称。"
+        "URG grpinfo: 直接使用 uncovered bin 名称（如 'other', 'zero' 等）"
+    ),
+}
+
+
+def _selector_note(metric: str) -> str:
+    """生成 selector 使用说明 note。"""
+    fields = _SELECTOR_FIELDS.get(metric, frozenset())
+    field_list = ", ".join(sorted(fields))
+    examples = _SELECTOR_EXAMPLES.get(metric, [])
+    hint = _SELECTOR_EXPORT_HINT.get(metric, "")
+    lines = [f"{metric} selector 需要: {field_list}。", "示例:"]
+    for ex in examples:
+        lines.append(f"  {ex}")
+    if hint:
+        lines.append(f"提示: {hint}")
+    return "\n".join(lines)
+
+
+def _selector_matches(selector: dict, row: dict) -> bool:
+    """检查一个 coverage item 是否匹配 selector。"""
+    metric = selector["metric"]
+    if row.get("metric") != metric:
+        return False
+    if row.get("scope") != selector.get("scope"):
+        return False
+
+    if metric == "line":
+        ev = row.get("evidence") or {}
+        sel_file = selector.get("file", "")
+        row_file = ev.get("file") or ""
+        if sel_file and row_file:
+            if row_file != sel_file and not row_file.endswith("/" + sel_file):
+                return False
+        return ev.get("line") == selector.get("line")
+
+    if metric == "toggle":
+        if not _field_match(row, "toggle_signal", selector.get("signal")):
+            return False
+        sel_trans = selector.get("transition", "")
+        # Normalize: accept "0->1", "0 -> 1", or NPI enum names
+        row_trans = _normalize_transition(row.get("toggle_transition") or row.get("name", ""))
+        return _normalize_transition(sel_trans) == row_trans
+
+    if metric == "branch":
+        return (_field_match(row, "branch", selector.get("branch"))
+                and selector.get("arm") == (row.get("branch_bin") or row.get("name", "")))
+
+    if metric == "condition":
+        return (_field_match(row, "condition", selector.get("condition"))
+                and selector.get("term") == (row.get("condition_bin") or row.get("name", "")))
+
+    if metric == "fsm":
+        return (_field_match(row, "fsm", selector.get("fsm"))
+                and selector.get("transition") == row.get("name", ""))
+
+    if metric == "assert":
+        sel_name = selector.get("name", "")
+        if sel_name and row.get("name") != sel_name:
+            return False
+        sel_kind = selector.get("kind")
+        if sel_kind and row.get("assert_kind") != sel_kind:
+            return False
+        return True
+
+    if metric == "functional":
+        if row.get("covergroup") != selector.get("covergroup"):
+            return False
+        if row.get("coverpoint") != selector.get("coverpoint"):
+            return False
+        sel_cross = selector.get("cross")
+        if sel_cross and row.get("cross") != sel_cross:
+            return False
+        return row.get("bin") == selector.get("bin")
+
+    return False
+
+
+def _field_match(row: dict, field: str, expected: str | None) -> bool:
+    if not expected:
+        return True
+    return str(row.get(field, "")) == expected
+
+
+def _normalize_transition(value: str) -> str:
+    """Normalize toggle transition to a canonical form like '0->1'."""
+    # NPI enum → human-readable
+    npi_map = {
+        "npiCovToggle01": "0->1",
+        "npiCovToggle10": "1->0",
+        "npiCovToggle0X": "0->X",
+        "npiCovToggleX0": "X->0",
+        "npiCovToggle1X": "1->X",
+        "npiCovToggleX1": "X->1",
+        "npiCovToggleZX": "Z->X",
+        "npiCovToggleXZ": "X->Z",
+    }
+    if value in npi_map:
+        return npi_map[value]
+    # Remove spaces: "0 -> 1" → "0->1"
+    return value.replace(" ", "")
+
 
 @dataclass
 class NpiCoverageBackend(CoverageBackend):
@@ -740,6 +908,71 @@ class NpiCoverageBackend(CoverageBackend):
                 )
             results.append({"path": path, "status": "loaded"})
         return results
+
+    def resolve_selector(self, selector: dict) -> dict:
+        """校验 selector 并解析为 coverage_ref。"""
+        metric = selector.get("metric")
+        errors: list = []
+
+        if not isinstance(metric, str) or metric not in _VALID_METRICS:
+            return {
+                "valid": False, "coverage_ref": None,
+                "errors": [{
+                    "field": "metric", "code": "INVALID_METRIC",
+                    "message": f"不支持的 metric: {metric}。合法值: {', '.join(sorted(_VALID_METRICS))}",
+                }],
+                "current_status": None,
+                "note": _selector_note(metric or "line"),
+            }
+
+        required = _SELECTOR_FIELDS.get(metric, frozenset())
+        missing = required - set(selector.keys())
+        if missing:
+            errors.append({
+                "field": sorted(missing)[0], "code": "MISSING_FIELD",
+                "message": f"{metric} selector 缺少必填字段: {', '.join(sorted(missing))}",
+            })
+
+        scope = selector.get("scope", "")
+        if not isinstance(scope, str) or not scope:
+            errors.append({"field": "scope", "code": "MISSING_FIELD", "message": "scope 是必填字段"})
+
+        if errors:
+            return {
+                "valid": False, "coverage_ref": None, "errors": errors,
+                "current_status": None, "note": _selector_note(metric),
+            }
+
+        items = self.items(metrics=[metric] if metric != "functional" else None)
+        if metric == "functional":
+            items = self.items(functional_only=True)
+
+        matches = [row for row in items if _selector_matches(selector, row)]
+
+        if len(matches) == 0:
+            return {
+                "valid": False, "coverage_ref": None,
+                "errors": [{"field": None, "code": "NO_MATCH",
+                            "message": f"selector 未匹配到任何 {metric} item。"}],
+                "current_status": None, "note": _selector_note(metric),
+            }
+        if len(matches) > 1:
+            return {
+                "valid": False, "coverage_ref": None,
+                "errors": [{"field": None, "code": "AMBIGUOUS_MATCH",
+                            "message": f"selector 匹配到 {len(matches)} 个 item。"}],
+                "current_status": None, "note": _selector_note(metric),
+            }
+
+        match = matches[0]
+        ref = match.get("coverage_ref")
+        if not isinstance(ref, str):
+            return {
+                "valid": False, "coverage_ref": None,
+                "errors": [{"field": None, "code": "NPI_ERROR", "message": "item 缺少 coverage_ref"}],
+                "current_status": None, "note": _selector_note(metric),
+            }
+        return {"valid": True, "coverage_ref": ref, "errors": [], "current_status": match.get("status", [])}
 
     def set_exclusion(
         self,
