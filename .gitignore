@@ -1,7 +1,9 @@
 .agents/
 .codex/
 /out/
+**/out/
 /tmp/
+**/tmp/
 
 # Legacy unowned test and regression assets
 test/
