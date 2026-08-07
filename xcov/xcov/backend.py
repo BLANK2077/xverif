@@ -425,6 +425,15 @@ class CoverageBackend:
     def unload_exclusions(self, test: str = "merged") -> None:
         raise NotImplementedError
 
+    def resolve_selector(self, selector: dict) -> dict:
+        return {
+            "valid": False, "coverage_ref": None,
+            "errors": [{"field": None, "code": "NOT_SUPPORTED",
+                        "message": "resolve_selector requires NpiCoverageBackend"}],
+            "current_status": None,
+            "note": "selector-based exclusion is only supported with NPI backend",
+        }
+
 
 class CanonicalCoverageBackend(CoverageBackend):
     """Mandatory backend-to-action contract boundary.
@@ -509,6 +518,9 @@ class CanonicalCoverageBackend(CoverageBackend):
 
     def resolve_selector(self, selector: dict) -> dict:
         return self._delegate.resolve_selector(selector)
+
+    def _npi_items(self, wanted_metrics=None):
+        return self._delegate._npi_items(wanted_metrics=wanted_metrics)
 
 
 # ── Selector resolution constants ──
@@ -693,6 +705,11 @@ class NpiCoverageBackend(CoverageBackend):
     coverage_ref_namespace: str = field(
         default_factory=lambda: secrets.token_hex(16)
     )
+    # URG 即调缓存
+    _urg_loaded: bool = field(default=False, init=False)
+    _urg_scopes: Dict[str, Json] = field(default_factory=dict, init=False)
+    _urg_metrics: List[str] = field(default_factory=list, init=False)
+    _urg_top_scopes: List[Json] = field(default_factory=list, init=False)
 
     def __post_init__(self) -> None:
         log_lifecycle_event("adhoc", "npi.init.begin", True, {"vdb": self.vdb})
@@ -797,6 +814,9 @@ class NpiCoverageBackend(CoverageBackend):
                 with _redirect_stdout_to_stderr():
                     self._api().module_call("npisys.end")
                 log_lifecycle_event("adhoc", "npi.end.ok", True, {"vdb": self.vdb})
+            self._urg_loaded = False
+            self._urg_scopes.clear()
+            self._urg_top_scopes.clear()
 
     def _api(self) -> NpiApiBinding:
         if self.api is None:
@@ -817,42 +837,37 @@ class NpiCoverageBackend(CoverageBackend):
         raise XcovError("TEST_NOT_FOUND", "test not found", test=test)
 
     def summary(self) -> Json:
-        return {"test_count": len(self.test_map), "top_scope_count": None}
+        self._ensure_urg()
+        return {"test_count": max(1, len(self.test_map)), "top_scope_count": len(self._urg_top_scopes)}
 
     def top_scopes(self) -> List[Json]:
-        rows: List[Json] = []
-        for inst in self._api().call("database.instance_handles", self.db):
-            try:
-                rows.append(self._scope_row_from_inst(inst))
-            finally:
-                self.release_if_handle(inst)
-        return rows
+        self._ensure_urg()
+        result = []
+        for s in self._urg_top_scopes:
+            leaf = s["name"].rsplit(".", 1)[-1]
+            result.append({"name": leaf, "full_name": s["name"],
+                           "parent": None, "depth": 0, "type": "instance"})
+        return result
 
     def scopes(self) -> List[Json]:
-        rows: List[Json] = []
-        for inst in self._api().call("database.instance_handles", self.db):
-            try:
-                self._walk_scopes(inst, rows)
-            finally:
-                self.release_if_handle(inst)
-        return rows
-
-    def _scope_row_from_inst(self, inst: Any) -> Json:
-        api = self._api()
-        name = _required_string(api, "instance.name", inst)
-        full_name = _required_string(api, "instance.full_name", inst)
-        return {
-            "name": name,
-            "full_name": full_name,
-            "parent": _scope_parent(full_name),
-            "depth": _scope_depth(full_name),
-            "type": _required_string(api, "instance.type", inst),
-            "def_name": _optional_string(api, "instance.def_name", inst),
-            "evidence": {
-                "file": _optional_string(api, "instance.file_name", inst),
-                "line": _optional_source_line(api, "instance.line_no", inst),
-            },
-        }
+        self._ensure_urg()
+        all_names = set(self._urg_scopes.keys())
+        extra = set()
+        for sname in all_names:
+            parts = sname.split(".")
+            for i in range(1, len(parts)):
+                ancestor = ".".join(parts[:i])
+                if ancestor not in all_names:
+                    extra.add(ancestor)
+        all_names |= extra
+        result = []
+        for sname in sorted(all_names):
+            leaf = sname.rsplit(".", 1)[-1]
+            parent = sname.rsplit(".", 1)[0] if "." in sname else None
+            depth = sname.count(".")
+            result.append({"name": leaf, "full_name": sname,
+                           "parent": parent, "depth": depth, "type": "instance"})
+        return result
 
     def _walk_scopes(self, inst: Any, rows: List[Json]) -> None:
         rows.append(self._scope_row_from_inst(inst))
@@ -862,9 +877,68 @@ class NpiCoverageBackend(CoverageBackend):
             finally:
                 self.release_if_handle(child)
 
+    # ── URG XML 数据源 ──
+
+    def _ensure_urg(self) -> None:
+        if self._urg_loaded:
+            return
+        import subprocess, tempfile, xml.etree.ElementTree as ET
+
+        cache_dir = tempfile.mkdtemp(prefix=".xcov-urg-")
+        xml_path = os.path.join(cache_dir, "session.xml")
+        result = subprocess.run(
+            ["urg", "-dir", self.vdb, "-report", cache_dir, "-format", "text", "-xml_verbose"],
+            capture_output=True, text=True, timeout=300,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"URG failed (exit {result.returncode}): {result.stderr[:500]}")
+        if not os.path.isfile(xml_path):
+            raise RuntimeError(f"URG did not produce session.xml at {xml_path}")
+
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        hvp = root.find("hvp")
+        if hvp is not None:
+            datadef = hvp.find("datadef")
+            if datadef is not None:
+                self._urg_metrics = [
+                    m.get("name", "") for m in datadef.findall("metdef") if m.get("builtin") == "1"
+                ]
+        old_cov = root.find("old_coverage")
+        if old_cov is not None:
+            self._urg_scopes = {}
+            self._parse_urg_scopes(old_cov)
+        self._urg_loaded = True
+
+    def _parse_urg_scopes(self, element: Any, parent_name: str = "") -> None:
+        for scope in element.findall("scope"):
+            stype = scope.get("type", "")
+            name = scope.get("name", "")
+            full_name = name if not parent_name else (
+                f"{parent_name}.{name}" if parent_name != name else name
+            )
+            if stype == "instance":
+                metrics = {}
+                for m in scope.findall("metric"):
+                    mname = m.get("name", "")
+                    val = m.get("value", "0/0")
+                    excl = int(m.get("excl", 0))
+                    if "/" in val:
+                        covered_str, total_str = val.split("/", 1)
+                        metrics[mname] = {"covered": int(covered_str),
+                                          "coverable": int(total_str), "excluded": excl}
+                self._urg_scopes[full_name] = {
+                    "name": name, "full_name": full_name,
+                    "type": "instance", "metrics": metrics,
+                }
+                if parent_name == "" or parent_name == name:
+                    self._urg_top_scopes.append({"name": full_name, "full_name": full_name})
+            self._parse_urg_scopes(scope, full_name)
+
     def items(self, metrics: Optional[List[str]] = None,
               scope: Optional[str] = None, test: str = "merged",
               functional_only: bool = False) -> List[Json]:
+        """NPI 详细数据（有 evidence）。URG scope 聚合数据在 scopes/summary 中。"""
         test_hdl = self._test_handle(test)
         wanted = METRICS if metrics is None else metrics
         if functional_only and "functional" not in wanted:
@@ -874,13 +948,7 @@ class NpiCoverageBackend(CoverageBackend):
         if design_metrics and not functional_only:
             for inst in self._api().call("database.instance_handles", self.db):
                 try:
-                    self._walk_items(
-                        inst,
-                        test_hdl,
-                        design_metrics,
-                        scope,
-                        rows,
-                    )
+                    self._walk_items(inst, test_hdl, design_metrics, scope, rows)
                 finally:
                     self.release_if_handle(inst)
         if "functional" in wanted:
@@ -890,6 +958,10 @@ class NpiCoverageBackend(CoverageBackend):
             if isinstance(ref, str):
                 self.coverage_identities[ref] = coverage_identity_for_row(row)
         return rows
+
+    def _npi_items(self, wanted_metrics: Optional[List[str]] = None) -> List[Json]:
+        """NPI 详细遍历（有 evidence）。"""
+        return self.items(metrics=wanted_metrics)
 
     def load_exclusions(self, paths: List[str], test: str = "merged") -> List[Json]:
         test_hdl = self._merged_only(test)
@@ -943,9 +1015,9 @@ class NpiCoverageBackend(CoverageBackend):
                 "current_status": None, "note": _selector_note(metric),
             }
 
-        items = self.items(metrics=[metric] if metric != "functional" else None)
+        items = self._npi_items(wanted_metrics=[metric] if metric != "functional" else None)
         if metric == "functional":
-            items = self.items(functional_only=True)
+            items = self._npi_items(wanted_metrics=["functional"])
 
         matches = [row for row in items if _selector_matches(selector, row)]
 
@@ -990,7 +1062,7 @@ class NpiCoverageBackend(CoverageBackend):
             }
         readable_matches = [
             row
-            for row in self.items(test=test)
+            for row in self._npi_items()
             if (row.get("coverage_ref") or coverage_ref_for_row(row))
             == coverage_ref
             and coverage_identity_for_row(row) == expected_identity

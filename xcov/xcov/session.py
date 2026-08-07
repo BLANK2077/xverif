@@ -12,7 +12,6 @@ from .backend import (
     CoverageBackend,
     NpiCoverageBackend,
 )
-from .urg_backend import UrgAggBackend
 from .errors import XcovError
 from .logging import log_lifecycle_event
 
@@ -81,7 +80,7 @@ class XcovSession:
 class SessionManager:
     def __init__(
         self,
-        backend_factory: BackendFactory = UrgAggBackend,
+        backend_factory: BackendFactory = NpiCoverageBackend,
     ) -> None:
         self.sessions: Dict[str, XcovSession] = {}
         self._backend_factory = backend_factory
@@ -128,11 +127,7 @@ class SessionManager:
                     cache_dir=cache_dir,
                 )
         log_lifecycle_event(sid, "session.open.begin", True, {"vdb": vdb})
-        backend = (
-            self._backend_factory(vdb, exclusion_policy=exclusion_policy)
-            if getattr(self._backend_factory, '__name__', '') in ('NpiCoverageBackend', 'UrgAggBackend')
-            else self._backend_factory(vdb)
-        )
+        backend = self._backend_factory(vdb, exclusion_policy=exclusion_policy)
         if hasattr(backend, "exclusion_policy"):
             backend.exclusion_policy = exclusion_policy
         if not isinstance(backend, CoverageBackend):

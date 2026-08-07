@@ -13,7 +13,7 @@ def test_session_xml_all_scopes(xverif_fixture):
     resources = xverif_fixture("xcov.comprehensive")
     vdb = resources / "comprehensive.vdb"
 
-    from xcov.urg_backend import UrgAggBackend
+    from xcov.backend import NpiCoverageBackend as UrgAggBackend
     backend = UrgAggBackend(vdb=str(vdb))
     try:
         scopes = backend.scopes()
@@ -39,7 +39,7 @@ def test_scope_aggregate_matches_npi(xverif_fixture):
     vdb = resources / "comprehensive.vdb"
 
     # URG side
-    from xcov.urg_backend import UrgAggBackend
+    from xcov.backend import NpiCoverageBackend as UrgAggBackend
     urg = UrgAggBackend(vdb=str(vdb))
     try:
         urg_items = urg.items()
@@ -130,7 +130,7 @@ def test_multi_inst_diff_coverage(xverif_fixture):
     resources = xverif_fixture("xcov.comprehensive")
     vdb = resources / "comprehensive.vdb"
 
-    from xcov.urg_backend import UrgAggBackend
+    from xcov.backend import NpiCoverageBackend as UrgAggBackend
     backend = UrgAggBackend(vdb=str(vdb))
     try:
         items = backend.items()
@@ -157,7 +157,7 @@ def test_urg_with_elfile(xverif_fixture, tmp_path):
     vdb = resources / "comprehensive.vdb"
 
     # First: get baseline without EL
-    from xcov.urg_backend import UrgAggBackend
+    from xcov.backend import NpiCoverageBackend as UrgAggBackend
     backend = UrgAggBackend(vdb=str(vdb), cache_dir=str(tmp_path))
     try:
         baseline = backend.items(scope="top.u_core0")
@@ -245,7 +245,7 @@ def test_el_lazy_export(xverif_fixture, tmp_path):
     vdb = resources / "comprehensive.vdb"
 
     from xcov.session import SessionManager, XcovSession
-    from xcov.urg_backend import UrgAggBackend
+    from xcov.backend import NpiCoverageBackend as UrgAggBackend
 
     def factory(vdb_path, **kw):
         b = UrgAggBackend(vdb=str(vdb_path))
@@ -286,7 +286,7 @@ def test_export_code_to_dir(xverif_fixture, tmp_path):
 
     from xcov.actions import Dispatcher
     from xcov.session import SessionManager
-    from xcov.urg_backend import UrgAggBackend
+    from xcov.backend import NpiCoverageBackend as UrgAggBackend
 
     def factory(vdb_path, **kw):
         b = UrgAggBackend(vdb=str(vdb_path))
