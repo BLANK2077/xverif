@@ -80,6 +80,18 @@ def test_vdb():
 
 
 @pytest.fixture(scope="module")
+def exclusion_vdb():
+    xverif_home = os.environ.get("XVERIF_HOME") or str(Path(__file__).resolve().parents[2])
+    versions_dir = os.path.join(xverif_home, ".xverif-test-cache", "fixtures", "xcov.exclusion", "versions")
+    if os.path.isdir(versions_dir):
+        for vhash in sorted(os.listdir(versions_dir), reverse=True):
+            vdb = os.path.join(versions_dir, vhash, "resources", "exclusion.vdb")
+            if os.path.isdir(vdb):
+                return vdb
+    pytest.skip("exclusion VDB not found; run: pytest --xverif-prepare xcov.exclusion")
+
+
+@pytest.fixture(scope="module")
 def xverif_home():
     return os.environ.get("XVERIF_HOME") or str(
         Path(__file__).resolve().parents[2]
@@ -497,6 +509,78 @@ def test_cov_xout_output_format(monkeypatch, test_vdb, xverif_home):
     text = content[0].text
     assert text.startswith("@xcov.code_coverage.summary.v1"), \
         f"unexpected xout header: {text[:80]}"
+
+
+# ── exclude.add / exclude.remove with selectors ──
+
+
+def test_cov_exclude_add_with_selector(monkeypatch, exclusion_vdb, xverif_home):
+    """xverif_cov_query(exclude.add) 用 selector 排除一个 line item."""
+    overrides = {"XVERIF_HOME": xverif_home, "XVERIF_MCP_BACKEND": "direct"}
+    server = _server(monkeypatch, overrides)
+
+    _call_tool(server, "xverif_cov_session_open", {"name": "mcp_excl_add", "vdb": exclusion_vdb})
+    content, _ = _call_tool(server, "xverif_cov_query", {
+        "session_id": "mcp_excl_add", "action": "exclude.add",
+        "args": {"selectors": [{"metric": "line", "scope": "top",
+                                "file": "exclusion_fixture.sv", "line": 72}]},
+        "output_format": "json",
+    })
+    payload = json.loads(content[0].text)
+    assert payload["ok"] is True
+    assert payload["data"]["items"][0]["status"] == "changed"
+
+    _call_tool(server, "xverif_cov_session_close", {"session_id": "mcp_excl_add"})
+
+
+def test_cov_exclude_add_invalid_selector(monkeypatch, exclusion_vdb, xverif_home):
+    """xverif_cov_query(exclude.add) 无效 selector 返回 errors + note."""
+    overrides = {"XVERIF_HOME": xverif_home, "XVERIF_MCP_BACKEND": "direct"}
+    server = _server(monkeypatch, overrides)
+
+    _call_tool(server, "xverif_cov_session_open", {"name": "mcp_excl_inv", "vdb": exclusion_vdb})
+    content, _ = _call_tool(server, "xverif_cov_query", {
+        "session_id": "mcp_excl_inv", "action": "exclude.add",
+        "args": {"selectors": [{"metric": "unknown", "scope": "top"}]},
+        "output_format": "json",
+    })
+    payload = json.loads(content[0].text)
+    assert payload["ok"] is True  # action succeeds; item has status=invalid
+    item = payload["data"]["items"][0]
+    assert item["status"] == "invalid"
+    assert len(item.get("errors", [])) > 0
+    assert item.get("errors", [{}])[0]["code"] == "INVALID_METRIC"
+    assert "note" in item
+
+    _call_tool(server, "xverif_cov_session_close", {"session_id": "mcp_excl_inv"})
+
+
+def test_cov_exclude_remove_with_selector(monkeypatch, exclusion_vdb, xverif_home):
+    """xverif_cov_query(exclude.add + exclude.remove) 完整排除/恢复流程."""
+    overrides = {"XVERIF_HOME": xverif_home, "XVERIF_MCP_BACKEND": "direct"}
+    server = _server(monkeypatch, overrides)
+
+    _call_tool(server, "xverif_cov_session_open", {"name": "mcp_excl_rm", "vdb": exclusion_vdb})
+
+    # add
+    content, _ = _call_tool(server, "xverif_cov_query", {
+        "session_id": "mcp_excl_rm", "action": "exclude.add",
+        "args": {"selectors": [{"metric": "line", "scope": "top",
+                                "file": "exclusion_fixture.sv", "line": 72}]},
+        "output_format": "json",
+    })
+    assert json.loads(content[0].text)["data"]["items"][0]["status"] == "changed"
+
+    # remove
+    content, _ = _call_tool(server, "xverif_cov_query", {
+        "session_id": "mcp_excl_rm", "action": "exclude.remove",
+        "args": {"selectors": [{"metric": "line", "scope": "top",
+                                "file": "exclusion_fixture.sv", "line": 72}]},
+        "output_format": "json",
+    })
+    assert json.loads(content[0].text)["data"]["items"][0]["status"] == "changed"
+
+    _call_tool(server, "xverif_cov_session_close", {"session_id": "mcp_excl_rm"})
 
     _call_tool(server, "xverif_cov_session_close", {
         "session_id": "mcp_int_xout",
