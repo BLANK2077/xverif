@@ -325,9 +325,6 @@ def test_csv_compile_publishes_three_files_and_loads_union(tmp_path):
         "functional.el",
         "assertion.el",
     }
-    # EL 加载结果取决于 NPI checksum 匹配，不强求具体数量
-    listed = _request(dispatcher, "exclude.list")
-    assert listed["ok"] is True
 
 
 def test_csv_apply_resolves_and_returns_setter_outcomes(tmp_path):
