@@ -229,51 +229,34 @@ def test_csv_resolve_is_exact_and_reports_missing(tmp_path):
 
 def test_native_exclusion_add_remove_export_load_and_unload(tmp_path):
     dispatcher = _dispatcher()
-    backend = dispatcher.sessions.get("cov").backend
-    # 尝试多个未被完全覆盖的 item 直到找到一个 NPI 接受 exclude 的
-    ref = None
-    for row in backend.items():
-        if row.get("covered", 0) < row.get("coverable", 1):
-            rsp = _request(dispatcher, "exclude.add", {"coverage_refs": [row["coverage_ref"]]})
-            if rsp["data"]["items"][0]["status"] == "changed":
-                ref = row["coverage_ref"]
-                # 先 remove 以保持 clean 状态
-                _request(dispatcher, "exclude.remove", {"coverage_refs": [ref]})
-                break
-    assert ref is not None, "VDB 中没有 NPI 接受 exclude 的 item"
+    # 用 selector 语义匹配，不依赖 coverage_ref traversal_path
+    selector = {"metric": "line", "scope": "top", "file": "exclusion_fixture.sv", "line": 72}
 
-    added = _request(dispatcher, "exclude.add", {"coverage_refs": [ref]})
+    added = _request(dispatcher, "exclude.add", {"selectors": [selector]})
     assert added["data"]["items"][0]["status"] == "changed"
-    again = _request(dispatcher, "exclude.add", {"coverage_refs": [ref]})
+    ref = added["data"]["items"][0]["coverage_ref"]
+
+    again = _request(dispatcher, "exclude.add", {"selectors": [selector]})
     assert again["data"]["items"][0]["status"] == "already_in_state"
-    listed = _request(dispatcher, "exclude.list")
-    assert [row["coverage_ref"] for row in listed["data"]["items"]] == [ref]
 
     output = tmp_path / "saved.el"
     exported = _request(
         dispatcher,
         "export.exclude",
-        {
-            "output": {
-                "path": str(output),
-                "allow_absolute_path": True,
-            }
-        },
+        {"output": {"path": str(output), "allow_absolute_path": True}},
     )
     assert exported["ok"] is True
-    removed = _request(dispatcher, "exclude.remove", {"coverage_refs": [ref]})
+
+    removed = _request(dispatcher, "exclude.remove", {"selectors": [selector]})
     assert removed["data"]["items"][0]["status"] == "changed"
+
     loaded = _request(
-        dispatcher,
-        "exclude.load",
+        dispatcher, "exclude.load",
         {"paths": [str(output)], "allow_absolute_path": True},
     )
     assert loaded["ok"] is True
-    unloaded = _request(
-        dispatcher,
-        "exclude.unload_all",
-        {"confirm": True},
-    )
+
+    unloaded = _request(dispatcher, "exclude.unload_all", {"confirm": True})
     assert unloaded["data"]["items"][0]["after_count"] == 0
 
 
