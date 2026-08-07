@@ -5,7 +5,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$script_dir/.." && pwd)"
 export XVERIF_HOME="${XVERIF_HOME:-$root}"
 
-python_bin="${PYTHON:-${XVERIF_XCOV_PYTHON:-python3}}"
+python_bin="${PYTHON:-${XVERIF_XCOV_PYTHON:-${XVERIF_HOME}/.conda-xverif/bin/python}}"
 command -v "$python_bin" >/dev/null 2>&1 || {
   echo "ERROR: Python interpreter not found: $python_bin; set PYTHON or XVERIF_XCOV_PYTHON" >&2
   exit 2
