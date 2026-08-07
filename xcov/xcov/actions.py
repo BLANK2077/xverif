@@ -189,16 +189,6 @@ ACTION_REGISTRY: Dict[str, ActionContract] = {
         "Validate the three grouped exclusion CSV source files.",
         "Do not use to access a VDB or mutate CSV files.",
     ),
-    "exclude.csv.status": ActionContract(
-        "exclude.csv.status", "_exclude_csv_git", False,
-        "Compare each source group commit and worktree state.",
-        "Do not use to resolve coverage objects in a VDB.",
-    ),
-    "exclude.csv.impact": ActionContract(
-        "exclude.csv.impact", "_exclude_csv_git", False,
-        "Classify source changes independently for every CSV group.",
-        "Do not use to stamp commits or mutate exclusions.",
-    ),
     "exclude.csv.resolve": ActionContract(
         "exclude.csv.resolve", "_exclude_csv_resolve", True,
         "Read-only resolve every CSV selector against the current merged VDB.",
@@ -213,16 +203,6 @@ ACTION_REGISTRY: Dict[str, ActionContract] = {
         "exclude.csv.compile", "_exclude_csv_compile", True,
         "Validate, resolve, apply, and atomically publish three native EL files.",
         "Do not publish partial output when any selector fails.",
-    ),
-    "exclude.csv.rebase": ActionContract(
-        "exclude.csv.rebase", "_exclude_csv_rebase", False,
-        "Generate rename and pure-line-shift review suggestions.",
-        "Do not automatically accept source-content changes.",
-    ),
-    "exclude.csv.stamp_changed": ActionContract(
-        "exclude.csv.stamp_changed", "_exclude_csv_stamp", True,
-        "Stamp only clean source groups whose selectors all resolve exactly.",
-        "Do not stamp dirty, missing, or ambiguous groups.",
     ),
     "exclude.csv.format": ActionContract(
         "exclude.csv.format", "_exclude_csv_format", False,
@@ -684,15 +664,6 @@ class Dispatcher:
         ]
         return _items_ok(req, rows)
 
-    def _exclude_csv_git(self, req: Json) -> Json:
-        args = action_args(req)
-        documents = parse_directory(_csv_directory(req))
-        rows = git_group_status(
-            documents,
-            str(args.get("repo_root", os.getcwd())),
-        )
-        return _items_ok(req, rows)
-
     def _exclude_csv_resolve(self, req: Json, sess) -> Json:
         documents, rows = _resolve_csv(req, sess)
         del documents
@@ -802,37 +773,6 @@ class Dispatcher:
                 sess.backend.load_exclusions([str(baseline)], test="merged")
                 raise
         return _items_ok(req, published)
-
-    def _exclude_csv_rebase(self, req: Json) -> Json:
-        args = action_args(req)
-        documents = parse_directory(_csv_directory(req))
-        rows = rebase_suggestions(
-            documents,
-            str(args.get("repo_root", os.getcwd())),
-        )
-        rows.extend(suggested_patches(documents, rows))
-        if args.get("write") is True:
-            rows.extend(apply_rebase_suggestions(documents, rows))
-        report = review_markdown(rows)
-        output = args.get("review_output")
-        if output:
-            path = resolve_artifact_path(
-                output["path"],
-                bool(output.get("allow_absolute_path", False)),
-            )
-            Path(path).parent.mkdir(parents=True, exist_ok=True)
-            Path(path).write_text(report, encoding="utf-8")
-        return _items_ok(req, rows)
-
-    def _exclude_csv_stamp(self, req: Json, sess) -> Json:
-        args = action_args(req)
-        documents, resolutions = _resolve_csv(req, sess)
-        rows = stamp_documents(
-            documents,
-            str(args.get("repo_root", os.getcwd())),
-            resolutions,
-        )
-        return _items_ok(req, rows)
 
     def _exclude_csv_format(self, req: Json) -> Json:
         args = action_args(req)

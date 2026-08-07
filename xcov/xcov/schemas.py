@@ -780,15 +780,11 @@ CSV_WORKFLOW_ITEM = _object({
         "coverage_object_missing",
         "ambiguous",
     ]),
-    "renamed_to": NULLABLE_STRING,
-    "line_updates": _array(LINE_UPDATE),
     "match_count": _integer(0),
     "reason": _string(min_length=1),
     "coverage_refs": _array(_string(min_length=1)),
     "action": _string(min_length=1),
     "automatic": _bool(),
-    "stamp_status": _string(min_length=1),
-    "patch": _string(min_length=1),
 }, required=["status"])
 
 ANNOTATION = _object({
@@ -848,26 +844,15 @@ def _query_summary(extra: Json | None = None) -> Json:
 def _csv_workflow_args(action: str) -> Json:
     props: Json = {"directory": _string(min_length=1)}
     if action in {
-        "exclude.csv.status",
-        "exclude.csv.impact",
-        "exclude.csv.rebase",
-        "exclude.csv.stamp_changed",
-    }:
-        props["repo_root"] = _string(min_length=1)
-    if action in {
         "exclude.csv.resolve",
         "exclude.csv.apply",
         "exclude.csv.compile",
-        "exclude.csv.stamp_changed",
     }:
         props["test"] = {"const": "merged"}
     if action == "exclude.csv.compile":
         props["output_directory"] = _string(min_length=1)
         props["allow_absolute_path"] = _bool()
     if action == "exclude.csv.format":
-        props["write"] = _bool()
-    if action == "exclude.csv.rebase":
-        props["review_output"] = _export_output()
         props["write"] = _bool()
     return _args(props)
 
@@ -1325,14 +1310,12 @@ SCHEMAS: Dict[str, Json] = {
                     "exclude.csv.resolve",
                     "exclude.csv.apply",
                     "exclude.csv.compile",
-                    "exclude.csv.stamp_changed",
                 } else _target(),
                 args=_csv_workflow_args(action),
                 require_target=action in {
                     "exclude.csv.resolve",
                     "exclude.csv.apply",
                     "exclude.csv.compile",
-                    "exclude.csv.stamp_changed",
                 },
             ),
             _completeness_summary(),
@@ -1344,13 +1327,9 @@ SCHEMAS: Dict[str, Json] = {
         )
         for action in (
             "exclude.csv.validate",
-            "exclude.csv.status",
-            "exclude.csv.impact",
             "exclude.csv.resolve",
             "exclude.csv.apply",
             "exclude.csv.compile",
-            "exclude.csv.rebase",
-            "exclude.csv.stamp_changed",
             "exclude.csv.format",
         )
     },
