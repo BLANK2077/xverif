@@ -1,0 +1,10 @@
+{
+  "schema": "x-npi.performance-thresholds.v1",
+  "hard_regression_limits": {
+    "negedge_median_rss_ratio": 1.05
+  },
+  "informational_targets": {
+    "negedge_median_cpu_ratio": 1.25,
+    "posedge_cpu_ratio": 1.5
+  }
+}

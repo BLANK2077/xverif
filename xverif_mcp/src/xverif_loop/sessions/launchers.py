@@ -102,6 +102,7 @@ def _run_bkill(*, job_id: str | None = None,
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
         )
     except Exception as exc:
         result = {

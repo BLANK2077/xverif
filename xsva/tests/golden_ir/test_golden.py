@@ -19,7 +19,7 @@ from xsva.cli import _serialize_timeline_ir, _serialize_sequence_ir, _serialize_
 
 
 def _load_json(path: Path) -> dict:
-    return json.loads(path.read_text())
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def test_golden_surface_ir(run_golden_case):

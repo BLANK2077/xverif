@@ -65,6 +65,7 @@ class StdioLoopRunner:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
             bufsize=1,
             start_new_session=True,
         )

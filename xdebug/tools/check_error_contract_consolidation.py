@@ -9,12 +9,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def require(path: str, needle: str) -> list[str]:
-    text = (ROOT / path).read_text()
+    text = (ROOT / path).read_text(encoding="utf-8")
     return [] if needle in text else [f"{path}: missing required consolidation marker: {needle}"]
 
 
 def forbid(path: str, needle: str) -> list[str]:
-    text = (ROOT / path).read_text()
+    text = (ROOT / path).read_text(encoding="utf-8")
     return [f"{path}: forbidden duplicate diagnostic path remains: {needle}"] if needle in text else []
 
 

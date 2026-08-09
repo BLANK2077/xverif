@@ -31,8 +31,13 @@
             "path": {"type": "string"},
             "paths": {"type": "array", "items": {"type": "string"}, "minItems": 1},
             "argv": {"type": "array", "items": {"type": "string"}, "minItems": 1},
-            "cwd": {"type": "string"}
-            ,"marker": {"type": "string"}
+            "cwd": {"type": "string"},
+            "marker": {"type": "string"},
+            "env": {
+              "type": "object",
+              "propertyNames": {"pattern": "^[A-Z_][A-Z0-9_]*$"},
+              "additionalProperties": {"type": "string"}
+            }
           },
           "allOf": [
             {

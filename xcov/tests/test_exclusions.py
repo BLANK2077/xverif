@@ -68,8 +68,9 @@ def _npi_dispatcher(policy: str = "default") -> Dispatcher:
                 "target": {"session_id": "cov"},
                 "args": {"confirm": True},
             })
-        # strict policy 测试：修改已有 session 的 policy
-        if policy != "default" and sess is not None:
+        # 进程级 session 复用时必须恢复本用例请求的 policy，避免 strict
+        # 状态污染后续 default 用例。
+        if sess is not None:
             sess.exclusion_policy = policy
             sess.backend._delegate.exclusion_policy = policy
         return _NPI_DISPATCHER
@@ -90,17 +91,6 @@ def _npi_dispatcher(policy: str = "default") -> Dispatcher:
     assert response["ok"] is True, response
     _NPI_DISPATCHER = dispatcher
     return dispatcher
-    xverif_home = os.environ.get("XVERIF_HOME") or os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..")
-    )
-    base = os.path.join(xverif_home, ".xverif-test-cache", "fixtures", "xcov.exclusion")
-    versions_dir = os.path.join(base, "versions")
-    if os.path.isdir(versions_dir):
-        for vhash in sorted(os.listdir(versions_dir), reverse=True):
-            vdb = os.path.join(versions_dir, vhash, "resources", "exclusion.vdb")
-            if os.path.isdir(vdb):
-                return vdb
-    pytest.skip("exclusion VDB not found; run: pytest --xverif-prepare xcov.exclusion")
 
 
 def _dispatcher(policy: str = "default") -> Dispatcher:
@@ -261,17 +251,51 @@ def test_native_exclusion_add_remove_export_load_and_unload(tmp_path):
 
 
 def test_strict_policy_rejects_covered_object():
-    dispatcher = _dispatcher("strict")
-    ref = next(
-        row["coverage_ref"]
-        for row in dispatcher.sessions.get("cov").backend.items()
-        if row["metric"] == "line"
+    import json
+    import subprocess
+    import sys
+
+    script = r'''
+import json
+import sys
+from xcov.actions import Dispatcher
+from xcov.backend import NpiCoverageBackend
+from xcov.session import SessionManager
+
+dispatcher = Dispatcher(SessionManager(NpiCoverageBackend))
+opened = dispatcher.dispatch({
+    "api_version": "xcov.v1",
+    "action": "session.open",
+    "target": {"vdb": sys.argv[1]},
+    "args": {"name": "cov", "exclusion_policy": "strict"},
+})
+assert opened["ok"], opened
+ref = next(
+    row["coverage_ref"]
+    for row in dispatcher.sessions.get("cov").backend.items()
+    if row["metric"] == "line"
+)
+response = dispatcher.dispatch({
+    "api_version": "xcov.v1",
+    "action": "exclude.add",
+    "target": {"session_id": "cov"},
+    "args": {"coverage_refs": [ref]},
+})
+print("XCOV_TEST_RESULT=" + json.dumps(response))
+'''
+    result = subprocess.run(
+        [sys.executable, "-c", script, _exclusion_vdb()],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
     )
-    response = _request(
-        dispatcher,
-        "exclude.add",
-        {"coverage_refs": [ref]},
+    assert result.returncode == 0, result.stderr
+    result_line = next(
+        line for line in result.stdout.splitlines()
+        if line.startswith("XCOV_TEST_RESULT=")
     )
+    response = json.loads(result_line.removeprefix("XCOV_TEST_RESULT="))
     assert response["data"]["items"][0]["status"] == "failed"
 
 
@@ -400,5 +424,3 @@ def test_exclusion_action_xout_is_human_readable(tmp_path):
     output = render_xout(response)
     assert "summary:\n" in output
     assert "pointer\tkind\tvalue" not in output
-
-

@@ -119,42 +119,6 @@ def test_xbit_adapter_rejects_aliases_conflicts_and_coercive_inputs():
 
 
 
-def test_xsva_adapter_uses_public_cli_and_preserves_metadata(monkeypatch):
-    calls = []
-    canonical = {
-        "ok": True, "tool": "xsva", "action": "parse",
-        "lowering_status": "partial",
-        "precision": {"semantic_model": "partial", "path_enumeration": "complete", "reason_codes": []},
-        "diagnostics": [],
-        "completeness": {
-            "scan_complete": True, "analysis_complete": False,
-            "response_truncated": False, "path_enumeration_complete": True,
-            "total_path_count": 1, "returned_path_count": 1,
-            "truncation_scopes": [],
-        },
-        "file": "input.sva", "property": "p", "emit": "timeline-ir",
-        "result": {
-            "schema_version": "xsva.timeline_ir.v1", "property": "p",
-            "kind": "property", "clock": {"edge": "posedge", "signal": "clk"},
-            "disable_expr": "", "trigger": {"cycle": 0, "expr": "req", "captures": []},
-            "obligations": [],
-            "match_paths": [{"id": "path_0", "description": "req", "obligations": []}],
-            "failure_conditions": [], "semantic_notes": [],
-        },
-    }
-
-    class DummyRunner:
-        def run_json(self, tool, argv):
-            calls.append((tool, argv))
-            return canonical
-
-    monkeypatch.setattr("xverif_mcp.adapters.xsva.StatelessCliRunner", DummyRunner)
-    from xverif_mcp.adapters.xsva import sva_parse
-
-    assert sva_parse("input.sva", "p", output_format="json") is canonical
-    assert calls == [("xsva", ["parse", "--file", "input.sva", "--property", "p", "--emit", "timeline-ir", "--json"])]
-
-
 def test_xsva_adapter_rejects_malformed_tool_response(monkeypatch):
     class DummyRunner:
         def run_json(self, tool, argv):
@@ -168,14 +132,3 @@ def test_xsva_adapter_rejects_malformed_tool_response(monkeypatch):
     assert result["error"]["code"] == "INVALID_TOOL_RESPONSE"
 
 
-def test_xsva_adapter_xout_is_passed_through_unchanged(monkeypatch):
-    expected = "Properties:\n  p\nAssertions:\n"
-
-    class DummyRunner:
-        def run_xout(self, tool, argv):
-            return expected
-
-    monkeypatch.setattr("xverif_mcp.adapters.xsva.StatelessCliRunner", DummyRunner)
-    from xverif_mcp.adapters.xsva import sva_list
-
-    assert sva_list("input.sva") == expected

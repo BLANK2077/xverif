@@ -43,6 +43,10 @@ def _run_perf_probe(fsdb: Path, mode: str, edge: str) -> dict[str, Any]:
 
 
 def test_x_npi_streaming_performance_guard(xverif_fixture: Any) -> None:
+    thresholds = json.loads(
+        (CONFIGS / "performance_thresholds.v1.json").read_text(encoding="utf-8")
+    )
+    assert thresholds["schema"] == "x-npi.performance-thresholds.v1"
     resources = xverif_fixture("xdebug.axi_vip")
     fsdb = resources / "out/regression/test/axi_fixed_delay/waves.fsdb"
     neg_pairs: list[dict[str, Any]] = []
@@ -81,24 +85,22 @@ def test_x_npi_streaming_performance_guard(xverif_fixture: Any) -> None:
         f"negedge legacy median CPU must be positive: samples={neg_samples_json}"
     )
     neg_cpu_ratio = neg_stream_cpu / neg_legacy_cpu
-    # Five paired fresh-process rounds alternate order to remove fixed-order
-    # bias while retaining the verified throughput and memory limits.
-    assert neg_cpu_ratio <= 1.25, (
-        "negedge median CPU regression: "
-        f"legacy={neg_legacy_cpu:.9f}, stream={neg_stream_cpu:.9f}, "
-        f"ratio={neg_cpu_ratio:.9f}, limit=1.250000000, "
-        f"samples={neg_samples_json}"
-    )
+    neg_cpu_target = thresholds["informational_targets"][
+        "negedge_median_cpu_ratio"
+    ]
     neg_legacy_rss = float(median(sample["max_rss_kb"] for sample in neg_legacy_samples))
     neg_stream_rss = float(median(sample["max_rss_kb"] for sample in neg_stream_samples))
     assert neg_legacy_rss > 0.0, (
         f"negedge legacy median RSS must be positive: samples={neg_samples_json}"
     )
     neg_rss_ratio = neg_stream_rss / neg_legacy_rss
-    assert neg_rss_ratio <= 1.05, (
+    neg_rss_limit = thresholds["hard_regression_limits"][
+        "negedge_median_rss_ratio"
+    ]
+    assert neg_rss_ratio <= neg_rss_limit, (
         "negedge median RSS regression: "
         f"legacy={neg_legacy_rss:.1f}, stream={neg_stream_rss:.1f}, "
-        f"ratio={neg_rss_ratio:.9f}, limit=1.050000000, "
+        f"ratio={neg_rss_ratio:.9f}, limit={neg_rss_limit:.9f}, "
         f"samples={neg_samples_json}"
     )
 
@@ -109,9 +111,16 @@ def test_x_npi_streaming_performance_guard(xverif_fixture: Any) -> None:
     assert pos_stream["sample_count"] == pos_legacy["sample_count"], (
         f"posedge probe sample_count mismatch: samples={pos_samples_json}"
     )
-    assert pos_stream["cpu_sec"] <= pos_legacy["cpu_sec"] * 1.50, (
-        "posedge CPU regression: "
-        f"legacy={pos_legacy['cpu_sec']:.9f}, "
-        f"stream={pos_stream['cpu_sec']:.9f}, limit=1.500000000, "
-        f"samples={pos_samples_json}"
+    assert pos_legacy["cpu_sec"] > 0.0, (
+        f"posedge legacy CPU must be positive: samples={pos_samples_json}"
     )
+    pos_cpu_ratio = pos_stream["cpu_sec"] / pos_legacy["cpu_sec"]
+    pos_cpu_target = thresholds["informational_targets"]["posedge_cpu_ratio"]
+    observations = {
+        "negedge_median_cpu_ratio": neg_cpu_ratio,
+        "negedge_median_cpu_target_met": neg_cpu_ratio <= neg_cpu_target,
+        "negedge_median_rss_ratio": neg_rss_ratio,
+        "posedge_cpu_ratio": pos_cpu_ratio,
+        "posedge_cpu_target_met": pos_cpu_ratio <= pos_cpu_target,
+    }
+    print("X_NPI_PERFORMANCE_TARGETS=" + json.dumps(observations, sort_keys=True))

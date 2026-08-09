@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "file_exceptions": {
+    "xdebug/tests/contract/test_session_lifecycle_internal_requests.py": "内部 session 补偿、子进程异常退出和非法 token 故障注入",
+    "xverif_mcp/tests/test_backend_wiring.py": "backend 启动失败、协议错误和 LSF 故障注入",
+    "xverif_mcp/tests/test_stdio_loop_session_lifecycle.py": "stdio loop readiness、崩溃、超时和回收故障注入",
+    "xverif_mcp/tests/test_xdebug_session_action_guard.py": "非法 session/action 组合的拒绝路径故障注入"
+  },
+  "test_exceptions": {
+    "xcov/tests/test_xcov.py::test_session_open_rejects_changed_vdb_run_manifest_without_opening_backend": "VDB manifest 被篡改时禁止 backend open",
+    "xcov/tests/test_xcov.py::test_session_open_rejects_retired_backend_and_lifecycle_args": "废弃参数拒绝路径",
+    "xcov/tests/test_xcov.py::test_npi_binding_rejects_missing_required_module_method_at_init": "NPI binding 缺失方法故障注入",
+    "xdebug/tests/session/test_session_lifecycle.py::test_engine_crash_marker_is_written_by_signal_handler": "真实 engine 信号崩溃路径的环境故障注入",
+    "xdebug/tests/unit/test_test_infra.py::test_stdio_loop_timeout_terminates_desynchronized_process": "stdio 子进程超时故障注入",
+    "xdebug/tests/unit/test_test_infra.py::test_stdio_loop_detects_stdout_pollution_after_ready": "stdio 协议污染故障注入",
+    "xdebug/tests/unit/test_test_infra.py::test_stdio_loop_drains_large_stderr_without_polluting_stdout": "stdio stderr 压力故障注入",
+    "xdebug/tests/unit/test_test_infra.py::test_stdio_loop_reports_child_exit": "stdio 子进程异常退出故障注入",
+    "xdebug/tests/unit/test_test_infra.py::test_hybrid_runner_timeout_terminates_persistent_frontend": "persistent frontend 超时故障注入",
+    "xverif_mcp/tests/test_import_adapters.py::test_xsva_adapter_rejects_malformed_tool_response": "xsva 非法响应故障注入",
+    "xverif_mcp/tests/test_loop_session.py::test_open_rejects_backend_session_id_mismatch_and_cleans_up": "session id 不一致故障注入",
+    "xverif_mcp/tests/test_loop_session.py::test_rejected_open_has_exact_conditional_cleanup_outcome": "open 拒绝后的补偿路径",
+    "xverif_mcp/tests/test_loop_session.py::test_close_terminate_failure_reports_partial_failure": "terminate 失败故障注入",
+    "xverif_mcp/tests/test_loop_session.py::test_manager_tombstones_session_after_close_partial_failure": "partial close 后 tombstone 故障注入",
+    "xverif_mcp/tests/test_loop_wrapper_uds.py::test_loop_wrapper_reports_bad_requests": "UDS 非法请求故障注入",
+    "xverif_mcp/tests/test_loop_wrapper_uds.py::test_loop_wrapper_query_timeout_returns_error": "UDS query 超时故障注入",
+    "xverif_mcp/tests/test_loop_wrapper_uds.py::test_loop_wrapper_logs_invalid_json_and_redacts_paths": "非法 JSON 和日志脱敏故障注入",
+    "xverif_mcp/tests/test_shared_loop_layer.py::test_same_alias_open_cannot_cross_terminal_publication": "并发 open 竞态故障注入",
+    "xverif_mcp/tests/test_shared_loop_layer.py::test_open_logging_failures_leave_one_terminal_manager_state": "日志写入失败故障注入"
+  }
+}

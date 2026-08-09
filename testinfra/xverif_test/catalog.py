@@ -71,6 +71,12 @@ class Suite:
         value = self.runner.get("marker")
         return str(value) if value else None
 
+    def runner_env(self) -> dict[str, str]:
+        return {
+            str(name): str(value)
+            for name, value in self.runner.get("env", {}).items()
+        }
+
 
 @dataclass(frozen=True)
 class SelectedSuite:

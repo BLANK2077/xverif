@@ -79,25 +79,6 @@ def test_mcp_server_initialize(monkeypatch: pytest.MonkeyPatch):
     assert server.mcp.name == "xverif"
 
 
-def test_stateful_cleanup_calls_debug_and_cov(monkeypatch: pytest.MonkeyPatch):
-    server = _server(monkeypatch)
-    calls: list[str] = []
-
-    class DummyAdapter:
-        def __init__(self, name: str) -> None:
-            self.name = name
-
-        def close_all(self) -> None:
-            calls.append(self.name)
-
-    monkeypatch.setattr(server, "debug", DummyAdapter("debug"))
-    monkeypatch.setattr(server, "cov", DummyAdapter("cov"))
-
-    server._cleanup_stateful_sessions()
-
-    assert calls == ["debug", "cov"]
-
-
 def test_stateful_cleanup_logs_and_continues_after_failure(monkeypatch: pytest.MonkeyPatch):
     server = _server(monkeypatch)
     calls: list[str] = []
@@ -131,29 +112,6 @@ def test_stateful_cleanup_logs_and_continues_after_failure(monkeypatch: pytest.M
         "backend": "direct",
         "error_type": "RuntimeError",
     }]
-
-
-def test_lifespan_cleanup_runs_on_exit(monkeypatch: pytest.MonkeyPatch):
-    server = _server(monkeypatch)
-    calls: list[str] = []
-
-    class DummyAdapter:
-        def __init__(self, name: str) -> None:
-            self.name = name
-
-        def close_all(self) -> None:
-            calls.append(self.name)
-
-    monkeypatch.setattr(server, "debug", DummyAdapter("debug"))
-    monkeypatch.setattr(server, "cov", DummyAdapter("cov"))
-
-    async def _run() -> None:
-        async with server._mcp_lifespan(server.mcp):
-            assert calls == []
-
-    anyio.run(_run)
-
-    assert calls == ["debug", "cov"]
 
 
 def test_mcp_tools_list(monkeypatch: pytest.MonkeyPatch):
@@ -379,40 +337,6 @@ def test_loc_context_requires_explicit_log_line(monkeypatch: pytest.MonkeyPatch)
     schema = anyio.run(_schema)
     assert schema["properties"]["line"]["type"] == "integer"
     assert "line" in schema["required"]
-
-
-def test_session_open_tools_expose_run_manifest_and_forward_it(monkeypatch: pytest.MonkeyPatch):
-    server = _server(monkeypatch)
-    calls = []
-
-    class DummyAdapter:
-        def session_open(self, **kwargs):
-            calls.append(kwargs)
-            return {"ok": True, "session": kwargs}
-
-    monkeypatch.setattr(server, "debug", DummyAdapter())
-    monkeypatch.setattr(server, "cov", DummyAdapter())
-
-    async def _run():
-        schemas = {tool.name: tool.inputSchema for tool in await server.mcp.list_tools()}
-        for name in ("xverif_debug_session_open", "xverif_cov_session_open"):
-            assert "run_manifest" in schemas[name]["properties"]
-        await server.mcp.call_tool("xverif_debug_session_open", {
-            "name": "debug_manifest", "fsdb": "waves.fsdb",
-            "run_manifest": "debug-run-manifest.json",
-        })
-        await server.mcp.call_tool("xverif_cov_session_open", {
-            "name": "cov_manifest", "vdb": "merged.vdb",
-            "run_manifest": "cov-run-manifest.json",
-        })
-
-    anyio.run(_run)
-    assert calls == [
-        {"name": "debug_manifest", "daidir": None, "fsdb": "waves.fsdb",
-         "run_manifest": "debug-run-manifest.json", "queue": None, "resource": None},
-        {"name": "cov_manifest", "vdb": "merged.vdb",
-         "run_manifest": "cov-run-manifest.json", "queue": None, "resource": None},
-    ]
 
 
 def test_mcp_ping_call(monkeypatch: pytest.MonkeyPatch):

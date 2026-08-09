@@ -100,10 +100,6 @@ Python Coverage API 证实 coverage object 可读取：
 - `file_name()`
 - `line_no(test)`
 
-因此 xcov 可以基于 NPI evidence 定位源码文件并读取源码窗口，生成
-`source.annotate`。这不是 URG HTML 解析；源码文本来自项目文件，coverage
-annotation 来自 VDB/NPI。
-
 不公开字段：`MISSING_ELSE` 等 URG HTML 专有显示标签。当前 Python Coverage API
 文档和 probe 没有证实这些标签可取。
 
@@ -150,8 +146,7 @@ union、strict mode 对 covered/uncovered 对象的差异，以及新进程只�
 - backend/action canonical score/count 不接受 `-1` sentinel；不适用值使用
   JSON `null`。只有 NPI SDK 层可以依据已声明 metric/type 把文档定义的“不适用”
   返回值映射成 `null`，非法负值仍返回 `NPI_CONTRACT_VIOLATION`。
-- `source.annotate` 在 `include_source_text:true` 时把源码读取失败报告为
-  `SOURCE_READ_FAILED`；不会继续返回不含源码文本的成功结果。
+
 - `NPI_CONTRACT_VIOLATION` 响应必须声明
   `scan_complete:false`、`analysis_complete:false`，调用方不得把部分遍历结果视为
   完整 coverage 事实。

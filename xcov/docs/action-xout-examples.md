@@ -134,13 +134,7 @@ NPI traversal 或 fact 合同失败使用结构化错误，并明确声明结果
 
 ### Source 与 assertion
 
-```json
-{"api_version":"xcov.v1","request_id":"source-map","action":"source.map","target":{"session_id":"cov0"},"args":{"file":"rtl/ctrl.sv","line":123,"window":3}}
-```
 
-```json
-{"api_version":"xcov.v1","request_id":"source-annotate","action":"source.annotate","target":{"session_id":"cov0"},"args":{"file":"rtl/ctrl.sv","line":123,"window":3,"include_source_text":true}}
-```
 
 ```json
 {"api_version":"xcov.v1","request_id":"assert-summary","action":"assert.summary","target":{"session_id":"cov0"}}
@@ -219,15 +213,15 @@ NPI traversal 或 fact 合同失败使用结构化错误，并明确声明结果
 ### Markdown export 请求
 
 ```json
-{"api_version":"xcov.v1","request_id":"export-code","action":"export.code_coverage","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","threshold_pct":100.0,"output":{"path":"code_coverage.md"}}}
+{"api_version":"xcov.v1","request_id":"export-code","action":"export.code_coverage","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","output":{"path":"code_coverage.md"}}}
 ```
 
 ```json
-{"api_version":"xcov.v1","request_id":"export-functional","action":"export.functional_coverage","target":{"session_id":"cov0"},"args":{"covergroup":"*uart*","threshold_pct":100.0,"output":{"path":"functional_coverage.md"}}}
+{"api_version":"xcov.v1","request_id":"export-functional","action":"export.functional_coverage","target":{"session_id":"cov0"},"args":{"covergroup":"*uart*","output":{"path":"functional_coverage.md"}}}
 ```
 
 ```json
-{"api_version":"xcov.v1","request_id":"export-assert","action":"export.assert","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","threshold_pct":100.0,"output":{"path":"assert.md"}}}
+{"api_version":"xcov.v1","request_id":"export-assert","action":"export.assert","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","output":{"path":"assert.md"}}}
 ```
 
 ## 完整性字段

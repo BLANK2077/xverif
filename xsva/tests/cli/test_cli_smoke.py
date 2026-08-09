@@ -22,7 +22,8 @@ def _run(tmp_path, source: str, *args: str):
     path.write_text(source, encoding="utf-8")
     return subprocess.run(
         [sys.executable, "-m", "xsva", *args, "--file", str(path)],
-        cwd=PROJECT_ROOT, text=True, capture_output=True, check=False,
+        cwd=PROJECT_ROOT, text=True, encoding="utf-8",
+        capture_output=True, check=False,
     )
 
 

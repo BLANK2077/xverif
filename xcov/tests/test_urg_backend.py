@@ -1,4 +1,4 @@
-"""Tests for UrgAggBackend — URG session.xml parsing and scope aggregation."""
+"""Tests for the unified NPI coverage backend and URG scope metadata."""
 from __future__ import annotations
 
 import json
@@ -33,97 +33,26 @@ def test_session_xml_all_scopes(xverif_fixture):
         backend.close()
 
 
-def test_scope_aggregate_matches_npi(xverif_fixture):
-    """scope.summary covered/total matches NPI leaf traversal + rollup."""
+def test_npi_line_items_follow_score_contract(xverif_fixture):
+    """Unified backend publishes real NPI line leaves under the score contract."""
     resources = xverif_fixture("xcov.comprehensive")
     vdb = resources / "comprehensive.vdb"
 
-    # URG side
-    from xcov.backend import NpiCoverageBackend as UrgAggBackend
-    urg = UrgAggBackend(vdb=str(vdb))
+    from xcov.backend import NpiCoverageBackend
+    from xcov.coverage_contract import is_score_bearing_row
+
+    backend = NpiCoverageBackend(vdb=str(vdb))
     try:
-        urg_items = urg.items()
+        items = backend.items(metrics=["line"])
     finally:
-        urg.close()
+        backend.close()
 
-    # NPI side
-    import sys
-    sys.path.insert(0, os.path.join(os.environ["VERDI_HOME"], "share/NPI/python"))
-    from pynpi import npisys, cov
-    from collections import defaultdict
-
-    npisys.init(["test_urg_backend"])
-    db = cov.open(str(vdb))
-    try:
-        tests = db.test_handles()
-        merged = cov.merge_test(tests[0], tests[1]) if len(tests) > 1 else tests[0]
-
-        scope_agg = defaultdict(lambda: defaultdict(lambda: {"covered": 0, "coverable": 0}))
-
-        def walk_leaves(handle, test, scope_name):
-            for child in handle.child_handles():
-                ct = child.type()
-                mn = None
-                if "Block" in ct or "Stmt" in ct: mn = "line"
-                elif "Toggle" in ct or "Signal" in ct: mn = "toggle"
-                elif "Cond" in ct: mn = "condition"
-                elif "Branch" in ct: mn = "branch"
-                elif "Fsm" in ct or "State" in ct or "Trans" in ct or "Seq" in ct: mn = "fsm"
-                elif "Assert" in ct or "Success" in ct or "Attempt" in ct or "Fail" in ct or "Vacuous" in ct or "Incomplete" in ct: mn = "assert"
-
-                if mn:
-                    c = child.covered(test)
-                    t = child.coverable(test)
-                    if c >= 0: scope_agg[scope_name][mn]["covered"] += c
-                    if t >= 0: scope_agg[scope_name][mn]["coverable"] += t
-                else:
-                    walk_leaves(child, test, scope_name)
-                cov.release_handle(child)
-
-        def walk_inst(inst, test, scope_path):
-            for attr in ["line_metric_handle", "toggle_metric_handle", "condition_metric_handle",
-                         "branch_metric_handle", "fsm_metric_handle", "assert_metric_handle"]:
-                try:
-                    g = getattr(inst, attr, None)
-                    if g:
-                        mh = g()
-                        if mh: walk_leaves(mh, test, scope_path); cov.release_handle(mh)
-                except Exception:
-                    pass
-            for ci in inst.instance_handles():
-                cs = ci.full_name(); walk_inst(ci, test, cs); cov.release_handle(ci)
-
-        top = db.instance_handles()[0]
-        walk_inst(top, merged, "top")
-
-        # Rollup to parents
-        for scope, metrics in sorted(scope_agg.items(), key=lambda x: -x[0].count(".")):
-            parent = scope.rsplit(".", 1)[0] if "." in scope else None
-            if parent and parent in scope_agg:
-                for m, d in metrics.items():
-                    scope_agg[parent][m]["covered"] += d["covered"]
-                    scope_agg[parent][m]["coverable"] += d["coverable"]
-
-        # Compare URG vs NPI for leaf scopes
-        urg_by_scope = defaultdict(dict)
-        for item in urg_items:
-            urg_by_scope[item["scope"]][item["metric"]] = {
-                "covered": item["covered"], "coverable": item["coverable"]}
-
-        for scope, metrics in scope_agg.items():
-            if scope not in urg_by_scope:
-                continue
-            for metric, d in metrics.items():
-                urg_d = urg_by_scope[scope].get(metric, {})
-                if urg_d:
-                    assert d["covered"] == urg_d["covered"], \
-                        f"{scope}.{metric}: NPI covered={d['covered']} URG={urg_d['covered']}"
-                    assert d["coverable"] == urg_d["coverable"], \
-                        f"{scope}.{metric}: NPI coverable={d['coverable']} URG={urg_d['coverable']}"
-    finally:
-        db.close()
-        npisys.end()
-
+    score_rows = [item for item in items if is_score_bearing_row(item)]
+    assert score_rows, "fixture must expose score-bearing line rows"
+    for item in score_rows:
+        assert item["metric"] == "line"
+        assert isinstance(item.get("covered"), int) and item["covered"] >= 0
+        assert isinstance(item.get("coverable"), int) and item["coverable"] >= 0
 
 def test_multi_inst_diff_coverage(xverif_fixture):
     """u_core0 (pipeline) and u_core1 (burst) have different coverage."""
@@ -152,72 +81,110 @@ def test_multi_inst_diff_coverage(xverif_fixture):
 
 
 def test_urg_with_elfile(xverif_fixture, tmp_path):
-    """-elfile reduces coverage values in session.xml."""
+    """URG applies a real NPI exclusion file to a covered line item."""
     resources = xverif_fixture("xcov.comprehensive")
     vdb = resources / "comprehensive.vdb"
 
-    # First: get baseline without EL
-    from xcov.backend import NpiCoverageBackend as UrgAggBackend
-    backend = UrgAggBackend(vdb=str(vdb), cache_dir=str(tmp_path))
-    try:
-        baseline = backend.items(scope="top.u_core0")
-        baseline_line = [i for i in baseline if i["metric"] == "line"]
-        assert len(baseline_line) > 0
-        base_covered = baseline_line[0]["covered"]
-    finally:
-        backend.close()
+    import subprocess
+    import xml.etree.ElementTree as ET
 
-    # Create EL via NPI
+    def run_urg(report_dir, elfile=None):
+        command = [
+            "urg", "-dir", str(vdb), "-report", str(report_dir),
+            "-format", "text", "-xml_verbose", "-metric", "line",
+        ]
+        if elfile is not None:
+            command.extend(["-elfile", str(elfile)])
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=120,
+        )
+        assert result.returncode == 0, f"URG failed: {result.stderr[:500]}"
+        return ET.parse(Path(report_dir) / "session.xml")
+
+    def core0_line_metric(tree):
+        for scope in tree.iter("scope"):
+            if scope.get("name") != "u_core0":
+                continue
+            for metric in scope.findall("metric"):
+                if metric.get("name") == "Line":
+                    covered, total = metric.get("value", "0/0").split("/", 1)
+                    return int(covered), int(total), int(metric.get("excl", "0"))
+        pytest.fail("Could not find u_core0 Line metric in session.xml")
+
+    baseline = core0_line_metric(run_urg(tmp_path / "baseline"))
+
     import sys
     sys.path.insert(0, os.path.join(os.environ["VERDI_HOME"], "share/NPI/python"))
     from pynpi import npisys, cov, cov_l0
+    from xcov.coverage_contract import SCORE_TYPES_BY_METRIC
+
     npisys.init(["test_el"])
     db = cov.open(str(vdb))
     try:
-        test = db.test_handles()[0]
+        tests = db.test_handles()
         top = db.instance_handles()[0]
         u0 = top.instance_handles()[0]
-        lm = u0.line_metric_handle()
-        children = lm.child_handles()
-        if children:
-            first = children[0]
-            cov_l0.set_status(cov_l0.StatusExcludedAtReportTime, first.cps_obj, test.cps_obj, 1)
-            for c in children: cov.release_handle(c)
-        cov.release_handle(lm)
-        el_path = str(tmp_path / "test.el")
-        cov_l0.save_exclude_file(test.cps_obj, el_path, "w")
+        owned = []
+
+        def find_covered(handle, selected_test):
+            for child in handle.child_handles():
+                owned.append(child)
+                if (
+                    child.type() in SCORE_TYPES_BY_METRIC["line"]
+                    and child.covered(selected_test) > 0
+                ):
+                    return child
+                found = find_covered(child, selected_test)
+                if found is not None:
+                    return found
+            return None
+
+        def find_in_instance(instance, selected_test):
+            metric_handle = instance.line_metric_handle()
+            if metric_handle:
+                owned.append(metric_handle)
+                target = find_covered(metric_handle, selected_test)
+                if target is not None:
+                    return target
+            for child_instance in instance.instance_handles():
+                owned.append(child_instance)
+                target = find_in_instance(child_instance, selected_test)
+                if target is not None:
+                    return target
+            return None
+
+        try:
+            selected_test = None
+            target = None
+            for candidate in tests:
+                target = find_in_instance(u0, candidate)
+                if target is not None:
+                    selected_test = candidate
+                    break
+            assert target is not None, "fixture must contain a covered line item"
+            changed = cov_l0.set_status(
+                cov_l0.StatusExcludedAtReportTime,
+                target.cps_obj,
+                selected_test.cps_obj,
+                1,
+            )
+            assert changed not in (0, False), "NPI should accept the covered exclusion"
+            el_path = tmp_path / "test.el"
+            cov_l0.save_exclude_file(selected_test.cps_obj, str(el_path), "w")
+        finally:
+            for child in reversed(owned):
+                cov.release_handle(child)
     finally:
         db.close()
         npisys.end()
 
-    # Re-run URG with EL
-    import subprocess
-    cache2 = str(tmp_path / "cache2")
-    os.makedirs(cache2, exist_ok=True)
-    result = subprocess.run(
-        ["urg", "-dir", str(vdb), "-report", cache2, "-format", "text",
-         "-xml_verbose", "-elfile", el_path, "-metric", "line"],
-        capture_output=True, text=True, timeout=120,
-    )
-    assert result.returncode == 0, f"URG failed: {result.stderr[:500]}"
-
-    # Parse new session.xml
-    import xml.etree.ElementTree as ET
-    tree = ET.parse(os.path.join(cache2, "session.xml"))
-    for scope in tree.iter("scope"):
-        if scope.get("name") == "u_core0":
-            for m in scope.findall("metric"):
-                if m.get("name") == "Line":
-                    val = m.get("value", "0/0")
-                    cov_after, total_after = val.split("/")
-                    excluded = int(m.get("excl", "0"))
-                    assert excluded > 0, "EL should have excluded items"
-                    assert int(cov_after) < base_covered, \
-                        f"EL should reduce covered from {base_covered} to {cov_after}"
-                    return
-
-    pytest.fail("Could not find u_core0 Line metric in session.xml")
-
+    after = core0_line_metric(run_urg(tmp_path / "with-el", el_path))
+    assert after[2] > baseline[2], "EL should increase the excluded line count"
+    assert after[0] < baseline[0], "excluding a covered line should reduce covered count"
 
 def test_urg_show_brief(xverif_fixture, tmp_path):
     """-show brief only outputs uncovered items."""
@@ -234,7 +201,7 @@ def test_urg_show_brief(xverif_fixture, tmp_path):
 
     modinfo = Path(tmp_path) / "modinfo.txt"
     assert modinfo.exists()
-    content = modinfo.read_text()
+    content = modinfo.read_text(encoding="utf-8")
     # Must have ==> markers for uncovered
     assert "==>" in content or "Not Covered" in content or "0/" in content
 

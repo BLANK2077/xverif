@@ -980,6 +980,7 @@ class XdebugLoopSession:
                 [self.xdebug_bin, "--json", "-"],
                 input=strict_json_dumps(request) + "\n",
                 text=True,
+                encoding="utf-8",
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 timeout=self.runtime.close_timeout_sec,

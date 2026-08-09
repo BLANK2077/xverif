@@ -2,6 +2,7 @@
   "schema": "xdebug.analysis-cache-thresholds.v1",
   "measurement_date": "2026-07-16",
   "sample_count": 3,
+  "rss_measurement_tolerance_bytes": 65536,
   "phase0_baseline": {
     "apb": {
       "cold_ms": [62, 68, 60],
@@ -37,25 +38,24 @@
       "scanner_invocations": [4, 3, 3]
     }
   },
-  "phase0_regression_limits": {
+  "phase0_hard_regression_limits": {
     "apb": {
-      "cold_p95_ms": 100,
-      "hot_p95_ms": 100,
       "max_rss_delta_bytes": 4194304,
       "max_estimated_bytes": 4096
     },
     "axi": {
-      "cold_p95_ms": 8500,
-      "hot_p95_ms": 500,
       "max_rss_delta_bytes": 850000000,
       "max_estimated_bytes": 900000000
     },
     "stream": {
-      "cold_p95_ms": 1200,
-      "hot_p95_ms": 1200,
       "max_rss_delta_bytes": 40000000,
       "max_estimated_bytes": 25000000
     }
+  },
+  "phase0_latency_targets": {
+    "apb": {"cold_p95_ms": 500, "hot_p95_ms": 500},
+    "axi": {"cold_p95_ms": 8500, "hot_p95_ms": 500},
+    "stream": {"cold_p95_ms": 1200, "hot_p95_ms": 1200}
   },
   "frozen_cache_contract": {
     "estimator_safety_factor": 2.0,

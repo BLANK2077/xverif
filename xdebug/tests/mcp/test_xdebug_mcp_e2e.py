@@ -121,6 +121,7 @@ def _kill_native_sessions(isolated_home: Path) -> None:
         )
         + "\n",
         text=True,
+        encoding="utf-8",
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         timeout=30,

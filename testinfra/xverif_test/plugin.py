@@ -107,10 +107,33 @@ def _ensure_xverif_state(config: pytest.Config) -> str | None:
         except ValueError as exc:
             raise pytest.UsageError(str(exc)) from exc
         config._xverif_plan = plan  # type: ignore[attr-defined]
+        _apply_plan_environment(plan)
     elif config.getoption("--xverif-plan"):
         raise pytest.UsageError("--xverif-plan requires --xverif-gate")
     config._xverif_operation = operation  # type: ignore[attr-defined]
     return operation
+
+
+def _apply_plan_environment(plan: ExecutionPlan) -> None:
+    requested: dict[str, tuple[str, str]] = {}
+    for selected in plan.suites:
+        for name, value in selected.suite.runner_env().items():
+            previous = requested.get(name)
+            if previous is not None and previous[0] != value:
+                raise pytest.UsageError(
+                    f"selected suites require conflicting {name} values: "
+                    f"{previous[1]}={previous[0]!r}, "
+                    f"{selected.suite.id}={value!r}"
+                )
+            requested[name] = (value, selected.suite.id)
+    for name, (value, suite_id) in requested.items():
+        current = os.environ.get(name)
+        if current is not None and current != value:
+            raise pytest.UsageError(
+                f"suite {suite_id} requires {name}={value!r}, "
+                f"but the environment contains {current!r}"
+            )
+        os.environ[name] = value
 
 
 @pytest.hookimpl(tryfirst=True)

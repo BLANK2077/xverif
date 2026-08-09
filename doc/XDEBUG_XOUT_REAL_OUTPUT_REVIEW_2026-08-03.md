@@ -91,7 +91,7 @@
 ## 001. `actions` / `primary`
 
 - returncode: 0
-- elapsed_ms: 68
+- elapsed_ms: 72
 - bytes: 1495
 - sha256: `b2d833867abea59c0221b6f3817434c2aa1b080053c80aea37df17ed58c5a00f`
 - request: `{"action": "actions", "api_version": "xdebug.v1", "args": {}}`
@@ -192,10 +192,10 @@ combined:
 ## 002. `session.open` / `setup`
 
 - returncode: 0
-- elapsed_ms: 245
+- elapsed_ms: 413
 - bytes: 50
 - sha256: `801dae73579a41aae7974fb6f2a87487c435c4d93f3e58f31d52451fd6af19f4`
-- request: `{"action": "session.open", "api_version": "xdebug.v1", "args": {"name": "native_xout_p"}, "target": {"fsdb": "/home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/.xverif-test-cache/fixtures/xdebug.apb_vip/versions/5b0d1be836520bd8421bb4193d12949c5ba4c3098cc94bd1dede3d5a81fb4709-prepare-7hdsu4cf/resources/out/regression/test/apb_vip_test/waves.fsdb"}}`
+- request: `{"action": "session.open", "api_version": "xdebug.v1", "args": {"name": "native_xout_p"}, "target": {"fsdb": "/home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.apb_vip/versions/5b0d1be836520bd8421bb4193d12949c5ba4c3098cc94bd1dede3d5a81fb4709-prepare-7hdsu4cf/resources/out/regression/test/apb_vip_test/waves.fsdb"}}`
 
 <!-- XOUT_BODY phase=final action=session.open role=setup bytes=50 sha256=801dae73579a41aae7974fb6f2a87487c435c4d93f3e58f31d52451fd6af19f4 -->
 ```xout
@@ -207,7 +207,7 @@ summary:
 ## 003. `apb.config.load` / `setup`
 
 - returncode: 0
-- elapsed_ms: 119
+- elapsed_ms: 128
 - bytes: 712
 - sha256: `527d57262376f9fdc430dbcb72e2e99f4e354eebe020c6bed988c7fa4fd74fc3`
 - request: `{"action": "apb.config.load", "api_version": "xdebug.v1", "args": {"config": {"clock": "apb_vip_fixture_top.clk", "edge": "posedge", "paddr": "apb_vip_fixture_top.apb_if.paddr", "penable": "apb_vip_fixture_top.apb_if.penable", "prdata": "apb_vip_fixture_top.apb_if.prdata[0]", "pready": "apb_vip_fixture_top.apb_if.pready[0]", "psel": "apb_vip_fixture_top.apb_if.psel[0]", "pslverr": "apb_vip_fixture_top.apb_if.pslverr[0]", "pwdata": "apb_vip_fixture_top.apb_if.pwdata", "pwrite": "apb_vip_fixture_top.apb_if.pwrite", "reset": {"polarity": "active_low", "signal": "apb_vip_fixture_top.rst_n"}}, "name": "apb0"}, "target": {"session_id": "native_xout_p"}}`
@@ -242,7 +242,7 @@ config.reset:
 ## 004. `apb.config.list` / `primary`
 
 - returncode: 0
-- elapsed_ms: 122
+- elapsed_ms: 131
 - bytes: 711
 - sha256: `866fdce04303810e6b94e97a8df0e0d64b89ec91f3b4be6907558bbcae2ae42a`
 - request: `{"action": "apb.config.list", "api_version": "xdebug.v1", "args": {"name": "apb0"}, "target": {"session_id": "native_xout_p"}}`
@@ -277,7 +277,7 @@ config.reset:
 ## 005. `apb.config.load` / `primary`
 
 - returncode: 0
-- elapsed_ms: 107
+- elapsed_ms: 118
 - bytes: 726
 - sha256: `5da1cf98401ccbe230106c251cbd97f14c5f30d1f3063afb509dae113b30aec1`
 - request: `{"action": "apb.config.load", "api_version": "xdebug.v1", "args": {"config": {"clock": "apb_vip_fixture_top.clk", "edge": "posedge", "paddr": "apb_vip_fixture_top.apb_if.paddr", "penable": "apb_vip_fixture_top.apb_if.penable", "prdata": "apb_vip_fixture_top.apb_if.prdata[0]", "pready": "apb_vip_fixture_top.apb_if.pready[0]", "psel": "apb_vip_fixture_top.apb_if.psel[0]", "pslverr": "apb_vip_fixture_top.apb_if.pslverr[0]", "pwdata": "apb_vip_fixture_top.apb_if.pwdata", "pwrite": "apb_vip_fixture_top.apb_if.pwrite", "reset": {"polarity": "active_low", "signal": "apb_vip_fixture_top.rst_n"}}, "name": "apb_primary"}, "target": {"session_id": "native_xout_p"}}`
@@ -312,7 +312,7 @@ config.reset:
 ## 006. `apb.query` / `primary`
 
 - returncode: 0
-- elapsed_ms: 185
+- elapsed_ms: 170
 - bytes: 549
 - sha256: `782dd84ec43b51afaf1b376b84ab562eadd46053172d956a16fa0664530d5bc9`
 - request: `{"action": "apb.query", "api_version": "xdebug.v1", "args": {"name": "apb0", "query": {"line_limit": 2}}, "target": {"session_id": "native_xout_p"}}`
@@ -347,7 +347,7 @@ transactions:
 ## 007. `apb.statistics` / `primary`
 
 - returncode: 0
-- elapsed_ms: 149
+- elapsed_ms: 151
 - bytes: 725
 - sha256: `43e0861890315acdb7b2f2ec079254aae44f0366334ff89f39ba1d88af419ee7`
 - request: `{"action": "apb.statistics", "api_version": "xdebug.v1", "args": {"name": "apb0"}, "target": {"session_id": "native_xout_p"}}`
@@ -381,7 +381,7 @@ notes:
 ## 008. `apb.transaction.cursor` / `primary`
 
 - returncode: 0
-- elapsed_ms: 110
+- elapsed_ms: 121
 - bytes: 562
 - sha256: `b478c3f7915aac5f3ce45cdeac3b209479aae22f8b3591bd7cd77b4795b8830b`
 - request: `{"action": "apb.transaction.cursor", "api_version": "xdebug.v1", "args": {"name": "apb0", "op": "begin"}, "target": {"session_id": "native_xout_p"}}`
@@ -416,7 +416,7 @@ transaction:
 ## 009. `apb.transfer_window` / `primary`
 
 - returncode: 0
-- elapsed_ms: 112
+- elapsed_ms: 126
 - bytes: 853
 - sha256: `6ac825d2e2e28e8cc29efa6372f938cba60eb3195b87d5a7d77713e8ca5a4340`
 - request: `{"action": "apb.transfer_window", "api_version": "xdebug.v1", "args": {"name": "apb0"}, "target": {"session_id": "native_xout_p"}}`
@@ -452,10 +452,10 @@ transactions:
 ## 010. `session.open` / `setup`
 
 - returncode: 0
-- elapsed_ms: 211
+- elapsed_ms: 287
 - bytes: 50
 - sha256: `801dae73579a41aae7974fb6f2a87487c435c4d93f3e58f31d52451fd6af19f4`
-- request: `{"action": "session.open", "api_version": "xdebug.v1", "args": {"name": "native_xout_a"}, "target": {"fsdb": "/home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/.xverif-test-cache/fixtures/xdebug.axi_vip/versions/b7a0d81ad90d77fb97c0da6239e1e69a10671089527be0adf5e7a21e5507c1f0-prepare-21inkxj8/resources/out/regression/test/axi_multi_id_test/waves.fsdb"}}`
+- request: `{"action": "session.open", "api_version": "xdebug.v1", "args": {"name": "native_xout_a"}, "target": {"fsdb": "/home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.axi_vip/versions/b7a0d81ad90d77fb97c0da6239e1e69a10671089527be0adf5e7a21e5507c1f0-prepare-21inkxj8/resources/out/regression/test/axi_multi_id_test/waves.fsdb"}}`
 
 <!-- XOUT_BODY phase=final action=session.open role=setup bytes=50 sha256=801dae73579a41aae7974fb6f2a87487c435c4d93f3e58f31d52451fd6af19f4 -->
 ```xout
@@ -467,7 +467,7 @@ summary:
 ## 011. `axi.config.load` / `setup`
 
 - returncode: 0
-- elapsed_ms: 180
+- elapsed_ms: 194
 - bytes: 4917
 - sha256: `b8702f457b14ada684c774ffeb3d262e82475fe813c0c3f0cbaf433903d661fb`
 - request: `{"action": "axi.config.load", "api_version": "xdebug.v1", "args": {"config": {"araddr": "axi_vip_fixture_top.axi_vip_if.master_if[0].araddr", "arburst": "axi_vip_fixture_top.axi_vip_if.master_if[0].arburst", "arid": "axi_vip_fixture_top.axi_vip_if.master_if[0].arid", "arlen": "axi_vip_fixture_top.axi_vip_if.master_if[0].arlen", "arready": "axi_vip_fixture_top.axi_vip_if.master_if[0].arready", "arsize": "axi_vip_fixture_top.axi_vip_if.master_if[0].arsize", "arvalid": "axi_vip_fixture_top.axi_vip_if.master_if[0].arvalid", "awaddr": "axi_vip_fixture_top.axi_vip_if.master_if[0].awaddr", "awburst": "axi_vip_fixture_top.axi_vip_if.master_if[0].awburst", "awid": "axi_vip_fixture_top.axi_vip_if.master_if[0].awid", "awlen": "axi_vip_fixture_top.axi_vip_if.master_if[0].awlen", "awready": "axi_vip_fixture_top.axi_vip_if.master_if[0].awready", "awsize": "axi_vip_fixture_top.axi_vip_if.master_if[0].awsize", "awvalid": "axi_vip_fixture_top.axi_vip_if.master_if[0].awvalid", "bid": "axi_vip_fixture_top.axi_vip_if.master_if[0].bid", "bready": "axi_vip_fixture_top.axi_vip_if.master_if[0].bready", "bresp": "axi_vip_fixture_top.axi_vip_if.master_if[0].bresp", "bvalid": "axi_vip_fixture_top.axi_vip_if.master_if[0].bvalid", "clock": "axi_vip_fixture_top.clk", "edge": "posedge", "rdata": "axi_vip_fixture_top.axi_vip_if.master_if[0].rdata", "reset": {"polarity": "active_low", "signal": "axi_vip_fixture_top.rst_n"}, "rid": "axi_vip_fixture_top.axi_vip_if.master_if[0].rid", "rlast": "axi_vip_fixture_top.axi_vip_if.master_if[0].rlast", "rready": "axi_vip_fixture_top.axi_vip_if.master_if[0].rready", "rresp": "axi_vip_fixture_top.axi_vip_if.master_if[0].rresp", "rvalid": "axi_vip_fixture_top.axi_vip_if.master_if[0].rvalid", "wdata": "axi_vip_fixture_top.axi_vip_if.master_if[0].wdata", "wlast": "axi_vip_fixture_top.axi_vip_if.master_if[0].wlast", "wready": "axi_vip_fixture_top.axi_vip_if.master_if[0].wready", "wstrb": "axi_vip_fixture_top.axi_vip_if.master_if[0].wstrb", "wvalid": "axi_vip_fixture_top.axi_vip_if.master_if[0].wvalid"}, "name": "axi0"}, "target": {"session_id": "native_xout_a"}}`
@@ -564,7 +564,7 @@ validation.clock:
 ## 012. `axi.analysis` / `primary`
 
 - returncode: 0
-- elapsed_ms: 6116
+- elapsed_ms: 6586
 - bytes: 2431
 - sha256: `4fc0baf21bc0887186a68c197dc2f64212044d8c9cfd92dca05d9f4c958c26d6`
 - request: `{"action": "axi.analysis", "api_version": "xdebug.v1", "args": {"analysis": "latency", "direction": "all", "name": "axi0"}, "target": {"session_id": "native_xout_a"}}`
@@ -662,7 +662,7 @@ slowest.response:
 ## 013. `axi.channel_stall` / `primary`
 
 - returncode: 0
-- elapsed_ms: 722
+- elapsed_ms: 798
 - bytes: 699
 - sha256: `1f500655f1aba4aac24c7cc9930bd6502f0fc172fd5e861b4c428932589da8df`
 - request: `{"action": "axi.channel_stall", "api_version": "xdebug.v1", "args": {"channel": "r", "line_limit": 2, "name": "axi0"}, "target": {"session_id": "native_xout_a"}}`
@@ -696,7 +696,7 @@ data:
 ## 014. `axi.config.list` / `primary`
 
 - returncode: 0
-- elapsed_ms: 127
+- elapsed_ms: 135
 - bytes: 2121
 - sha256: `2886a23c78dc23680659052a01ba0f0c72dbfbfae7048b5dd8bc45ee2d83715e`
 - request: `{"action": "axi.config.list", "api_version": "xdebug.v1", "args": {"name": "axi0"}, "target": {"session_id": "native_xout_a"}}`
@@ -762,7 +762,7 @@ config.channels.r:
 ## 015. `axi.config.load` / `primary`
 
 - returncode: 0
-- elapsed_ms: 124
+- elapsed_ms: 151
 - bytes: 4931
 - sha256: `e014799f2b8b40fabe905a092243e03c4be43dd10d280c7e4c9bcf35bf05d429`
 - request: `{"action": "axi.config.load", "api_version": "xdebug.v1", "args": {"config": {"araddr": "axi_vip_fixture_top.axi_vip_if.master_if[0].araddr", "arburst": "axi_vip_fixture_top.axi_vip_if.master_if[0].arburst", "arid": "axi_vip_fixture_top.axi_vip_if.master_if[0].arid", "arlen": "axi_vip_fixture_top.axi_vip_if.master_if[0].arlen", "arready": "axi_vip_fixture_top.axi_vip_if.master_if[0].arready", "arsize": "axi_vip_fixture_top.axi_vip_if.master_if[0].arsize", "arvalid": "axi_vip_fixture_top.axi_vip_if.master_if[0].arvalid", "awaddr": "axi_vip_fixture_top.axi_vip_if.master_if[0].awaddr", "awburst": "axi_vip_fixture_top.axi_vip_if.master_if[0].awburst", "awid": "axi_vip_fixture_top.axi_vip_if.master_if[0].awid", "awlen": "axi_vip_fixture_top.axi_vip_if.master_if[0].awlen", "awready": "axi_vip_fixture_top.axi_vip_if.master_if[0].awready", "awsize": "axi_vip_fixture_top.axi_vip_if.master_if[0].awsize", "awvalid": "axi_vip_fixture_top.axi_vip_if.master_if[0].awvalid", "bid": "axi_vip_fixture_top.axi_vip_if.master_if[0].bid", "bready": "axi_vip_fixture_top.axi_vip_if.master_if[0].bready", "bresp": "axi_vip_fixture_top.axi_vip_if.master_if[0].bresp", "bvalid": "axi_vip_fixture_top.axi_vip_if.master_if[0].bvalid", "clock": "axi_vip_fixture_top.clk", "edge": "posedge", "rdata": "axi_vip_fixture_top.axi_vip_if.master_if[0].rdata", "reset": {"polarity": "active_low", "signal": "axi_vip_fixture_top.rst_n"}, "rid": "axi_vip_fixture_top.axi_vip_if.master_if[0].rid", "rlast": "axi_vip_fixture_top.axi_vip_if.master_if[0].rlast", "rready": "axi_vip_fixture_top.axi_vip_if.master_if[0].rready", "rresp": "axi_vip_fixture_top.axi_vip_if.master_if[0].rresp", "rvalid": "axi_vip_fixture_top.axi_vip_if.master_if[0].rvalid", "wdata": "axi_vip_fixture_top.axi_vip_if.master_if[0].wdata", "wlast": "axi_vip_fixture_top.axi_vip_if.master_if[0].wlast", "wready": "axi_vip_fixture_top.axi_vip_if.master_if[0].wready", "wstrb": "axi_vip_fixture_top.axi_vip_if.master_if[0].wstrb", "wvalid": "axi_vip_fixture_top.axi_vip_if.master_if[0].wvalid"}, "name": "axi_primary"}, "target": {"session_id": "native_xout_a"}}`
@@ -859,10 +859,10 @@ validation.clock:
 ## 016. `axi.export` / `primary`
 
 - returncode: 0
-- elapsed_ms: 112
+- elapsed_ms: 131
 - bytes: 962
 - sha256: `d0651474b53df0e8fcaa299c62f27ddb2bd6a7188117e86fe2d2d98c527942e6`
-- request: `{"action": "axi.export", "api_version": "xdebug.v1", "args": {"name": "axi0", "output": {"file_format": "tsv", "path": "/tmp/pytest-of-ryan/pytest-591/test_all_runtime_actions_emit_0/axi"}, "time_range": {"begin": "0ns", "end": "1us"}}, "target": {"session_id": "native_xout_a"}}`
+- request: `{"action": "axi.export", "api_version": "xdebug.v1", "args": {"name": "axi0", "output": {"file_format": "tsv", "path": "/tmp/pytest-of-ryan/pytest-719/popen-gw0/test_all_runtime_actions_emit_0/axi"}, "time_range": {"begin": "0ns", "end": "1us"}}, "target": {"session_id": "native_xout_a"}}`
 
 <!-- XOUT_BODY phase=final action=axi.export role=primary bytes=962 sha256=d0651474b53df0e8fcaa299c62f27ddb2bd6a7188117e86fe2d2d98c527942e6 -->
 ```xout
@@ -895,7 +895,7 @@ summary:
 ## 017. `axi.latency_outlier` / `primary`
 
 - returncode: 0
-- elapsed_ms: 142
+- elapsed_ms: 394
 - bytes: 1607
 - sha256: `c5a523737c6374e05e585dc7f5b86cec79f13982c721ba350dfa253203bfad01`
 - request: `{"action": "axi.latency_outlier", "api_version": "xdebug.v1", "args": {"line_limit": 2, "method": "top_n", "name": "axi0", "top_n": 2}, "target": {"session_id": "native_xout_a"}}`
@@ -927,7 +927,7 @@ outliers:
 ## 018. `axi.outstanding_timeline` / `primary`
 
 - returncode: 0
-- elapsed_ms: 121
+- elapsed_ms: 148
 - bytes: 1025
 - sha256: `0da3fa40cb1a3743c65965c53e2cfd70d9304f16036fb6ba0d1766eda3226b2d`
 - request: `{"action": "axi.outstanding_timeline", "api_version": "xdebug.v1", "args": {"direction": "all", "line_limit": 4, "name": "axi0"}, "target": {"session_id": "native_xout_a"}}`
@@ -967,7 +967,7 @@ change_points:
 ## 019. `axi.query` / `primary`
 
 - returncode: 0
-- elapsed_ms: 163
+- elapsed_ms: 198
 - bytes: 3345
 - sha256: `d3a63bbbb68ec9dce529d8324a28363f52f8fcaf7fec9b059fd0b09db2e975c3`
 - request: `{"action": "axi.query", "api_version": "xdebug.v1", "args": {"direction": "write", "name": "axi0", "query": {"line_limit": 2}}, "target": {"session_id": "native_xout_a"}}`
@@ -1058,7 +1058,7 @@ transaction_2_response:
 ## 020. `axi.request_response_pair` / `primary`
 
 - returncode: 0
-- elapsed_ms: 130
+- elapsed_ms: 162
 - bytes: 2128
 - sha256: `1940670fa637b449146b4e0104c3f9e0e2ee4fd2af996423605347632726d3c7`
 - request: `{"action": "axi.request_response_pair", "api_version": "xdebug.v1", "args": {"direction": "all", "line_limit": 2, "name": "axi0"}, "target": {"session_id": "native_xout_a"}}`
@@ -1102,7 +1102,7 @@ transactions:
 ## 021. `axi.statistics` / `primary`
 
 - returncode: 0
-- elapsed_ms: 157
+- elapsed_ms: 208
 - bytes: 739
 - sha256: `74f6c70d189cb790e9b09fb8b4f0c89b7199418027cc3b260e035ee6adaf462c`
 - request: `{"action": "axi.statistics", "api_version": "xdebug.v1", "args": {"name": "axi0"}, "target": {"session_id": "native_xout_a"}}`
@@ -1136,7 +1136,7 @@ notes:
 ## 022. `axi.transaction.cursor` / `primary`
 
 - returncode: 0
-- elapsed_ms: 126
+- elapsed_ms: 141
 - bytes: 1136
 - sha256: `fc17728ee28f616725abf94908c4c96d00fdf1d81abe8df2dbf8c919a087a714`
 - request: `{"action": "axi.transaction.cursor", "api_version": "xdebug.v1", "args": {"direction": "all", "name": "axi0", "op": "begin"}, "target": {"session_id": "native_xout_a"}}`
@@ -1193,12 +1193,12 @@ transaction.response:
 ## 023. `batch` / `primary`
 
 - returncode: 0
-- elapsed_ms: 652
+- elapsed_ms: 743
 - bytes: 688
-- sha256: `8fe16061c846d93c374ac8ccc1daf88b7173768eb23b562e8c327c311d9e700f`
+- sha256: `3814d553f81fd411dab31a98a1c7b3abf94386f6406821da5525c510d3b6a1df`
 - request: `{"action": "batch", "api_version": "xdebug.v1", "args": {"requests": [{"action": "actions", "api_version": "xdebug.v1", "args": {}}]}}`
 
-<!-- XOUT_BODY phase=final action=batch role=primary bytes=688 sha256=8fe16061c846d93c374ac8ccc1daf88b7173768eb23b562e8c327c311d9e700f -->
+<!-- XOUT_BODY phase=final action=batch role=primary bytes=688 sha256=3814d553f81fd411dab31a98a1c7b3abf94386f6406821da5525c510d3b6a1df -->
 ```xout
 @xdebug.batch.v1
 summary:
@@ -1208,16 +1208,16 @@ summary:
 
 results:
   api_version  ok    action   tool.name  tool.version  tool.build_id                                                                  tool.git_revision  tool.schema_revision                                              summary.action_count  summary.total_action_count  summary.verbose  summary.filtered
-  xdebug.v1    true  actions  xdebug     0.1.0         69cd811f92b4-c45099040abf3dbe194d3ba27c207d7637b39ba9f9d662fad3d9d50dda99fb2c  69cd811f92b4       c45099040abf3dbe194d3ba27c207d7637b39ba9f9d662fad3d9d50dda99fb2c  73                    73                          false            false
+  xdebug.v1    true  actions  xdebug     0.1.0         8eecf71271cc-c45099040abf3dbe194d3ba27c207d7637b39ba9f9d662fad3d9d50dda99fb2c  8eecf71271cc       c45099040abf3dbe194d3ba27c207d7637b39ba9f9d662fad3d9d50dda99fb2c  73                    73                          false            false
 ```
 
 ## 024. `session.open` / `setup`
 
 - returncode: 0
-- elapsed_ms: 271
+- elapsed_ms: 280
 - bytes: 50
 - sha256: `801dae73579a41aae7974fb6f2a87487c435c4d93f3e58f31d52451fd6af19f4`
-- request: `{"action": "session.open", "api_version": "xdebug.v1", "args": {"name": "native_xout_w"}, "target": {"fsdb": "/home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/.xverif-test-cache/fixtures/xdebug.ai_complex_wave/versions/a5da8054a5d15693369316da2fb212b16fc10e5e065bc3fe560800ce7e14ee17-prepare-6mprgsuo/resources/out/waves.fsdb"}}`
+- request: `{"action": "session.open", "api_version": "xdebug.v1", "args": {"name": "native_xout_w"}, "target": {"fsdb": "/home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.ai_complex_wave/versions/a5da8054a5d15693369316da2fb212b16fc10e5e065bc3fe560800ce7e14ee17-prepare-6mprgsuo/resources/out/waves.fsdb"}}`
 
 <!-- XOUT_BODY phase=final action=session.open role=setup bytes=50 sha256=801dae73579a41aae7974fb6f2a87487c435c4d93f3e58f31d52451fd6af19f4 -->
 ```xout
@@ -1229,7 +1229,7 @@ summary:
 ## 025. `counter.statistics` / `primary`
 
 - returncode: 0
-- elapsed_ms: 163
+- elapsed_ms: 149
 - bytes: 1141
 - sha256: `1f0061f9e520f876eaa50024ba14add470e6714b2008d52810375e5daae553d6`
 - request: `{"action": "counter.statistics", "api_version": "xdebug.v1", "args": {"clock": "ai_complex_top.clk", "cnt": "ai_complex_top.counter_inc", "edge": "posedge", "time_range": {"begin": "55ns", "end": "95ns"}, "vld": "ai_complex_top.rst_n"}, "target": {"session_id": "native_xout_w"}}`
@@ -1286,10 +1286,10 @@ sampling.effective:
 ## 026. `session.open` / `setup`
 
 - returncode: 0
-- elapsed_ms: 251
+- elapsed_ms: 263
 - bytes: 50
 - sha256: `801dae73579a41aae7974fb6f2a87487c435c4d93f3e58f31d52451fd6af19f4`
-- request: `{"action": "session.open", "api_version": "xdebug.v1", "args": {"name": "native_xout_e"}, "target": {"fsdb": "/home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/.xverif-test-cache/fixtures/xdebug.xif_event/versions/664ac163a4de5950f40c81bafad04508bf5ea6a1fadbf1eca21aeabe1306ee44-prepare-kh7pipx2/resources/out/waves/xif_event_multi_if_test.fsdb"}}`
+- request: `{"action": "session.open", "api_version": "xdebug.v1", "args": {"name": "native_xout_e"}, "target": {"fsdb": "/home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.xif_event/versions/664ac163a4de5950f40c81bafad04508bf5ea6a1fadbf1eca21aeabe1306ee44-prepare-kh7pipx2/resources/out/waves/xif_event_multi_if_test.fsdb"}}`
 
 <!-- XOUT_BODY phase=final action=session.open role=setup bytes=50 sha256=801dae73579a41aae7974fb6f2a87487c435c4d93f3e58f31d52451fd6af19f4 -->
 ```xout
@@ -1301,10 +1301,10 @@ summary:
 ## 027. `event.config.load` / `setup`
 
 - returncode: 0
-- elapsed_ms: 123
+- elapsed_ms: 133
 - bytes: 272
 - sha256: `566f8525eaf715b96cbe953d036a99a50925389c18cb123dcee8648c215dc01d`
-- request: `{"action": "event.config.load", "api_version": "xdebug.v1", "args": {"config_path": "/tmp/pytest-of-ryan/pytest-591/test_all_runtime_actions_emit_0/event_rdy_leaf.json", "name": "rdy"}, "target": {"session_id": "native_xout_e"}}`
+- request: `{"action": "event.config.load", "api_version": "xdebug.v1", "args": {"config_path": "/tmp/pytest-of-ryan/pytest-719/popen-gw0/test_all_runtime_actions_emit_0/event_rdy_leaf.json", "name": "rdy"}, "target": {"session_id": "native_xout_e"}}`
 
 <!-- XOUT_BODY phase=final action=event.config.load role=setup bytes=272 sha256=566f8525eaf715b96cbe953d036a99a50925389c18cb123dcee8648c215dc01d -->
 ```xout
@@ -1329,7 +1329,7 @@ config.signals:
 ## 028. `event.config.list` / `primary`
 
 - returncode: 0
-- elapsed_ms: 138
+- elapsed_ms: 150
 - bytes: 271
 - sha256: `ae8331ce28aebdeff087d43354d9b1f906e27d8e2aff1b66fdcf4266a03cc0e6`
 - request: `{"action": "event.config.list", "api_version": "xdebug.v1", "args": {"name": "rdy"}, "target": {"session_id": "native_xout_e"}}`
@@ -1357,10 +1357,10 @@ config.signals:
 ## 029. `event.config.load` / `primary`
 
 - returncode: 0
-- elapsed_ms: 173
+- elapsed_ms: 132
 - bytes: 282
 - sha256: `5056e09b47e561f3d03e868f342babfef4a8ab81dbef684cfb92d277ecd0b5be`
-- request: `{"action": "event.config.load", "api_version": "xdebug.v1", "args": {"config_path": "/tmp/pytest-of-ryan/pytest-591/test_all_runtime_actions_emit_0/event_rdy_leaf.json", "name": "primary_event"}, "target": {"session_id": "native_xout_e"}}`
+- request: `{"action": "event.config.load", "api_version": "xdebug.v1", "args": {"config_path": "/tmp/pytest-of-ryan/pytest-719/popen-gw0/test_all_runtime_actions_emit_0/event_rdy_leaf.json", "name": "primary_event"}, "target": {"session_id": "native_xout_e"}}`
 
 <!-- XOUT_BODY phase=final action=event.config.load role=primary bytes=282 sha256=5056e09b47e561f3d03e868f342babfef4a8ab81dbef684cfb92d277ecd0b5be -->
 ```xout
@@ -1385,10 +1385,10 @@ config.signals:
 ## 030. `event.export` / `primary`
 
 - returncode: 0
-- elapsed_ms: 137
+- elapsed_ms: 159
 - bytes: 831
 - sha256: `4d832feeed88d4bc83333c53b81c5ba0e0da2266ea9e4fb2879ac2f7895e3699`
-- request: `{"action": "event.export", "api_version": "xdebug.v1", "args": {"expr": "vld && rdy", "name": "rdy", "output": {"file_format": "json", "path": "/tmp/pytest-of-ryan/pytest-591/test_all_runtime_actions_emit_0/events.json"}}, "target": {"session_id": "native_xout_e"}}`
+- request: `{"action": "event.export", "api_version": "xdebug.v1", "args": {"expr": "vld && rdy", "name": "rdy", "output": {"file_format": "json", "path": "/tmp/pytest-of-ryan/pytest-719/popen-gw0/test_all_runtime_actions_emit_0/events.json"}}, "target": {"session_id": "native_xout_e"}}`
 
 <!-- XOUT_BODY phase=final action=event.export role=primary bytes=831 sha256=4d832feeed88d4bc83333c53b81c5ba0e0da2266ea9e4fb2879ac2f7895e3699 -->
 ```xout
@@ -1429,7 +1429,7 @@ sampling.effective:
 ## 031. `event.find` / `primary`
 
 - returncode: 0
-- elapsed_ms: 107
+- elapsed_ms: 139
 - bytes: 844
 - sha256: `94e9b7c8841eb67368353cbe3ed40d52c62753243bd647509ba75fd1f6c7d9df`
 - request: `{"action": "event.find", "api_version": "xdebug.v1", "args": {"expr": "vld && rdy", "line_limit": 2, "mode": "all", "name": "rdy"}, "target": {"session_id": "native_xout_e"}}`
@@ -1523,7 +1523,7 @@ expr_samples:
 ## 033. `expr.normalize` / `primary`
 
 - returncode: 0
-- elapsed_ms: 133
+- elapsed_ms: 154
 - bytes: 360
 - sha256: `5fde614b01217921eb708f1b91c177220ff229dc18ba7ece1359feac7cf28b28`
 - request: `{"action": "expr.normalize", "api_version": "xdebug.v1", "args": {"expr": "valid && !ready"}}`
@@ -1550,7 +1550,7 @@ expr.args:
 ## 034. `list.create` / `setup`
 
 - returncode: 0
-- elapsed_ms: 107
+- elapsed_ms: 124
 - bytes: 177
 - sha256: `63653cf3482bf1715ef56edce6ce332c881447dd4ebc620e2a528e085792a6d9`
 - request: `{"action": "list.create", "api_version": "xdebug.v1", "args": {"name": "basic_add", "signals": ["ai_complex_top.sig_a", "ai_complex_top.sig_b"]}, "target": {"session_id": "native_xout_w"}}`
@@ -1572,7 +1572,7 @@ signals:
 ## 035. `list.add` / `primary`
 
 - returncode: 0
-- elapsed_ms: 83
+- elapsed_ms: 124
 - bytes: 114
 - sha256: `d9e393bd77b63b0952796d57d7441523123f715731379b210aabbc87c0e5c764`
 - request: `{"action": "list.add", "api_version": "xdebug.v1", "args": {"name": "basic_add", "signal": "ai_complex_top.hs_valid"}, "target": {"session_id": "native_xout_w"}}`
@@ -1590,7 +1590,7 @@ summary:
 ## 036. `list.create` / `primary`
 
 - returncode: 0
-- elapsed_ms: 101
+- elapsed_ms: 125
 - bytes: 180
 - sha256: `a1dfb16f43beb29e71bd0f6b5ccc26aacafdb9b8e3d0f14790e0a51c99bb1efb`
 - request: `{"action": "list.create", "api_version": "xdebug.v1", "args": {"name": "primary_list", "signals": ["ai_complex_top.sig_a", "ai_complex_top.sig_b"]}, "target": {"session_id": "native_xout_w"}}`
@@ -1612,7 +1612,7 @@ signals:
 ## 037. `list.create` / `setup`
 
 - returncode: 0
-- elapsed_ms: 105
+- elapsed_ms: 118
 - bytes: 180
 - sha256: `8cd0ed9262b969773421369a7bd9ad60b0c942248f8ba46c41c05cee5335e678`
 - request: `{"action": "list.create", "api_version": "xdebug.v1", "args": {"name": "basic_delete", "signals": ["ai_complex_top.sig_a", "ai_complex_top.sig_b"]}, "target": {"session_id": "native_xout_w"}}`
@@ -1634,7 +1634,7 @@ signals:
 ## 038. `list.delete` / `primary`
 
 - returncode: 0
-- elapsed_ms: 111
+- elapsed_ms: 124
 - bytes: 104
 - sha256: `2dac639a8acb0fb08a53fda9ab0facc961723b5eff1c83448251033e7bba05d8`
 - request: `{"action": "list.delete", "api_version": "xdebug.v1", "args": {"index": 2, "name": "basic_delete"}, "target": {"session_id": "native_xout_w"}}`
@@ -1651,7 +1651,7 @@ summary:
 ## 039. `list.create` / `setup`
 
 - returncode: 0
-- elapsed_ms: 107
+- elapsed_ms: 141
 - bytes: 180
 - sha256: `fe91d3ece656a8ef6e8d416d50b4629694e107bfe08d539618a496672ae29213`
 - request: `{"action": "list.create", "api_version": "xdebug.v1", "args": {"name": "basic_export", "signals": ["ai_complex_top.sig_a", "ai_complex_top.sig_b"]}, "target": {"session_id": "native_xout_w"}}`
@@ -1673,10 +1673,10 @@ signals:
 ## 040. `list.export` / `primary`
 
 - returncode: 0
-- elapsed_ms: 133
+- elapsed_ms: 150
 - bytes: 364
 - sha256: `178cd42f3c9d1ad4facb0ba1f83126f3f6bc65b317f88c6da3b28037b5f1c932`
-- request: `{"action": "list.export", "api_version": "xdebug.v1", "args": {"name": "basic_export", "output": {"file_format": "u64bin", "path": "/tmp/pytest-of-ryan/pytest-591/test_all_runtime_actions_emit_0/list_export"}, "time_range": {"begin": "0ns", "end": "400ns"}}, "target": {"session_id": "native_xout_w"}}`
+- request: `{"action": "list.export", "api_version": "xdebug.v1", "args": {"name": "basic_export", "output": {"file_format": "u64bin", "path": "/tmp/pytest-of-ryan/pytest-719/popen-gw0/test_all_runtime_actions_emit_0/list_export"}, "time_range": {"begin": "0ns", "end": "400ns"}}, "target": {"session_id": "native_xout_w"}}`
 
 <!-- XOUT_BODY phase=final action=list.export role=primary bytes=364 sha256=178cd42f3c9d1ad4facb0ba1f83126f3f6bc65b317f88c6da3b28037b5f1c932 -->
 ```xout
@@ -1699,7 +1699,7 @@ summary:
 ## 041. `list.create` / `setup`
 
 - returncode: 0
-- elapsed_ms: 109
+- elapsed_ms: 122
 - bytes: 186
 - sha256: `bab932511115b69a3692bd9a4b0c64427edcda550fcf9a040c6d16c4f1511601`
 - request: `{"action": "list.create", "api_version": "xdebug.v1", "args": {"name": "basic_first_change", "signals": ["ai_complex_top.sig_a", "ai_complex_top.sig_b"]}, "target": {"session_id": "native_xout_w"}}`
@@ -1721,7 +1721,7 @@ signals:
 ## 042. `list.first_change` / `primary`
 
 - returncode: 0
-- elapsed_ms: 129
+- elapsed_ms: 142
 - bytes: 404
 - sha256: `8f89714cf53c54a5692f8338fd8b5911cfd4963bdef876cf493a68ff8c357ec9`
 - request: `{"action": "list.first_change", "api_version": "xdebug.v1", "args": {"name": "basic_first_change", "time_range": {"begin": "0ns", "end": "120ns"}}, "target": {"session_id": "native_xout_w"}}`
@@ -1745,7 +1745,7 @@ changed_signals:
 ## 043. `list.load` / `primary`
 
 - returncode: 0
-- elapsed_ms: 117
+- elapsed_ms: 137
 - bytes: 120
 - sha256: `d2c5332bee266055fcb259e707521af4616b65fe9cc19aeba7034e59c611e1d7`
 - request: `{"action": "list.load", "api_version": "xdebug.v1", "args": {"config": {"lists": [{"name": "loaded", "signals": ["ai_complex_top.sig_a", "ai_complex_top.sig_b"]}]}}, "target": {"session_id": "native_xout_w"}}`
@@ -1768,7 +1768,7 @@ validation:
 ## 044. `list.create` / `setup`
 
 - returncode: 0
-- elapsed_ms: 109
+- elapsed_ms: 162
 - bytes: 178
 - sha256: `183dee611969b33b74f648f63c6afc49f24b2a3c4d6036ad17f8838c9bb389b1`
 - request: `{"action": "list.create", "api_version": "xdebug.v1", "args": {"name": "basic_show", "signals": ["ai_complex_top.sig_a", "ai_complex_top.sig_b"]}, "target": {"session_id": "native_xout_w"}}`
@@ -1790,7 +1790,7 @@ signals:
 ## 045. `list.show` / `primary`
 
 - returncode: 0
-- elapsed_ms: 108
+- elapsed_ms: 148
 - bytes: 161
 - sha256: `ae6da1e74e206af655370687b339dd88f1e368587fb27cc2c1d5bde2ff657ad0`
 - request: `{"action": "list.show", "api_version": "xdebug.v1", "args": {"name": "basic_show"}, "target": {"session_id": "native_xout_w"}}`
@@ -1811,7 +1811,7 @@ signals:
 ## 046. `list.create` / `setup`
 
 - returncode: 0
-- elapsed_ms: 109
+- elapsed_ms: 160
 - bytes: 182
 - sha256: `eb11335d075c36ff1ad23f4cc390fbd17b654480d8915a8653965a2c977c7d8d`
 - request: `{"action": "list.create", "api_version": "xdebug.v1", "args": {"name": "basic_validate", "signals": ["ai_complex_top.sig_a", "ai_complex_top.sig_b"]}, "target": {"session_id": "native_xout_w"}}`
@@ -1833,7 +1833,7 @@ signals:
 ## 047. `list.validate` / `primary`
 
 - returncode: 0
-- elapsed_ms: 121
+- elapsed_ms: 140
 - bytes: 175
 - sha256: `62f6a3a07c21059ed640996aab25aea91e6f445cccfa32493f55868e01b10ce4`
 - request: `{"action": "list.validate", "api_version": "xdebug.v1", "args": {"name": "basic_validate"}, "target": {"session_id": "native_xout_w"}}`
@@ -1854,17 +1854,17 @@ signals:
 ## 048. `nwave.rc.generate` / `primary`
 
 - returncode: 0
-- elapsed_ms: 167
-- bytes: 507
-- sha256: `58ad51c7472edc3a2601be07a7336c4249c3ecc33b7ac71b0b3c649a09a6b53f`
-- request: `{"action": "nwave.rc.generate", "api_version": "xdebug.v1", "args": {"config_path": "/tmp/pytest-of-ryan/pytest-591/test_all_runtime_actions_emit_0/wave_view.json", "output": {"path": "/tmp/pytest-of-ryan/pytest-591/test_all_runtime_actions_emit_0/signal.rc"}}, "target": {"session_id": "native_xout_w"}}`
+- elapsed_ms: 124
+- bytes: 517
+- sha256: `88892d73194f8970f4ce59c2f057532788d571998a8062b8bd67468ac045618c`
+- request: `{"action": "nwave.rc.generate", "api_version": "xdebug.v1", "args": {"config_path": "/tmp/pytest-of-ryan/pytest-719/popen-gw0/test_all_runtime_actions_emit_0/wave_view.json", "output": {"path": "/tmp/pytest-of-ryan/pytest-719/popen-gw0/test_all_runtime_actions_emit_0/signal.rc"}}, "target": {"session_id": "native_xout_w"}}`
 
-<!-- XOUT_BODY phase=final action=nwave.rc.generate role=primary bytes=507 sha256=58ad51c7472edc3a2601be07a7336c4249c3ecc33b7ac71b0b3c649a09a6b53f -->
+<!-- XOUT_BODY phase=final action=nwave.rc.generate role=primary bytes=517 sha256=88892d73194f8970f4ce59c2f057532788d571998a8062b8bd67468ac045618c -->
 ```xout
 @xdebug.nwave.rc.generate.v1
 summary:
   written     : true
-  config_path : /tmp/pytest-of-ryan/pytest-591/test_all_runtime_actions_emit_0/wave_view.json
+  config_path : /tmp/pytest-of-ryan/pytest-719/popen-gw0/test_all_runtime_actions_emit_0/wave_view.json
   valid       : true
   group_count : 1
   signal_count: 1
@@ -1888,7 +1888,7 @@ rc_preview:
 ## 049. `protocol.handshake.inspect` / `primary`
 
 - returncode: 0
-- elapsed_ms: 135
+- elapsed_ms: 144
 - bytes: 1029
 - sha256: `80e7303148e4b8b83421c85d9ebc98d0fd2958a9e03e92a24375ac0c7171d2ea`
 - request: `{"action": "protocol.handshake.inspect", "api_version": "xdebug.v1", "args": {"clock": "ai_complex_top.clk", "ready": "ai_complex_top.hs_ready", "valid": "ai_complex_top.hs_valid"}, "target": {"session_id": "native_xout_w"}}`
@@ -1931,7 +1931,7 @@ sampling.effective:
 ## 050. `schema` / `primary`
 
 - returncode: 0
-- elapsed_ms: 77
+- elapsed_ms: 78
 - bytes: 2877
 - sha256: `73b5ea0c99fbde9e27833eb0a55c1ab40c0590b3444c080c41613cdfd010cb0e`
 - request: `{"action": "schema", "api_version": "xdebug.v1", "args": {"action": "value.at", "kind": "request"}}`
@@ -1983,7 +1983,7 @@ examples:
 ## 051. `scope.list` / `primary`
 
 - returncode: 0
-- elapsed_ms: 120
+- elapsed_ms: 116
 - bytes: 1107
 - sha256: `38fc0c25dc2fffde4fbf8b92910ea48ea8109662527790f5b5cbb6677647f90f`
 - request: `{"action": "scope.list", "api_version": "xdebug.v1", "args": {"kind": "all", "level": 1, "path": "ai_complex_top"}, "target": {"session_id": "native_xout_w"}}`
@@ -2042,10 +2042,10 @@ signals:
 ## 052. `session.open` / `setup`
 
 - returncode: 0
-- elapsed_ms: 237
+- elapsed_ms: 375
 - bytes: 50
 - sha256: `801dae73579a41aae7974fb6f2a87487c435c4d93f3e58f31d52451fd6af19f4`
-- request: `{"action": "session.open", "api_version": "xdebug.v1", "args": {"name": "native_xout_c"}, "target": {"daidir": "/home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/.xverif-test-cache/fixtures/xdebug.active_semantics/versions/585596a0b185a09e028b04fdc2653542b7a5eef8b0293f4cd5746ca579a54ea3-prepare-8nux5yqa/resources/out/simv.daidir", "fsdb": "/home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/.xverif-test-cache/fixtures/xdebug.active_semantics/versions/585596a0b185a09e028b04fdc2653542b7a5eef8b0293f4cd5746ca579a54ea3-prepare-8nux5yqa/resources/out/waves.fsdb"}}`
+- request: `{"action": "session.open", "api_version": "xdebug.v1", "args": {"name": "native_xout_c"}, "target": {"daidir": "/home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.active_semantics/versions/585596a0b185a09e028b04fdc2653542b7a5eef8b0293f4cd5746ca579a54ea3-prepare-8nux5yqa/resources/out/simv.daidir", "fsdb": "/home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.active_semantics/versions/585596a0b185a09e028b04fdc2653542b7a5eef8b0293f4cd5746ca579a54ea3-prepare-8nux5yqa/resources/out/waves.fsdb"}}`
 
 <!-- XOUT_BODY phase=final action=session.open role=setup bytes=50 sha256=801dae73579a41aae7974fb6f2a87487c435c4d93f3e58f31d52451fd6af19f4 -->
 ```xout
@@ -2057,7 +2057,7 @@ summary:
 ## 053. `scope.roots` / `primary`
 
 - returncode: 0
-- elapsed_ms: 116
+- elapsed_ms: 129
 - bytes: 322
 - sha256: `55a2b79887a5678f6077161064f8b6d7da692632eea95d6a8369a018cddbca63`
 - request: `{"action": "scope.roots", "api_version": "xdebug.v1", "args": {"source": "auto"}, "target": {"session_id": "native_xout_c"}}`
@@ -2081,10 +2081,10 @@ roots:
 ## 054. `session.open` / `setup`
 
 - returncode: 0
-- elapsed_ms: 244
+- elapsed_ms: 271
 - bytes: 50
 - sha256: `801dae73579a41aae7974fb6f2a87487c435c4d93f3e58f31d52451fd6af19f4`
-- request: `{"action": "session.open", "api_version": "xdebug.v1", "args": {"name": "native_xout_disposable_close"}, "target": {"fsdb": "/home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/.xverif-test-cache/fixtures/xdebug.ai_complex_wave/versions/a5da8054a5d15693369316da2fb212b16fc10e5e065bc3fe560800ce7e14ee17-prepare-6mprgsuo/resources/out/waves.fsdb"}}`
+- request: `{"action": "session.open", "api_version": "xdebug.v1", "args": {"name": "native_xout_disposable_close"}, "target": {"fsdb": "/home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.ai_complex_wave/versions/a5da8054a5d15693369316da2fb212b16fc10e5e065bc3fe560800ce7e14ee17-prepare-6mprgsuo/resources/out/waves.fsdb"}}`
 
 <!-- XOUT_BODY phase=final action=session.open role=setup bytes=50 sha256=801dae73579a41aae7974fb6f2a87487c435c4d93f3e58f31d52451fd6af19f4 -->
 ```xout
@@ -2096,12 +2096,12 @@ summary:
 ## 055. `session.close` / `primary`
 
 - returncode: 0
-- elapsed_ms: 195
-- bytes: 658
-- sha256: `0cce3aa7ea714d879b3e077d1f29afcc539b492961702733ac4d6c36bea68620`
+- elapsed_ms: 205
+- bytes: 630
+- sha256: `52ac14f0d58ad1f6c6dc402f65e7584d345de5057dc5a650b9dfd18b4196d321`
 - request: `{"action": "session.close", "api_version": "xdebug.v1", "args": {}, "target": {"session_id": "native_xout_disposable_close"}}`
 
-<!-- XOUT_BODY phase=final action=session.close role=primary bytes=658 sha256=0cce3aa7ea714d879b3e077d1f29afcc539b492961702733ac4d6c36bea68620 -->
+<!-- XOUT_BODY phase=final action=session.close role=primary bytes=630 sha256=52ac14f0d58ad1f6c6dc402f65e7584d345de5057dc5a650b9dfd18b4196d321 -->
 ```xout
 @xdebug.session.close.v1
 summary:
@@ -2113,10 +2113,10 @@ removed_session:
   transport  : uds
   server_host: eda.ic
   fsdb       : /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.ai_complex_wave/versions/a5da8054a5d15693369316da2fb212b16fc10e5e065bc3fe560800ce7e14ee17-prepare-6mprgsuo/resources/out/waves.fsdb
-  socket_path: /home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/tmp/xdebug-1001-12b7eeedcd83f8b3.sock
-  server_pid : 1640772
-  created_at : 1785788283
-  last_active: 1785788284
+  socket_path: /home/RD/ryan/work/xverif/tmp/xdebug-1001-745719001fd5f295.sock
+  server_pid : 3116690
+  created_at : 1786279978
+  last_active: 1786279978
   fsdb_mtime : 1785305001
   fsdb_size  : 9232
   fsdb_dev   : 64770
@@ -2126,7 +2126,7 @@ removed_session:
 ## 056. `session.doctor` / `primary`
 
 - returncode: 0
-- elapsed_ms: 148
+- elapsed_ms: 125
 - bytes: 88
 - sha256: `2124fd9d04461327832ce03da6bf9b11baaaf6782c7ad73163341f38c7d7f0a2`
 - request: `{"action": "session.doctor", "api_version": "xdebug.v1", "args": {}, "target": {"session_id": "native_xout_w"}}`
@@ -2144,12 +2144,12 @@ data:
 ## 057. `session.gc` / `primary`
 
 - returncode: 0
-- elapsed_ms: 344
-- bytes: 3279
-- sha256: `2ad26a126c31a83a6b01e9d60a5d4d923866df08d3fa8eb499439393ab692254`
+- elapsed_ms: 347
+- bytes: 3111
+- sha256: `04749e1de32379419633e1da262f9e4fd78d1956264d66fa5a8029250c139ffd`
 - request: `{"action": "session.gc", "api_version": "xdebug.v1", "args": {}}`
 
-<!-- XOUT_BODY phase=final action=session.gc role=primary bytes=3279 sha256=2ad26a126c31a83a6b01e9d60a5d4d923866df08d3fa8eb499439393ab692254 -->
+<!-- XOUT_BODY phase=final action=session.gc role=primary bytes=3111 sha256=04749e1de32379419633e1da262f9e4fd78d1956264d66fa5a8029250c139ffd -->
 ```xout
 @xdebug.session.gc.v1
 summary:
@@ -2158,22 +2158,22 @@ summary:
   removed_count: 0
 
 kept_sessions:
-  session_id     mode      transport  server_host  fsdb                                                                                                                                                                                                                        socket_path                                                                                  server_pid  created_at  last_active  fsdb_mtime  fsdb_size  fsdb_dev  fsdb_inode  daidir                                                                                                                                                                                              daidir_mtime  daidir_size  daidir_dev  daidir_inode
-  native_xout_p  waveform  uds        eda.ic       /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.apb_vip/versions/5b0d1be836520bd8421bb4193d12949c5ba4c3098cc94bd1dede3d5a81fb4709-prepare-7hdsu4cf/resources/out/regression/test/apb_vip_test/waves.fsdb       /home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/tmp/xdebug-1001-f7e10f18f07ae65d.sock  1640280     1785788269  1785788270   1785305080  21053      64770     53481561
-  native_xout_a  waveform  uds        eda.ic       /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.axi_vip/versions/b7a0d81ad90d77fb97c0da6239e1e69a10671089527be0adf5e7a21e5507c1f0-prepare-21inkxj8/resources/out/regression/test/axi_multi_id_test/waves.fsdb  /home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/tmp/xdebug-1001-2ff3d0ff242e4327.sock  1640334     1785788270  1785788278   1785305487  4464084    64770     53481826
-  native_xout_w  waveform  uds        eda.ic       /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.ai_complex_wave/versions/a5da8054a5d15693369316da2fb212b16fc10e5e065bc3fe560800ce7e14ee17-prepare-6mprgsuo/resources/out/waves.fsdb                            /home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/tmp/xdebug-1001-4ad5c73dc970c961.sock  1640500     1785788279  1785788284   1785305001  9232       64770     53480732
-  native_xout_e  waveform  uds        eda.ic       /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.xif_event/versions/664ac163a4de5950f40c81bafad04508bf5ea6a1fadbf1eca21aeabe1306ee44-prepare-kh7pipx2/resources/out/waves/xif_event_multi_if_test.fsdb          /home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/tmp/xdebug-1001-e799fe8782371102.sock  1640518     1785788280  1785788281   1785305859  12029      64770     53742495
-  native_xout_c  combined  uds        eda.ic       /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.active_semantics/versions/585596a0b185a09e028b04fdc2653542b7a5eef8b0293f4cd5746ca579a54ea3-prepare-8nux5yqa/resources/out/waves.fsdb                           /home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/tmp/xdebug-1001-39188bccaca42ae0.sock  1640751     1785788283  1785788283   1785304981  10908      64770     53220060    /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.active_semantics/versions/585596a0b185a09e028b04fdc2653542b7a5eef8b0293f4cd5746ca579a54ea3-prepare-8nux5yqa/resources/out/simv.daidir  1785304981    4096         64770       53220003
+  session_id     mode      transport  server_host  fsdb                                                                                                                                                                                                                        socket_path                                                      server_pid  created_at  last_active  fsdb_mtime  fsdb_size  fsdb_dev  fsdb_inode  daidir                                                                                                                                                                                              daidir_mtime  daidir_size  daidir_dev  daidir_inode
+  native_xout_p  waveform  uds        eda.ic       /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.apb_vip/versions/5b0d1be836520bd8421bb4193d12949c5ba4c3098cc94bd1dede3d5a81fb4709-prepare-7hdsu4cf/resources/out/regression/test/apb_vip_test/waves.fsdb       /home/RD/ryan/work/xverif/tmp/xdebug-1001-f67862925b32b41f.sock  3116323     1786279962  1786279963   1785305080  21053      64770     53481561
+  native_xout_a  waveform  uds        eda.ic       /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.axi_vip/versions/b7a0d81ad90d77fb97c0da6239e1e69a10671089527be0adf5e7a21e5507c1f0-prepare-21inkxj8/resources/out/regression/test/axi_multi_id_test/waves.fsdb  /home/RD/ryan/work/xverif/tmp/xdebug-1001-7c333083b59168c5.sock  3116378     1786279963  1786279973   1785305487  4464084    64770     53481826
+  native_xout_w  waveform  uds        eda.ic       /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.ai_complex_wave/versions/a5da8054a5d15693369316da2fb212b16fc10e5e065bc3fe560800ce7e14ee17-prepare-6mprgsuo/resources/out/waves.fsdb                            /home/RD/ryan/work/xverif/tmp/xdebug-1001-f3802894aee453ef.sock  3116477     1786279973  1786279979   1785305001  9232       64770     53480732
+  native_xout_e  waveform  uds        eda.ic       /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.xif_event/versions/664ac163a4de5950f40c81bafad04508bf5ea6a1fadbf1eca21aeabe1306ee44-prepare-kh7pipx2/resources/out/waves/xif_event_multi_if_test.fsdb          /home/RD/ryan/work/xverif/tmp/xdebug-1001-2a41edf41a324bc4.sock  3116495     1786279974  1786279975   1785305859  12029      64770     53742495
+  native_xout_c  combined  uds        eda.ic       /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.active_semantics/versions/585596a0b185a09e028b04fdc2653542b7a5eef8b0293f4cd5746ca579a54ea3-prepare-8nux5yqa/resources/out/waves.fsdb                           /home/RD/ryan/work/xverif/tmp/xdebug-1001-171d86848a96866a.sock  3116668     1786279978  1786279978   1785304981  10908      64770     53220060    /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.active_semantics/versions/585596a0b185a09e028b04fdc2653542b7a5eef8b0293f4cd5746ca579a54ea3-prepare-8nux5yqa/resources/out/simv.daidir  1785304981    4096         64770       53220003
   removed: [empty]
 ```
 
 ## 058. `session.open` / `setup`
 
 - returncode: 0
-- elapsed_ms: 254
+- elapsed_ms: 269
 - bytes: 50
 - sha256: `801dae73579a41aae7974fb6f2a87487c435c4d93f3e58f31d52451fd6af19f4`
-- request: `{"action": "session.open", "api_version": "xdebug.v1", "args": {"name": "native_xout_disposable_kill"}, "target": {"fsdb": "/home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/.xverif-test-cache/fixtures/xdebug.ai_complex_wave/versions/a5da8054a5d15693369316da2fb212b16fc10e5e065bc3fe560800ce7e14ee17-prepare-6mprgsuo/resources/out/waves.fsdb"}}`
+- request: `{"action": "session.open", "api_version": "xdebug.v1", "args": {"name": "native_xout_disposable_kill"}, "target": {"fsdb": "/home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.ai_complex_wave/versions/a5da8054a5d15693369316da2fb212b16fc10e5e065bc3fe560800ce7e14ee17-prepare-6mprgsuo/resources/out/waves.fsdb"}}`
 
 <!-- XOUT_BODY phase=final action=session.open role=setup bytes=50 sha256=801dae73579a41aae7974fb6f2a87487c435c4d93f3e58f31d52451fd6af19f4 -->
 ```xout
@@ -2185,12 +2185,12 @@ summary:
 ## 059. `session.kill` / `primary`
 
 - returncode: 0
-- elapsed_ms: 188
-- bytes: 656
-- sha256: `d23b1614cdcfd194108973e70227478d549134112d66317305206c2f9c5f6862`
+- elapsed_ms: 212
+- bytes: 628
+- sha256: `3453ee81fff3464160e227c4338e772689cd19b9431dc4922a1c8ee2c936920b`
 - request: `{"action": "session.kill", "api_version": "xdebug.v1", "args": {}, "target": {"session_id": "native_xout_disposable_kill"}}`
 
-<!-- XOUT_BODY phase=final action=session.kill role=primary bytes=656 sha256=d23b1614cdcfd194108973e70227478d549134112d66317305206c2f9c5f6862 -->
+<!-- XOUT_BODY phase=final action=session.kill role=primary bytes=628 sha256=3453ee81fff3464160e227c4338e772689cd19b9431dc4922a1c8ee2c936920b -->
 ```xout
 @xdebug.session.kill.v1
 summary:
@@ -2202,10 +2202,10 @@ removed_session:
   transport  : uds
   server_host: eda.ic
   fsdb       : /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.ai_complex_wave/versions/a5da8054a5d15693369316da2fb212b16fc10e5e065bc3fe560800ce7e14ee17-prepare-6mprgsuo/resources/out/waves.fsdb
-  socket_path: /home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/tmp/xdebug-1001-9cdfe61bf12ffb96.sock
-  server_pid : 1640806
-  created_at : 1785788284
-  last_active: 1785788284
+  socket_path: /home/RD/ryan/work/xverif/tmp/xdebug-1001-3f8b959a43e8aa40.sock
+  server_pid : 3116725
+  created_at : 1786279979
+  last_active: 1786279979
   fsdb_mtime : 1785305001
   fsdb_size  : 9232
   fsdb_dev   : 64770
@@ -2215,12 +2215,12 @@ removed_session:
 ## 060. `session.list` / `primary`
 
 - returncode: 0
-- elapsed_ms: 45
-- bytes: 3254
-- sha256: `47049b40b9f2302197fbf721e2c95ca21045e63d9feeeaba9389a6498ed07e96`
+- elapsed_ms: 90
+- bytes: 3086
+- sha256: `55541eca4e975acce85cfdd33f46b4e9fa4608c1631999e13c6aea5ca85b26e0`
 - request: `{"action": "session.list", "api_version": "xdebug.v1", "args": {}}`
 
-<!-- XOUT_BODY phase=final action=session.list role=primary bytes=3254 sha256=47049b40b9f2302197fbf721e2c95ca21045e63d9feeeaba9389a6498ed07e96 -->
+<!-- XOUT_BODY phase=final action=session.list role=primary bytes=3086 sha256=55541eca4e975acce85cfdd33f46b4e9fa4608c1631999e13c6aea5ca85b26e0 -->
 ```xout
 @xdebug.session.list.v1
 summary:
@@ -2228,21 +2228,21 @@ summary:
   expired_removed_count: 0
 
 sessions:
-  session_id     mode      transport  server_host  fsdb                                                                                                                                                                                                                        socket_path                                                                                  server_pid  created_at  last_active  fsdb_mtime  fsdb_size  fsdb_dev  fsdb_inode  daidir                                                                                                                                                                                              daidir_mtime  daidir_size  daidir_dev  daidir_inode
-  native_xout_p  waveform  uds        eda.ic       /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.apb_vip/versions/5b0d1be836520bd8421bb4193d12949c5ba4c3098cc94bd1dede3d5a81fb4709-prepare-7hdsu4cf/resources/out/regression/test/apb_vip_test/waves.fsdb       /home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/tmp/xdebug-1001-f7e10f18f07ae65d.sock  1640280     1785788269  1785788284   1785305080  21053      64770     53481561
-  native_xout_a  waveform  uds        eda.ic       /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.axi_vip/versions/b7a0d81ad90d77fb97c0da6239e1e69a10671089527be0adf5e7a21e5507c1f0-prepare-21inkxj8/resources/out/regression/test/axi_multi_id_test/waves.fsdb  /home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/tmp/xdebug-1001-2ff3d0ff242e4327.sock  1640334     1785788270  1785788284   1785305487  4464084    64770     53481826
-  native_xout_w  waveform  uds        eda.ic       /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.ai_complex_wave/versions/a5da8054a5d15693369316da2fb212b16fc10e5e065bc3fe560800ce7e14ee17-prepare-6mprgsuo/resources/out/waves.fsdb                            /home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/tmp/xdebug-1001-4ad5c73dc970c961.sock  1640500     1785788279  1785788284   1785305001  9232       64770     53480732
-  native_xout_e  waveform  uds        eda.ic       /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.xif_event/versions/664ac163a4de5950f40c81bafad04508bf5ea6a1fadbf1eca21aeabe1306ee44-prepare-kh7pipx2/resources/out/waves/xif_event_multi_if_test.fsdb          /home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/tmp/xdebug-1001-e799fe8782371102.sock  1640518     1785788280  1785788284   1785305859  12029      64770     53742495
-  native_xout_c  combined  uds        eda.ic       /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.active_semantics/versions/585596a0b185a09e028b04fdc2653542b7a5eef8b0293f4cd5746ca579a54ea3-prepare-8nux5yqa/resources/out/waves.fsdb                           /home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/tmp/xdebug-1001-39188bccaca42ae0.sock  1640751     1785788283  1785788284   1785304981  10908      64770     53220060    /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.active_semantics/versions/585596a0b185a09e028b04fdc2653542b7a5eef8b0293f4cd5746ca579a54ea3-prepare-8nux5yqa/resources/out/simv.daidir  1785304981    4096         64770       53220003
+  session_id     mode      transport  server_host  fsdb                                                                                                                                                                                                                        socket_path                                                      server_pid  created_at  last_active  fsdb_mtime  fsdb_size  fsdb_dev  fsdb_inode  daidir                                                                                                                                                                                              daidir_mtime  daidir_size  daidir_dev  daidir_inode
+  native_xout_p  waveform  uds        eda.ic       /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.apb_vip/versions/5b0d1be836520bd8421bb4193d12949c5ba4c3098cc94bd1dede3d5a81fb4709-prepare-7hdsu4cf/resources/out/regression/test/apb_vip_test/waves.fsdb       /home/RD/ryan/work/xverif/tmp/xdebug-1001-f67862925b32b41f.sock  3116323     1786279962  1786279979   1785305080  21053      64770     53481561
+  native_xout_a  waveform  uds        eda.ic       /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.axi_vip/versions/b7a0d81ad90d77fb97c0da6239e1e69a10671089527be0adf5e7a21e5507c1f0-prepare-21inkxj8/resources/out/regression/test/axi_multi_id_test/waves.fsdb  /home/RD/ryan/work/xverif/tmp/xdebug-1001-7c333083b59168c5.sock  3116378     1786279963  1786279979   1785305487  4464084    64770     53481826
+  native_xout_w  waveform  uds        eda.ic       /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.ai_complex_wave/versions/a5da8054a5d15693369316da2fb212b16fc10e5e065bc3fe560800ce7e14ee17-prepare-6mprgsuo/resources/out/waves.fsdb                            /home/RD/ryan/work/xverif/tmp/xdebug-1001-f3802894aee453ef.sock  3116477     1786279973  1786279979   1785305001  9232       64770     53480732
+  native_xout_e  waveform  uds        eda.ic       /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.xif_event/versions/664ac163a4de5950f40c81bafad04508bf5ea6a1fadbf1eca21aeabe1306ee44-prepare-kh7pipx2/resources/out/waves/xif_event_multi_if_test.fsdb          /home/RD/ryan/work/xverif/tmp/xdebug-1001-2a41edf41a324bc4.sock  3116495     1786279974  1786279979   1785305859  12029      64770     53742495
+  native_xout_c  combined  uds        eda.ic       /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.active_semantics/versions/585596a0b185a09e028b04fdc2653542b7a5eef8b0293f4cd5746ca579a54ea3-prepare-8nux5yqa/resources/out/waves.fsdb                           /home/RD/ryan/work/xverif/tmp/xdebug-1001-171d86848a96866a.sock  3116668     1786279978  1786279979   1785304981  10908      64770     53220060    /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.active_semantics/versions/585596a0b185a09e028b04fdc2653542b7a5eef8b0293f4cd5746ca579a54ea3-prepare-8nux5yqa/resources/out/simv.daidir  1785304981    4096         64770       53220003
 ```
 
 ## 061. `session.open` / `primary`
 
 - returncode: 0
-- elapsed_ms: 286
+- elapsed_ms: 264
 - bytes: 50
 - sha256: `801dae73579a41aae7974fb6f2a87487c435c4d93f3e58f31d52451fd6af19f4`
-- request: `{"action": "session.open", "api_version": "xdebug.v1", "args": {"name": "primary_session_open"}, "target": {"fsdb": "/home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/.xverif-test-cache/fixtures/xdebug.ai_complex_wave/versions/a5da8054a5d15693369316da2fb212b16fc10e5e065bc3fe560800ce7e14ee17-prepare-6mprgsuo/resources/out/waves.fsdb"}}`
+- request: `{"action": "session.open", "api_version": "xdebug.v1", "args": {"name": "primary_session_open"}, "target": {"fsdb": "/home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.ai_complex_wave/versions/a5da8054a5d15693369316da2fb212b16fc10e5e065bc3fe560800ce7e14ee17-prepare-6mprgsuo/resources/out/waves.fsdb"}}`
 
 <!-- XOUT_BODY phase=final action=session.open role=primary bytes=50 sha256=801dae73579a41aae7974fb6f2a87487c435c4d93f3e58f31d52451fd6af19f4 -->
 ```xout
@@ -2254,7 +2254,7 @@ summary:
 ## 062. `signal.anomaly.inspect` / `primary`
 
 - returncode: 0
-- elapsed_ms: 129
+- elapsed_ms: 149
 - bytes: 562
 - sha256: `deed83ad3ad7cc9b6805528a59b5b7abe2dff0fe676441b8921d1ccf1f7491ef`
 - request: `{"action": "signal.anomaly.inspect", "api_version": "xdebug.v1", "args": {"checks": [{"type": "unknown_xz"}], "line_limit": 4, "signals": ["xif_event_top.xz_data"], "time_range": {"begin": "0ns", "end": "200ns"}}, "target": {"session_id": "native_xout_e"}}`
@@ -2283,7 +2283,7 @@ scan_status:
 ## 063. `signal.canonicalize` / `primary`
 
 - returncode: 0
-- elapsed_ms: 137
+- elapsed_ms: 154
 - bytes: 594
 - sha256: `b874df7a237f984c7240f7f3f0db73f5b1c5baac126363eae738a4628ed4378d`
 - request: `{"action": "signal.canonicalize", "api_version": "xdebug.v1", "args": {"signal": "active_semantics_tb.u_dut.mux_y"}, "target": {"session_id": "native_xout_c"}}`
@@ -2315,7 +2315,7 @@ connection:
 ## 064. `signal.changes` / `primary`
 
 - returncode: 0
-- elapsed_ms: 158
+- elapsed_ms: 156
 - bytes: 808
 - sha256: `82b1ebbaaae1a5cfa9c11c6a1b562a4c2603fffec30bac219ac3807b0c99acc7`
 - request: `{"action": "signal.changes", "api_version": "xdebug.v1", "args": {"line_limit": 2, "signal": "ai_complex_top.sig_a", "time_range": {"begin": "0ns", "end": "120ns"}}, "target": {"session_id": "native_xout_w"}}`
@@ -2353,7 +2353,7 @@ changes:
 ## 065. `signal.resolve` / `primary`
 
 - returncode: 0
-- elapsed_ms: 107
+- elapsed_ms: 122
 - bytes: 531
 - sha256: `5ec7613753f10b379a6049b25b2fac8f522e7f38698e4ef138f6b7b8ca2d806e`
 - request: `{"action": "signal.resolve", "api_version": "xdebug.v1", "args": {"signal": "active_semantics_tb.u_dut.mux_y"}, "target": {"session_id": "native_xout_c"}}`
@@ -2378,7 +2378,7 @@ matches:
 ## 066. `signal.sampled_pulse.inspect` / `primary`
 
 - returncode: 0
-- elapsed_ms: 135
+- elapsed_ms: 151
 - bytes: 1710
 - sha256: `046df8eb176367f4327ffb6ed53f4eb1db331e1a36de0076cd61e251d9cf0dd7`
 - request: `{"action": "signal.sampled_pulse.inspect", "api_version": "xdebug.v1", "args": {"clock": "ai_complex_top.clk", "line_limit": 5, "time_range": {"begin": "0ns", "end": "200ns"}, "valid": "ai_complex_top.glitch_sig"}, "target": {"session_id": "native_xout_w"}}`
@@ -2428,7 +2428,7 @@ findings:
 ## 067. `signal.stability` / `primary`
 
 - returncode: 0
-- elapsed_ms: 140
+- elapsed_ms: 159
 - bytes: 578
 - sha256: `6cf87dd7d614c029f869df3cf71c828d9ef584c4fed34c8d938e50a6c5f8ec55`
 - request: `{"action": "signal.stability", "api_version": "xdebug.v1", "args": {"signal": "ai_complex_top.stable_sig", "time_range": {"begin": "0ns", "end": "400ns"}}, "target": {"session_id": "native_xout_w"}}`
@@ -2462,7 +2462,7 @@ changes:
 ## 068. `signal.statistics` / `primary`
 
 - returncode: 0
-- elapsed_ms: 138
+- elapsed_ms: 152
 - bytes: 1195
 - sha256: `9440f5d725df46f29211a88ddfadb56a361ac8f76e3e97dcd8cf9c78588269c9`
 - request: `{"action": "signal.statistics", "api_version": "xdebug.v1", "args": {"clock": "ai_complex_top.clk", "signal": "ai_complex_top.hs_valid", "time_range": {"begin": "120ns", "end": "210ns"}}, "target": {"session_id": "native_xout_w"}}`
@@ -2523,7 +2523,7 @@ activity:
 ## 069. `signal.xz_verify` / `primary`
 
 - returncode: 0
-- elapsed_ms: 137
+- elapsed_ms: 275
 - bytes: 653
 - sha256: `dd19a24d4aa3433f8f4ff794ec223860ac75362649d07a5c0c06b599bfb65b67`
 - request: `{"action": "signal.xz_verify", "api_version": "xdebug.v1", "args": {"expected_state": "x", "signal": "ai_complex_top.xz_bus", "time_range": {"begin": "86ns", "end": "94ns"}}, "target": {"session_id": "native_xout_w"}}`
@@ -2556,10 +2556,10 @@ time_range:
 ## 070. `session.open` / `setup`
 
 - returncode: 0
-- elapsed_ms: 238
+- elapsed_ms: 418
 - bytes: 50
 - sha256: `801dae73579a41aae7974fb6f2a87487c435c4d93f3e58f31d52451fd6af19f4`
-- request: `{"action": "session.open", "api_version": "xdebug.v1", "args": {"name": "native_xout_s"}, "target": {"fsdb": "/home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/.xverif-test-cache/fixtures/xdebug.stream_v1/versions/5eca27af24084f076f68c6a77c6fe0cb9e0a152332912dbf074cabc3b4600ede-prepare-qrcrom97/resources/out/waves.fsdb"}}`
+- request: `{"action": "session.open", "api_version": "xdebug.v1", "args": {"name": "native_xout_s"}, "target": {"fsdb": "/home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.stream_v1/versions/5eca27af24084f076f68c6a77c6fe0cb9e0a152332912dbf074cabc3b4600ede-prepare-qrcrom97/resources/out/waves.fsdb"}}`
 
 <!-- XOUT_BODY phase=final action=session.open role=setup bytes=50 sha256=801dae73579a41aae7974fb6f2a87487c435c4d93f3e58f31d52451fd6af19f4 -->
 ```xout
@@ -2571,10 +2571,10 @@ summary:
 ## 071. `stream.config.load` / `setup`
 
 - returncode: 0
-- elapsed_ms: 138
+- elapsed_ms: 161
 - bytes: 1754
 - sha256: `082f0826afa4d56d66eb64b07bc2de80b169677010703bb05b74af3d000f2789`
-- request: `{"action": "stream.config.load", "api_version": "xdebug.v1", "args": {"config_path": "/home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/xdebug/testdata/waveform/stream_v1/config/streams.json", "mode": "replace"}, "target": {"session_id": "native_xout_s"}}`
+- request: `{"action": "stream.config.load", "api_version": "xdebug.v1", "args": {"config_path": "/home/RD/ryan/work/xverif/xdebug/testdata/waveform/stream_v1/config/streams.json", "mode": "replace"}, "target": {"session_id": "native_xout_s"}}`
 
 <!-- XOUT_BODY phase=final action=stream.config.load role=setup bytes=1754 sha256=082f0826afa4d56d66eb64b07bc2de80b169677010703bb05b74af3d000f2789 -->
 ```xout
@@ -2610,7 +2610,7 @@ validation:
 ## 072. `stream.config.get` / `primary`
 
 - returncode: 0
-- elapsed_ms: 117
+- elapsed_ms: 129
 - bytes: 958
 - sha256: `699952b1d0fef9a2713afdb868031cc3d0db63b9a81068b6e3483d322003f6e8`
 - request: `{"action": "stream.config.get", "api_version": "xdebug.v1", "args": {"name": "ready_stream"}, "target": {"session_id": "native_xout_s"}}`
@@ -2658,7 +2658,7 @@ stream.beat_fields:
 ## 073. `stream.config.list` / `primary`
 
 - returncode: 0
-- elapsed_ms: 138
+- elapsed_ms: 145
 - bytes: 1189
 - sha256: `1a10b2480b41680a1f2a7b5a3885bc94c2d28783de312aedfc69a28c4e3956b8`
 - request: `{"action": "stream.config.list", "api_version": "xdebug.v1", "args": {}, "target": {"session_id": "native_xout_s"}}`
@@ -2683,7 +2683,7 @@ streams:
 ## 074. `stream.config.load` / `primary`
 
 - returncode: 0
-- elapsed_ms: 92
+- elapsed_ms: 135
 - bytes: 665
 - sha256: `f027eb64dd4adbb8b2bf92bfe5772db39e46f63a094a3d0b3b21d0922a052030`
 - request: `{"action": "stream.config.load", "api_version": "xdebug.v1", "args": {"config": {"streams": [{"clock": "clk || 1'b0", "data": "data", "description": "valid-only stream", "edge": "posedge", "name": "native_primary_stream", "reset": {"polarity": "active_low", "signal": "stream_v1_top.rst_n"}, "signals": {"clk": "stream_v1_top.clk", "data": "stream_v1_top.vo_data", "vld": "stream_v1_top.vo_vld"}, "vld": "vld"}]}, "mode": "append"}, "target": {"session_id": "native_xout_s"}}`
@@ -2710,7 +2710,7 @@ validation:
 ## 075. `stream.describe` / `primary`
 
 - returncode: 0
-- elapsed_ms: 142
+- elapsed_ms: 134
 - bytes: 2145
 - sha256: `b116a3300d15098ba61f3552c2ac3f27a34a623a6beaa41e3b8555f5f540cae3`
 - request: `{"action": "stream.describe", "api_version": "xdebug.v1", "args": {"stream": "ready_stream"}, "target": {"session_id": "native_xout_s"}}`
@@ -2790,10 +2790,10 @@ semantics:
 ## 076. `stream.export` / `primary`
 
 - returncode: 0
-- elapsed_ms: 872
+- elapsed_ms: 1013
 - bytes: 1315
 - sha256: `4d6181ade4b402525b2f20b884b9565b9e80e35c0a66e8d9168660353eef60de`
-- request: `{"action": "stream.export", "api_version": "xdebug.v1", "args": {"cache_scope": "full", "kind": "transfer", "output": {"file_format": "tsv", "path": "/tmp/pytest-of-ryan/pytest-591/test_all_runtime_actions_emit_0/stream.tsv"}, "stream": "ready_stream", "time_range": {"begin": "0ns", "end": "1us"}}, "target": {"session_id": "native_xout_s"}}`
+- request: `{"action": "stream.export", "api_version": "xdebug.v1", "args": {"cache_scope": "full", "kind": "transfer", "output": {"file_format": "tsv", "path": "/tmp/pytest-of-ryan/pytest-719/popen-gw0/test_all_runtime_actions_emit_0/stream.tsv"}, "stream": "ready_stream", "time_range": {"begin": "0ns", "end": "1us"}}, "target": {"session_id": "native_xout_s"}}`
 
 <!-- XOUT_BODY phase=final action=stream.export role=primary bytes=1315 sha256=4d6181ade4b402525b2f20b884b9565b9e80e35c0a66e8d9168660353eef60de -->
 ```xout
@@ -2838,7 +2838,7 @@ summary:
 ## 077. `stream.query` / `primary`
 
 - returncode: 0
-- elapsed_ms: 1117
+- elapsed_ms: 1103
 - bytes: 2308
 - sha256: `3b3b4023c3b0f061970b2fa3d21db7acfed431ea342bb4330515952e6bf1b73a`
 - request: `{"action": "stream.query", "api_version": "xdebug.v1", "args": {"packet_index": 3, "query": "packet_at", "stream": "ready_packet", "time_range": {"begin": "0ns", "end": "1us"}}, "target": {"session_id": "native_xout_s"}}`
@@ -2923,7 +2923,7 @@ packet.beat_fields_preview.head:
 ## 078. `stream.validate` / `primary`
 
 - returncode: 0
-- elapsed_ms: 137
+- elapsed_ms: 169
 - bytes: 1407
 - sha256: `75d0680a4f2adbd91230eab42edc95723999a368efddb287121022080848ea0a`
 - request: `{"action": "stream.validate", "api_version": "xdebug.v1", "args": {"cache_scope": "full", "dynamic": true, "stream": "ready_stream", "time_range": {"begin": "0ns", "end": "1us"}}, "target": {"session_id": "native_xout_s"}}`
@@ -2983,7 +2983,7 @@ dynamic.scanned_range:
 ## 079. `trace.active_driver` / `primary`
 
 - returncode: 0
-- elapsed_ms: 114
+- elapsed_ms: 141
 - bytes: 960
 - sha256: `bb35686965188a76981ee8fcfd016fed1fe1fd6c59ce3132afc938376d2e0980`
 - request: `{"action": "trace.active_driver", "api_version": "xdebug.v1", "args": {"signal": "active_semantics_tb.u_dut.mux_y", "time": "26ns"}, "target": {"session_id": "native_xout_c"}}`
@@ -3025,7 +3025,7 @@ active_signals:
 ## 080. `trace.active_driver_chain` / `primary`
 
 - returncode: 0
-- elapsed_ms: 149
+- elapsed_ms: 164
 - bytes: 1424
 - sha256: `04e8d4a857b07eac33662176ae3a59470f701bbe53f1e94ac7be69a55382444c`
 - request: `{"action": "trace.active_driver_chain", "api_version": "xdebug.v1", "args": {"signal": "active_semantics_tb.u_dut.mux_y", "time": "26ns"}, "target": {"session_id": "native_xout_c"}}`
@@ -3076,7 +3076,7 @@ active_signals:
 ## 081. `trace.driver` / `primary`
 
 - returncode: 0
-- elapsed_ms: 129
+- elapsed_ms: 142
 - bytes: 957
 - sha256: `32e4e14997026b35f7da2e6acae558d49f39358dc1cf4f29ed74259a0397e536`
 - request: `{"action": "trace.driver", "api_version": "xdebug.v1", "args": {"signal": "active_semantics_tb.u_dut.mux_y"}, "target": {"session_id": "native_xout_c"}}`
@@ -3118,7 +3118,7 @@ active_signals:
 ## 082. `trace.load` / `primary`
 
 - returncode: 0
-- elapsed_ms: 128
+- elapsed_ms: 125
 - bytes: 768
 - sha256: `c34f9fbad2aca0e2e12efefac4286f4cee72806665ec48d469afa5ea6745023d`
 - request: `{"action": "trace.load", "api_version": "xdebug.v1", "args": {"signal": "active_semantics_tb.u_dut.mux_y"}, "target": {"session_id": "native_xout_c"}}`
@@ -3155,10 +3155,10 @@ active_signals:
 ## 083. `session.open` / `setup`
 
 - returncode: 0
-- elapsed_ms: 237
+- elapsed_ms: 528
 - bytes: 50
 - sha256: `801dae73579a41aae7974fb6f2a87487c435c4d93f3e58f31d52451fd6af19f4`
-- request: `{"action": "session.open", "api_version": "xdebug.v1", "args": {"name": "native_xout_x"}, "target": {"daidir": "/home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/.xverif-test-cache/fixtures/xdebug.trace_x_xprop/versions/8efd40845b015e9729763fe8fad3cff590e4399458e80b01b29874d830af18da-prepare-xe7akjqx/resources/out/simv.daidir", "fsdb": "/home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/.xverif-test-cache/fixtures/xdebug.trace_x_xprop/versions/8efd40845b015e9729763fe8fad3cff590e4399458e80b01b29874d830af18da-prepare-xe7akjqx/resources/out/waves.fsdb"}}`
+- request: `{"action": "session.open", "api_version": "xdebug.v1", "args": {"name": "native_xout_x"}, "target": {"daidir": "/home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.trace_x_xprop/versions/8efd40845b015e9729763fe8fad3cff590e4399458e80b01b29874d830af18da-prepare-xe7akjqx/resources/out/simv.daidir", "fsdb": "/home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.trace_x_xprop/versions/8efd40845b015e9729763fe8fad3cff590e4399458e80b01b29874d830af18da-prepare-xe7akjqx/resources/out/waves.fsdb"}}`
 
 <!-- XOUT_BODY phase=final action=session.open role=setup bytes=50 sha256=801dae73579a41aae7974fb6f2a87487c435c4d93f3e58f31d52451fd6af19f4 -->
 ```xout
@@ -3170,7 +3170,7 @@ summary:
 ## 084. `trace.x_origin` / `primary`
 
 - returncode: 0
-- elapsed_ms: 164
+- elapsed_ms: 218
 - bytes: 3267
 - sha256: `310b88bc25fb0d87e27049c7ea6ca40d8393a80f2b711e313a54d721e6f7dff6`
 - request: `{"action": "trace.x_origin", "api_version": "xdebug.v1", "args": {"signal": "trace_x_xprop_tb.observed", "time": "18ns", "value_format": "hex"}, "target": {"session_id": "native_xout_x"}}`
@@ -3271,7 +3271,7 @@ chains:
 ## 085. `value.at` / `primary`
 
 - returncode: 0
-- elapsed_ms: 177
+- elapsed_ms: 243
 - bytes: 101
 - sha256: `f73705a07e913aa95c8c0f8eebc4bac5e6a2050de440057f9d936e83aa9b90de`
 - request: `{"action": "value.at", "api_version": "xdebug.v1", "args": {"signal": "ai_complex_top.sig_a", "times": ["75ns", "95ns"], "value_format": "hex"}, "target": {"session_id": "native_xout_w"}}`
@@ -3287,7 +3287,7 @@ values:
 ## 086. `verify.conditions` / `primary`
 
 - returncode: 0
-- elapsed_ms: 129
+- elapsed_ms: 176
 - bytes: 857
 - sha256: `746abce87927da529d404179108813dc06b176fcb84e92594d62bfc9d8c2092c`
 - request: `{"action": "verify.conditions", "api_version": "xdebug.v1", "args": {"clock": "ai_complex_top.clk", "conditions": [{"expr": "a == 8'hff"}], "signals": {"a": "ai_complex_top.sig_a"}, "time": "95ns"}, "target": {"session_id": "native_xout_w"}}`
@@ -3330,7 +3330,7 @@ clock_context.effective_sampling:
 ## 087. `waveform.cursor.set` / `setup`
 
 - returncode: 0
-- elapsed_ms: 117
+- elapsed_ms: 142
 - bytes: 180
 - sha256: `7d0f88b6136a069f5948a080a428308918e0acf1e6f15082cbff94e8b3642e49`
 - request: `{"action": "waveform.cursor.set", "api_version": "xdebug.v1", "args": {"name": "mark_delete", "time": "75ns"}, "target": {"session_id": "native_xout_w"}}`
@@ -3355,7 +3355,7 @@ metadata:
 ## 088. `waveform.cursor.delete` / `primary`
 
 - returncode: 0
-- elapsed_ms: 117
+- elapsed_ms: 133
 - bytes: 101
 - sha256: `59bf99b00ace9f13a7ef4feb05b3ccc2515c3adce1a94cc790ceb537985f29b4`
 - request: `{"action": "waveform.cursor.delete", "api_version": "xdebug.v1", "args": {"name": "mark_delete"}, "target": {"session_id": "native_xout_w"}}`
@@ -3372,7 +3372,7 @@ summary:
 ## 089. `waveform.cursor.set` / `setup`
 
 - returncode: 0
-- elapsed_ms: 120
+- elapsed_ms: 125
 - bytes: 177
 - sha256: `26e183e4d55e02b4cf02aa3c31ae2275ec9c79846d8e612d6cb7ae74d4cca702`
 - request: `{"action": "waveform.cursor.set", "api_version": "xdebug.v1", "args": {"name": "mark_get", "time": "75ns"}, "target": {"session_id": "native_xout_w"}}`
@@ -3397,7 +3397,7 @@ metadata:
 ## 090. `waveform.cursor.get` / `primary`
 
 - returncode: 0
-- elapsed_ms: 125
+- elapsed_ms: 122
 - bytes: 118
 - sha256: `b4b37c93b48c206c689f5613447b5484e2e3061dffa2295809c6f15ad07a665d`
 - request: `{"action": "waveform.cursor.get", "api_version": "xdebug.v1", "args": {"name": "mark_get"}, "target": {"session_id": "native_xout_w"}}`
@@ -3417,7 +3417,7 @@ metadata:
 ## 091. `waveform.cursor.set` / `setup`
 
 - returncode: 0
-- elapsed_ms: 121
+- elapsed_ms: 132
 - bytes: 182
 - sha256: `9b9b0d1bdae37f456519405d387b08720c37fe6c8beed4187a56b5527ed5e100`
 - request: `{"action": "waveform.cursor.set", "api_version": "xdebug.v1", "args": {"name": "mark_for_list", "time": "75ns"}, "target": {"session_id": "native_xout_w"}}`
@@ -3442,12 +3442,12 @@ metadata:
 ## 092. `waveform.cursor.list` / `primary`
 
 - returncode: 0
-- elapsed_ms: 138
+- elapsed_ms: 128
 - bytes: 302
-- sha256: `98074ae98cd2dc899e906411fdb323a602fedc85ad4e8c51f17139eb0a764fe2`
+- sha256: `c8609a69eb9a7566320798b93fe0c0a6ee3165a747f4bd379c496bd96258afa9`
 - request: `{"action": "waveform.cursor.list", "api_version": "xdebug.v1", "args": {}, "target": {"session_id": "native_xout_w"}}`
 
-<!-- XOUT_BODY phase=final action=waveform.cursor.list role=primary bytes=302 sha256=98074ae98cd2dc899e906411fdb323a602fedc85ad4e8c51f17139eb0a764fe2 -->
+<!-- XOUT_BODY phase=final action=waveform.cursor.list role=primary bytes=302 sha256=c8609a69eb9a7566320798b93fe0c0a6ee3165a747f4bd379c496bd96258afa9 -->
 ```xout
 @xdebug.waveform.cursor.list.v1
 summary:
@@ -3456,14 +3456,14 @@ summary:
 
 cursors:
   name           time  note  origin  clock  created_at  updated_at
-  mark_get       75ns        manual         1785788291  1785788291
-  mark_for_list  75ns        manual         1785788291  1785788291
+  mark_get       75ns        manual         1786279987  1786279987
+  mark_for_list  75ns        manual         1786279987  1786279987
 ```
 
 ## 093. `waveform.cursor.set` / `primary`
 
 - returncode: 0
-- elapsed_ms: 132
+- elapsed_ms: 131
 - bytes: 181
 - sha256: `8c1072d673f4e061d81e419a43e8d0e21df83cb53e04e19ab5baa597ae2f6b14`
 - request: `{"action": "waveform.cursor.set", "api_version": "xdebug.v1", "args": {"name": "mark_primary", "time": "75ns"}, "target": {"session_id": "native_xout_w"}}`
@@ -3488,7 +3488,7 @@ metadata:
 ## 094. `waveform.cursor.set` / `setup`
 
 - returncode: 0
-- elapsed_ms: 116
+- elapsed_ms: 155
 - bytes: 177
 - sha256: `1f84cdf3e567a52744003b46fc200058841c911d3fd15ca9c99d592ff3efed7c`
 - request: `{"action": "waveform.cursor.set", "api_version": "xdebug.v1", "args": {"name": "mark_use", "time": "75ns"}, "target": {"session_id": "native_xout_w"}}`
@@ -3513,7 +3513,7 @@ metadata:
 ## 095. `waveform.cursor.use` / `primary`
 
 - returncode: 0
-- elapsed_ms: 112
+- elapsed_ms: 129
 - bytes: 140
 - sha256: `c725b84a7a395887e7a38b2490f17c603e25cccaa5f8043472bdd253cccb449f`
 - request: `{"action": "waveform.cursor.use", "api_version": "xdebug.v1", "args": {"name": "mark_use"}, "target": {"session_id": "native_xout_w"}}`
@@ -3533,7 +3533,7 @@ metadata:
 ## 096. `window.verify` / `primary`
 
 - returncode: 0
-- elapsed_ms: 135
+- elapsed_ms: 152
 - bytes: 919
 - sha256: `e4d501dfb7671826e9670ac17eabf461f11d4b121c028119e9c860f808b51445`
 - request: `{"action": "window.verify", "api_version": "xdebug.v1", "args": {"clock": "ai_complex_top.clk", "conditions": [{"expr": "valid || !valid", "mode": "always"}], "signals": {"valid": "ai_complex_top.hs_valid"}, "time_range": {"begin": "140ns", "end": "175ns"}}, "target": {"session_id": "native_xout_w"}}`
@@ -3579,7 +3579,7 @@ conditions:
 ## 097. `trace.active_driver_chain` / `protection:012`
 
 - returncode: 0
-- elapsed_ms: 149
+- elapsed_ms: 167
 - bytes: 1243
 - sha256: `f507e12613367fd9c651184ed2074ef19de09e65cab6873075651dcc54d83c0d`
 - request: `{"action": "trace.active_driver_chain", "api_version": "xdebug.v1", "args": {"signal": "active_semantics_tb.u_dut.ambiguous_rhs_out", "time": "26ns"}, "target": {"session_id": "native_xout_c"}}`
@@ -3622,7 +3622,7 @@ ambiguous_rhs_samples:
 ## 098. `trace.active_driver_chain` / `protection:013`
 
 - returncode: 0
-- elapsed_ms: 152
+- elapsed_ms: 178
 - bytes: 1804
 - sha256: `a8a9bd19cdf4bd70f4e3ed28ae79c8271140b6d67a085a02bc654eca891e3302`
 - request: `{"action": "trace.active_driver_chain", "api_version": "xdebug.v1", "args": {"signal": "active_semantics_tb.u_dut.chain_out", "time": "26ns"}, "target": {"session_id": "native_xout_c"}}`
@@ -3676,7 +3676,7 @@ active_signals:
 ## 099. `not.a.real.action` / `error:unknown-action`
 
 - returncode: 1
-- elapsed_ms: 50
+- elapsed_ms: 55
 - bytes: 309
 - sha256: `ae6d50970066f5f62b3d6d150632d251985017a1d8041ac11c7402c41ae00d4e`
 - request: `{"action": "not.a.real.action", "api_version": "xdebug.v1"}`
@@ -3698,7 +3698,7 @@ available_values: ["actions","axi.analysis","expr.eval_at"]
 ## 100. `schema` / `error:schema-missing-field`
 
 - returncode: 1
-- elapsed_ms: 58
+- elapsed_ms: 71
 - bytes: 436
 - sha256: `39bd6a0c52779cd447c80be96e16e3ddd89c6f54c61e8229a6090f224a35f119`
 - request: `{"action": "schema", "api_version": "xdebug.v1", "args": {}}`
@@ -3723,7 +3723,7 @@ correct_example:
 ## 101. `session.doctor` / `error:session-not-found`
 
 - returncode: 1
-- elapsed_ms: 60
+- elapsed_ms: 70
 - bytes: 164
 - sha256: `f920b3aebe5ff1269b357203185374ce503c3dc636e74e74b0e2845b79109d0c`
 - request: `{"action": "session.doctor", "api_version": "xdebug.v1", "args": {}, "target": {"session_id": "missing"}}`
@@ -3742,7 +3742,7 @@ error_layer: session_manager
 ## 102. `expr.normalize` / `error:expression-syntax`
 
 - returncode: 1
-- elapsed_ms: 107
+- elapsed_ms: 126
 - bytes: 472
 - sha256: `b504f051cb25bde7f906d4d0f5b1688bba326950057d3a8b45dfe53caf61c7b9`
 - request: `{"action": "expr.normalize", "api_version": "xdebug.v1", "args": {"expr": "valid &&"}}`
@@ -3770,7 +3770,7 @@ next_actions:
 ## 103. `value.at` / `error:signal-not-found`
 
 - returncode: 1
-- elapsed_ms: 120
+- elapsed_ms: 131
 - bytes: 595
 - sha256: `7e6a5c42e9127368cda7257c66ecec412a668bd20af94a36e4ad0ced9a6a1e39`
 - request: `{"action": "value.at", "api_version": "xdebug.v1", "args": {"signal": "ai_complex_top.no_such", "time": "10ns"}, "target": {"session_id": "native_xout_w"}}`
@@ -3799,7 +3799,7 @@ next_actions:
 ## 104. `signal.changes` / `error:invalid-time`
 
 - returncode: 1
-- elapsed_ms: 112
+- elapsed_ms: 127
 - bytes: 449
 - sha256: `812f2c5e5dd19df67d9c1dd32ec61ffdeacac436ad2379094ae5e8d637b14de0`
 - request: `{"action": "signal.changes", "api_version": "xdebug.v1", "args": {"signal": "ai_complex_top.sig_a", "time_range": {"begin": "bad", "end": "10ns"}}, "target": {"session_id": "native_xout_w"}}`
@@ -3823,7 +3823,7 @@ correct_example:
 ## 105. `stream.query` / `error:config-not-found`
 
 - returncode: 1
-- elapsed_ms: 212
+- elapsed_ms: 195
 - bytes: 753
 - sha256: `07340ac1a2e4873129c0352bd2ddd667c2a5528f3236239b81fe56a08d315068`
 - request: `{"action": "stream.query", "api_version": "xdebug.v1", "args": {"query": "summary", "stream": "missing_stream"}, "target": {"session_id": "native_xout_s"}}`
@@ -3854,10 +3854,10 @@ next_actions:
 ## 106. `stream.export` / `error:invalid-output-format`
 
 - returncode: 1
-- elapsed_ms: 93
+- elapsed_ms: 79
 - bytes: 719
 - sha256: `6e9bb667e6d5175ab596d27cb133016ef9d48883cfd29a8b7cda8f78f43d1e2b`
-- request: `{"action": "stream.export", "api_version": "xdebug.v1", "args": {"output": {"file_format": "binary", "path": "/tmp/pytest-of-ryan/pytest-591/test_all_runtime_actions_emit_0/bad"}, "stream": "ready_stream"}, "target": {"session_id": "native_xout_s"}}`
+- request: `{"action": "stream.export", "api_version": "xdebug.v1", "args": {"output": {"file_format": "binary", "path": "/tmp/pytest-of-ryan/pytest-719/popen-gw0/test_all_runtime_actions_emit_0/bad"}, "stream": "ready_stream"}, "target": {"session_id": "native_xout_s"}}`
 
 <!-- XOUT_BODY phase=final action=stream.export role=error:invalid-output-format bytes=719 sha256=6e9bb667e6d5175ab596d27cb133016ef9d48883cfd29a8b7cda8f78f43d1e2b -->
 ```xout
@@ -3880,7 +3880,7 @@ correct_example:
 ## 107. `waveform.cursor.get` / `error:cursor-not-found`
 
 - returncode: 1
-- elapsed_ms: 142
+- elapsed_ms: 126
 - bytes: 166
 - sha256: `5caf66507014c4ffe3106f69fe430102c109ac7b8787301570513064a14c0b4b`
 - request: `{"action": "waveform.cursor.get", "api_version": "xdebug.v1", "args": {"name": "missing_cursor"}, "target": {"session_id": "native_xout_w"}}`
@@ -3899,7 +3899,7 @@ error_layer: handler
 ## 108. `apb.query` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 156
+- elapsed_ms: 142
 - bytes: 693
 - sha256: `b7e6f8b5face476166ab8e38b64fcd6737c81b89ced24f096d16e6adfc222c9b`
 - request: `{"action": "apb.query", "api_version": "xdebug.v1", "args": {"name": "apb0", "query": {"line_limit": 2}, "value_format": "bin"}, "target": {"session_id": "native_xout_p"}}`
@@ -3934,7 +3934,7 @@ transactions:
 ## 109. `apb.query` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 133
+- elapsed_ms: 148
 - bytes: 534
 - sha256: `2be2e051fb7fae045fe7e557b47d5f45354d235c9898b3a7e19f67fd0b5b9eae`
 - request: `{"action": "apb.query", "api_version": "xdebug.v1", "args": {"name": "apb0", "query": {"line_limit": 2}, "value_format": "dec"}, "target": {"session_id": "native_xout_p"}}`
@@ -3969,7 +3969,7 @@ transactions:
 ## 110. `apb.statistics` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 193
+- elapsed_ms: 142
 - bytes: 725
 - sha256: `43e0861890315acdb7b2f2ec079254aae44f0366334ff89f39ba1d88af419ee7`
 - request: `{"action": "apb.statistics", "api_version": "xdebug.v1", "args": {"name": "apb0", "value_format": "bin"}, "target": {"session_id": "native_xout_p"}}`
@@ -4003,7 +4003,7 @@ notes:
 ## 111. `apb.statistics` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 157
+- elapsed_ms: 140
 - bytes: 725
 - sha256: `43e0861890315acdb7b2f2ec079254aae44f0366334ff89f39ba1d88af419ee7`
 - request: `{"action": "apb.statistics", "api_version": "xdebug.v1", "args": {"name": "apb0", "value_format": "dec"}, "target": {"session_id": "native_xout_p"}}`
@@ -4037,7 +4037,7 @@ notes:
 ## 112. `apb.transaction.cursor` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 257
+- elapsed_ms: 133
 - bytes: 610
 - sha256: `0b93de36628cdc40b35d73f957ab2e0c8a3577aeedd8a5b5a7fe0e1eedae9601`
 - request: `{"action": "apb.transaction.cursor", "api_version": "xdebug.v1", "args": {"name": "apb0", "op": "begin", "value_format": "bin"}, "target": {"session_id": "native_xout_p"}}`
@@ -4072,7 +4072,7 @@ transaction:
 ## 113. `apb.transaction.cursor` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 115
+- elapsed_ms: 155
 - bytes: 556
 - sha256: `427f1c65dbd740fc8491785d6558e4076c471ed9b5e97f16d6d5b3a28bf50fe1`
 - request: `{"action": "apb.transaction.cursor", "api_version": "xdebug.v1", "args": {"name": "apb0", "op": "begin", "value_format": "dec"}, "target": {"session_id": "native_xout_p"}}`
@@ -4107,7 +4107,7 @@ transaction:
 ## 114. `apb.transfer_window` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 120
+- elapsed_ms: 146
 - bytes: 1381
 - sha256: `367a909efe285e39b7b2aa070930d7991dd534ebb76d30b2511cdb71d05f2772`
 - request: `{"action": "apb.transfer_window", "api_version": "xdebug.v1", "args": {"name": "apb0", "value_format": "bin"}, "target": {"session_id": "native_xout_p"}}`
@@ -4143,7 +4143,7 @@ transactions:
 ## 115. `apb.transfer_window` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 123
+- elapsed_ms: 126
 - bytes: 820
 - sha256: `ee7c7f8d23a7e7a40ed48d593af4b0146efb9f5e8508e4925780ef21b0e06b9c`
 - request: `{"action": "apb.transfer_window", "api_version": "xdebug.v1", "args": {"name": "apb0", "value_format": "dec"}, "target": {"session_id": "native_xout_p"}}`
@@ -4179,7 +4179,7 @@ transactions:
 ## 116. `axi.analysis` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 188
+- elapsed_ms: 226
 - bytes: 2498
 - sha256: `95bf87e961d9b440f3bf5af3e62357494eb5fc3149d5fb70b76ad9b103cb650b`
 - request: `{"action": "axi.analysis", "api_version": "xdebug.v1", "args": {"analysis": "latency", "direction": "all", "name": "axi0", "value_format": "bin"}, "target": {"session_id": "native_xout_a"}}`
@@ -4277,7 +4277,7 @@ slowest.response:
 ## 117. `axi.analysis` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 177
+- elapsed_ms: 209
 - bytes: 2417
 - sha256: `a545402cc62083cf2289490655ec31738396a11fc22b199db1dec22ecef855f7`
 - request: `{"action": "axi.analysis", "api_version": "xdebug.v1", "args": {"analysis": "latency", "direction": "all", "name": "axi0", "value_format": "dec"}, "target": {"session_id": "native_xout_a"}}`
@@ -4375,10 +4375,10 @@ slowest.response:
 ## 118. `axi.export` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 129
+- elapsed_ms: 149
 - bytes: 962
 - sha256: `d0651474b53df0e8fcaa299c62f27ddb2bd6a7188117e86fe2d2d98c527942e6`
-- request: `{"action": "axi.export", "api_version": "xdebug.v1", "args": {"name": "axi0", "output": {"file_format": "tsv", "path": "/tmp/pytest-of-ryan/pytest-591/test_all_runtime_actions_emit_0/axi-bin"}, "time_range": {"begin": "0ns", "end": "1us"}, "value_format": "bin"}, "target": {"session_id": "native_xout_a"}}`
+- request: `{"action": "axi.export", "api_version": "xdebug.v1", "args": {"name": "axi0", "output": {"file_format": "tsv", "path": "/tmp/pytest-of-ryan/pytest-719/popen-gw0/test_all_runtime_actions_emit_0/axi-bin"}, "time_range": {"begin": "0ns", "end": "1us"}, "value_format": "bin"}, "target": {"session_id": "native_xout_a"}}`
 
 <!-- XOUT_BODY phase=final action=axi.export role=value-format:bin bytes=962 sha256=d0651474b53df0e8fcaa299c62f27ddb2bd6a7188117e86fe2d2d98c527942e6 -->
 ```xout
@@ -4411,10 +4411,10 @@ summary:
 ## 119. `axi.export` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 174
+- elapsed_ms: 128
 - bytes: 962
 - sha256: `d0651474b53df0e8fcaa299c62f27ddb2bd6a7188117e86fe2d2d98c527942e6`
-- request: `{"action": "axi.export", "api_version": "xdebug.v1", "args": {"name": "axi0", "output": {"file_format": "tsv", "path": "/tmp/pytest-of-ryan/pytest-591/test_all_runtime_actions_emit_0/axi-dec"}, "time_range": {"begin": "0ns", "end": "1us"}, "value_format": "dec"}, "target": {"session_id": "native_xout_a"}}`
+- request: `{"action": "axi.export", "api_version": "xdebug.v1", "args": {"name": "axi0", "output": {"file_format": "tsv", "path": "/tmp/pytest-of-ryan/pytest-719/popen-gw0/test_all_runtime_actions_emit_0/axi-dec"}, "time_range": {"begin": "0ns", "end": "1us"}, "value_format": "dec"}, "target": {"session_id": "native_xout_a"}}`
 
 <!-- XOUT_BODY phase=final action=axi.export role=value-format:dec bytes=962 sha256=d0651474b53df0e8fcaa299c62f27ddb2bd6a7188117e86fe2d2d98c527942e6 -->
 ```xout
@@ -4447,7 +4447,7 @@ summary:
 ## 120. `axi.latency_outlier` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 200
+- elapsed_ms: 170
 - bytes: 1763
 - sha256: `329dff0700f1be4280451702a972d1c84b6d82a11ca460b1c8bbdc2bbbfb7c77`
 - request: `{"action": "axi.latency_outlier", "api_version": "xdebug.v1", "args": {"line_limit": 2, "method": "top_n", "name": "axi0", "top_n": 2, "value_format": "bin"}, "target": {"session_id": "native_xout_a"}}`
@@ -4479,7 +4479,7 @@ outliers:
 ## 121. `axi.latency_outlier` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 164
+- elapsed_ms: 159
 - bytes: 1583
 - sha256: `679682f7e95f44009635bed1f5e982878651916d567c4d49687c8a4792c4f930`
 - request: `{"action": "axi.latency_outlier", "api_version": "xdebug.v1", "args": {"line_limit": 2, "method": "top_n", "name": "axi0", "top_n": 2, "value_format": "dec"}, "target": {"session_id": "native_xout_a"}}`
@@ -4511,7 +4511,7 @@ outliers:
 ## 122. `axi.query` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 186
+- elapsed_ms: 164
 - bytes: 6935
 - sha256: `4b897c29254c008736984e09cc7f988dca1c3fb1f211b82fbdb15f3edf9f2e9b`
 - request: `{"action": "axi.query", "api_version": "xdebug.v1", "args": {"direction": "write", "name": "axi0", "query": {"line_limit": 2}, "value_format": "bin"}, "target": {"session_id": "native_xout_a"}}`
@@ -4602,7 +4602,7 @@ transaction_2_response:
 ## 123. `axi.query` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 144
+- elapsed_ms: 167
 - bytes: 2256
 - sha256: `c7619a4cecb2dfb00505df6ad7606aa6eacaff33f6f3535746c3ba6361c4f671`
 - request: `{"action": "axi.query", "api_version": "xdebug.v1", "args": {"direction": "write", "name": "axi0", "query": {"line_limit": 2}, "value_format": "dec"}, "target": {"session_id": "native_xout_a"}}`
@@ -4693,7 +4693,7 @@ transaction_2_response:
 ## 124. `axi.request_response_pair` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 126
+- elapsed_ms: 150
 - bytes: 2284
 - sha256: `5bcac6c186d340d6b3e32c59f436e1feac1190c69b7d256d89c956f32b0dc3e9`
 - request: `{"action": "axi.request_response_pair", "api_version": "xdebug.v1", "args": {"direction": "all", "line_limit": 2, "name": "axi0", "value_format": "bin"}, "target": {"session_id": "native_xout_a"}}`
@@ -4737,7 +4737,7 @@ transactions:
 ## 125. `axi.request_response_pair` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 127
+- elapsed_ms: 122
 - bytes: 2104
 - sha256: `1d5e86040944dee00b0f87aa70760d23ee15272b14946148de0b3d716e6a3932`
 - request: `{"action": "axi.request_response_pair", "api_version": "xdebug.v1", "args": {"direction": "all", "line_limit": 2, "name": "axi0", "value_format": "dec"}, "target": {"session_id": "native_xout_a"}}`
@@ -4781,7 +4781,7 @@ transactions:
 ## 126. `axi.statistics` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 126
+- elapsed_ms: 149
 - bytes: 739
 - sha256: `74f6c70d189cb790e9b09fb8b4f0c89b7199418027cc3b260e035ee6adaf462c`
 - request: `{"action": "axi.statistics", "api_version": "xdebug.v1", "args": {"name": "axi0", "value_format": "bin"}, "target": {"session_id": "native_xout_a"}}`
@@ -4815,7 +4815,7 @@ notes:
 ## 127. `axi.statistics` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 137
+- elapsed_ms: 145
 - bytes: 739
 - sha256: `74f6c70d189cb790e9b09fb8b4f0c89b7199418027cc3b260e035ee6adaf462c`
 - request: `{"action": "axi.statistics", "api_version": "xdebug.v1", "args": {"name": "axi0", "value_format": "dec"}, "target": {"session_id": "native_xout_a"}}`
@@ -4849,7 +4849,7 @@ notes:
 ## 128. `axi.transaction.cursor` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 121
+- elapsed_ms: 134
 - bytes: 1203
 - sha256: `d2e1154d0efcc89e56e457d169b76635e430450152cf0ddea60bb28630ab9e51`
 - request: `{"action": "axi.transaction.cursor", "api_version": "xdebug.v1", "args": {"direction": "all", "name": "axi0", "op": "begin", "value_format": "bin"}, "target": {"session_id": "native_xout_a"}}`
@@ -4906,7 +4906,7 @@ transaction.response:
 ## 129. `axi.transaction.cursor` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 119
+- elapsed_ms: 133
 - bytes: 1121
 - sha256: `0ed82c5a39f0eace56f395361e881a7f2a083d26a98c60ce2f212cc3ee52b0cf`
 - request: `{"action": "axi.transaction.cursor", "api_version": "xdebug.v1", "args": {"direction": "all", "name": "axi0", "op": "begin", "value_format": "dec"}, "target": {"session_id": "native_xout_a"}}`
@@ -4963,7 +4963,7 @@ transaction.response:
 ## 130. `counter.statistics` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 126
+- elapsed_ms: 168
 - bytes: 1190
 - sha256: `5b41a1c0f4c283b3a48f2c813c4c03c567ec7d888678c4db24bd0eb9aedf1356`
 - request: `{"action": "counter.statistics", "api_version": "xdebug.v1", "args": {"clock": "ai_complex_top.clk", "cnt": "ai_complex_top.counter_inc", "edge": "posedge", "time_range": {"begin": "55ns", "end": "95ns"}, "value_format": "bin", "vld": "ai_complex_top.rst_n"}, "target": {"session_id": "native_xout_w"}}`
@@ -5020,7 +5020,7 @@ sampling.effective:
 ## 131. `counter.statistics` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 129
+- elapsed_ms: 156
 - bytes: 1141
 - sha256: `99a04d43d293aac95184875966b7ed0e01c2d6494ce3868b75b691cbc925bbc4`
 - request: `{"action": "counter.statistics", "api_version": "xdebug.v1", "args": {"clock": "ai_complex_top.clk", "cnt": "ai_complex_top.counter_inc", "edge": "posedge", "time_range": {"begin": "55ns", "end": "95ns"}, "value_format": "dec", "vld": "ai_complex_top.rst_n"}, "target": {"session_id": "native_xout_w"}}`
@@ -5077,10 +5077,10 @@ sampling.effective:
 ## 132. `event.export` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 141
+- elapsed_ms: 151
 - bytes: 831
 - sha256: `4d832feeed88d4bc83333c53b81c5ba0e0da2266ea9e4fb2879ac2f7895e3699`
-- request: `{"action": "event.export", "api_version": "xdebug.v1", "args": {"expr": "vld && rdy", "name": "rdy", "output": {"file_format": "json", "path": "/tmp/pytest-of-ryan/pytest-591/test_all_runtime_actions_emit_0/events.json-bin"}, "value_format": "bin"}, "target": {"session_id": "native_xout_e"}}`
+- request: `{"action": "event.export", "api_version": "xdebug.v1", "args": {"expr": "vld && rdy", "name": "rdy", "output": {"file_format": "json", "path": "/tmp/pytest-of-ryan/pytest-719/popen-gw0/test_all_runtime_actions_emit_0/events.json-bin"}, "value_format": "bin"}, "target": {"session_id": "native_xout_e"}}`
 
 <!-- XOUT_BODY phase=final action=event.export role=value-format:bin bytes=831 sha256=4d832feeed88d4bc83333c53b81c5ba0e0da2266ea9e4fb2879ac2f7895e3699 -->
 ```xout
@@ -5121,10 +5121,10 @@ sampling.effective:
 ## 133. `event.export` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 132
+- elapsed_ms: 147
 - bytes: 831
 - sha256: `4d832feeed88d4bc83333c53b81c5ba0e0da2266ea9e4fb2879ac2f7895e3699`
-- request: `{"action": "event.export", "api_version": "xdebug.v1", "args": {"expr": "vld && rdy", "name": "rdy", "output": {"file_format": "json", "path": "/tmp/pytest-of-ryan/pytest-591/test_all_runtime_actions_emit_0/events.json-dec"}, "value_format": "dec"}, "target": {"session_id": "native_xout_e"}}`
+- request: `{"action": "event.export", "api_version": "xdebug.v1", "args": {"expr": "vld && rdy", "name": "rdy", "output": {"file_format": "json", "path": "/tmp/pytest-of-ryan/pytest-719/popen-gw0/test_all_runtime_actions_emit_0/events.json-dec"}, "value_format": "dec"}, "target": {"session_id": "native_xout_e"}}`
 
 <!-- XOUT_BODY phase=final action=event.export role=value-format:dec bytes=831 sha256=4d832feeed88d4bc83333c53b81c5ba0e0da2266ea9e4fb2879ac2f7895e3699 -->
 ```xout
@@ -5165,7 +5165,7 @@ sampling.effective:
 ## 134. `event.find` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 137
+- elapsed_ms: 135
 - bytes: 844
 - sha256: `90f53944a09c31d3f98b3dc61f80a855027be27849a336c8299dba1e4e01c381`
 - request: `{"action": "event.find", "api_version": "xdebug.v1", "args": {"expr": "vld && rdy", "line_limit": 2, "mode": "all", "name": "rdy", "value_format": "bin"}, "target": {"session_id": "native_xout_e"}}`
@@ -5212,7 +5212,7 @@ events:
 ## 135. `event.find` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 172
+- elapsed_ms: 139
 - bytes: 844
 - sha256: `82f964cbd5943b05aa4ea3452406d30095103352adef03a38c41a8cc6e826efd`
 - request: `{"action": "event.find", "api_version": "xdebug.v1", "args": {"expr": "vld && rdy", "line_limit": 2, "mode": "all", "name": "rdy", "value_format": "dec"}, "target": {"session_id": "native_xout_e"}}`
@@ -5259,7 +5259,7 @@ events:
 ## 136. `expr.eval_at` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 162
+- elapsed_ms: 149
 - bytes: 849
 - sha256: `6e131b5cb9a7c1217ad1636027e53fd2ccdc02c2d6487e1977da85878703086f`
 - request: `{"action": "expr.eval_at", "api_version": "xdebug.v1", "args": {"clock": "ai_complex_top.clk", "expr": "valid && !ready", "signals": {"ready": "ai_complex_top.hs_ready", "valid": "ai_complex_top.hs_valid"}, "time": "145ns", "value_format": "bin"}, "target": {"session_id": "native_xout_w"}}`
@@ -5306,7 +5306,7 @@ expr_samples:
 ## 137. `expr.eval_at` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 132
+- elapsed_ms: 160
 - bytes: 926
 - sha256: `e15e0d8e4be9bb9bf4c1c8ae0d97ea29ef059746640b4727485aa55ba4d6c43e`
 - request: `{"action": "expr.eval_at", "api_version": "xdebug.v1", "args": {"clock": "ai_complex_top.clk", "expr": "valid && !ready", "signals": {"ready": "ai_complex_top.hs_ready", "valid": "ai_complex_top.hs_valid"}, "time": "145ns", "value_format": "dec"}, "target": {"session_id": "native_xout_w"}}`
@@ -5355,7 +5355,7 @@ expr_samples:
 ## 138. `list.first_change` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 193
+- elapsed_ms: 162
 - bytes: 431
 - sha256: `f5c6b80cdc0afe5093339c9299c0c7f5a25e4703ca545cf3aa6e65ecb6f01cde`
 - request: `{"action": "list.first_change", "api_version": "xdebug.v1", "args": {"name": "basic_first_change", "time_range": {"begin": "0ns", "end": "120ns"}, "value_format": "bin"}, "target": {"session_id": "native_xout_w"}}`
@@ -5379,7 +5379,7 @@ changed_signals:
 ## 139. `list.first_change` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 133
+- elapsed_ms: 170
 - bytes: 404
 - sha256: `43dd0a7603894c6bd76afe40b7b7e0307883703142da8ec2e370a184c2738781`
 - request: `{"action": "list.first_change", "api_version": "xdebug.v1", "args": {"name": "basic_first_change", "time_range": {"begin": "0ns", "end": "120ns"}, "value_format": "dec"}, "target": {"session_id": "native_xout_w"}}`
@@ -5403,7 +5403,7 @@ changed_signals:
 ## 140. `protocol.handshake.inspect` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 147
+- elapsed_ms: 250
 - bytes: 1029
 - sha256: `80e7303148e4b8b83421c85d9ebc98d0fd2958a9e03e92a24375ac0c7171d2ea`
 - request: `{"action": "protocol.handshake.inspect", "api_version": "xdebug.v1", "args": {"clock": "ai_complex_top.clk", "ready": "ai_complex_top.hs_ready", "valid": "ai_complex_top.hs_valid", "value_format": "bin"}, "target": {"session_id": "native_xout_w"}}`
@@ -5446,7 +5446,7 @@ sampling.effective:
 ## 141. `protocol.handshake.inspect` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 133
+- elapsed_ms: 208
 - bytes: 1029
 - sha256: `80e7303148e4b8b83421c85d9ebc98d0fd2958a9e03e92a24375ac0c7171d2ea`
 - request: `{"action": "protocol.handshake.inspect", "api_version": "xdebug.v1", "args": {"clock": "ai_complex_top.clk", "ready": "ai_complex_top.hs_ready", "valid": "ai_complex_top.hs_valid", "value_format": "dec"}, "target": {"session_id": "native_xout_w"}}`
@@ -5489,7 +5489,7 @@ sampling.effective:
 ## 142. `signal.anomaly.inspect` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 138
+- elapsed_ms: 157
 - bytes: 552
 - sha256: `574b9df787b808fa58006fff898b4ed77a48cd33886cfa8099ccd2c58e9e51aa`
 - request: `{"action": "signal.anomaly.inspect", "api_version": "xdebug.v1", "args": {"checks": [{"type": "unknown_xz"}], "line_limit": 4, "signals": ["xif_event_top.xz_data"], "time_range": {"begin": "0ns", "end": "200ns"}, "value_format": "bin"}, "target": {"session_id": "native_xout_e"}}`
@@ -5518,7 +5518,7 @@ scan_status:
 ## 143. `signal.anomaly.inspect` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 122
+- elapsed_ms: 135
 - bytes: 577
 - sha256: `da842a120b74269215a0346d618882cb3aeba42f6724c1872ce845caaf8192a3`
 - request: `{"action": "signal.anomaly.inspect", "api_version": "xdebug.v1", "args": {"checks": [{"type": "unknown_xz"}], "line_limit": 4, "signals": ["xif_event_top.xz_data"], "time_range": {"begin": "0ns", "end": "200ns"}, "value_format": "dec"}, "target": {"session_id": "native_xout_e"}}`
@@ -5547,7 +5547,7 @@ scan_status:
 ## 144. `signal.changes` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 135
+- elapsed_ms: 166
 - bytes: 834
 - sha256: `1f0bb5537d858b4c81d7a08d3d7975de858743318229e2a3d25e9be1df5c6613`
 - request: `{"action": "signal.changes", "api_version": "xdebug.v1", "args": {"line_limit": 2, "signal": "ai_complex_top.sig_a", "time_range": {"begin": "0ns", "end": "120ns"}, "value_format": "bin"}, "target": {"session_id": "native_xout_w"}}`
@@ -5585,7 +5585,7 @@ changes:
 ## 145. `signal.changes` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 200
+- elapsed_ms: 176
 - bytes: 808
 - sha256: `a8be00f77b781ca0c394250354e8a80a9230436ce2d922f718cc4aa2dfcdf72f`
 - request: `{"action": "signal.changes", "api_version": "xdebug.v1", "args": {"line_limit": 2, "signal": "ai_complex_top.sig_a", "time_range": {"begin": "0ns", "end": "120ns"}, "value_format": "dec"}, "target": {"session_id": "native_xout_w"}}`
@@ -5623,7 +5623,7 @@ changes:
 ## 146. `signal.sampled_pulse.inspect` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 162
+- elapsed_ms: 142
 - bytes: 1710
 - sha256: `0545c752451bb852c483db75ba95d916c204628957cf3105db09193b6a524894`
 - request: `{"action": "signal.sampled_pulse.inspect", "api_version": "xdebug.v1", "args": {"clock": "ai_complex_top.clk", "line_limit": 5, "time_range": {"begin": "0ns", "end": "200ns"}, "valid": "ai_complex_top.glitch_sig", "value_format": "bin"}, "target": {"session_id": "native_xout_w"}}`
@@ -5673,7 +5673,7 @@ findings:
 ## 147. `signal.sampled_pulse.inspect` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 125
+- elapsed_ms: 143
 - bytes: 1710
 - sha256: `66eb1f892d463cdab8601b9ad4fa19b5cbf4e247d62a46007a9eb4f3f048a1dd`
 - request: `{"action": "signal.sampled_pulse.inspect", "api_version": "xdebug.v1", "args": {"clock": "ai_complex_top.clk", "line_limit": 5, "time_range": {"begin": "0ns", "end": "200ns"}, "valid": "ai_complex_top.glitch_sig", "value_format": "dec"}, "target": {"session_id": "native_xout_w"}}`
@@ -5723,7 +5723,7 @@ findings:
 ## 148. `signal.stability` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 141
+- elapsed_ms: 143
 - bytes: 578
 - sha256: `63769af11c24abfa8519d95a37c9b42b6f0cc6f1eebbc82e756700b89a59728e`
 - request: `{"action": "signal.stability", "api_version": "xdebug.v1", "args": {"signal": "ai_complex_top.stable_sig", "time_range": {"begin": "0ns", "end": "400ns"}, "value_format": "bin"}, "target": {"session_id": "native_xout_w"}}`
@@ -5757,7 +5757,7 @@ changes:
 ## 149. `signal.stability` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 133
+- elapsed_ms: 155
 - bytes: 578
 - sha256: `bd2adb7c4be69fbacabdbd69ba383ef32d298cf877a83c46a6819ccf4e435983`
 - request: `{"action": "signal.stability", "api_version": "xdebug.v1", "args": {"signal": "ai_complex_top.stable_sig", "time_range": {"begin": "0ns", "end": "400ns"}, "value_format": "dec"}, "target": {"session_id": "native_xout_w"}}`
@@ -5791,7 +5791,7 @@ changes:
 ## 150. `signal.statistics` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 153
+- elapsed_ms: 146
 - bytes: 1195
 - sha256: `f5ce190ec93e439e2602c5589b501b0cc92257b8a8c7b82ceb4df2b22d5508bc`
 - request: `{"action": "signal.statistics", "api_version": "xdebug.v1", "args": {"clock": "ai_complex_top.clk", "signal": "ai_complex_top.hs_valid", "time_range": {"begin": "120ns", "end": "210ns"}, "value_format": "bin"}, "target": {"session_id": "native_xout_w"}}`
@@ -5852,7 +5852,7 @@ activity:
 ## 151. `signal.statistics` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 169
+- elapsed_ms: 154
 - bytes: 1195
 - sha256: `c89044b2b9bbc51c97f41b08def4f42ba80a8e08c034d0c7900f4ccab12b96ad`
 - request: `{"action": "signal.statistics", "api_version": "xdebug.v1", "args": {"clock": "ai_complex_top.clk", "signal": "ai_complex_top.hs_valid", "time_range": {"begin": "120ns", "end": "210ns"}, "value_format": "dec"}, "target": {"session_id": "native_xout_w"}}`
@@ -5913,7 +5913,7 @@ activity:
 ## 152. `signal.xz_verify` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 133
+- elapsed_ms: 159
 - bytes: 645
 - sha256: `01cc078bacfa8f241f9722e99e24a476ab9fa57bb32acfcbef166e26179b2c42`
 - request: `{"action": "signal.xz_verify", "api_version": "xdebug.v1", "args": {"expected_state": "x", "signal": "ai_complex_top.xz_bus", "time_range": {"begin": "86ns", "end": "94ns"}, "value_format": "bin"}, "target": {"session_id": "native_xout_w"}}`
@@ -5946,7 +5946,7 @@ time_range:
 ## 153. `signal.xz_verify` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 144
+- elapsed_ms: 141
 - bytes: 670
 - sha256: `ee3f95dfecd0a92e52ec6f5f833eb25be5548351005973802556dab2806cfc9c`
 - request: `{"action": "signal.xz_verify", "api_version": "xdebug.v1", "args": {"expected_state": "x", "signal": "ai_complex_top.xz_bus", "time_range": {"begin": "86ns", "end": "94ns"}, "value_format": "dec"}, "target": {"session_id": "native_xout_w"}}`
@@ -5979,10 +5979,10 @@ time_range:
 ## 154. `stream.export` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 177
+- elapsed_ms: 264
 - bytes: 1315
 - sha256: `4d6181ade4b402525b2f20b884b9565b9e80e35c0a66e8d9168660353eef60de`
-- request: `{"action": "stream.export", "api_version": "xdebug.v1", "args": {"cache_scope": "full", "kind": "transfer", "output": {"file_format": "tsv", "path": "/tmp/pytest-of-ryan/pytest-591/test_all_runtime_actions_emit_0/stream.tsv-bin"}, "stream": "ready_stream", "time_range": {"begin": "0ns", "end": "1us"}, "value_format": "bin"}, "target": {"session_id": "native_xout_s"}}`
+- request: `{"action": "stream.export", "api_version": "xdebug.v1", "args": {"cache_scope": "full", "kind": "transfer", "output": {"file_format": "tsv", "path": "/tmp/pytest-of-ryan/pytest-719/popen-gw0/test_all_runtime_actions_emit_0/stream.tsv-bin"}, "stream": "ready_stream", "time_range": {"begin": "0ns", "end": "1us"}, "value_format": "bin"}, "target": {"session_id": "native_xout_s"}}`
 
 <!-- XOUT_BODY phase=final action=stream.export role=value-format:bin bytes=1315 sha256=4d6181ade4b402525b2f20b884b9565b9e80e35c0a66e8d9168660353eef60de -->
 ```xout
@@ -6027,10 +6027,10 @@ summary:
 ## 155. `stream.export` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 181
+- elapsed_ms: 211
 - bytes: 1315
 - sha256: `4d6181ade4b402525b2f20b884b9565b9e80e35c0a66e8d9168660353eef60de`
-- request: `{"action": "stream.export", "api_version": "xdebug.v1", "args": {"cache_scope": "full", "kind": "transfer", "output": {"file_format": "tsv", "path": "/tmp/pytest-of-ryan/pytest-591/test_all_runtime_actions_emit_0/stream.tsv-dec"}, "stream": "ready_stream", "time_range": {"begin": "0ns", "end": "1us"}, "value_format": "dec"}, "target": {"session_id": "native_xout_s"}}`
+- request: `{"action": "stream.export", "api_version": "xdebug.v1", "args": {"cache_scope": "full", "kind": "transfer", "output": {"file_format": "tsv", "path": "/tmp/pytest-of-ryan/pytest-719/popen-gw0/test_all_runtime_actions_emit_0/stream.tsv-dec"}, "stream": "ready_stream", "time_range": {"begin": "0ns", "end": "1us"}, "value_format": "dec"}, "target": {"session_id": "native_xout_s"}}`
 
 <!-- XOUT_BODY phase=final action=stream.export role=value-format:dec bytes=1315 sha256=4d6181ade4b402525b2f20b884b9565b9e80e35c0a66e8d9168660353eef60de -->
 ```xout
@@ -6075,7 +6075,7 @@ summary:
 ## 156. `stream.query` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 391
+- elapsed_ms: 587
 - bytes: 2548
 - sha256: `d275ed1977cd63b00ca028e540974ffcbaacb50fa1ace76669c8c502e0a082d2`
 - request: `{"action": "stream.query", "api_version": "xdebug.v1", "args": {"packet_index": 3, "query": "packet_at", "stream": "ready_packet", "time_range": {"begin": "0ns", "end": "1us"}, "value_format": "bin"}, "target": {"session_id": "native_xout_s"}}`
@@ -6160,7 +6160,7 @@ packet.beat_fields_preview.head:
 ## 157. `stream.query` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 403
+- elapsed_ms: 487
 - bytes: 2327
 - sha256: `6210af302ad35b881ee7431a44d4d45136a196bba55387a95aa483fe78fb9ee1`
 - request: `{"action": "stream.query", "api_version": "xdebug.v1", "args": {"packet_index": 3, "query": "packet_at", "stream": "ready_packet", "time_range": {"begin": "0ns", "end": "1us"}, "value_format": "dec"}, "target": {"session_id": "native_xout_s"}}`
@@ -6245,7 +6245,7 @@ packet.beat_fields_preview.head:
 ## 158. `trace.active_driver_chain` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 151
+- elapsed_ms: 161
 - bytes: 1424
 - sha256: `04e8d4a857b07eac33662176ae3a59470f701bbe53f1e94ac7be69a55382444c`
 - request: `{"action": "trace.active_driver_chain", "api_version": "xdebug.v1", "args": {"signal": "active_semantics_tb.u_dut.mux_y", "time": "26ns", "value_format": "bin"}, "target": {"session_id": "native_xout_c"}}`
@@ -6296,7 +6296,7 @@ active_signals:
 ## 159. `trace.active_driver_chain` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 143
+- elapsed_ms: 168
 - bytes: 1424
 - sha256: `04e8d4a857b07eac33662176ae3a59470f701bbe53f1e94ac7be69a55382444c`
 - request: `{"action": "trace.active_driver_chain", "api_version": "xdebug.v1", "args": {"signal": "active_semantics_tb.u_dut.mux_y", "time": "26ns", "value_format": "dec"}, "target": {"session_id": "native_xout_c"}}`
@@ -6347,7 +6347,7 @@ active_signals:
 ## 160. `trace.x_origin` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 206
+- elapsed_ms: 186
 - bytes: 3261
 - sha256: `063acdf91eafc3d830c907f5dc571c03f8167564b24c9f4361a884d088bc3ac4`
 - request: `{"action": "trace.x_origin", "api_version": "xdebug.v1", "args": {"signal": "trace_x_xprop_tb.observed", "time": "18ns", "value_format": "bin"}, "target": {"session_id": "native_xout_x"}}`
@@ -6448,7 +6448,7 @@ chains:
 ## 161. `trace.x_origin` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 248
+- elapsed_ms: 187
 - bytes: 3309
 - sha256: `4265df69f90a8c8ca3e72ec33614acfe2e8ce72725a1bcaeada3a6874e023168`
 - request: `{"action": "trace.x_origin", "api_version": "xdebug.v1", "args": {"signal": "trace_x_xprop_tb.observed", "time": "18ns", "value_format": "dec"}, "target": {"session_id": "native_xout_x"}}`
@@ -6549,7 +6549,7 @@ chains:
 ## 162. `value.at` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 166
+- elapsed_ms: 239
 - bytes: 119
 - sha256: `843245e8f83466ccbad100de026136634fdb9d434f5811376f522ef4c3dd86f9`
 - request: `{"action": "value.at", "api_version": "xdebug.v1", "args": {"signal": "ai_complex_top.sig_a", "times": ["75ns", "95ns"], "value_format": "bin"}, "target": {"session_id": "native_xout_w"}}`
@@ -6565,7 +6565,7 @@ values:
 ## 163. `value.at` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 178
+- elapsed_ms: 190
 - bytes: 101
 - sha256: `33d0a421548e602b17094cb87e8a4bcfc2904eddf9d64707ecc19d54aaf95345`
 - request: `{"action": "value.at", "api_version": "xdebug.v1", "args": {"signal": "ai_complex_top.sig_a", "times": ["75ns", "95ns"], "value_format": "dec"}, "target": {"session_id": "native_xout_w"}}`
@@ -6581,7 +6581,7 @@ values:
 ## 164. `verify.conditions` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 131
+- elapsed_ms: 124
 - bytes: 857
 - sha256: `9602a028664d503826affbddb26c4ab1da0eca4692df194b57a8628f68af27de`
 - request: `{"action": "verify.conditions", "api_version": "xdebug.v1", "args": {"clock": "ai_complex_top.clk", "conditions": [{"expr": "a == 8'hff"}], "signals": {"a": "ai_complex_top.sig_a"}, "time": "95ns", "value_format": "bin"}, "target": {"session_id": "native_xout_w"}}`
@@ -6624,7 +6624,7 @@ clock_context.effective_sampling:
 ## 165. `verify.conditions` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 132
+- elapsed_ms: 146
 - bytes: 941
 - sha256: `8d6c70905dca83081832d9ac6f619cdd5c6243f21088c44b3f0ebeb02f22b103`
 - request: `{"action": "verify.conditions", "api_version": "xdebug.v1", "args": {"clock": "ai_complex_top.clk", "conditions": [{"expr": "a == 8'hff"}], "signals": {"a": "ai_complex_top.sig_a"}, "time": "95ns", "value_format": "dec"}, "target": {"session_id": "native_xout_w"}}`
@@ -6669,7 +6669,7 @@ clock_context.effective_sampling:
 ## 166. `window.verify` / `value-format:bin`
 
 - returncode: 0
-- elapsed_ms: 126
+- elapsed_ms: 144
 - bytes: 919
 - sha256: `e4d501dfb7671826e9670ac17eabf461f11d4b121c028119e9c860f808b51445`
 - request: `{"action": "window.verify", "api_version": "xdebug.v1", "args": {"clock": "ai_complex_top.clk", "conditions": [{"expr": "valid || !valid", "mode": "always"}], "signals": {"valid": "ai_complex_top.hs_valid"}, "time_range": {"begin": "140ns", "end": "175ns"}, "value_format": "bin"}, "target": {"session_id": "native_xout_w"}}`
@@ -6715,7 +6715,7 @@ conditions:
 ## 167. `window.verify` / `value-format:dec`
 
 - returncode: 0
-- elapsed_ms: 138
+- elapsed_ms: 139
 - bytes: 919
 - sha256: `e4d501dfb7671826e9670ac17eabf461f11d4b121c028119e9c860f808b51445`
 - request: `{"action": "window.verify", "api_version": "xdebug.v1", "args": {"clock": "ai_complex_top.clk", "conditions": [{"expr": "valid || !valid", "mode": "always"}], "signals": {"valid": "ai_complex_top.hs_valid"}, "time_range": {"begin": "140ns", "end": "175ns"}, "value_format": "dec"}, "target": {"session_id": "native_xout_w"}}`
@@ -6761,7 +6761,7 @@ conditions:
 ## 168. `value.at` / `xz:hex`
 
 - returncode: 0
-- elapsed_ms: 235
+- elapsed_ms: 189
 - bytes: 111
 - sha256: `5f5830c4d127197971d9d219fa05fc16535def3176ca79a1bcf26fdac6fe9b53`
 - request: `{"action": "value.at", "api_version": "xdebug.v1", "args": {"signal": "trace_x_xprop_tb.observed", "time": "18ns", "value_format": "hex"}, "target": {"session_id": "native_xout_x"}}`
@@ -6777,7 +6777,7 @@ values:
 ## 169. `value.at` / `xz:bin`
 
 - returncode: 0
-- elapsed_ms: 162
+- elapsed_ms: 175
 - bytes: 103
 - sha256: `40fa208e243de4c2ae90b483bd48830e29be5e0828eb290c2ab7762cab2a4c02`
 - request: `{"action": "value.at", "api_version": "xdebug.v1", "args": {"signal": "trace_x_xprop_tb.observed", "time": "18ns", "value_format": "bin"}, "target": {"session_id": "native_xout_x"}}`
@@ -6793,7 +6793,7 @@ values:
 ## 170. `value.at` / `xz:dec`
 
 - returncode: 0
-- elapsed_ms: 167
+- elapsed_ms: 189
 - bytes: 128
 - sha256: `33797e31f288eb8e6135343d6a833e1c10cdce19c855fcb8302aa0c4e4ae5b27`
 - request: `{"action": "value.at", "api_version": "xdebug.v1", "args": {"signal": "trace_x_xprop_tb.observed", "time": "18ns", "value_format": "dec"}, "target": {"session_id": "native_xout_x"}}`
@@ -6809,12 +6809,12 @@ values:
 ## 171. `session.close` / `teardown`
 
 - returncode: 0
-- elapsed_ms: 159
-- bytes: 665
-- sha256: `1014891e0f273bd507de96fa8542351142363f14edce395338d00c6d353b1663`
+- elapsed_ms: 204
+- bytes: 637
+- sha256: `7ff9a479919a646ca3b41bd77173042c34f501257433cd92795ffd8c2b53c8f4`
 - request: `{"action": "session.close", "api_version": "xdebug.v1", "args": {}, "target": {"session_id": "native_xout_p"}}`
 
-<!-- XOUT_BODY phase=final action=session.close role=teardown bytes=665 sha256=1014891e0f273bd507de96fa8542351142363f14edce395338d00c6d353b1663 -->
+<!-- XOUT_BODY phase=final action=session.close role=teardown bytes=637 sha256=7ff9a479919a646ca3b41bd77173042c34f501257433cd92795ffd8c2b53c8f4 -->
 ```xout
 @xdebug.session.close.v1
 summary:
@@ -6826,10 +6826,10 @@ removed_session:
   transport  : uds
   server_host: eda.ic
   fsdb       : /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.apb_vip/versions/5b0d1be836520bd8421bb4193d12949c5ba4c3098cc94bd1dede3d5a81fb4709-prepare-7hdsu4cf/resources/out/regression/test/apb_vip_test/waves.fsdb
-  socket_path: /home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/tmp/xdebug-1001-f7e10f18f07ae65d.sock
-  server_pid : 1640280
-  created_at : 1785788269
-  last_active: 1785788294
+  socket_path: /home/RD/ryan/work/xverif/tmp/xdebug-1001-f67862925b32b41f.sock
+  server_pid : 3116323
+  created_at : 1786279962
+  last_active: 1786279990
   fsdb_mtime : 1785305080
   fsdb_size  : 21053
   fsdb_dev   : 64770
@@ -6839,12 +6839,12 @@ removed_session:
 ## 172. `session.close` / `teardown`
 
 - returncode: 0
-- elapsed_ms: 710
-- bytes: 672
-- sha256: `6df6f3dfccaaa91a37e12b65c47fd56fbcb77daaf1447693ed130816cc3da868`
+- elapsed_ms: 827
+- bytes: 644
+- sha256: `b623bbb40bd1e3c1364fc0170c4954e33cc5406a5a801d8d816d3afb869def9f`
 - request: `{"action": "session.close", "api_version": "xdebug.v1", "args": {}, "target": {"session_id": "native_xout_a"}}`
 
-<!-- XOUT_BODY phase=final action=session.close role=teardown bytes=672 sha256=6df6f3dfccaaa91a37e12b65c47fd56fbcb77daaf1447693ed130816cc3da868 -->
+<!-- XOUT_BODY phase=final action=session.close role=teardown bytes=644 sha256=b623bbb40bd1e3c1364fc0170c4954e33cc5406a5a801d8d816d3afb869def9f -->
 ```xout
 @xdebug.session.close.v1
 summary:
@@ -6856,10 +6856,10 @@ removed_session:
   transport  : uds
   server_host: eda.ic
   fsdb       : /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.axi_vip/versions/b7a0d81ad90d77fb97c0da6239e1e69a10671089527be0adf5e7a21e5507c1f0-prepare-21inkxj8/resources/out/regression/test/axi_multi_id_test/waves.fsdb
-  socket_path: /home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/tmp/xdebug-1001-2ff3d0ff242e4327.sock
-  server_pid : 1640334
-  created_at : 1785788270
-  last_active: 1785788296
+  socket_path: /home/RD/ryan/work/xverif/tmp/xdebug-1001-7c333083b59168c5.sock
+  server_pid : 3116378
+  created_at : 1786279963
+  last_active: 1786279992
   fsdb_mtime : 1785305487
   fsdb_size  : 4464084
   fsdb_dev   : 64770
@@ -6869,12 +6869,12 @@ removed_session:
 ## 173. `session.close` / `teardown`
 
 - returncode: 0
-- elapsed_ms: 184
-- bytes: 643
-- sha256: `5bda6e293fa785dfe26a02e5e8546a2fe82adf9f1717e496c834896772add5c7`
+- elapsed_ms: 285
+- bytes: 615
+- sha256: `dabbe4d40c0e21e736e6842225e62c777efaaba8355033aa1aadc2e625faf3f9`
 - request: `{"action": "session.close", "api_version": "xdebug.v1", "args": {}, "target": {"session_id": "native_xout_w"}}`
 
-<!-- XOUT_BODY phase=final action=session.close role=teardown bytes=643 sha256=5bda6e293fa785dfe26a02e5e8546a2fe82adf9f1717e496c834896772add5c7 -->
+<!-- XOUT_BODY phase=final action=session.close role=teardown bytes=615 sha256=dabbe4d40c0e21e736e6842225e62c777efaaba8355033aa1aadc2e625faf3f9 -->
 ```xout
 @xdebug.session.close.v1
 summary:
@@ -6886,10 +6886,10 @@ removed_session:
   transport  : uds
   server_host: eda.ic
   fsdb       : /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.ai_complex_wave/versions/a5da8054a5d15693369316da2fb212b16fc10e5e065bc3fe560800ce7e14ee17-prepare-6mprgsuo/resources/out/waves.fsdb
-  socket_path: /home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/tmp/xdebug-1001-4ad5c73dc970c961.sock
-  server_pid : 1640500
-  created_at : 1785788279
-  last_active: 1785788303
+  socket_path: /home/RD/ryan/work/xverif/tmp/xdebug-1001-f3802894aee453ef.sock
+  server_pid : 3116477
+  created_at : 1786279973
+  last_active: 1786279999
   fsdb_mtime : 1785305001
   fsdb_size  : 9232
   fsdb_dev   : 64770
@@ -6899,12 +6899,12 @@ removed_session:
 ## 174. `session.close` / `teardown`
 
 - returncode: 0
-- elapsed_ms: 193
-- bytes: 662
-- sha256: `2c9a2b230f81ba630c915b29841c3601c518261b261a16645b1d282edd11b1d9`
+- elapsed_ms: 244
+- bytes: 634
+- sha256: `1a79b2429439bde63bbbce14dc47685e7fc5d6a1d46ff7c2b835115c673cac3f`
 - request: `{"action": "session.close", "api_version": "xdebug.v1", "args": {}, "target": {"session_id": "native_xout_e"}}`
 
-<!-- XOUT_BODY phase=final action=session.close role=teardown bytes=662 sha256=2c9a2b230f81ba630c915b29841c3601c518261b261a16645b1d282edd11b1d9 -->
+<!-- XOUT_BODY phase=final action=session.close role=teardown bytes=634 sha256=1a79b2429439bde63bbbce14dc47685e7fc5d6a1d46ff7c2b835115c673cac3f -->
 ```xout
 @xdebug.session.close.v1
 summary:
@@ -6916,10 +6916,10 @@ removed_session:
   transport  : uds
   server_host: eda.ic
   fsdb       : /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.xif_event/versions/664ac163a4de5950f40c81bafad04508bf5ea6a1fadbf1eca21aeabe1306ee44-prepare-kh7pipx2/resources/out/waves/xif_event_multi_if_test.fsdb
-  socket_path: /home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/tmp/xdebug-1001-e799fe8782371102.sock
-  server_pid : 1640518
-  created_at : 1785788280
-  last_active: 1785788298
+  socket_path: /home/RD/ryan/work/xverif/tmp/xdebug-1001-2a41edf41a324bc4.sock
+  server_pid : 3116495
+  created_at : 1786279974
+  last_active: 1786279995
   fsdb_mtime : 1785305859
   fsdb_size  : 12029
   fsdb_dev   : 64770
@@ -6929,12 +6929,12 @@ removed_session:
 ## 175. `session.close` / `teardown`
 
 - returncode: 0
-- elapsed_ms: 214
-- bytes: 964
-- sha256: `6c5f808650d9641864215785791b259f7f57a2ad55f0521f744fdcd983c47126`
+- elapsed_ms: 236
+- bytes: 936
+- sha256: `5ea601dd257e49d4027e1c2ee9c4cae08fa671dca8e5428e33e6c63dcb04e817`
 - request: `{"action": "session.close", "api_version": "xdebug.v1", "args": {}, "target": {"session_id": "native_xout_c"}}`
 
-<!-- XOUT_BODY phase=final action=session.close role=teardown bytes=964 sha256=6c5f808650d9641864215785791b259f7f57a2ad55f0521f744fdcd983c47126 -->
+<!-- XOUT_BODY phase=final action=session.close role=teardown bytes=936 sha256=5ea601dd257e49d4027e1c2ee9c4cae08fa671dca8e5428e33e6c63dcb04e817 -->
 ```xout
 @xdebug.session.close.v1
 summary:
@@ -6947,10 +6947,10 @@ removed_session:
   server_host : eda.ic
   daidir      : /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.active_semantics/versions/585596a0b185a09e028b04fdc2653542b7a5eef8b0293f4cd5746ca579a54ea3-prepare-8nux5yqa/resources/out/simv.daidir
   fsdb        : /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.active_semantics/versions/585596a0b185a09e028b04fdc2653542b7a5eef8b0293f4cd5746ca579a54ea3-prepare-8nux5yqa/resources/out/waves.fsdb
-  socket_path : /home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/tmp/xdebug-1001-39188bccaca42ae0.sock
-  server_pid  : 1640751
-  created_at  : 1785788283
-  last_active : 1785788301
+  socket_path : /home/RD/ryan/work/xverif/tmp/xdebug-1001-171d86848a96866a.sock
+  server_pid  : 3116668
+  created_at  : 1786279978
+  last_active : 1786279998
   daidir_mtime: 1785304981
   daidir_size : 4096
   daidir_dev  : 64770
@@ -6964,12 +6964,12 @@ removed_session:
 ## 176. `session.close` / `teardown`
 
 - returncode: 0
-- elapsed_ms: 184
-- bytes: 650
-- sha256: `46db7a8a12cd80c6c5f8beb7e30513bc83afdd480e3fcac5fee184cbf02299ca`
+- elapsed_ms: 199
+- bytes: 622
+- sha256: `ede2be91e78fd808084b7d89f20c6077965c3639eceae806a7ac1ab0c720a6e6`
 - request: `{"action": "session.close", "api_version": "xdebug.v1", "args": {}, "target": {"session_id": "primary_session_open"}}`
 
-<!-- XOUT_BODY phase=final action=session.close role=teardown bytes=650 sha256=46db7a8a12cd80c6c5f8beb7e30513bc83afdd480e3fcac5fee184cbf02299ca -->
+<!-- XOUT_BODY phase=final action=session.close role=teardown bytes=622 sha256=ede2be91e78fd808084b7d89f20c6077965c3639eceae806a7ac1ab0c720a6e6 -->
 ```xout
 @xdebug.session.close.v1
 summary:
@@ -6981,10 +6981,10 @@ removed_session:
   transport  : uds
   server_host: eda.ic
   fsdb       : /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.ai_complex_wave/versions/a5da8054a5d15693369316da2fb212b16fc10e5e065bc3fe560800ce7e14ee17-prepare-6mprgsuo/resources/out/waves.fsdb
-  socket_path: /home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/tmp/xdebug-1001-5587796343cff99d.sock
-  server_pid : 1640829
-  created_at : 1785788285
-  last_active: 1785788285
+  socket_path: /home/RD/ryan/work/xverif/tmp/xdebug-1001-592902b7d3b2d097.sock
+  server_pid : 3116748
+  created_at : 1786279980
+  last_active: 1786279980
   fsdb_mtime : 1785305001
   fsdb_size  : 9232
   fsdb_dev   : 64770
@@ -6995,11 +6995,11 @@ removed_session:
 
 - returncode: 0
 - elapsed_ms: 210
-- bytes: 638
-- sha256: `7517ca19b6d0a159fc3f8ac11997c8b9d58826effaab206ad30eb193ced632a2`
+- bytes: 610
+- sha256: `d850ca756da1144a6fdaa2c4b52cf3f29c349f36e96dd202a89e0187f4f13d82`
 - request: `{"action": "session.close", "api_version": "xdebug.v1", "args": {}, "target": {"session_id": "native_xout_s"}}`
 
-<!-- XOUT_BODY phase=final action=session.close role=teardown bytes=638 sha256=7517ca19b6d0a159fc3f8ac11997c8b9d58826effaab206ad30eb193ced632a2 -->
+<!-- XOUT_BODY phase=final action=session.close role=teardown bytes=610 sha256=d850ca756da1144a6fdaa2c4b52cf3f29c349f36e96dd202a89e0187f4f13d82 -->
 ```xout
 @xdebug.session.close.v1
 summary:
@@ -7011,10 +7011,10 @@ removed_session:
   transport  : uds
   server_host: eda.ic
   fsdb       : /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.stream_v1/versions/5eca27af24084f076f68c6a77c6fe0cb9e0a152332912dbf074cabc3b4600ede-prepare-qrcrom97/resources/out/waves.fsdb
-  socket_path: /home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/tmp/xdebug-1001-329e20c50517aa11.sock
-  server_pid : 1640890
-  created_at : 1785788286
-  last_active: 1785788301
+  socket_path: /home/RD/ryan/work/xverif/tmp/xdebug-1001-e4fd608dc9c77f0b.sock
+  server_pid : 3116844
+  created_at : 1786279981
+  last_active: 1786279997
   fsdb_mtime : 1785305005
   fsdb_size  : 60523
   fsdb_dev   : 64770
@@ -7024,12 +7024,12 @@ removed_session:
 ## 178. `session.close` / `teardown`
 
 - returncode: 0
-- elapsed_ms: 217
-- bytes: 958
-- sha256: `f8bfe73e5a91823f8ad5095aa804c0e2f9e14de52893e8898140e1dfd6731f8d`
+- elapsed_ms: 209
+- bytes: 930
+- sha256: `acad52600003f636a4dc625bc768d775cb77f86ac893b369ca53d3d37f54117d`
 - request: `{"action": "session.close", "api_version": "xdebug.v1", "args": {}, "target": {"session_id": "native_xout_x"}}`
 
-<!-- XOUT_BODY phase=final action=session.close role=teardown bytes=958 sha256=f8bfe73e5a91823f8ad5095aa804c0e2f9e14de52893e8898140e1dfd6731f8d -->
+<!-- XOUT_BODY phase=final action=session.close role=teardown bytes=930 sha256=acad52600003f636a4dc625bc768d775cb77f86ac893b369ca53d3d37f54117d -->
 ```xout
 @xdebug.session.close.v1
 summary:
@@ -7042,10 +7042,10 @@ removed_session:
   server_host : eda.ic
   daidir      : /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.trace_x_xprop/versions/8efd40845b015e9729763fe8fad3cff590e4399458e80b01b29874d830af18da-prepare-xe7akjqx/resources/out/simv.daidir
   fsdb        : /home/RD/ryan/work/xverif/.xverif-test-cache/fixtures/xdebug.trace_x_xprop/versions/8efd40845b015e9729763fe8fad3cff590e4399458e80b01b29874d830af18da-prepare-xe7akjqx/resources/out/waves.fsdb
-  socket_path : /home/RD/ryan/work/tmp/xverif-a3d-rebuild.J9L50K/repo/tmp/xdebug-1001-792645f4a0f30d8c.sock
-  server_pid  : 1640979
-  created_at  : 1785788290
-  last_active : 1785788303
+  socket_path : /home/RD/ryan/work/xverif/tmp/xdebug-1001-11593611750626ee.sock
+  server_pid  : 3116964
+  created_at  : 1786279985
+  last_active : 1786280000
   daidir_mtime: 1785304995
   daidir_size : 4096
   daidir_dev  : 64770

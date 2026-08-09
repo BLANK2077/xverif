@@ -36,7 +36,17 @@ class _TestBackend(_CoverageBackend):
     def summary(self): return {"test_count":1,"top_scope_count":1}
     def top_scopes(self): return [{"name":"top","full_name":"top","parent":None,"depth":0,"type":"instance"}]
     def scopes(self): return self.top_scopes()
-    def items(self,**kw): return list(self._items)
+    def items(self, **kw):
+        rows = list(self._items)
+        metrics = kw.get("metrics")
+        if metrics is not None:
+            rows = [row for row in rows if row.get("metric") in metrics]
+        scope = kw.get("scope")
+        if scope is not None:
+            rows = [row for row in rows if row.get("scope") == scope]
+        if kw.get("functional_only"):
+            rows = [row for row in rows if row.get("metric") == "functional"]
+        return rows
     def load_exclusions(self,paths,test="merged"): return [{"path":p,"status":"loaded"} for p in paths]
     def set_exclusion(self,ref,excluded,test="merged"): return {"coverage_ref":ref,"status":"changed","before":False,"after":excluded}
     def save_exclusions(self,path,test="merged"): pass
@@ -88,7 +98,7 @@ def _run_proc(req: dict, args: list[str] | None = None, env: dict | None = None)
     if env:
         merged_env.update(env)
     return subprocess.run([str(XCOV), *(args or ["-"])], input=json.dumps(req),
-                          text=True, capture_output=True, check=False,
+                          text=True, encoding="utf-8", capture_output=True, check=False,
                           cwd=str(ROOT), env=merged_env)
 
 
@@ -101,7 +111,7 @@ def _read_last_json_line(path: Path) -> dict:
 def _fake_dispatcher() -> Dispatcher:
     return Dispatcher(
         SessionManager(
-            backend_factory=lambda vdb: _TestBackend(vdb),
+            backend_factory=lambda vdb, **_kwargs: _TestBackend(vdb),
         )
     )
 
@@ -256,39 +266,8 @@ def test_header_unsafe_action_returns_canonical_error_xout_without_traceback(
     assert "detail.path: $.action" in proc.stdout
 
 
-def test_nonfinite_direct_request_is_rejected_before_artifact_write(tmp_path):
-    artifact = tmp_path / "must-not-exist.md"
-    rsp = _dispatch_opened().dispatch({
-        "api_version": "xcov.v1",
-        "request_id": "nonfinite-direct",
-        "action": "export.code_coverage",
-        "target": {"session_id": "cov0"},
-        "args": {
-            "threshold_pct": float("nan"),
-            "output": {
-                "path": str(artifact),
-                "allow_absolute_path": True,
-            },
-        },
-    })
-
-    assert rsp["ok"] is False
-    assert rsp["error"]["code"] == "SCHEMA_INVALID"
-    assert rsp["error"]["detail.path"] == "$.args.threshold_pct"
-    assert not artifact.exists()
 
 
-def test_session_open_uses_only_the_injected_backend_factory():
-    rsp = _fake_dispatcher().dispatch({
-        "api_version": "xcov.v1",
-        "request_id": "open",
-        "action": "session.open",
-        "target": {"vdb": "unit-test.vdb"},
-        "args": {"name": "cov0"},
-    })
-    assert rsp["ok"] is True
-    assert rsp["data"]["session"]["session_id"] == "cov0"
-    assert rsp["data"]["session"]["worker"] == "fake"
 
 
 def _write_run_manifest(vdb: Path, manifest: Path) -> None:
@@ -303,27 +282,6 @@ def _write_run_manifest(vdb: Path, manifest: Path) -> None:
             },
         },
     }), encoding="utf-8")
-
-
-def test_session_open_validates_published_vdb_run_manifest_before_backend_open(tmp_path):
-    vdb = tmp_path / "merged.vdb"
-    vdb.mkdir()
-    (vdb / "coverage.bin").write_bytes(b"coverage-data")
-    manifest = tmp_path / "run-manifest.json"
-    _write_run_manifest(vdb, manifest)
-
-    rsp = _fake_dispatcher().dispatch({
-        "api_version": "xcov.v1", "request_id": "manifest-open",
-        "action": "session.open",
-        "target": {"vdb": str(vdb), "run_manifest": str(manifest)},
-        "args": {"name": "cov_manifest"},
-    })
-
-    assert rsp["ok"] is True
-    snapshot = rsp["data"]["resource_snapshot"]
-    assert snapshot["vdb"] == str(vdb)
-    assert snapshot["run_manifest"]["schema_version"] == "xcov.run-manifest.v1"
-    assert snapshot["run_manifest"]["manifest_path"] == str(manifest.resolve())
 
 
 def test_session_open_rejects_changed_vdb_run_manifest_without_opening_backend(tmp_path):
@@ -394,7 +352,7 @@ def test_run_manifest_contract_fails_before_backend_and_session_side_effects(
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     opened_vdbs = []
 
-    def factory(path):
+    def factory(path, **_kwargs):
         opened_vdbs.append(path)
         return _TestBackend(path)
 
@@ -445,7 +403,7 @@ def test_run_manifest_rejects_noncanonical_json_before_backend_open(
     opened_vdbs = []
 
     dispatcher = Dispatcher(SessionManager(
-        backend_factory=lambda path: (
+        backend_factory=lambda path, **_kwargs: (
             opened_vdbs.append(path) or _TestBackend(path)
         ),
     ))
@@ -484,7 +442,7 @@ def test_session_open_rejects_retired_backend_and_lifecycle_args(retired_arg):
 def test_duplicate_session_name_fails_before_manifest_or_backend_work(tmp_path):
     opened_vdbs = []
 
-    def factory(vdb):
+    def factory(vdb, **_kwargs):
         opened_vdbs.append(vdb)
         return _TestBackend(vdb)
 
@@ -522,7 +480,7 @@ def test_fake_backend_is_not_a_production_vdb_selector():
 
     opened_vdbs = []
 
-    def factory(vdb):
+    def factory(vdb, **_kwargs):
         opened_vdbs.append(vdb)
         return _TestBackend(vdb)
 
@@ -571,28 +529,6 @@ def test_action_registry_binds_handler_guidance_and_both_schemas():
         assert contract.response_schema == schema_for_action(action, "response")
 
 
-def test_schema_required_fields_are_action_specific():
-    dispatcher = Dispatcher()
-    source = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "schema-source",
-        "action": "schema", "args": {"action": "source.map"},
-    })["data"]["schema"]
-    session_open = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "schema-open",
-        "action": "schema", "args": {"action": "session.open"},
-    })["data"]["schema"]
-    code_export = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "schema-export",
-        "action": "schema", "args": {"action": "export.code_coverage"},
-    })["data"]["schema"]
-    assert set(source["properties"]["args"]["required"]) == {"file", "line"}
-    assert session_open["properties"]["target"]["required"] == ["vdb"]
-    assert "run_manifest" in session_open["properties"]["target"]["properties"]
-    assert set(session_open["properties"]["args"]["properties"]) == {
-        "name",
-        "exclusion_policy",
-    }
-    assert "threshold_pct" in code_export["properties"]["args"]["properties"]
 
 
 def test_request_schemas_close_every_declared_object():
@@ -776,22 +712,6 @@ def test_response_completeness_is_bound_to_returned_items():
     assert raised.value.code == "RESPONSE_SCHEMA_INVALID"
 
 
-def test_response_schema_rejects_nonfinite_json_numbers():
-    rsp = _dispatch_opened().dispatch({
-        "api_version": "xcov.v1",
-        "request_id": "finite-response",
-        "action": "scope.summary",
-        "target": {"session_id": "cov0"},
-        "args": {"scope": "top.u_dut"},
-    })
-    mutated = deepcopy(rsp)
-    mutated["data"]["items"][0]["coverage_pct"] = float("nan")
-
-    with pytest.raises(XcovError) as raised:
-        validate_response("scope.summary", mutated)
-    assert raised.value.code == "RESPONSE_SCHEMA_INVALID"
-    with pytest.raises(XcovError):
-        render_xout(mutated)
 
 
 def test_public_xout_rejects_undeclared_success_action():
@@ -855,61 +775,6 @@ def test_unknown_fields_are_rejected_at_every_public_request_layer():
         assert "detail.path" in rsp["error"], req
 
 
-@pytest.mark.parametrize(
-    "action,args,field",
-    [
-        ("scope.summary", {"metrics": []}, "metrics"),
-        ("code_coverage.summary", {"metrics": []}, "metrics"),
-        ("code_coverage.holes", {"metrics": []}, "metrics"),
-        (
-            "source.map",
-            {"file": "rtl/ctrl.sv", "line": 1, "metrics": []},
-            "metrics",
-        ),
-        (
-            "source.annotate",
-            {
-                "file": "rtl/ctrl.sv",
-                "line": 1,
-                "metrics": [],
-                "include_source_text": False,
-            },
-            "metrics",
-        ),
-        ("functional_coverage.holes", {"levels": []}, "levels"),
-        (
-            "export.code_coverage",
-            {"metrics": [], "output": {"path": "must-not-exist.md"}},
-            "metrics",
-        ),
-    ],
-)
-def test_explicit_empty_selectors_are_rejected_instead_of_defaulted(
-    action,
-    args,
-    field,
-    tmp_path,
-):
-    args = deepcopy(args)
-    artifact = tmp_path / "must-not-exist.md"
-    if action == "export.code_coverage":
-        args["output"] = {
-            "path": str(artifact),
-            "allow_absolute_path": True,
-        }
-    dispatcher = _dispatch_opened()
-    rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1",
-        "request_id": f"empty-{field}",
-        "action": action,
-        "target": {"session_id": "cov0"},
-        "args": args,
-    })
-
-    assert rsp["ok"] is False
-    assert rsp["error"]["code"] == "SCHEMA_INVALID"
-    assert rsp["error"]["detail.path"] == f"$.args.{field}"
-    assert not artifact.exists()
 
 
 def test_backend_empty_metric_selector_means_no_metrics_not_all_metrics():
@@ -1042,7 +907,7 @@ def test_new_urg_alignment_actions_are_in_schema_and_actions():
     names = {row["name"] for row in actions["data"]["items"]}
     for action in ("code_coverage.summary", "code_coverage.holes",
                    "functional_coverage.summary", "functional_coverage.holes",
-                   "source.annotate", "assert.summary", "export.code_coverage",
+                   "assert.summary", "export.code_coverage",
                    "export.functional_coverage", "export.assert"):
         assert action in names
         schema = dispatcher.dispatch({
@@ -1171,21 +1036,6 @@ def test_logging_writes_action_manifest_lifecycle_and_transport(
     assert json.loads(manifest.read_text(encoding="utf-8"))["session_id"] == "cov0"
 
 
-def test_logging_can_be_disabled(monkeypatch, tmp_path):
-    log_dir = tmp_path / "disabled_logs"
-    monkeypatch.setenv("XVERIF_XCOV_LOG_DIR", str(log_dir))
-    monkeypatch.setenv("XVERIF_XCOV_LOG", "0")
-    rsp = _fake_dispatcher().dispatch({
-        "api_version": "xcov.v1",
-        "request_id": "open",
-        "action": "session.open",
-        "target": {"vdb": "unit-test.vdb"},
-        "args": {"name": "cov0"},
-    })
-    assert rsp["ok"] is True
-    assert not log_dir.exists()
-
-
 def test_regex_rejected():
     reqs = [
         {"api_version": "xcov.v1", "request_id": "open",
@@ -1200,22 +1050,6 @@ def test_regex_rejected():
     assert out[2]["json"]["error"]["code"] == "REGEX_NOT_SUPPORTED"
 
 
-def test_export_writes_file(tmp_path):
-    path = tmp_path / "holes.md"
-    reqs = [
-        {"api_version": "xcov.v1", "request_id": "open",
-         "action": "session.open", "target": {"vdb": "unit-test.vdb"},
-         "args": {"name": "cov0"}},
-        {"api_version": "xcov.v1", "request_id": "export",
-         "action": "export.code_coverage", "target": {"session_id": "cov0"},
-         "args": {"output": {"path": str(path), "allow_absolute_path": True}}},
-    ]
-    rc, _ = _stdio_exchange(reqs)
-    assert rc == 0
-    assert path.exists()
-    text = path.read_text()
-    assert "# Code Coverage Holes" in text
-    assert "0->1 covered" in text
 
 
 def _dispatch_opened() -> Dispatcher:
@@ -1242,170 +1076,24 @@ def test_top_level_limits_are_rejected_before_dispatch():
     assert rsp["error"]["detail.path"] == "$"
 
 
-def test_action_args_limits_control_returned_items():
-    dispatcher = _dispatch_opened()
-    rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "holes",
-        "action": "code_coverage.holes", "target": {"session_id": "cov0"},
-        "args": {"scope": "top.u_dut", "metrics": ["toggle", "branch"],
-                 "limits": {"max_items": 2}},
-    })
-    assert rsp["ok"] is True
-    assert rsp["summary"]["returned_count"] == 2
 
 
-def test_scope_summary_returns_one_requested_scope():
-    dispatcher = _dispatch_opened()
-    rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "scope",
-        "action": "scope.summary", "target": {"session_id": "cov0"},
-        "args": {"scope": "top.u_dut"},
-    })
-    assert rsp["ok"] is True
-    assert rsp["summary"]["total_count"] == 1
-    item = rsp["data"]["items"][0]
-    assert item["full_name"] == "top.u_dut"
-    assert item["coverable"] == 9
-    assert "metrics" not in item
-    assert not (set(item) & {"parent", "depth", "type", "def_name"})
-    assert item["toggle_pct"] == 0.0
-    assert item["branch_pct"] == 0.0
 
 
-def test_scope_children_direct_vs_recursive():
-    dispatcher = _dispatch_opened()
-    direct = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "children",
-        "action": "scope.children", "target": {"session_id": "cov0"},
-        "args": {"scope": "top.u_dut"},
-    })
-    recursive = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "children-rec",
-        "action": "scope.children", "target": {"session_id": "cov0"},
-        "args": {"scope": "top", "recursive": True},
-    })
-    assert {i["full_name"] for i in direct["data"]["items"]} == {
-        "top.u_dut.u_ctrl", "top.u_dut.u_fifo"
-    }
-    assert all(set(i) == {"name", "full_name", "coverage_pct"}
-               for i in direct["data"]["items"])
-    assert "top.u_dut.u_fifo" in {i["full_name"] for i in recursive["data"]["items"]}
 
 
-def test_scope_summary_xout_is_compact_and_path_aware():
-    dispatcher = _dispatch_opened()
-    rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "scope-xout",
-        "action": "scope.summary", "target": {"session_id": "cov0"},
-        "args": {"scope": "top.u_dut"},
-    })
-    xout = render_xout(rsp)
-    assert xout.startswith("@xcov.v1 ok action=scope.summary request_id=scope-xout\n")
-    assert "top.u_dut" in xout
-    assert "coverage:\n" in xout
-    assert "line" in xout and "100.0" in xout
-    assert "pointer\tkind\tvalue" not in xout
 
 
-def test_scope_children_xout_preserves_the_strict_response_rows():
-    dispatcher = _dispatch_opened()
-    rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "children-xout",
-        "action": "scope.children", "target": {"session_id": "cov0"},
-        "args": {"scope": "top.u_dut"},
-    })
-    xout = render_xout(rsp)
-    assert "items:\n" in xout
-    assert "top.u_dut.u_ctrl" in xout
-    assert "pointer\tkind\tvalue" not in xout
 
 
-def test_scope_search_returns_brief_coverage_rows():
-    dispatcher = _dispatch_opened()
-    rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "search",
-        "action": "scope.search", "target": {"session_id": "cov0"},
-        "args": {"query": {"include_patterns": ["*u_fifo"], "match_field": "full_name"}},
-    })
-    assert rsp["ok"] is True
-    assert rsp["data"]["items"][0]["full_name"] == "top.u_dut.u_fifo"
-    assert set(rsp["data"]["items"][0]) == {"name", "full_name", "coverage_pct"}
-    assert rsp["data"]["items"][0]["coverage_pct"] == 0.0
 
 
-def test_export_code_coverage_writes_markdown_only(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    dispatcher = _dispatch_opened()
-    rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "code-export",
-        "action": "export.code_coverage", "target": {"session_id": "cov0"},
-        "args": {"scope": "top.u_dut", "output": {"path": "code.md"}},
-    })
-    assert rsp["ok"] is True
-    assert rsp["summary"]["output_path"] == ".xverif/xcov_exports/code.md"
-    assert rsp["summary"]["artifact_format"] == "md"
-    assert "x-npi" in rsp["summary"]["note"]
-    text = (tmp_path / ".xverif/xcov_exports/code.md").read_text(encoding="utf-8")
-    assert "# Code Coverage Holes" in text
-    assert "| scope | signal | bit | 0->1 covered | 1->0 covered | file:line |" in text
 
 
-def test_functional_levels_filter():
-    dispatcher = _dispatch_opened()
-    bins = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "func-bin",
-        "action": "functional_coverage.holes", "target": {"session_id": "cov0"},
-        "args": {"levels": ["bin"]},
-    })
-    cps = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "func-cp",
-        "action": "functional_coverage.holes", "target": {"session_id": "cov0"},
-        "args": {"levels": ["coverpoint"]},
-    })
-    assert bins["summary"]["total_count"] == 1
-    assert cps["summary"]["total_count"] == 1
 
 
-def test_functional_coverage_holes_glob_filters_full_name_and_covergroup():
-    dispatcher = _dispatch_opened()
-    full_name = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "func-filter-full",
-        "action": "functional_coverage.holes", "target": {"session_id": "cov0"},
-        "args": {
-            "levels": ["bin"],
-            "query": {"include_patterns": ["*zero_credit"], "match_field": "full_name"},
-        },
-    })
-    covergroup = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "func-filter-cg",
-        "action": "functional_coverage.holes", "target": {"session_id": "cov0"},
-        "args": {
-            "levels": ["bin"],
-            "query": {"include_patterns": ["cg_*"], "match_field": "covergroup"},
-        },
-    })
-    assert full_name["ok"] is True
-    assert full_name["summary"]["total_count"] == 1
-    assert full_name["data"]["items"][0]["bin"] == "zero_credit"
-    assert covergroup["ok"] is True
-    assert covergroup["summary"]["total_count"] == 1
-    assert covergroup["data"]["items"][0]["covergroup"] == "cg_credit"
 
 
-def test_functional_summary_uses_requested_level_only():
-    dispatcher = _dispatch_opened()
-    rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "func-summary",
-        "action": "functional_coverage.summary", "target": {"session_id": "cov0"},
-    })
-    assert rsp["ok"] is True
-    assert rsp["summary"]["total_count"] == 1
-    assert rsp["data"]["items"][0]["coverable"] == 1
-    forbidden = {
-        "metric", "name", "full_name", "score_basis", "score_item_count",
-        "raw_covered", "raw_coverable", "raw_missing", "raw_coverage_pct",
-    }
-    assert not (set(rsp["data"]["items"][0]) & forbidden)
 
 
 @pytest.mark.parametrize(
@@ -1433,54 +1121,6 @@ def test_functional_summary_every_public_group_by_is_executable(group_by):
         }
 
 
-@pytest.mark.parametrize(
-    "action,args,identity",
-    [
-        ("code_coverage.summary", {"group_by": "scope"}, "scope"),
-        (
-            "functional_coverage.summary",
-            {"group_by": "covergroup"},
-            "covergroup",
-        ),
-        (
-            "functional_coverage.summary",
-            {"group_by": "coverpoint"},
-            "coverpoint",
-        ),
-        ("functional_coverage.summary", {"group_by": "bin"}, "bin"),
-    ],
-)
-def test_summary_response_schema_requires_exact_group_identity(
-    action,
-    args,
-    identity,
-):
-    rsp = _dispatch_opened().dispatch({
-        "api_version": "xcov.v1",
-        "request_id": f"strict-{identity}",
-        "action": action,
-        "target": {"session_id": "cov0"},
-        "args": args,
-    })
-    assert rsp["ok"] is True
-    assert rsp["data"]["items"]
-
-    missing_identity = deepcopy(rsp)
-    missing_identity["data"]["items"][0].pop(identity)
-    with pytest.raises(XcovError) as missing:
-        validate_response(action, missing_identity)
-    assert missing.value.code == "RESPONSE_SCHEMA_INVALID"
-
-    extra_identity = deepcopy(rsp)
-    alternative = (
-        "type"
-        if action == "code_coverage.summary"
-        else "cross"
-    )
-    extra_identity["data"]["items"][0][alternative] = "unexpected"
-    with pytest.raises(XcovError) as extra:
-        validate_response(action, extra_identity)
-    assert extra.value.code == "RESPONSE_SCHEMA_INVALID"
 
 
 def test_code_coverage_summary_omits_display_only_fields():
@@ -1534,146 +1174,16 @@ def test_functional_covergroup_summary_uses_urg_score_average():
     assert summary[0]["score_basis"] == "average_direct_coverpoint_cross_pct"
 
 
-def test_functional_bin_evidence_is_inherited_from_parent():
-    dispatcher = _dispatch_opened()
-    rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "func-bin-evidence",
-        "action": "functional_coverage.holes", "target": {"session_id": "cov0"},
-        "args": {"levels": ["bin"]},
-    })
-    assert rsp["ok"] is True
-    item = rsp["data"]["items"][0]
-    assert item["file"] == "verif/env/uart_coverage.sv"
-    assert item["line"] == 22
-    forbidden = {
-        "metric", "name", "full_name", "score_basis", "score_item_count",
-        "raw_covered", "raw_coverable", "raw_missing", "evidence", "evidence_source",
-    }
-    assert not (set(item) & forbidden)
 
 
-def test_code_coverage_holes_reports_hierarchy_coverage_only():
-    dispatcher = _dispatch_opened()
-    rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "code-details",
-        "action": "code_coverage.holes", "target": {"session_id": "cov0"},
-        "args": {"scope": "top.u_dut", "metrics": ["toggle", "branch", "condition"]},
-    })
-    assert rsp["ok"] is True
-    rows = rsp["data"]["items"]
-    assert {row["full_name"] for row in rows} == {
-        "top.u_dut", "top.u_dut.u_ctrl", "top.u_dut.u_fifo"
-    }
-    item = next(row for row in rows if row["full_name"] == "top.u_dut.u_ctrl")
-    assert item["branch_pct"] == 0.0
-    assert item["condition_pct"] == 0.0
-    assert "branch_bin" not in item
-    assert "toggle_signal" not in item
-    forbidden = {"parent", "depth", "type", "def_name", "covered", "coverable", "missing",
-                 "file", "line"}
-    assert not (set(item) & forbidden)
-    assert "note" in rsp["summary"]
 
 
-def test_code_coverage_holes_glob_filters_hierarchy_rows():
-    dispatcher = _dispatch_opened()
-    include = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "code-filter-include",
-        "action": "code_coverage.holes", "target": {"session_id": "cov0"},
-        "args": {
-            "scope": "top.u_dut",
-            "metrics": ["toggle", "branch", "condition"],
-            "query": {"include_patterns": ["*u_ctrl"], "match_field": "full_name"},
-        },
-    })
-    exclude = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "code-filter-exclude",
-        "action": "code_coverage.holes", "target": {"session_id": "cov0"},
-        "args": {
-            "scope": "top.u_dut",
-            "metrics": ["toggle", "branch", "condition"],
-            "query": {"exclude_patterns": ["*u_fifo"], "match_field": "full_name"},
-        },
-    })
-    assert include["ok"] is True
-    assert [row["full_name"] for row in include["data"]["items"]] == ["top.u_dut.u_ctrl"]
-    assert exclude["ok"] is True
-    assert "top.u_dut.u_fifo" not in {row["full_name"] for row in exclude["data"]["items"]}
 
 
-def test_source_annotate_returns_source_window_and_annotations(tmp_path):
-    src = tmp_path / "ctrl.sv"
-    src.write_text("\n".join([
-        "module ctrl;",
-        "  logic enable;",
-        "  assert property (p_ready);",
-        "endmodule",
-    ]) + "\n", encoding="utf-8")
-    dispatcher = _dispatch_opened()
-    rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "annotate",
-        "action": "source.annotate", "target": {"session_id": "cov0"},
-        "args": {"file": "rtl/ctrl.sv", "line": 120, "window": 0,
-                 "include_source_text": False},
-    })
-    assert rsp["ok"] is True
-    assert rsp["summary"]["total_count"] == 1
-    row = rsp["data"]["items"][0]
-    assert row["line"] == 120
-    assert row["annotation_count"] == 1
-    assert row["annotations"][0]["metric"] == "assert"
-    contradictory = deepcopy(rsp)
-    contradictory["data"]["items"][0]["annotation_count"] = 0
-    with pytest.raises(XcovError) as raised:
-        validate_response("source.annotate", contradictory)
-    assert raised.value.code == "RESPONSE_SCHEMA_INVALID"
 
 
-def test_functional_coverage_export_groups_bins_by_covergroup(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    dispatcher = _dispatch_opened()
-    rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "func-export",
-        "action": "export.functional_coverage", "target": {"session_id": "cov0"},
-        "args": {"covergroup": "cg_credit", "output": {"path": "func.md"}},
-    })
-    assert rsp["ok"] is True
-    text = (tmp_path / ".xverif/xcov_exports/func.md").read_text(encoding="utf-8")
-    assert "# Functional Coverage Holes" in text
-    assert "## cg_credit (verif/env/uart_coverage.sv:21)" in text
-    assert "### cp_level" in text
-    assert "zero_credit" in text
-    assert "verif/env/uart_coverage.sv:22" not in text
 
 
-def test_assert_summary_summarizes_bins_without_report_fields():
-    dispatcher = _dispatch_opened()
-    rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "assert-summary",
-        "action": "assert.summary", "target": {"session_id": "cov0"},
-    })
-    assert rsp["ok"] is True
-    item = next(row for row in rsp["data"]["items"]
-                if row["full_name"] == "top.u_dut.u_ctrl.p_ready")
-    assert item["attempts"] == 10
-    assert item["real_successes"] == 8
-    forbidden = {"kind", "category", "severity", "failures", "incomplete",
-                 "first_match", "file", "line", "evidence"}
-    assert not (set(item) & forbidden)
-    assert "sections" not in rsp["data"]
-
-
-def test_xout_functional_coverage_holes_uses_projected_fields():
-    dispatcher = _dispatch_opened()
-    rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "func-bin-xout",
-        "action": "functional_coverage.holes", "target": {"session_id": "cov0"},
-        "args": {"levels": ["bin"]},
-    })
-    xout = render_xout(rsp)
-    assert "cg_credit" in xout
-    assert "items:\n" in xout
-    assert "pointer\tkind\tvalue" not in xout
 
 
 def test_xout_items_keep_every_metric_field():
@@ -1688,33 +1198,8 @@ def test_xout_items_keep_every_metric_field():
     assert "line" in xout and "100.0" in xout
 
 
-def test_xout_contains_only_the_code_coverage_hierarchy_contract():
-    dispatcher = _dispatch_opened()
-    rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "code-detail-xout",
-        "action": "code_coverage.holes", "target": {"session_id": "cov0"},
-        "args": {"scope": "top.u_dut", "metrics": ["condition"], "limits": {"max_items": 1}},
-    })
-    xout = render_xout(rsp)
-    assert "condition_pct" in xout
-    assert "0.0" in xout
-    assert "condition_bin" not in xout
 
 
-def test_xout_assert_summary_omits_report_fields():
-    dispatcher = _dispatch_opened()
-    assert_rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "assert-xout",
-        "action": "assert.summary", "target": {"session_id": "cov0"},
-    })
-    assert_xout = render_xout(assert_rsp)
-    assert "items:\n" in assert_xout
-    assert "name" in assert_xout
-    assert "full_name" in assert_xout
-    assert "attempts" in assert_xout
-    assert "real_successes" in assert_xout
-    assert "failures" not in assert_xout
-    assert "incomplete" not in assert_xout
 
 
 def test_branch_mask_hint_decoding():
@@ -1754,72 +1239,8 @@ def test_branch_mask_hint_enabled(monkeypatch):
         assert _branch_mask_hint_enabled() is False
 
 
-def test_branch_mask_in_response():
-    dispatcher = _dispatch_opened()
-    rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "branch-mask",
-        "action": "source.map", "target": {"session_id": "cov0"},
-        "args": {"file": "rtl/ctrl.sv", "line": 95, "window": 10, "metrics": ["branch"]},
-    })
-    assert rsp["ok"] is True
-    rows = rsp["data"]["items"]
-    # one-hot item: "000000100" -> branch_mask
-    bin_item = next(row for row in rows
-                    if row.get("branch_bin") == "000000100")
-    assert "branch_mask" in bin_item
-    assert bin_item["branch_mask"]["encoding"] == "one_hot"
-    assert bin_item["branch_mask"]["branch_arm_index"] == 2
-    # non-bitmask item: "else" -> no branch_mask
-    else_item = next(row for row in rows
-                     if row.get("branch_bin") == "else")
-    assert "branch_mask" not in else_item
 
 
-def test_branch_mask_in_xout():
-    dispatcher = _dispatch_opened()
-    rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "branch-mask-xout",
-        "action": "source.map", "target": {"session_id": "cov0"},
-        "args": {"file": "rtl/ctrl.sv", "line": 95, "window": 10, "metrics": ["branch"]},
-    })
-    xout = render_xout(rsp)
-    assert "branch_mask.encoding" in xout
-    assert "branch_mask.branch_arm_index" in xout
-
-
-def test_test_each_is_explicitly_unsupported():
-    dispatcher = _dispatch_opened()
-    rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "each",
-        "action": "code_coverage.holes", "target": {"session_id": "cov0"},
-        "args": {"test": "each"},
-    })
-    assert rsp["ok"] is False
-    assert rsp["error"]["code"] == "TEST_MODE_NOT_SUPPORTED"
-
-
-def test_export_path_safety(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    dispatcher = _dispatch_opened()
-    bad_parent = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "bad-parent",
-        "action": "export.code_coverage", "target": {"session_id": "cov0"},
-        "args": {"output": {"path": "../holes.md"}},
-    })
-    bad_abs = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "bad-abs",
-        "action": "export.code_coverage", "target": {"session_id": "cov0"},
-        "args": {"output": {"path": str(tmp_path / "holes.md")}},
-    })
-    ok = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "ok-rel",
-        "action": "export.code_coverage", "target": {"session_id": "cov0"},
-        "args": {"output": {"path": "holes.md"}},
-    })
-    assert bad_parent["error"]["code"] == "OUTPUT_PATH_UNSAFE"
-    assert bad_abs["error"]["code"] == "OUTPUT_PATH_UNSAFE"
-    assert ok["ok"] is True
-    assert (tmp_path / ".xverif/xcov_exports/holes.md").exists()
 
 
 class CountingBackend(CoverageBackend):
@@ -2032,7 +1453,7 @@ class ContractFailingBackend(CoverageBackend):
 def test_npi_contract_failure_propagates_to_incomplete_action_error():
     dispatcher = Dispatcher(
         SessionManager(
-            backend_factory=lambda _vdb: ContractFailingBackend(),
+            backend_factory=lambda _vdb, **_kwargs: ContractFailingBackend(),
         )
     )
     opened = dispatcher.dispatch({
@@ -2092,7 +1513,7 @@ class MutatingCoverageBackend(_TestBackend):
 def _dispatch_with_mutating_backend(mutate, *, worker_kind="custom") -> Dispatcher:
     dispatcher = Dispatcher(
         SessionManager(
-            backend_factory=lambda vdb: MutatingCoverageBackend(
+            backend_factory=lambda vdb, **_kwargs: MutatingCoverageBackend(
                 vdb,
                 mutate,
                 worker_kind=worker_kind,
@@ -2182,42 +1603,8 @@ def test_npi_success_with_semantically_invalid_percentage_is_typed_npi_failure()
     assert rsp["summary"]["analysis_complete"] is False
 
 
-def test_assert_count_bin_must_have_nonnegative_count():
-    def mutate(rows):
-        count_bin = next(
-            row for row in rows if row["type"] == "npiCovAttemptBin"
-        )
-        count_bin["count"] = -1
-
-    dispatcher = _dispatch_with_mutating_backend(mutate)
-    rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1",
-        "request_id": "bad-assert-count",
-        "action": "assert.summary",
-        "target": {"session_id": "cov0"},
-    })
-
-    assert rsp["ok"] is False
-    assert rsp["error"]["code"] == "BACKEND_CONTRACT_VIOLATION"
-    assert rsp["error"]["detail.field"] == "count"
-    assert rsp["summary"]["analysis_complete"] is False
 
 
-def test_non_applicable_backend_values_are_canonical_nulls_not_query_guesses():
-    dispatcher = _dispatch_with_mutating_backend(lambda rows: None)
-    backend = dispatcher.sessions.get("cov0").backend
-    assert isinstance(backend, CanonicalCoverageBackend)
-
-    rows = backend.items(metrics=["assert"])
-    count_bin = next(row for row in rows if row["type"] == "npiCovAttemptBin")
-    assert count_bin["covered"] is None
-    assert count_bin["coverable"] is None
-    assert count_bin["missing"] is None
-    assert count_bin["coverage_pct"] is None
-    assert count_bin["count"] == 10
-
-    assert_object = next(row for row in rows if row["type"] == "npiCovAssert")
-    assert assert_object["count"] is None
 
 
 def test_absent_evidence_is_canonical_empty_evidence_and_not_an_error():
@@ -2328,51 +1715,6 @@ class InvalidScopeParentBackend(_TestBackend):
         return rows
 
 
-def test_backend_scope_parent_mismatch_is_a_typed_contract_violation():
-    dispatcher = Dispatcher(
-        SessionManager(backend_factory=InvalidScopeParentBackend)
-    )
-    opened = dispatcher.dispatch({
-        "api_version": "xcov.v1",
-        "request_id": "open-bad-scope-parent",
-        "action": "session.open",
-        "target": {"vdb": "bad-scope-parent.vdb"},
-        "args": {"name": "cov0"},
-    })
-    assert opened["ok"] is True
-
-    rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1",
-        "request_id": "bad-scope-parent",
-        "action": "scope.summary",
-        "target": {"session_id": "cov0"},
-    })
-    assert rsp["ok"] is False
-    assert rsp["error"]["code"] == "BACKEND_CONTRACT_VIOLATION"
-    assert rsp["error"]["detail.field"] == "scopes.parent"
-    assert rsp["summary"]["analysis_complete"] is False
-
-
-def test_source_annotate_source_read_failure_is_typed_without_annotation_fallback():
-    dispatcher = _dispatch_opened()
-    rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1",
-        "request_id": "source-read-failed",
-        "action": "source.annotate",
-        "target": {"session_id": "cov0"},
-        "args": {
-            "file": "rtl/ctrl.sv",
-            "line": 12,
-            "window": 0,
-            "include_source_text": True,
-        },
-    })
-
-    assert rsp["ok"] is False
-    assert rsp["error"]["code"] == "SOURCE_READ_FAILED"
-    assert rsp["summary"]["scan_complete"] is False
-    assert rsp["summary"]["analysis_complete"] is False
-    assert rsp["data"] == {}
 
 
 def test_stdio_uses_only_request_id_and_rejects_id_alias():

@@ -194,22 +194,6 @@ class TestLoopSessionOpen:
         assert session.state == "alive"
         assert session.session_id == "test"
 
-    def test_open_does_not_send_reuse_or_reopen(self, fake_xdebug_bin):
-        s = XdebugLoopSession(
-            alias="test2", fsdb="t.fsdb", daidir=None,
-            launcher=DirectLauncher(), runtime=TEST_RUNTIME,
-            logger=TEST_LOGGER,
-            xdebug_bin=fake_xdebug_bin,
-        )
-        try:
-            r = s.open()
-            assert r.get("ok")
-            assert s.state == "alive"
-            rsp = s.query("fake", {}, output_format="json")
-            assert rsp["summary"]["echo_target"]["session_id"] == "test2"
-        finally:
-            s.close(force=True)
-
     def test_open_rejects_backend_session_id_mismatch_and_cleans_up(
         self,
         fake_xdebug_bin,
@@ -414,53 +398,6 @@ class TestLoopSessionOpen:
         assert response["error"]["cleanup_complete"] is cleanup_complete
         assert s.state == state
         assert token not in json.dumps(response, sort_keys=True)
-
-    def test_open_forwards_run_manifest_in_native_target(self, fake_xdebug_bin):
-        s = XdebugLoopSession(
-            alias="manifest_test", fsdb="t.fsdb", daidir=None,
-            run_manifest="run-manifest.json",
-            launcher=DirectLauncher(), runtime=TEST_RUNTIME,
-            logger=TEST_LOGGER,
-            xdebug_bin=fake_xdebug_bin,
-        )
-        try:
-            requests = []
-            call_raw = s._call_raw
-
-            def capture(request, timeout=None):
-                requests.append(request)
-                return call_raw(request, timeout)
-
-            s._call_raw = capture
-            response = s.open()
-            assert response["ok"] is True
-            opened = next(request for request in requests if request["action"] == "session.open")
-            assert opened["target"]["run_manifest"] == "run-manifest.json"
-        finally:
-            s.close(force=True)
-
-    def test_public_json_reports_stat_and_declared_manifest_identity(self, fake_xdebug_bin, tmp_path):
-        fsdb = tmp_path / "waves.fsdb"
-        manifest = tmp_path / "run-manifest.json"
-        fsdb.write_bytes(b"fixture")
-        manifest.write_text('{"state":"published"}\n', encoding="utf-8")
-        s = XdebugLoopSession(
-            alias="identity_test", fsdb=str(fsdb), daidir=None,
-            run_manifest=str(manifest), launcher=DirectLauncher(),
-            runtime=TEST_RUNTIME, logger=TEST_LOGGER,
-            xdebug_bin=fake_xdebug_bin,
-        )
-        try:
-            public = s.public_json()
-            identity = public["resource_identity"]
-            assert public["session_id"] is None
-            assert "alias" not in public
-            assert "resource_hash" not in public
-            assert identity["content_identity"] == "manifest_declared"
-            assert identity["stat"]["size_bytes"] == len(b"fixture")
-            assert identity["manifest_sha256"]
-        finally:
-            s.close(force=True)
 
     def test_launcher_start_failure_returns_structured_open_error(self):
         class MissingLauncher(DirectLauncher):

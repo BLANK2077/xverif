@@ -67,7 +67,9 @@ def test_suite_filter_can_only_narrow_a_gate() -> None:
         filter_plan(build_plan(load_catalog(), "fast"), ["xloc.vim"])
 
 
-class FakeResourceItem:
+class TestResourceItem:
+    __test__ = False
+
     def __init__(self, fixturenames: tuple[str, ...] = ()) -> None:
         self.fixturenames = fixturenames
         self.marker = None
@@ -80,7 +82,7 @@ def test_npi_capability_and_fixture_imply_common_xdist_resource_group() -> None:
     catalog = load_catalog()
     suite = next(item for item in catalog.suites if item.id == "xdebug.stream")
 
-    item = FakeResourceItem(("artifact_root", "xverif_fixture"))
+    item = TestResourceItem(("artifact_root", "xverif_fixture"))
     apply_xdist_resource_group(item, suite)  # type: ignore[arg-type]
     assert item.marker is not None
     assert item.marker.kwargs["name"] == "xverif-resource-verdi_npi"
@@ -90,7 +92,7 @@ def test_npi_capability_without_fixture_does_not_serialize_item() -> None:
     catalog = load_catalog()
     suite = next(item for item in catalog.suites if item.id == "xdebug.contract")
 
-    item = FakeResourceItem(("artifact_root",))
+    item = TestResourceItem(("artifact_root",))
     apply_xdist_resource_group(item, suite)  # type: ignore[arg-type]
     assert item.marker is None
 
@@ -99,7 +101,12 @@ def test_explicit_resource_token_serializes_complete_suite() -> None:
     catalog = load_catalog()
     suite = next(item for item in catalog.suites if item.id == "skills.x_npi_real")
 
-    item = FakeResourceItem()
+    item = TestResourceItem()
     apply_xdist_resource_group(item, suite)  # type: ignore[arg-type]
     assert item.marker is not None
     assert item.marker.kwargs["name"] == "xverif-resource-verdi_npi"
+
+
+def test_native_xout_suite_declares_final_phase() -> None:
+    suite = load_catalog().suite_by_id("xdebug.native_xout_all")
+    assert suite.runner_env() == {"XDEBUG_XOUT_PHASE": "final"}

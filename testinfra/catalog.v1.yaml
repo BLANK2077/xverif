@@ -323,7 +323,6 @@ suites:
     runner:
       kind: pytest
       paths:
-        - xverif_mcp/tests/test_action_smoke_script.py
         - xverif_mcp/tests/test_direct_output_formats.py
         - xverif_mcp/tests/test_loop_session.py
         - xverif_mcp/tests/test_loop_wrapper_uds.py
@@ -361,6 +360,20 @@ suites:
     hermetic: false
     deterministic: true
     cost: {class: medium, estimate_sec: 180}
+    timeouts: {execute_sec: 600, cleanup_sec: 30}
+
+  - id: xverif_mcp.real_fullchain
+    owner: xverif_mcp
+    level: system
+    intent: [contract, lifecycle, integration]
+    domains: [mcp, debug, coverage]
+    runner: {kind: pytest, path: xverif_mcp/tests/test_real_fullchain.py}
+    fixtures: [xdebug.active_driver, xcov.comprehensive, xcov.exclusion]
+    capabilities: [child_process, mcp_process, npi, fsdb, daidir]
+    hermetic: false
+    deterministic: true
+    cost: {class: slow, estimate_sec: 120}
+    resources: {cpu: 1, memory_mb: 3072, tokens: [verdi_npi]}
     timeouts: {execute_sec: 600, cleanup_sec: 30}
 
   - id: xverif_mcp.real_lsf_jobid
@@ -689,7 +702,10 @@ suites:
     level: system
     intent: [contract, semantics]
     domains: [xout, cli, design, waveform, combined, apb, axi, stream, event]
-    runner: {kind: pytest, path: xdebug/tests/native_xout}
+    runner:
+      kind: pytest
+      path: xdebug/tests/native_xout
+      env: {XDEBUG_XOUT_PHASE: final}
     fixtures: [xdebug.ai_complex_wave, xdebug.active_semantics, xdebug.trace_x_xprop, xdebug.apb_vip, xdebug.axi_vip, xdebug.stream_v1, xdebug.xif_event]
     capabilities: [child_process, npi, fsdb, daidir]
     hermetic: false

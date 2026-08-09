@@ -271,3 +271,9 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 - 错误现象：在临时重建仓库运行 `xdebug.native_xout_all` 时，第一次遗漏已确认的 `XIF_AGENT` 导致 xif fixture 指纹 cache miss，第二次遗漏 `XDEBUG_XOUT_PHASE` 导致测试在采集前拒绝启动。
 - 误判原因：只复用了 host、Python 与 gate 参数，没有从 native XOUT runner 和 fixture default environment 重新核对该 suite 的完整显式环境合同；临时仓库绝对路径还会参与 XIF fixture 指纹。
 - 以后规则：native XOUT 最终采集必须一次显式传入 `XVERIF_TEST_EXECUTION_ENV=host`、已缓存构建对应的 `XIF_AGENT`、`XDEBUG_XOUT_PHASE=final` 和当前重建仓库 `PYTHONPATH`；启动前先核对 runner phase enum 与 fixture fingerprint 环境，不以 preflight 失败逐项补参数。
+
+### 2026-08-09 环境错误复盘
+
+- 错误现象：host regression 的外层执行单元返回持久执行 session id 后，误把外层单元完成判断为 pytest 提前结束，并把 session id 当作进程 PID 查询。
+- 误判原因：混淆了 functions.exec cell、exec_command 持久 session 与宿主进程 PID 三种标识。
+- 以后规则：长运行 pytest 返回 SESSION_ID 时只用 write_stdin 继续轮询该 session；结果目录存在 RUNNING 时先确认持久 session 状态，不用 ps -p session-id 推断测试是否退出。

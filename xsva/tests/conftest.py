@@ -31,7 +31,7 @@ def pytest_generate_tests(metafunc):
 def run_golden_case(golden_dir, golden_case):
     """Run a golden test case: parse input.sva → compare with golden JSON files."""
     case_dir = golden_dir / golden_case
-    input_sva = (case_dir / "input.sva").read_text()
+    input_sva = (case_dir / "input.sva").read_text(encoding="utf-8")
 
     from xsva.parser.scanner import Scanner
     from xsva.ir.diagnostics import DiagnosticBag

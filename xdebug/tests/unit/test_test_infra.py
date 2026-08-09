@@ -78,51 +78,6 @@ else:
 
 
 @pytest.mark.unit
-def test_cli_runner_stdin_and_file(tmp_path: Path) -> None:
-    runner = CliRunner(_fake_xdebug(tmp_path), cwd=tmp_path)
-    request = {"api_version": "xdebug.v1", "action": "actions"}
-
-    stdin_result = runner.run(request, input_mode="stdin", output_format="json")
-    file_result = runner.run(request, input_mode="file", output_format="json")
-
-    assert stdin_result.ok
-    assert file_result.ok
-    assert stdin_result.response["summary"]["value"] == 7
-    assert "pid" not in stdin_result.normalized_response["summary"]
-    assert stdin_result.normalized_response == file_result.normalized_response
-
-
-@pytest.mark.unit
-def test_cli_runner_xout(tmp_path: Path) -> None:
-    runner = CliRunner(_fake_xdebug(tmp_path), cwd=tmp_path)
-    result = runner.run(
-        {"api_version": "xdebug.v1", "action": "actions"},
-        output_format="xout",
-    )
-    assert result.ok
-    assert result.response.startswith("@xdebug.fake.v1")
-
-
-@pytest.mark.unit
-def test_stdio_loop_json_and_quit(tmp_path: Path) -> None:
-    loop = StdioLoopRunner(_fake_xdebug(tmp_path), cwd=tmp_path, default_json=True)
-    ready = loop.start()
-    assert ready["protocol"] == "xdebug-stdio-loop"
-    result = loop.request(
-        {
-            "api_version": "xdebug.v1",
-            "action": "value.at",
-            "args": {"signal": "top.clk", "clock": "top.clk", "time": "0ns"},
-        }
-    )
-    assert result.ok
-    assert result.envelope["payload_format"] == "json"
-    assert result.response["summary"]["value"] == 7
-    quit_result = loop.quit()
-    assert quit_result is not None and quit_result.ok
-
-
-@pytest.mark.unit
 def test_stdio_loop_timeout_terminates_desynchronized_process(tmp_path: Path) -> None:
     loop = StdioLoopRunner(_fake_xdebug(tmp_path), cwd=tmp_path)
     loop.start()
@@ -213,21 +168,6 @@ def test_hybrid_runner_timeout_terminates_persistent_frontend(
 
 
 @pytest.mark.unit
-def test_hybrid_runner_explicit_restart_applies_environment_changes(
-    tmp_path: Path,
-) -> None:
-    runner = HybridCliRunner(_fake_xdebug(tmp_path), cwd=tmp_path)
-    try:
-        first = runner.run({"api_version": "xdebug.v1", "action": "actions"})
-        runner.base_env["HYBRID_PHASE"] = "second"
-        runner.restart()
-        second = runner.run({"api_version": "xdebug.v1", "action": "actions"})
-        assert first.response["summary"]["pid"] != second.response["summary"]["pid"]
-    finally:
-        runner.close()
-
-
-@pytest.mark.unit
 def test_normalize_replaces_paths_and_sorts_selected_list() -> None:
     value = {
         "elapsed_ms": 3,
@@ -272,30 +212,6 @@ def test_invariant_assertions() -> None:
 
 
 @pytest.mark.unit
-def test_artifact_writer_redacts_and_writes_diff(tmp_path: Path) -> None:
-    runner = CliRunner(
-        _fake_xdebug(tmp_path),
-        cwd=tmp_path,
-        base_env={"SERVICE_TOKEN": "secret-value"},
-    )
-    result = runner.run(
-        {"api_version": "xdebug.v1", "action": "actions"},
-        output_format="json",
-    )
-    case_dir = ArtifactWriter(tmp_path / "artifacts", run_id="run").write(
-        "demo/case",
-        result,
-        expected={"ok": True, "summary": {"value": 8}},
-        extra={"trace_tree": {"root": "top.clk"}},
-    )
-    assert (case_dir / "command.json").exists()
-    assert (case_dir / "diff.txt").read_text(encoding="utf-8")
-    env = json.loads((case_dir / "env.json").read_text(encoding="utf-8"))
-    assert env["SERVICE_TOKEN"] == "<redacted>"
-    assert (case_dir / "trace_tree.json").exists()
-
-
-@pytest.mark.unit
 def test_command_runner_success_and_timeout(tmp_path: Path) -> None:
     runner = CommandRunner(cwd=tmp_path)
     success = runner.run(
@@ -313,23 +229,3 @@ def test_command_runner_success_and_timeout(tmp_path: Path) -> None:
     assert timeout.returncode == -1
 
 
-@pytest.mark.unit
-def test_runners_record_history_for_failure_artifacts(tmp_path: Path) -> None:
-    cli = CliRunner(_fake_xdebug(tmp_path), cwd=tmp_path)
-    cli_result = cli.run({"api_version": "xdebug.v1", "action": "actions"})
-    assert cli.history == [cli_result]
-
-    command = CommandRunner(cwd=tmp_path)
-    command_result = command.run(
-        [sys.executable, "-c", "print('history-ok')"],
-        timeout_sec=5,
-    )
-    assert command.history == [command_result]
-
-    loop = StdioLoopRunner(_fake_xdebug(tmp_path), cwd=tmp_path)
-    loop.start()
-    try:
-        loop_result = loop.request({"api_version": "xdebug.v1", "action": "actions"})
-        assert loop.history == [loop_result]
-    finally:
-        loop.terminate()

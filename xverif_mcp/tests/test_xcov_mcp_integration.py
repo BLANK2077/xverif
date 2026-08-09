@@ -510,6 +510,10 @@ def test_cov_xout_output_format(monkeypatch, test_vdb, xverif_home):
     assert text.startswith("@xcov.code_coverage.summary.v1"), \
         f"unexpected xout header: {text[:80]}"
 
+    _call_tool(server, "xverif_cov_session_close", {
+        "session_id": "mcp_int_xout",
+    })
+
 
 # ── exclude.add / exclude.remove with selectors ──
 
@@ -581,7 +585,3 @@ def test_cov_exclude_remove_with_selector(monkeypatch, exclusion_vdb, xverif_hom
     assert json.loads(content[0].text)["data"]["items"][0]["status"] == "changed"
 
     _call_tool(server, "xverif_cov_session_close", {"session_id": "mcp_excl_rm"})
-
-    _call_tool(server, "xverif_cov_session_close", {
-        "session_id": "mcp_int_xout",
-    })

@@ -134,17 +134,7 @@ NPI 前校验 `xcov.run-manifest.v1` 的 `state:"published"`，以及相对 mani
 {"api_version":"xcov.v1","action":"functional_coverage.holes","target":{"session_id":"cov0"},"args":{"levels":["bin"],"query":{"include_patterns":["*APB_accesses_cg*"],"match_field":"full_name"}}}
 ```
 
-源码位置反查 coverage object：
 
-```json
-{"api_version":"xcov.v1","action":"source.map","target":{"session_id":"cov0"},"args":{"file":"rtl/ctrl.sv","line":123,"window":3}}
-```
-
-源码窗口加 coverage annotation：
-
-```json
-{"api_version":"xcov.v1","action":"source.annotate","target":{"session_id":"cov0"},"args":{"file":"rtl/ctrl.sv","line":123,"window":3}}
-```
 
 assert 汇总：
 
@@ -155,19 +145,19 @@ assert 汇总：
 导出 code coverage 未达标项：
 
 ```json
-{"api_version":"xcov.v1","action":"export.code_coverage","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","threshold_pct":100.0,"output":{"path":"code_coverage.md"}}}
+{"api_version":"xcov.v1","action":"export.code_coverage","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","output":{"path":"code_coverage.md"}}}
 ```
 
 导出 functional coverage 未达标 bin：
 
 ```json
-{"api_version":"xcov.v1","action":"export.functional_coverage","target":{"session_id":"cov0"},"args":{"covergroup":"*","threshold_pct":100.0,"output":{"path":"functional_coverage.md"}}}
+{"api_version":"xcov.v1","action":"export.functional_coverage","target":{"session_id":"cov0"},"args":{"covergroup":"*","output":{"path":"functional_coverage.md"}}}
 ```
 
 导出 assertion coverage：
 
 ```json
-{"api_version":"xcov.v1","action":"export.assert","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","threshold_pct":100.0,"output":{"path":"assert.md"}}}
+{"api_version":"xcov.v1","action":"export.assert","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","output":{"path":"assert.md"}}}
 ```
 
 ## Exclusion 管理
@@ -227,8 +217,8 @@ CSV action：
 
 ## URG 对齐语义
 
-`code_coverage.summary`、`code_coverage.holes`、`metrics.list`、`scope.summary`、
-`source.map` 和 Markdown exports 使用与 URG HTML 报告一致的 score-bearing
+`code_coverage.summary`、`code_coverage.holes`、`metrics.list`、`scope.summary` 和
+Markdown exports 使用与 URG HTML 报告一致的 score-bearing
 object 层级：
 
 - Line：`npiCovStmtBin`
@@ -294,12 +284,8 @@ Python NPI 层只把文档定义的 SDK “不适用”返回值映射为 `null`
   非空数组，空数组不会回退成默认全集。
 - `code_coverage.summary/holes` 的 `metrics` 只接受 line/toggle/branch/condition/
   fsm/assert；functional metric 只能通过 `functional_coverage.*` 查询。
-- `source.map`：按源码 file/line/window 反查 coverage item。
-- `source.annotate`：基于 NPI `file_name()/line_no()` evidence 和项目源码文件输出源码
-  窗口。它可以挂接 line/branch/condition/toggle/assert object annotation，但不承诺
-  URG HTML 专有展示标签，例如 `MISSING_ELSE`；除非后续 NPI API probe 证明这些标签
-  可取。`include_source_text:true` 时源码文件读取失败返回 `SOURCE_READ_FAILED`，
-  不会退化成仅 annotation 的成功响应；设置为 `false` 时完全不读取源码文件。
+
+
 - `assert.summary`：输出 assert/cover property/cover sequence 的基础覆盖率和
   attempts/real successes/without attempts；不输出 kind/category/severity/failures/
   incomplete/first_match/file/line。详细报告请使用 `export.assert`。
@@ -364,4 +350,3 @@ xcov 日志默认写入：
 ## 当前限制
 
 - `test="each"` 尚未实现；使用 `test="merged"` 或具体 test name。
-- `source.annotate` 不解析 URG HTML，不输出未证实的 URG 专有源码标注。

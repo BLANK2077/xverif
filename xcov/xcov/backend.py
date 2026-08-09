@@ -816,6 +816,7 @@ class NpiCoverageBackend(CoverageBackend):
                 log_lifecycle_event("adhoc", "npi.end.ok", True, {"vdb": self.vdb})
             self._urg_loaded = False
             self._urg_scopes.clear()
+            self._urg_metrics.clear()
             self._urg_top_scopes.clear()
 
     def _api(self) -> NpiApiBinding:
@@ -884,19 +885,18 @@ class NpiCoverageBackend(CoverageBackend):
             return
         import subprocess, tempfile, xml.etree.ElementTree as ET
 
-        cache_dir = tempfile.mkdtemp(prefix=".xcov-urg-")
-        xml_path = os.path.join(cache_dir, "session.xml")
-        result = subprocess.run(
-            ["urg", "-dir", self.vdb, "-report", cache_dir, "-format", "text", "-xml_verbose"],
-            capture_output=True, text=True, timeout=300,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(f"URG failed (exit {result.returncode}): {result.stderr[:500]}")
-        if not os.path.isfile(xml_path):
-            raise RuntimeError(f"URG did not produce session.xml at {xml_path}")
+        with tempfile.TemporaryDirectory(prefix=".xcov-urg-") as cache_dir:
+            xml_path = os.path.join(cache_dir, "session.xml")
+            result = subprocess.run(
+                ["urg", "-dir", self.vdb, "-report", cache_dir, "-format", "text", "-xml_verbose"],
+                capture_output=True, text=True, encoding="utf-8", timeout=300,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(f"URG failed (exit {result.returncode}): {result.stderr[:500]}")
+            if not os.path.isfile(xml_path):
+                raise RuntimeError(f"URG did not produce session.xml at {xml_path}")
 
-        tree = ET.parse(xml_path)
-        root = tree.getroot()
+            root = ET.parse(xml_path).getroot()
         hvp = root.find("hvp")
         if hvp is not None:
             datadef = hvp.find("datadef")

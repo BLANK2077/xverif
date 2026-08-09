@@ -130,6 +130,7 @@ class StatelessCliRunner:
                 input=input_text,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
                 timeout=self._effective_timeout(timeout_sec),
                 check=False,
                 env=env,

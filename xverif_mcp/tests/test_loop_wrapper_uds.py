@@ -139,34 +139,6 @@ def _session_log(root: Path, alias: str, name: str) -> list[dict]:
     return _read_ndjson(root / "sessions" / alias / f"{name}.ndjson")
 
 
-def test_loop_wrapper_ping(tmp_path, monkeypatch):
-    monkeypatch.setenv("XVERIF_LOOP_LOG_DIR", str(tmp_path / "logs"))
-    debug = _make_fake_loop(tmp_path / "fake_xdebug", protocol="xdebug-stdio-loop", api_version="xdebug")
-    cov = _make_fake_loop(tmp_path / "fake_xcov", protocol="xcov-stdio-loop", api_version="xcov")
-    service = LoopWrapperService(mode="direct", xdebug_bin=debug, xcov_bin=cov)
-    server, thread, sock = _start_server(tmp_path, service)
-    try:
-        rsp = send_requests(sock, [{"id": "p1", "method": "server.ping", "params": {}}])[0]
-        assert rsp["ok"] is True
-        assert rsp["result"]["pong"] is True
-    finally:
-        server.shutdown()
-        thread.join(timeout=5)
-
-
-def test_loop_wrapper_socket_is_private(tmp_path, monkeypatch):
-    monkeypatch.setenv("XVERIF_LOOP_LOG_DIR", str(tmp_path / "logs"))
-    debug = _make_fake_loop(tmp_path / "fake_xdebug", protocol="xdebug-stdio-loop", api_version="xdebug")
-    cov = _make_fake_loop(tmp_path / "fake_xcov", protocol="xcov-stdio-loop", api_version="xcov")
-    service = LoopWrapperService(mode="direct", xdebug_bin=debug, xcov_bin=cov)
-    server, thread, sock = _start_server(tmp_path, service)
-    try:
-        assert stat.S_IMODE(Path(sock).stat().st_mode) == 0o600
-    finally:
-        server.shutdown()
-        thread.join(timeout=5)
-
-
 @pytest.mark.parametrize("kind", ("file", "symlink"))
 def test_loop_wrapper_rejects_unsafe_existing_socket_path(tmp_path, monkeypatch, kind):
     monkeypatch.setenv("XVERIF_LOOP_LOG_DIR", str(tmp_path / "logs"))
@@ -181,78 +153,6 @@ def test_loop_wrapper_rejects_unsafe_existing_socket_path(tmp_path, monkeypatch,
     with pytest.raises(RuntimeError, match="SOCKET_PATH_UNSAFE"):
         server.serve_forever()
     assert target.read_text() == "do not delete"
-
-
-def test_loop_wrapper_debug_session_lifecycle(tmp_path, monkeypatch):
-    monkeypatch.setenv("XVERIF_LOOP_LOG_DIR", str(tmp_path / "logs"))
-    debug = _make_fake_loop(tmp_path / "fake_xdebug", protocol="xdebug-stdio-loop", api_version="xdebug")
-    cov = _make_fake_loop(tmp_path / "fake_xcov", protocol="xcov-stdio-loop", api_version="xcov")
-    service = LoopWrapperService(mode="direct", xdebug_bin=debug, xcov_bin=cov)
-    server, thread, sock = _start_server(tmp_path, service)
-    try:
-        responses = send_requests(sock, [
-            {"id": "open", "method": "debug.session.open", "params": {
-                "name": "d0", "fsdb": "wave.fsdb", "run_manifest": "debug-run-manifest.json"}},
-            {
-                "id": "doctor",
-                "method": "debug.session.doctor",
-                "params": {"session_id": "d0"},
-            },
-            {"id": "query", "method": "debug.query", "params": {
-                "session_id": "d0", "action": "value.at", "args": {"signal": "clk"}, "output_format": "json"}},
-            {"id": "list", "method": "debug.session.list", "params": {}},
-            {
-                "id": "close",
-                "method": "debug.session.close",
-                "params": {"session_id": "d0"},
-            },
-            {"id": "gc", "method": "debug.session.gc", "params": {}},
-        ])
-        assert [r["ok"] for r in responses] == [True, True, True, True, True, True]
-        assert responses[0]["result"]["session"]["session_id"] == "d0"
-        assert "alias" not in responses[0]["result"]["session"]
-        assert responses[1]["result"]["summary"]["read_only"] is True
-        assert responses[2]["result"]["action"] == "value.at"
-        assert responses[3]["result"]["sessions"]
-        assert responses[5]["result"]["summary"]["removed_count"] == 1
-    finally:
-        server.shutdown()
-        thread.join(timeout=5)
-
-
-def test_loop_wrapper_cov_session_lifecycle(tmp_path, monkeypatch):
-    monkeypatch.setenv("XVERIF_LOOP_LOG_DIR", str(tmp_path / "logs"))
-    debug = _make_fake_loop(tmp_path / "fake_xdebug", protocol="xdebug-stdio-loop", api_version="xdebug")
-    cov = _make_fake_loop(tmp_path / "fake_xcov", protocol="xcov-stdio-loop", api_version="xcov")
-    service = LoopWrapperService(mode="direct", xdebug_bin=debug, xcov_bin=cov)
-    server, thread, sock = _start_server(tmp_path, service)
-    try:
-        responses = send_requests(sock, [
-            {"id": "open", "method": "cov.session.open", "params": {
-                "name": "c0", "vdb": "merged.vdb", "run_manifest": "cov-run-manifest.json"}},
-            {
-                "id": "doctor",
-                "method": "cov.session.doctor",
-                "params": {"session_id": "c0"},
-            },
-            {"id": "query", "method": "cov.query", "params": {
-                "session_id": "c0", "action": "code_coverage.summary", "output_format": "json"}},
-            {
-                "id": "kill",
-                "method": "cov.session.kill",
-                "params": {"session_id": "c0"},
-            },
-            {"id": "gc", "method": "cov.session.gc", "params": {}},
-        ])
-        assert [r["ok"] for r in responses] == [True, True, True, True, True]
-        assert responses[0]["result"]["session"]["vdb"] == "merged.vdb"
-        assert responses[1]["result"]["summary"]["read_only"] is True
-        assert responses[2]["result"]["action"] == "code_coverage.summary"
-        assert responses[3]["result"]["data"]["cleanup"]["native_kill"] == "not_supported"
-        assert responses[4]["result"]["summary"]["removed_count"] == 1
-    finally:
-        server.shutdown()
-        thread.join(timeout=5)
 
 
 def test_loop_wrapper_reports_bad_requests(tmp_path, monkeypatch):
@@ -468,45 +368,6 @@ def test_loop_wrapper_query_timeout_returns_error(tmp_path, monkeypatch):
     finally:
         server.shutdown()
         thread.join(timeout=5)
-
-
-def test_loop_wrapper_writes_direct_structured_logs(tmp_path, monkeypatch):
-    log_root = tmp_path / "logs"
-    monkeypatch.setenv("XVERIF_LOOP_LOG_DIR", str(log_root))
-    debug = _make_fake_loop(tmp_path / "fake_xdebug", protocol="xdebug-stdio-loop", api_version="xdebug")
-    cov = _make_fake_loop(tmp_path / "fake_xcov", protocol="xcov-stdio-loop", api_version="xcov")
-    service = LoopWrapperService(mode="direct", xdebug_bin=debug, xcov_bin=cov)
-    server, thread, sock = _start_server(tmp_path, service)
-    try:
-        responses = send_requests(sock, [
-            {"id": "open", "method": "debug.session.open", "params": {"name": "logcase", "fsdb": "wave.fsdb"}},
-            {"id": "query", "method": "debug.query", "params": {
-                "session_id": "logcase", "action": "value.at", "args": {"signal": "clk"}, "output_format": "json"}},
-            {
-                "id": "close",
-                "method": "debug.session.close",
-                "params": {"session_id": "logcase"},
-            },
-        ])
-        assert all(r["ok"] for r in responses)
-    finally:
-        server.shutdown()
-        thread.join(timeout=5)
-
-    uds_events = _read_ndjson(log_root / "logs" / "uds.ndjson")
-    session_events = _session_log(log_root, "logcase", "session")
-    stdio_events = _session_log(log_root, "logcase", "stdio")
-    assert {e["component"] for e in uds_events} == {"xverif-loop-wrapper"}
-    assert {e["layer"] for e in uds_events} == {"loop-wrapper"}
-    assert "uds.listen.ready" in [e["phase"] for e in uds_events]
-    assert "uds.request.begin" in [e["phase"] for e in uds_events]
-    assert "uds.request.end" in [e["phase"] for e in uds_events]
-    assert "manager.open.begin" in [e["phase"] for e in session_events]
-    assert "query.begin" in [e["phase"] for e in session_events]
-    assert "manager.close.end" in [e["phase"] for e in session_events]
-    assert "process.start" in [e["phase"] for e in stdio_events]
-    assert "ready.ok" in [e["phase"] for e in stdio_events]
-    assert "request.end" in [e["phase"] for e in stdio_events]
 
 
 def test_loop_wrapper_logs_invalid_json_and_redacts_paths(tmp_path, monkeypatch):

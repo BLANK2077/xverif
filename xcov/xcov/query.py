@@ -20,8 +20,6 @@ DEFAULT_LIMITS = {
     "code_coverage.holes": 100,
     "functional_coverage.summary": 100,
     "functional_coverage.holes": 100,
-    "source.map": 100,
-    "source.annotate": 100,
     "assert.summary": 100,
 }
 

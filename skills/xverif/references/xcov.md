@@ -49,17 +49,7 @@ function holes：
 {"api_version":"xcov.v1","action":"functional_coverage.holes","target":{"session_id":"cov0"},"args":{"levels":["bin"],"query":{"include_patterns":["*APB_accesses_cg*"],"match_field":"full_name"}}}
 ```
 
-source map：
 
-```json
-{"api_version":"xcov.v1","action":"source.map","target":{"session_id":"cov0"},"args":{"file":"rtl/ctrl.sv","line":123,"window":3}}
-```
-
-source annotate：
-
-```json
-{"api_version":"xcov.v1","action":"source.annotate","target":{"session_id":"cov0"},"args":{"file":"rtl/ctrl.sv","line":123,"window":3}}
-```
 
 assert summary：
 
@@ -70,19 +60,19 @@ assert summary：
 code coverage export：
 
 ```json
-{"api_version":"xcov.v1","action":"export.code_coverage","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","threshold_pct":100.0,"output":{"path":"code_coverage.md"}}}
+{"api_version":"xcov.v1","action":"export.code_coverage","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","output":{"path":"code_coverage.md"}}}
 ```
 
 function coverage export：
 
 ```json
-{"api_version":"xcov.v1","action":"export.functional_coverage","target":{"session_id":"cov0"},"args":{"covergroup":"*uart*","threshold_pct":100.0,"output":{"path":"function_coverage.md"}}}
+{"api_version":"xcov.v1","action":"export.functional_coverage","target":{"session_id":"cov0"},"args":{"covergroup":"*uart*","output":{"path":"function_coverage.md"}}}
 ```
 
 assert export：
 
 ```json
-{"api_version":"xcov.v1","action":"export.assert","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","threshold_pct":100.0,"output":{"path":"assert.md"}}}
+{"api_version":"xcov.v1","action":"export.assert","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","output":{"path":"assert.md"}}}
 ```
 
 ## 读取规则
@@ -114,7 +104,6 @@ assert export：
   `export.assert` 导出 Markdown 查看。
 - 三个 export action 只支持 Markdown；复杂二次统计、跨报告处理或自定义格式，转用
   `x-npi` 编写 `pynpi` coverage 脚本。
-- `source.annotate` 的源码文本来自项目源文件，coverage annotation 来自 VDB/NPI，不解析 URG HTML。
 - `assert.summary` 输出基础覆盖率和 attempts/real successes/without attempts；不输出
   kind/category/severity/failures/incomplete/first_match/file/line。需要完整 assertion
   Markdown 时使用 `export.assert`。
