@@ -1223,36 +1223,99 @@ class NpiCoverageBackend(CoverageBackend):
                 "current_status": None, "note": _selector_note(metric),
             }
 
-        items = self._npi_items(wanted_metrics=[metric] if metric != "functional" else None)
         if metric == "functional":
-            items = self._npi_items(wanted_metrics=["functional"])
-
-        matches = [row for row in items if _selector_matches(selector, row)]
-
-        if len(matches) == 0:
             return {
                 "valid": False, "coverage_ref": None,
-                "errors": [{"field": None, "code": "NO_MATCH",
-                            "message": f"selector 未匹配到任何 {metric} item。"}],
-                "current_status": None, "note": _selector_note(metric),
-            }
-        if len(matches) > 1:
-            return {
-                "valid": False, "coverage_ref": None,
-                "errors": [{"field": None, "code": "AMBIGUOUS_MATCH",
-                            "message": f"selector 匹配到 {len(matches)} 个 item。"}],
+                "errors": [{"field": "metric", "code": "NOT_SUPPORTED",
+                            "message": "functional selector is not supported; use exports mode"}],
                 "current_status": None, "note": _selector_note(metric),
             }
 
-        match = matches[0]
-        ref = match.get("coverage_ref")
-        if not isinstance(ref, str):
+        # Scope-local precise lookup: db.handle_by_name + metric handle
+        inst = self.db.handle_by_name(scope)
+        if not inst:
             return {
                 "valid": False, "coverage_ref": None,
-                "errors": [{"field": None, "code": "NPI_ERROR", "message": "item 缺少 coverage_ref"}],
+                "errors": [{"field": "scope", "code": "SCOPE_NOT_FOUND",
+                            "message": f"NPI scope not found: {scope}"}],
                 "current_status": None, "note": _selector_note(metric),
             }
-        return {"valid": True, "coverage_ref": ref, "errors": [], "current_status": match.get("status", [])}
+        metric_hdl = getattr(inst, METRIC_METHODS[metric])()
+        if not metric_hdl:
+            self.release_if_handle(inst)
+            return {
+                "valid": False, "coverage_ref": None,
+                "errors": [{"field": "metric", "code": "METRIC_UNAVAILABLE",
+                            "message": f"URG 未导出此 scope 的 {metric} 数据，请确认 RTL 是否真的不需要该覆盖率"}],
+                "current_status": None, "note": _selector_note(metric),
+            }
+        leaf_types = {
+            "line": {"npiCovStmtBin"},
+            "condition": {"npiCovConditionBin"},
+            "branch": {"npiCovBranchBin"},
+            "toggle": {"npiCovToggleBin"},
+            "fsm": {"npiCovStateBin", "npiCovTransBin", "npiCovSeqBin"},
+        }[metric]
+        test_hdl = self._merged_only("merged")
+        sel_file = selector.get("file", "")
+        sel_line = selector.get("line")
+
+        def _find_in_children(handle: Any, depth: int = 0, path: tuple = ()) -> Optional[Json]:
+            if depth > 4:
+                return None
+            for idx, child in enumerate(handle.child_handles()):
+                child_path = path + (idx,)
+                try:
+                    typ = child.type()
+                except Exception:
+                    self.release_if_handle(child)
+                    continue
+                if typ in leaf_types:
+                    try:
+                        child_file = str(child.file_name() or "")
+                    except Exception:
+                        child_file = ""
+                    try:
+                        child_line = int(child.line_no(test_hdl) or 0)
+                    except Exception:
+                        child_line = 0
+                    if (not sel_file or child_file.endswith("/" + sel_file) or child_file == sel_file) \
+                            and (sel_line is None or child_line == sel_line):
+                        try:
+                            self._api().call("coverage.covered", child, test_hdl)
+                            return {
+                                "valid": True, "coverage_ref": None, "errors": [],
+                                "current_status": ["not_covered"],
+                                "locator": {
+                                    "scope": scope, "metric": metric,
+                                    "path": list(child_path),
+                                    "type": typ, "name": str(child.name() or ""),
+                                },
+                            }
+                        finally:
+                            self.release_if_handle(child)
+                    self.release_if_handle(child)
+                else:
+                    result = _find_in_children(child, depth + 1, child_path)
+                    self.release_if_handle(child)
+                    if result:
+                        return result
+            return None
+
+        try:
+            match = _find_in_children(metric_hdl)
+        finally:
+            self.release_if_handle(metric_hdl)
+            self.release_if_handle(inst)
+
+        if match:
+            return match
+        return {
+            "valid": False, "coverage_ref": None,
+            "errors": [{"field": None, "code": "NO_MATCH",
+                        "message": f"selector 未匹配到任何 {metric} item。"}],
+            "current_status": None, "note": _selector_note(metric),
+        }
 
     def attach_gap_locators(self, payload: Json, test: str = "merged") -> Json:
         """Attach direct, scope-local NPI paths to URG gap IDs."""

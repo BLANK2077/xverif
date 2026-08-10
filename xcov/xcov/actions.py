@@ -799,6 +799,21 @@ class Dispatcher:
                     "errors": resolved["errors"],
                     "note": resolved.get("note", ""),
                 })
+            elif resolved.get("locator"):
+                result = sess.backend.set_exclusion_locator(
+                    resolved["locator"], excluded, test="merged"
+                )
+                if result.get("status") in {"changed", "already_in_state"}:
+                    key = "selector:" + json.dumps(selector, sort_keys=True, separators=(",", ":"))
+                    if excluded:
+                        result["reason"] = reason
+                        result["metadata_status"] = sess.record_exclusion(
+                            key, {"reason": reason, "selector": selector, "csv_row": _selector_csv_row(selector)},
+                        )
+                    else:
+                        sess.remove_exclusion_record(key)
+                result.setdefault("coverage_ref", None)
+                rows.append(result)
             else:
                 result = sess.backend.set_exclusion(
                     resolved["coverage_ref"], excluded, test="merged"
@@ -989,14 +1004,7 @@ class Dispatcher:
         _require_merged(args)
         path = _export_output_path(args)
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        exported_count = sum(
-            1
-            for row in sess.backend.items(test="merged")
-            if (
-                "excluded_at_compile_time" in row["status"]
-                or "excluded_at_report_time" in row["status"]
-            )
-        )
+        exported_count = len(sess.exclusion_records)
         sess.backend.save_exclusions(path, test="merged")
         summary = completeness_summary(exported_count, 0)
         summary.update({
@@ -1017,16 +1025,10 @@ class Dispatcher:
                 "CONFIRMATION_REQUIRED",
                 "exclude.unload_all requires confirm=true",
             )
-        before = len([
-            row for row in sess.backend.items(test="merged")
-            if "excluded_at_report_time" in row["status"]
-        ])
+        before = len(sess.exclusion_records)
         sess.backend.unload_exclusions(test="merged")
         sess.clear_exclusions()
-        after = len([
-            row for row in sess.backend.items(test="merged")
-            if "excluded_at_report_time" in row["status"]
-        ])
+        after = 0
         return ok_response(
             req,
             completeness_summary(1, 1),
