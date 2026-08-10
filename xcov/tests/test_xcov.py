@@ -2196,3 +2196,65 @@ MON_RETRY->MON_HALT 212 Not Covered
     assert "- fsm: state" in xout
     assert "\n\n- fsm: monitor_state" in xout
     assert "required" not in xout
+def _x_npi_coverage_helper_for_open_compat():
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[2] / "skills/x-npi/scripts/x_npi/coverage.py"
+    spec = importlib.util.spec_from_file_location("x_npi_coverage_compat", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_cov_open_contract_accepts_supported_signatures():
+    from xcov.backend import _cov_open_contract
+
+    def old_open(vdb):
+        return vdb
+
+    def new_open(vdb, config_opt=0):
+        return vdb, config_opt
+
+    assert _cov_open_contract(old_open).positional_args == ("vdb",)
+    assert _cov_open_contract(new_open).positional_args == ("vdb", "config_opt")
+
+
+def test_x_npi_open_covdb_calls_old_interface_once(monkeypatch):
+    from types import SimpleNamespace
+    import pytest
+
+    helper = _x_npi_coverage_helper_for_open_compat()
+    calls = []
+
+    def old_open(vdb):
+        calls.append((vdb,))
+        return object()
+
+    monkeypatch.setattr(helper, "_cov", lambda: SimpleNamespace(open=old_open))
+    helper.open_covdb("old.vdb")
+    assert calls == [("old.vdb",)]
+    with pytest.raises(RuntimeError, match="does not support strict"):
+        helper.open_covdb("old.vdb", strict=True)
+    assert calls == [("old.vdb",)]
+
+
+def test_x_npi_open_covdb_calls_new_interface_once(monkeypatch):
+    from types import SimpleNamespace
+
+    helper = _x_npi_coverage_helper_for_open_compat()
+    calls = []
+
+    def new_open(vdb, config_opt=0):
+        calls.append((vdb, config_opt))
+        return object()
+
+    cov = SimpleNamespace(
+        open=new_open,
+        ConfigOpt=SimpleNamespace(ExclusionInStrictMode=7),
+    )
+    monkeypatch.setattr(helper, "_cov", lambda: cov)
+    helper.open_covdb("default.vdb")
+    helper.open_covdb("strict.vdb", strict=True)
+    assert calls == [("default.vdb", 0), ("strict.vdb", 7)]

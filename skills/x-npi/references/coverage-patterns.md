@@ -186,6 +186,9 @@ unload_exclusions(test)
 - `open_covdb(..., strict=True)` 只在 `cov.open` 时启用
   `ExclusionInStrictMode`；不要启用或公开
   `ExcludeByStmtLevel`。
+- `open_covdb()` 会先检查安装版本的真实签名：旧版 `cov.open(vdb)` 只支持默认模式，
+  新版 `cov.open(vdb, config_opt=0)` 才支持 strict。每次打开只调用一次，不用
+  `TypeError` 重试另一种签名。
 - exclusion handle 不跨 traversal 长期缓存。先用 metric/scope/type/traversal
   identity 产生引用，写入前重新遍历并复核人类可读 identity 恰好匹配一次。
 - P0 只对 merged test 管理 exclusion。setter/load/save/unload 返回 `0` 时明确

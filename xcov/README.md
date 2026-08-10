@@ -93,13 +93,17 @@ xverif_cov_get_schema
 
 `session.open` 的公开 `args` 只有 `name` 和可选
 `exclusion_policy:"default|strict"`。`strict` 把
-`cov.ConfigOpt.ExclusionInStrictMode` 传给 `cov.open`，拒绝把已覆盖对象设为
+支持双参数接口时把 `cov.ConfigOpt.ExclusionInStrictMode` 传给 `cov.open`，拒绝把已覆盖对象设为
 report-time exclusion；xcov 从不公开 `ExcludeByStmtLevel`。同名 alive session 一律返回
 `SESSION_EXISTS`；xcov 不比较旧、新 VDB，不复用旧 backend，也不隐式关闭后重开。
 需要切换 VDB 时，调用方必须先显式执行 `session.close`，再发起新的
 `session.open`。`fake`、`reuse`、`reopen` 都不是公开参数，字符串
 `target.vdb:"fake"` 也没有特殊含义；`FakeCoverageBackend` 只允许测试通过
 `SessionManager` 的 backend factory 注入。
+
+xcov 在调用前检查当前 pynpi 的真实 `cov.open` 签名。单参数旧版在默认模式调用
+`cov.open(vdb)`；双参数版本调用 `cov.open(vdb, config_opt)`。单参数旧版不支持 strict，
+会返回明确错误；不会先调用失败再 fallback。
 
 ### 可复现输入：run manifest
 

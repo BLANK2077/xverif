@@ -107,8 +107,10 @@ Python Coverage API 证实 coverage object 可读取：
 
 当前安装的 Python Coverage API 已证实：
 
-- `cov.open(vdb, config_opt)`，其中
+- 新版 `cov.open(vdb, config_opt=0)`，其中
   `cov.ConfigOpt.ExclusionInStrictMode` 用于 strict exclusion policy。
+- 旧版 `cov.open(vdb)` 由 xcov 在调用前检查签名并用于默认模式；旧版请求 strict 时
+  返回明确不支持错误，不静默忽略 strict，也不捕获 `TypeError` 重试。
 - test handle 的 `load_exclude_file(path)`、`save_exclude_file(path, mode)` 和
   `unload_exclusion()`。
 - score object 的 `has_status_excluded_at_compile_time(test)`、

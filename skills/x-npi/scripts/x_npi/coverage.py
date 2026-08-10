@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import inspect
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Sequence
 
@@ -40,8 +41,30 @@ def _cov():
 
 def open_covdb(vdb: str, strict: bool = False) -> Any:
     cov = _cov()
-    config_opt = int(cov.ConfigOpt.ExclusionInStrictMode) if strict else 0
-    db = cov.open(vdb, config_opt)
+    try:
+        signature = inspect.signature(cov.open)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"cannot inspect cov.open signature: {exc}") from exc
+    positional = [
+        item for item in signature.parameters.values()
+        if item.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+    ]
+    required = [item for item in positional if item.default is inspect.Parameter.empty]
+    has_varargs = any(
+        item.kind == inspect.Parameter.VAR_POSITIONAL
+        for item in signature.parameters.values()
+    )
+    if has_varargs or len(required) != 1 or len(positional) not in (1, 2):
+        raise RuntimeError(f"unsupported cov.open signature: {signature}")
+    if len(positional) == 1:
+        if strict:
+            raise RuntimeError(
+                "installed cov.open(vdb) does not support strict exclusion config_opt"
+            )
+        db = cov.open(vdb)
+    else:
+        config_opt = int(cov.ConfigOpt.ExclusionInStrictMode) if strict else 0
+        db = cov.open(vdb, config_opt)
     if not db:
         raise RuntimeError(f"cov.open failed: {vdb}")
     return db

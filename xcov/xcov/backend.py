@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import hashlib
+import inspect
 import json
 import secrets
 import sys
@@ -175,6 +176,35 @@ NPI_METHOD_CONTRACTS: Dict[str, NpiMethodContract] = {
         "value",
     ),
 }
+
+
+def _cov_open_contract(open_fn: Callable[..., Any]) -> NpiMethodContract:
+    try:
+        signature = inspect.signature(open_fn)
+    except (TypeError, ValueError) as exc:
+        raise XcovError(
+            "NPI_CONTRACT_VIOLATION",
+            "cannot inspect pynpi.cov.open signature",
+            operation="cov.open",
+            cause_type=type(exc).__name__,
+            cause_message=str(exc),
+        ) from exc
+    parameters = list(signature.parameters.values())
+    positional = [
+        item for item in parameters
+        if item.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+    ]
+    has_varargs = any(item.kind == inspect.Parameter.VAR_POSITIONAL for item in parameters)
+    required = [item for item in positional if item.default is inspect.Parameter.empty]
+    if has_varargs or len(required) != 1 or len(positional) not in (1, 2):
+        raise XcovError(
+            "NPI_CONTRACT_VIOLATION",
+            "unsupported pynpi.cov.open signature",
+            operation="cov.open",
+            actual_signature=str(signature),
+            supported_signatures=["open(vdb)", "open(vdb, config_opt=0)"],
+        )
+    return _contract("open", "vdb", *(() if len(positional) == 1 else ("config_opt",)))
 for _metric_method in METRIC_METHODS.values():
     NPI_METHOD_CONTRACTS[f"instance.{_metric_method}"] = _contract(
         _metric_method
@@ -731,6 +761,8 @@ class NpiCoverageBackend(CoverageBackend):
         self.cov = cov
         self.npisys = npisys
         self.api = NpiApiBinding(cov, npisys)
+        cov_open_contract = _cov_open_contract(cov.open)
+        self.api._contracts["cov.open"] = cov_open_contract
         with _redirect_stdout_to_stderr():
             init_ok = self.api.module_call("npisys.init", sys.argv)
         if init_ok != 1:
@@ -746,11 +778,16 @@ class NpiCoverageBackend(CoverageBackend):
                     if self.exclusion_policy == "strict"
                     else 0
                 )
-                self.db = self.api.module_call(
-                    "cov.open",
-                    self.vdb,
-                    config_opt,
-                )
+            if len(cov_open_contract.positional_args) == 1:
+                if config_opt:
+                    raise XcovError(
+                        "NPI_COV_OPEN_STRICT_UNSUPPORTED",
+                        "installed pynpi.cov.open does not accept config_opt; strict exclusion is unavailable",
+                        actual_signature="open(vdb)",
+                    )
+                self.db = self.api.module_call("cov.open", self.vdb)
+            else:
+                self.db = self.api.module_call("cov.open", self.vdb, config_opt)
             if not self.db:
                 log_lifecycle_event("adhoc", "vdb.open.failed", False, {"vdb": self.vdb})
                 raise XcovError(
