@@ -228,7 +228,7 @@ def test_request_parser_rejects_nonfinite_json_numbers(constant):
         '{"api_version":"xcov.v1","action":"export.code_coverage",'
         '"target":{"session_id":"cov0"},"args":{"threshold_pct":'
         + constant
-        + ',"output":{"path":"holes.md"}}}'
+        + ',"output":{"path":"export.md"}}}'
     )
 
     with pytest.raises(XcovError) as raised:
@@ -737,26 +737,26 @@ def test_unknown_fields_are_rejected_at_every_public_request_layer():
             "unexpected_top_level": True,
         },
         {
-            "api_version": "xcov.v1", "action": "code_coverage.holes",
+            "api_version": "xcov.v1", "action": "code_coverage.summary",
             "target": {"session_id": "cov0", "unexpected_target": True},
         },
         {
-            "api_version": "xcov.v1", "action": "code_coverage.holes",
+            "api_version": "xcov.v1", "action": "code_coverage.summary",
             "target": {"session_id": "cov0"},
             "args": {"unexpected_arg": True},
         },
         {
-            "api_version": "xcov.v1", "action": "code_coverage.holes",
+            "api_version": "xcov.v1", "action": "code_coverage.summary",
             "target": {"session_id": "cov0"},
             "args": {"query": {"unexpected_query": True}},
         },
         {
-            "api_version": "xcov.v1", "action": "code_coverage.holes",
+            "api_version": "xcov.v1", "action": "code_coverage.summary",
             "target": {"session_id": "cov0"},
             "args": {"sort": {"unexpected_sort": True}},
         },
         {
-            "api_version": "xcov.v1", "action": "code_coverage.holes",
+            "api_version": "xcov.v1", "action": "code_coverage.summary",
             "target": {"session_id": "cov0"},
             "args": {"limits": {"unexpected_limit": True}},
         },
@@ -764,7 +764,7 @@ def test_unknown_fields_are_rejected_at_every_public_request_layer():
             "api_version": "xcov.v1", "action": "export.code_coverage",
             "target": {"session_id": "cov0"},
             "args": {
-                "output": {"path": "holes.md", "unexpected_output": True},
+                "output": {"path": "export.md", "unexpected_output": True},
             },
         },
     ]
@@ -783,7 +783,7 @@ def test_backend_empty_metric_selector_means_no_metrics_not_all_metrics():
 
 @pytest.mark.parametrize(
     "action",
-    ["code_coverage.summary", "code_coverage.holes"],
+    ["code_coverage.summary"],
 )
 def test_code_coverage_actions_reject_functional_metric(action):
     rsp = _dispatch_opened().dispatch({
@@ -905,8 +905,8 @@ def test_new_urg_alignment_actions_are_in_schema_and_actions():
         "action": "actions",
     })
     names = {row["name"] for row in actions["data"]["items"]}
-    for action in ("code_coverage.summary", "code_coverage.holes",
-                   "functional_coverage.summary", "functional_coverage.holes",
+    for action in ("code_coverage.summary",
+                   "functional_coverage.summary",
                    "assert.summary", "export.code_coverage",
                    "export.functional_coverage", "export.assert"):
         assert action in names
@@ -921,7 +921,8 @@ def test_new_urg_alignment_actions_are_in_schema_and_actions():
                "export.scope_tree", "export.functional",
                "functional.summary", "functional.holes", "assert.report",
                "function_coverage.summary", "function_coverage.holes",
-               "export.function_coverage"}
+               "export.function_coverage",
+               "code_coverage.holes", "functional_coverage.holes"}
     assert not (names & removed)
     for action in removed:
         rsp = dispatcher.dispatch({
@@ -946,41 +947,13 @@ def test_logging_sanitize_omits_heavy_fields():
     assert sanitized["log_truncated"] is True
 
 
-def test_stdio_loop_with_injected_backend_holes():
-    lines = [
-        {"api_version": "xcov.v1", "request_id": "open",
-         "action": "session.open", "target": {"vdb": "unit-test.vdb"},
-         "args": {"name": "cov0"}},
-        {"api_version": "xcov.v1", "request_id": "holes",
-         "action": "code_coverage.holes", "target": {"session_id": "cov0"},
-         "args": {"metrics": ["toggle", "branch"]}},
-    ]
-    rc, out = _stdio_exchange(lines)
-    assert rc == 0
-    assert out[0]["protocol"] == "xcov-stdio-loop"
-    assert out[2]["request_id"] == "holes"
-    assert "id" not in out[2]
-    assert out[2]["ok"] is True
-    assert out[2]["api_version"] == "xcov.v1"
-    assert out[2]["action"] == "code_coverage.holes"
-    assert out[2]["xout"].startswith("@xcov.code_coverage.holes.v1\n")
-    assert "XOUT_BEGIN" not in out[2]["xout"]
-    assert "XOUT_END" not in out[2]["xout"]
-    assert '"/request_id"' not in out[2]["xout"]
-    assert '"/api_version"' not in out[2]["xout"]
-    assert '"/action"' not in out[2]["xout"]
-    assert '"/ok"' not in out[2]["xout"]
-    assert "total_count: 1" in out[2]["xout"]
-    assert out[2]["json"]["summary"]["total_count"] == 1
-
-
 def test_stdio_loop_unknown_action_returns_error_without_crash():
     reqs = [
         {"api_version": "xcov.v1", "request_id": "open",
          "action": "session.open", "target": {"vdb": "unit-test.vdb"},
          "args": {"name": "cov0"}},
         {"api_version": "xcov.v1", "request_id": "bad",
-         "action": "cov.holes", "target": {"session_id": "cov0"}},
+         "action": "cov.unknown", "target": {"session_id": "cov0"}},
     ]
     rc, out = _stdio_exchange(reqs)
     assert rc == 0
@@ -988,11 +961,11 @@ def test_stdio_loop_unknown_action_returns_error_without_crash():
     assert out[2]["request_id"] == "bad"
     assert "id" not in out[2]
     assert out[2]["ok"] is False
-    assert out[2]["action"] == "cov.holes"
+    assert out[2]["action"] == "cov.unknown"
     assert '"/request_id"' not in out[2]["xout"]
     assert '"/action"' not in out[2]["xout"]
     assert out[2]["json"]["error"]["code"] == "UNKNOWN_ACTION"
-    assert out[2]["json"]["error"]["detail.requested_action"] == "cov.holes"
+    assert out[2]["json"]["error"]["detail.requested_action"] == "cov.unknown"
 
 
 def test_tests_list_defaults_to_name_filter():
@@ -1016,8 +989,8 @@ def test_logging_writes_action_manifest_lifecycle_and_transport(
         {"api_version": "xcov.v1", "request_id": "open",
          "action": "session.open", "target": {"vdb": "unit-test.vdb"},
          "args": {"name": "cov0"}},
-        {"api_version": "xcov.v1", "request_id": "holes",
-         "action": "code_coverage.holes", "target": {"session_id": "cov0"},
+        {"api_version": "xcov.v1", "request_id": "summary",
+         "action": "code_coverage.summary", "target": {"session_id": "cov0"},
          "args": {"metrics": ["toggle"]}},
         {"api_version": "xcov.v1", "request_id": "close",
          "action": "session.close", "target": {"session_id": "cov0"}},
@@ -1042,7 +1015,7 @@ def test_regex_rejected():
          "action": "session.open", "target": {"vdb": "unit-test.vdb"},
          "args": {"name": "cov0"}},
         {"api_version": "xcov.v1", "request_id": "bad",
-         "action": "code_coverage.holes", "target": {"session_id": "cov0"},
+         "action": "code_coverage.summary", "target": {"session_id": "cov0"},
          "args": {"query": {"include_patterns": ["^top.*"]}}},
     ]
     _, out = _stdio_exchange(reqs)
@@ -1066,8 +1039,8 @@ def _dispatch_opened() -> Dispatcher:
 def test_top_level_limits_are_rejected_before_dispatch():
     dispatcher = _dispatch_opened()
     rsp = dispatcher.dispatch({
-        "api_version": "xcov.v1", "request_id": "holes",
-        "action": "code_coverage.holes", "target": {"session_id": "cov0"},
+        "api_version": "xcov.v1", "request_id": "limits-test",
+        "action": "code_coverage.summary", "target": {"session_id": "cov0"},
         "args": {"scope": "top.u_dut", "metrics": ["toggle", "branch"]},
         "limits": {"max_items": 1},
     })
@@ -1253,12 +1226,15 @@ class CountingBackend(CoverageBackend):
     def summary(self):
         return {"test_count": 1, "top_scope_count": 1}
 
+    def top_scopes(self):
+        return [{"name": "top", "full_name": "top", "parent": None, "depth": 0, "type": "instance"}]
+
     def scopes(self):
         self.scopes_called += 1
         raise AssertionError("session public_json must not scan scopes")
 
-    def metrics_for_scope(self, scope, test):
-        return []
+    def scope_metrics(self):
+        return {}
 
     def items(self, metrics=None, scope=None, test="merged", functional_only=False):
         return []

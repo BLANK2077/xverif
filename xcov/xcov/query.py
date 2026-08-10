@@ -17,9 +17,7 @@ DEFAULT_LIMITS = {
     "scope.search": 100,
     "scope.summary": 100,
     "code_coverage.summary": 100,
-    "code_coverage.holes": 100,
     "functional_coverage.summary": 100,
-    "functional_coverage.holes": 100,
     "assert.summary": 100,
 }
 

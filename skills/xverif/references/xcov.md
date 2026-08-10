@@ -34,7 +34,7 @@ Coverage 分析和 exclusion 的标准顺序：
 1. 打开 VDB session。
 2. 按用户需要选择一种初始状态：用 `exclude.load` 导入 EL、用 `exclude.csv.apply` 导入三类
    CSV，或不加载任何 exclusion。不要自动选择或静默 fallback。
-3. 先用 `scope.summary`、`scope.children`、`code_coverage.summary` 和 holes action 查询覆盖率。
+3. 先用 `scope.summary`、`scope.children`、`code_coverage.summary` 查询覆盖率。
 4. 用 `export.code_coverage`、`export.functional_coverage` 或 `export.assert` 导出具体缺口，不能
    只依据压缩摘要决定排除。
 5. 对每个 gap 选择补充激励，或调用 `exclude.add` 并为每个条目提供具体非空 `reason`。
@@ -54,33 +54,13 @@ open：
 {"api_version":"xcov.v1","action":"session.open","target":{"vdb":"merged.vdb"},"args":{"name":"cov0"}}
 ```
 
-holes：
-
-```json
-{"api_version":"xcov.v1","action":"code_coverage.holes","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","metrics":["line","toggle","branch","condition","fsm","assert"],"limits":{"max_items":100}}}
-```
-
-code holes glob filter：
-
-```json
-{"api_version":"xcov.v1","action":"code_coverage.holes","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","query":{"include_patterns":["*u_uart*"],"exclude_patterns":["*uvm*"],"match_field":"full_name"}}}
-```
-
-function holes：
-
-```json
-{"api_version":"xcov.v1","action":"functional_coverage.holes","target":{"session_id":"cov0"},"args":{"levels":["bin"],"query":{"include_patterns":["*APB_accesses_cg*"],"match_field":"full_name"}}}
-```
-
-
-
 assert summary：
 
 ```json
 {"api_version":"xcov.v1","action":"assert.summary","target":{"session_id":"cov0"}}
 ```
 
-code coverage export：
+code coverage export（**每次 export 触发一次 URG，尽量一次提交多个 instance**）：
 
 ```json
 {"api_version":"xcov.v1","action":"export.code_coverage","target":{"session_id":"cov0"},"args":{"scopes":["uart_tb.u_uart"],"metrics":["line","toggle"],"output":{"path":"coverage_artifacts"}}}
@@ -123,21 +103,16 @@ assert export：
 - coverage pct 用 `covered/coverable`，不要用 hit count 代替覆盖率。
 - 保留 `excluded/unreachable/illegal` 状态，不要误判为普通 hole。
 - 交互查询优先用 `scope.summary`、`scope.children`、`scope.search`、
-  `code_coverage.summary`、`code_coverage.holes` 看层次覆盖率。
+  `code_coverage.summary` 看层次覆盖率。
 - `scope.summary` 返回扁平覆盖率字段；不要期待 `metrics={...}`，也不要期待
   parent/depth/type/def_name。
 - `scope.children` 和 `scope.search` 每项只返回 `name/full_name/coverage_pct`。
 - `code_coverage.summary` 不输出 `name/full_name/functional_pct`。
-- `code_coverage.holes` 只输出当前 hierarchy 与子模块覆盖率概览，只保留
-  `name/full_name/coverage_pct/*_pct`，不展开具体未覆盖 signal、branch、condition 或
-  bin，也不输出 parent/depth/type/def_name/covered/coverable/missing/file/line。
-- `code_coverage.holes` 和 `functional_coverage.holes` 支持 `query.include_patterns` /
+- `code_coverage.summary` 和 `scope.*` 支持 `query.include_patterns` /
   `query.exclude_patterns` 通配过滤；只支持 glob `*`、`?`，不要使用 regex。
-- `functional_coverage.holes` 默认按 `full_name` 过滤，可用 `match_field` 切到
-  `covergroup`、`coverpoint`、`cross`、`bin` 或 `name`。
-- `functional_coverage.summary` 和 `functional_coverage.holes` 不输出
-  `metric/name/full_name/score_basis/score_item_count/raw_covered/raw_coverable/raw_missing`；
-  `functional_coverage.summary` 也不输出 `raw_coverage_pct`。
+- `functional_coverage.summary` 不输出
+  `metric/name/full_name/score_basis/score_item_count/raw_covered/raw_coverable/raw_missing`，
+  也不输出 `raw_coverage_pct`。
 - xout 的 `items:` 是对齐纯文本表格，不是 Markdown 表格；JSON 响应结构不变。
 - 详细 code coverage 未覆盖项使用 `export.code_coverage` 的分 metric JSON/XOUT 查看；
   functional/assertion 使用各自 export action 的当前 schema。

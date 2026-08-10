@@ -120,22 +120,22 @@ NPI 前校验 `xcov.run-manifest.v1` 的 `state:"published"`，以及相对 mani
 {"schema_version":"xcov.run-manifest.v1","state":"published","resources":{"vdb":{"path":"merged.vdb","size_bytes":4096,"sha256":"<64-hex-sha256>"}}}
 ```
 
-查询 holes：
+查询 code coverage summary：
 
 ```json
-{"api_version":"xcov.v1","action":"code_coverage.holes","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","metrics":["line","toggle","branch","condition","fsm","assert"],"limits":{"max_items":100}}}
+{"api_version":"xcov.v1","action":"code_coverage.summary","target":{"session_id":"cov0"},"args":{"group_by":"metric","metrics":["line","toggle","branch","condition","fsm"]}}
 ```
 
-按通配过滤 code coverage hierarchy holes：
+按通配过滤 scope：
 
 ```json
-{"api_version":"xcov.v1","action":"code_coverage.holes","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","query":{"include_patterns":["*u_uart*"],"exclude_patterns":["*uvm*"],"match_field":"full_name"}}}
+{"api_version":"xcov.v1","action":"scope.search","target":{"session_id":"cov0"},"args":{"query":{"include_patterns":["*u_uart*"],"exclude_patterns":["*uvm*"],"match_field":"full_name"}}}
 ```
 
-查询 functional coverage holes：
+导出 code coverage 详情（**每次 export 触发一次 URG，尽量一次提交多个 instance**）：
 
 ```json
-{"api_version":"xcov.v1","action":"functional_coverage.holes","target":{"session_id":"cov0"},"args":{"levels":["bin"],"query":{"include_patterns":["*APB_accesses_cg*"],"match_field":"full_name"}}}
+{"api_version":"xcov.v1","action":"export.code_coverage","target":{"session_id":"cov0"},"args":{"scopes":["uart_tb.u_uart","uart_tb.u_ctrl"],"metrics":["line","branch"],"output":{"path":"coverage_artifacts"}}}
 ```
 
 
@@ -232,7 +232,7 @@ CSV action：
 
 ## URG 对齐语义
 
-`code_coverage.summary`、`code_coverage.holes`、`metrics.list`、`scope.summary` 和
+`code_coverage.summary`、`metrics.list`、`scope.summary` 和
 Markdown exports 使用与 URG HTML 报告一致的 score-bearing
 object 层级：
 
@@ -285,19 +285,15 @@ Python NPI 层只把文档定义的 SDK “不适用”返回值映射为 `null`
   hierarchy 名称和快速查看当前覆盖率。
 - `code_coverage.summary`：按 metric、scope 或 source file 汇总代码覆盖率；不输出
   name/full_name/functional_pct。
-- `code_coverage.holes`：按输入 hierarchy 输出当前层次和子模块的覆盖率概览，只保留
-  `name/full_name/coverage_pct/*_pct`，不展开具体 signal、branch、condition 或 bin，
-  也不输出 parent/depth/type/def_name/covered/coverable/missing/file/line。具体未覆盖项请使用
-  `export.code_coverage`。
+- `export.code_coverage`：详细 code coverage 导出，每次调用触发一次 URG，尽量一次提交
+  多个要查看的 instance。按 scope 分目录，按 metric 输出 JSON/XOUT/raw URG text。
 - `functional_coverage.summary`：按 covergroup、coverpoint、cross 或 bin 汇总功能覆盖率，
   不输出 metric/name/full_name/score_basis/score_item_count/raw_* 字段，包括
   raw_coverage_pct。
-- `functional_coverage.holes`：输出未覆盖的 functional coverage 项，支持 `levels` 和
-  `query` glob 过滤；不输出 metric/name/full_name/score_basis/score_item_count/raw_* 字段。
 - `query.match_field` 与 `sort.by` 都是 action-specific enum；拼错或选择该 action
   不支持的字段会在执行前返回 `SCHEMA_INVALID`。显式 `metrics`/`levels` 必须是
   非空数组，空数组不会回退成默认全集。
-- `code_coverage.summary/holes` 的 `metrics` 只接受 line/toggle/branch/condition/
+- `code_coverage.summary` 的 `metrics` 只接受 line/toggle/branch/condition/
   fsm/assert；functional metric 只能通过 `functional_coverage.*` 查询。
 
 

@@ -450,7 +450,7 @@ def test_cov_session_real_lifecycle(monkeypatch: pytest.MonkeyPatch):
         )
         queried_json = await server.mcp.call_tool(
             "xverif_cov_query",
-            {"session_id": "cov_real", "action": "code_coverage.holes",
+            {"session_id": "cov_real", "action": "code_coverage.summary",
              "args": {"metrics": ["toggle", "branch"], "limits": {"max_items": 1}},
              "output_format": "json"},
         )
@@ -603,7 +603,7 @@ def test_batch_real_lifecycle(tmp_path, monkeypatch: pytest.MonkeyPatch):
         json.dumps({"tool": "xverif_cov_session_open",
                      "args": {"name": "cov_real", "vdb": test_vdb}}),
         json.dumps({"tool": "xverif_cov_query",
-                     "args": {"session_id": "cov_real", "action": "code_coverage.holes",
+                     "args": {"session_id": "cov_real", "action": "code_coverage.summary",
                               "args": {"metrics": ["line"], "limits": {"max_items": 2}},
                               "output_format": "json"}}),
         json.dumps({"tool": "xverif_cov_session_close",

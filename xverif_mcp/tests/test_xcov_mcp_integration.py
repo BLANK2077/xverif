@@ -183,46 +183,6 @@ def test_cov_code_coverage_summary(monkeypatch, test_vdb, xverif_home):
     })
 
 
-def test_cov_code_coverage_holes(monkeypatch, test_vdb, xverif_home):
-    """xverif_cov_query(code_coverage.holes) 返回未覆盖项列表."""
-    overrides = {
-        "XVERIF_HOME": xverif_home,
-        "XVERIF_MCP_BACKEND": "direct",
-    }
-    server = _server(monkeypatch, overrides)
-
-    _call_tool(server, "xverif_cov_session_open", {
-        "name": "mcp_int_holes", "vdb": test_vdb,
-    })
-
-    content, _ = _call_tool(server, "xverif_cov_query", {
-        "session_id": "mcp_int_holes",
-        "action": "code_coverage.holes",
-        "args": {"metrics": ["toggle"], "limits": {"max_items": 10}},
-        "output_format": "json",
-    })
-    payload = json.loads(content[0].text)
-    assert payload["ok"] is True
-
-    items = payload["data"]["items"]
-    assert payload["summary"]["returned_count"] <= 10
-
-    # holes items have coverage_pct and per-metric pct fields
-    for item in items:
-        assert "coverage_pct" in item
-        assert "full_name" in item
-        # at least one metric-specific pct field should be present
-        metric_pcts = [item.get(k) for k in (
-            "line_pct", "toggle_pct", "branch_pct", "condition_pct", "fsm_pct", "assert_pct"
-        )]
-        assert any(v is not None for v in metric_pcts), \
-            f"no metric_pct in hole item: {list(item.keys())}"
-
-    _call_tool(server, "xverif_cov_session_close", {
-        "session_id": "mcp_int_holes",
-    })
-
-
 def test_cov_scope_summary(monkeypatch, test_vdb, xverif_home):
     """xverif_cov_query(scope.summary) 返回指定 scope 的覆盖率."""
     overrides = {

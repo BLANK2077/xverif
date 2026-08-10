@@ -131,20 +131,10 @@ ACTION_REGISTRY: Dict[str, ActionContract] = {
         "Aggregate code-coverage scores by a declared grouping field.",
         "Do not use for hierarchy-level holes or detailed Markdown evidence.",
     ),
-    "code_coverage.holes": ActionContract(
-        "code_coverage.holes", "_code_coverage", True,
-        "Find hierarchy scopes whose selected code metrics are below 100 percent.",
-        "Do not use for individual uncovered bins; use export.code_coverage.",
-    ),
     "functional_coverage.summary": ActionContract(
         "functional_coverage.summary", "_functional", True,
         "Aggregate functional coverage at covergroup, coverpoint, cross, or bin level.",
         "Do not use when only uncovered functional items are required.",
-    ),
-    "functional_coverage.holes": ActionContract(
-        "functional_coverage.holes", "_functional", True,
-        "List uncovered functional coverage items at selected levels.",
-        "Do not use for code coverage or full Markdown export.",
     ),
     "assert.summary": ActionContract(
         "assert.summary", "_assert_report", True,
@@ -482,46 +472,31 @@ class Dispatcher:
         args = action_args(req)
         query = query_args(action, args)
         metrics = _selector_or_default(args, "metrics", _code_metrics())
-        already_filtered = False
-        if action == "code_coverage.holes":
-            scopes = _indexed_scopes(sess.backend.scopes())
-            items = sess.backend.items(metrics=metrics, scope=args.get("scope"),
-                                      test=str(args.get("test", "merged")))
-            rows = _code_coverage_hole_scope_rows(scopes, _coverage_score_rows(items), metrics, args)
-            rows = _project_code_coverage_hole_rows(rows)
+        group_by = str(args.get("group_by", "metric"))
+        try:
+            scope_metrics = sess.backend.scope_metrics()
+        except NotImplementedError:
+            scope_metrics = None
+        if scope_metrics is not None and group_by in ("metric", "scope"):
+            scope_filter = args.get("scope")
+            if scope_filter:
+                sf = str(scope_filter)
+                scope_metrics = {
+                    s: m for s, m in scope_metrics.items()
+                    if s == sf or s.startswith(sf + ".")
+                }
+            rows = _code_coverage_from_urg(scope_metrics, group_by)
         else:
-            group_by = str(args.get("group_by", "metric"))
-            try:
-                scope_metrics = sess.backend.scope_metrics()
-            except NotImplementedError:
-                scope_metrics = None
-            if scope_metrics is not None and group_by in ("metric", "scope"):
-                scope_filter = args.get("scope")
-                if scope_filter:
-                    sf = str(scope_filter)
-                    scope_metrics = {
-                        s: m for s, m in scope_metrics.items()
-                        if s == sf or s.startswith(sf + ".")
-                    }
-                rows = _code_coverage_from_urg(scope_metrics, group_by)
-            else:
-                rows = sess.backend.items(metrics=metrics, scope=args.get("scope"),
-                                          test=str(args.get("test", "merged")))
-                rows = _coverage_score_rows(rows)
-                rows = _summary_from_items(rows, group_by)
-            rows = filter_items(rows, query)
-            rows = _project_code_coverage_summary_rows(rows)
-            already_filtered = True
-        if not already_filtered:
-            rows = filter_items(rows, query)
+            rows = sess.backend.items(metrics=metrics, scope=args.get("scope"),
+                                      test=str(args.get("test", "merged")))
+            rows = _coverage_score_rows(rows)
+            rows = _summary_from_items(rows, group_by)
+        rows = filter_items(rows, query)
+        rows = _project_code_coverage_summary_rows(rows)
         rows = sort_items(action, rows, args.get("sort"))
         summary, inline, warnings = apply_output(action, args, rows)
         summary.update({"session_id": sess.session_id, "scope": args.get("scope"),
                         "test": args.get("test", "merged"), "metrics": metrics})
-        if action == "code_coverage.holes":
-            summary["note"] = ("Detailed uncovered code coverage items are available via "
-                               "export.code_coverage. For complex processing, use x-npi "
-                               "and learn the pynpi coverage APIs.")
         return ok_response(req, summary, {"filters": filters_summary(query), "items": inline}, warnings)
 
     def _functional(self, req: Json, sess) -> Json:
@@ -531,16 +506,10 @@ class Dispatcher:
         rows = sess.backend.items(metrics=["functional"], scope=args.get("scope"),
                                   test=str(args.get("test", "merged")),
                                   functional_only=True)
-        if action == "functional_coverage.holes":
-            rows = _filter_functional_levels(rows, args.get("levels"))
-            rows = [row for row in rows if row["missing"] > 0]
-            rows = filter_items(rows, query)
-            rows = _project_functional_coverage_hole_rows(rows)
-        else:
-            group_by = str(args.get("group_by", "covergroup"))
-            rows = _functional_summary_rows(rows, group_by)
-            rows = filter_items(rows, query)
-            rows = _project_functional_coverage_summary_rows(rows, group_by)
+        group_by = str(args.get("group_by", "covergroup"))
+        rows = _functional_summary_rows(rows, group_by)
+        rows = filter_items(rows, query)
+        rows = _project_functional_coverage_summary_rows(rows, group_by)
         rows = sort_items(action, rows, args.get("sort"))
         summary, inline, warnings = apply_output(action, args, rows)
         summary.update({"session_id": sess.session_id, "test": args.get("test", "merged")})
@@ -1916,35 +1885,12 @@ def _project_code_coverage_summary_rows(rows: List[Json]) -> List[Json]:
             for row in rows]
 
 
-def _project_code_coverage_hole_rows(rows: List[Json]) -> List[Json]:
-    columns = [
-        "name", "full_name", "coverage_pct",
-        "line_pct", "toggle_pct", "branch_pct", "condition_pct",
-        "fsm_pct", "assert_pct",
-    ]
-    return [_project_columns(row, columns) for row in rows]
-
-
 def _project_functional_coverage_summary_rows(rows: List[Json], group_by: str) -> List[Json]:
     columns = [
         group_by, "covered", "coverable", "missing",
         "coverage_pct",
     ]
     return [_project_columns(row, columns) for row in rows]
-
-
-def _project_functional_coverage_hole_rows(rows: List[Json]) -> List[Json]:
-    out: List[Json] = []
-    for row in rows:
-        ev = row.get("evidence") if isinstance(row.get("evidence"), dict) else {}
-        projected = _project_columns(row, [
-            "covergroup", "coverpoint", "cross", "bin",
-            "covered", "coverable", "count", "coverage_pct", "status",
-        ])
-        projected["file"] = ev.get("file")
-        projected["line"] = ev.get("line")
-        out.append(projected)
-    return out
 
 
 def _project_assert_summary_rows(rows: List[Json]) -> List[Json]:
@@ -1958,38 +1904,6 @@ def _project_assert_summary_rows(rows: List[Json]) -> List[Json]:
 
 def _code_metrics() -> List[str]:
     return [m for m in METRICS if m != "functional"]
-
-
-def _code_coverage_hole_scope_rows(scopes: Dict[str, Json], items: List[Json],
-                                   metrics: List[str], args: Json) -> List[Json]:
-    coverage = _scope_coverage(items, metrics)
-    current = _scope_summary_rows(scopes, coverage, args)
-    children = _scope_children_rows(scopes, coverage, args)
-    seen = set()
-    rows = []
-    for row in current + children:
-        full = row.get("full_name")
-        if full in seen:
-            continue
-        seen.add(full)
-        rows.append(row)
-    return [
-        row
-        for row in rows
-        if any(_pct_is_below_100(row[f"{metric}_pct"]) for metric in metrics)
-    ]
-
-
-def _pct_is_below_100(value: Any) -> bool:
-    if value is None:
-        return False
-    if not isinstance(value, (int, float)) or isinstance(value, bool):
-        raise XcovError(
-            "INTERNAL_CONTRACT_ERROR",
-            "derived coverage percentage is not numeric",
-            field="coverage_pct",
-        )
-    return value < 100.0
 
 
 def _summary_from_items(items: List[Json], group_by: str) -> List[Json]:

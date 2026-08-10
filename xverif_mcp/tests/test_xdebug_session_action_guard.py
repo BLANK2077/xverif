@@ -71,7 +71,7 @@ def test_loop_wrapper_cov_query_rejects_removed_outer_field(field: str) -> None:
         "method": "cov.query",
         "params": {
             "session_id": "cov_a",
-            "action": "code_coverage.holes",
+            "action": "code_coverage.summary",
             field: {},
         },
     })

@@ -75,22 +75,7 @@ QUERY_FIELD_CONTRACTS: Dict[str, Dict[str, Any]] = {
             "full_name",
         ),
     },
-    "code_coverage.holes": {
-        "default": "full_name",
-        "allowed": ("name", "full_name"),
-    },
     "functional_coverage.summary": {
-        "default": "full_name",
-        "allowed": (
-            "name",
-            "full_name",
-            "covergroup",
-            "coverpoint",
-            "cross",
-            "bin",
-        ),
-    },
-    "functional_coverage.holes": {
         "default": "full_name",
         "allowed": (
             "name",
@@ -137,17 +122,6 @@ SORT_FIELD_CONTRACTS: Dict[str, tuple[str, ...]] = {
         "missing",
         "coverage_pct",
     ),
-    "code_coverage.holes": (
-        "name",
-        "full_name",
-        "coverage_pct",
-        "line_pct",
-        "toggle_pct",
-        "branch_pct",
-        "condition_pct",
-        "fsm_pct",
-        "assert_pct",
-    ),
     "functional_coverage.summary": (
         "covergroup",
         "coverpoint",
@@ -157,19 +131,6 @@ SORT_FIELD_CONTRACTS: Dict[str, tuple[str, ...]] = {
         "coverable",
         "missing",
         "coverage_pct",
-    ),
-    "functional_coverage.holes": (
-        "covergroup",
-        "coverpoint",
-        "cross",
-        "bin",
-        "covered",
-        "coverable",
-        "count",
-        "coverage_pct",
-        "status",
-        "file",
-        "line",
     ),
     "assert.summary": (
         "name",
@@ -521,11 +482,12 @@ SESSION = _object({
     "vdb": _string(min_length=1),
     "test_count": _integer(0),
     "top_scope_count": _nullable(_integer(0)),
+    "top_scopes": _string_array(),
     "worker": _string(min_length=1),
     "exclusion_policy": _string(enum=["default", "strict"]),
 }, required=[
-    "session_id", "state", "vdb", "test_count", "top_scope_count", "worker",
-    "exclusion_policy",
+    "session_id", "state", "vdb", "test_count", "top_scope_count",
+    "top_scopes", "worker", "exclusion_policy",
 ])
 
 RUN_MANIFEST_RESOURCE = _object({
@@ -634,21 +596,6 @@ CODE_SUMMARY_ITEM = {
     ],
 }
 
-CODE_HOLE_ITEM = _object({
-    "name": _string(min_length=1),
-    "full_name": _string(min_length=1),
-    "coverage_pct": NULLABLE_NUMBER,
-    "line_pct": NULLABLE_NUMBER,
-    "toggle_pct": NULLABLE_NUMBER,
-    "branch_pct": NULLABLE_NUMBER,
-    "condition_pct": NULLABLE_NUMBER,
-    "fsm_pct": NULLABLE_NUMBER,
-    "assert_pct": NULLABLE_NUMBER,
-}, required=[
-    "name", "full_name", "coverage_pct", "line_pct", "toggle_pct",
-    "branch_pct", "condition_pct", "fsm_pct", "assert_pct",
-])
-
 FUNCTIONAL_SUMMARY_ITEM = {
     "oneOf": [
         _object(
@@ -661,23 +608,6 @@ FUNCTIONAL_SUMMARY_ITEM = {
         for group_by in FUNCTIONAL_LEVELS
     ],
 }
-
-FUNCTIONAL_HOLE_ITEM = _object({
-    "covergroup": NULLABLE_STRING,
-    "coverpoint": NULLABLE_STRING,
-    "cross": NULLABLE_STRING,
-    "bin": NULLABLE_STRING,
-    "covered": NULLABLE_INTEGER,
-    "coverable": NULLABLE_INTEGER,
-    "count": NULLABLE_INTEGER,
-    "coverage_pct": NULLABLE_NUMBER,
-    "status": _array(_string(enum=sorted(STATUS_VALUES)), min_items=1),
-    "file": NULLABLE_NONEMPTY_STRING,
-    "line": NULLABLE_POSITIVE_INTEGER,
-}, required=[
-    "covergroup", "coverpoint", "cross", "bin", "covered", "coverable",
-    "count", "coverage_pct", "status", "file", "line",
-])
 
 EVIDENCE = _object({
     "file": NULLABLE_NONEMPTY_STRING,
@@ -1062,29 +992,6 @@ SCHEMAS: Dict[str, Json] = {
             filters_action="code_coverage.summary",
         ),
     ),
-    "code_coverage.holes": _schema_entry(
-        "code_coverage.holes",
-        _request(
-            "code_coverage.holes",
-            target=SESSION_TARGET,
-            args=_args(_coverage_query_props(
-                "code_coverage.holes",
-                metrics=CODE_METRICS,
-            )),
-            require_target=True,
-        ),
-        _query_summary({
-            "session_id": _string(min_length=1),
-            "scope": NULLABLE_STRING,
-            "test": _string(min_length=1),
-            "metrics": _string_array(CODE_METRICS, min_items=1),
-            "note": _string(min_length=1),
-        }),
-        _items_data(
-            CODE_HOLE_ITEM,
-            filters_action="code_coverage.holes",
-        ),
-    ),
     "functional_coverage.summary": _schema_entry(
         "functional_coverage.summary",
         _request(
@@ -1105,31 +1012,6 @@ SCHEMAS: Dict[str, Json] = {
         _items_data(
             FUNCTIONAL_SUMMARY_ITEM,
             filters_action="functional_coverage.summary",
-        ),
-    ),
-    "functional_coverage.holes": _schema_entry(
-        "functional_coverage.holes",
-        _request(
-            "functional_coverage.holes",
-            target=SESSION_TARGET,
-            args=_args({
-                **_query_props("functional_coverage.holes"),
-                "scope": _string(min_length=1),
-                "test": _string(min_length=1),
-                "levels": _string_array(
-                    FUNCTIONAL_LEVELS,
-                    min_items=1,
-                ),
-            }),
-            require_target=True,
-        ),
-        _query_summary({
-            "session_id": _string(min_length=1),
-            "test": _string(min_length=1),
-        }),
-        _items_data(
-            FUNCTIONAL_HOLE_ITEM,
-            filters_action="functional_coverage.holes",
         ),
     ),
     "assert.summary": _schema_entry(
