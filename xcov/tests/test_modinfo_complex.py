@@ -92,12 +92,12 @@ def test_complex_modinfo_export_has_diverse_incomplete_branch_groups(xverif_fixt
 
     scores = {}
     expected_line = {
-        ACTIVE_SCOPE: {"line_group_count": 6, "gap_count": 9},
-        SPARSE_SCOPE: {"line_group_count": 7, "gap_count": 14},
+        ACTIVE_SCOPE: {"line_group_count": 7, "gap_count": 15},
+        SPARSE_SCOPE: {"line_group_count": 8, "gap_count": 23},
     }
     expected_condition = {
-        ACTIVE_SCOPE: {"coverage_object_gap_count": 26, "gap_count": 24},
-        SPARSE_SCOPE: {"coverage_object_gap_count": 36, "gap_count": 33},
+        ACTIVE_SCOPE: {"coverage_object_gap_count": 33, "gap_count": 31},
+        SPARSE_SCOPE: {"coverage_object_gap_count": 43, "gap_count": 40},
     }
     for item in response["data"]["items"]:
         scope = item["scope"]
@@ -171,5 +171,19 @@ def test_complex_modinfo_export_has_diverse_incomplete_branch_groups(xverif_fixt
         branch_xout = (instance_dir / "branch.xout").read_text(encoding="utf-8")
         assert "\n  uncovered:\n" in branch_xout
         assert "\n\n  uncovered:\n" not in branch_xout
+        assert "0:request.data[0] | 1:reject_maintenance" in branch_xout
+        assert "0:2'b01 | 1:2'b10" in branch_xout
+
+        fsm = json.loads((instance_dir / "fsm.json").read_text(encoding="utf-8"))
+        assert fsm["schema"] == "xcov.code_coverage.fsm.v2"
+        assert fsm["fsm_group_count"] == 2
+        assert [group["fsm"] for group in fsm["fsm_groups"]] == ["state", "monitor_state"]
+        assert all(group["transition_coverage"]["pct"] < 100.0 for group in fsm["fsm_groups"])
+        assert all(group["gaps"] for group in fsm["fsm_groups"])
+        fsm_xout = (instance_dir / "fsm.xout").read_text(encoding="utf-8")
+        assert fsm_xout.startswith("@xcov.code_coverage.fsm.v2\n")
+        assert fsm_xout.count("\n- fsm: ") == 2
+        assert "gap_id  kind" in fsm_xout
+        assert "required" not in fsm_xout
 
     assert any(scores[ACTIVE_SCOPE][metric] != scores[SPARSE_SCOPE][metric] for metric in METRICS)
