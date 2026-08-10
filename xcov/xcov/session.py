@@ -44,12 +44,17 @@ class XcovSession:
 
     def public_json(self) -> Json:
         summary = self.backend.summary()
+        try:
+            top_scopes = [s["full_name"] for s in self.backend.top_scopes()]
+        except Exception:
+            top_scopes = []
         return {
             "session_id": self.session_id,
             "state": self.state,
             "vdb": self.vdb,
             "test_count": summary["test_count"],
             "top_scope_count": summary["top_scope_count"],
+            "top_scopes": top_scopes,
             "worker": self.worker,
             "exclusion_policy": self.exclusion_policy,
         }

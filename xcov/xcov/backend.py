@@ -7,6 +7,8 @@ import inspect
 import json
 import secrets
 import sys
+import tempfile
+import xml.etree.ElementTree as ET
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Literal, Optional
@@ -23,8 +25,10 @@ from .coverage_contract import (
     coverage_ref_for_row,
     is_score_bearing_row,
 )
+from .eda import import_pynpi
 from .errors import XcovError
 from .logging import log_lifecycle_event
+from .urg_runner import UrgRunner
 
 Json = Dict[str, Any]
 
@@ -768,22 +772,14 @@ class NpiCoverageBackend(CoverageBackend):
 
     def __post_init__(self) -> None:
         log_lifecycle_event("adhoc", "npi.init.begin", True, {"vdb": self.vdb})
-        verdi_home = os.environ.get("XVERIF_XCOV_VERDI_HOME") or os.environ.get("VERDI_HOME")
-        if not verdi_home:
-            log_lifecycle_event("adhoc", "npi.init.failed", False,
-                                {"vdb": self.vdb, "reason": "VERDI_HOME is required"})
-            raise XcovError("NPI_INIT_FAILED", "VERDI_HOME is required")
-        sys.path.append(os.path.abspath(os.path.join(verdi_home, "share/NPI/python")))
         try:
-            from pynpi import cov, npisys  # type: ignore
-        except Exception as exc:
-            log_lifecycle_event("adhoc", "npi.import.failed", False,
+            self.cov, self.npisys = import_pynpi()
+        except XcovError as exc:
+            log_lifecycle_event("adhoc", "npi.init.failed", False,
                                 {"vdb": self.vdb, "error": str(exc)})
-            raise XcovError("NPI_INIT_FAILED", f"failed to import pynpi: {exc}") from exc
-        self.cov = cov
-        self.npisys = npisys
-        self.api = NpiApiBinding(cov, npisys)
-        cov_open_contract = _cov_open_contract(cov.open)
+            raise
+        self.api = NpiApiBinding(self.cov, self.npisys)
+        cov_open_contract = _cov_open_contract(self.cov.open)
         self.api._contracts["cov.open"] = cov_open_contract
         with _redirect_stdout_to_stderr():
             init_ok = self.api.module_call("npisys.init", sys.argv)
@@ -970,13 +966,13 @@ class NpiCoverageBackend(CoverageBackend):
     def _ensure_urg(self) -> None:
         if self._urg_loaded:
             return
-        import subprocess, tempfile, xml.etree.ElementTree as ET
 
         with tempfile.TemporaryDirectory(prefix=".xcov-urg-") as cache_dir:
             xml_path = os.path.join(cache_dir, "session.xml")
-            result = subprocess.run(
-                ["urg", "-dir", self.vdb, "-report", cache_dir, "-format", "text", "-xml_verbose"],
-                capture_output=True, text=True, encoding="utf-8", timeout=300,
+            result = UrgRunner().run(
+                ["urg", "-dir", self.vdb, "-report", cache_dir,
+                 "-full64", "-xml_verbose"],
+                timeout=300,
             )
             if result.returncode != 0:
                 raise RuntimeError(f"URG failed (exit {result.returncode}): {result.stderr[:500]}")

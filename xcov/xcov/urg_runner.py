@@ -11,6 +11,8 @@ import subprocess
 from dataclasses import dataclass
 from typing import List, Optional, Sequence
 
+from .eda import get_urg_path
+
 
 @dataclass
 class UrgRunResult:
@@ -37,8 +39,11 @@ class UrgRunner:
         return bool(self._bsub_cmd)
 
     def build_argv(self, urg_args: Sequence[str]) -> List[str]:
+        argv = list(urg_args)
+        if argv and argv[0] == "urg":
+            argv[0] = get_urg_path()
         if not self.use_bsub:
-            return list(urg_args)
+            return argv
 
         base = shlex.split(self._bsub_cmd)
         interactive = {"-I", "-Is", "-Ip"}
@@ -48,7 +53,7 @@ class UrgRunner:
             base.extend(["-q", self._queue])
         if self._resource:
             base.extend(["-R", self._resource])
-        base.extend(urg_args)
+        base.extend(argv)
         return base
 
     def run(

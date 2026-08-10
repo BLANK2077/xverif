@@ -2,20 +2,11 @@ from __future__ import annotations
 
 import csv
 import io
+import os
 from pathlib import Path
 import subprocess
-import sys
 
 import pytest
-
-import os
-
-# Ensure NPI is importable (VERDI_HOME is set in CI/host environments)
-_verdi_home = os.environ.get("VERDI_HOME", "")
-if _verdi_home:
-    _npi_path = os.path.join(_verdi_home, "share", "NPI", "python")
-    if _npi_path not in sys.path:
-        sys.path.insert(0, _npi_path)
 
 from xcov.actions import Dispatcher
 from xcov.backend import NpiCoverageBackend

@@ -88,10 +88,11 @@ def test_urg_with_elfile(xverif_fixture, tmp_path):
 
     import subprocess
     import xml.etree.ElementTree as ET
+    from xcov.eda import get_urg_path
 
     def run_urg(report_dir, elfile=None):
         command = [
-            "urg", "-dir", str(vdb), "-report", str(report_dir),
+            get_urg_path(), "-dir", str(vdb), "-report", str(report_dir),
             "-format", "text", "-xml_verbose", "-metric", "line",
         ]
         if elfile is not None:
@@ -118,9 +119,9 @@ def test_urg_with_elfile(xverif_fixture, tmp_path):
 
     baseline = core0_line_metric(run_urg(tmp_path / "baseline"))
 
-    import sys
-    sys.path.insert(0, os.path.join(os.environ["VERDI_HOME"], "share/NPI/python"))
-    from pynpi import npisys, cov, cov_l0
+    from xcov.eda import import_pynpi
+    _, _ = import_pynpi()
+    from pynpi import cov, cov_l0, npisys  # noqa: F811
     from xcov.coverage_contract import SCORE_TYPES_BY_METRIC
 
     npisys.init(["test_el"])
@@ -193,8 +194,9 @@ def test_urg_show_brief(xverif_fixture, tmp_path):
     vdb = resources / "comprehensive.vdb"
 
     import subprocess
+    from xcov.eda import get_urg_path
     result = subprocess.run(
-        ["urg", "-dir", str(vdb), "-report", str(tmp_path), "-format", "text",
+        [get_urg_path(), "-dir", str(vdb), "-report", str(tmp_path), "-format", "text",
          "-show", "brief", "-metric", "line"],
         capture_output=True, text=True, timeout=120,
     )
