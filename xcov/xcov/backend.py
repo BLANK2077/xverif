@@ -403,6 +403,9 @@ class CoverageBackend:
     def scopes(self) -> List[Json]:
         raise NotImplementedError
 
+    def scope_metrics(self) -> Dict[str, Json]:
+        raise NotImplementedError
+
     def items(self, metrics: Optional[List[str]] = None,
               scope: Optional[str] = None, test: str = "merged",
               functional_only: bool = False) -> List[Json]:
@@ -479,6 +482,9 @@ class CanonicalCoverageBackend(CoverageBackend):
             backend_type=self._backend_type,
             worker_kind=self.worker_kind,
         )
+
+    def scope_metrics(self) -> Dict[str, Json]:
+        return self._delegate.scope_metrics()
 
     def items(self, metrics: Optional[List[str]] = None,
               scope: Optional[str] = None, test: str = "merged",
@@ -564,21 +570,18 @@ _SELECTOR_EXAMPLES: dict[str, list[str]] = {
 }
 
 _SELECTOR_EXPORT_HINT: dict[str, str] = {
-    "line": "通过 export.code_coverage action 导出 modinfo.txt 查看准确的 scope、file、line。",
+    "line": "通过 export.code_coverage action 导出 line JSON/XOUT 查看准确的 scope、file、line。",
     "toggle": (
-        "通过 export.code_coverage action 导出 modinfo.txt 查看准确的 signal 名和 transition 方向。"
-        "URG modinfo Toggle 列: Toggle 0->1, Toggle 1->0"
+        "通过 export.code_coverage action 导出 toggle JSON/XOUT 查看准确的 signal 名和缺失边沿。"
     ),
     "branch": (
-        "通过 export.code_coverage action 导出 modinfo.txt 查看准确的 branch 表达式和 arm 名。"
-        "URG modinfo Branch arm 列: -1-, -2-, -3-, -4-（对应 case/if 的每个 arm）"
+        "通过 export.code_coverage action 导出 branch JSON/XOUT 查看准确的表达式、URG vector 和 arm。"
     ),
     "condition": (
-        "通过 export.code_coverage action 导出 modinfo.txt 查看准确的 condition 表达式和 term 名。"
-        "URG modinfo Condition term 列: -1-, -2-（对应表达式的每个 term）"
+        "通过 export.code_coverage action 导出 condition JSON/XOUT 查看准确的表达式和 term vector。"
     ),
     "fsm": (
-        "通过 export.code_coverage action 导出 modinfo.txt 查看准确的 FSM 状态名和转换。"
+        "通过 export.code_coverage action 导出 FSM JSON/XOUT 查看准确的状态名和转换。"
     ),
     "assert": (
         "通过 export.assert action 导出 asserts.txt 查看准确的 assertion 名。"
@@ -848,6 +851,31 @@ class NpiCoverageBackend(CoverageBackend):
             leaf = s["name"].rsplit(".", 1)[-1]
             result.append({"name": leaf, "full_name": s["name"],
                            "parent": None, "depth": 0, "type": "instance"})
+        return result
+
+    def scope_metrics(self) -> Dict[str, Json]:
+        """Return URG session.xml subtree ratios keyed by elaborated instance."""
+        self._ensure_urg()
+        public_names = {
+            "Line": "line", "Cond": "condition", "Branch": "branch",
+            "Toggle": "toggle", "FSM": "fsm",
+        }
+        result: Dict[str, Json] = {}
+        for scope, row in self._urg_scopes.items():
+            metrics: Json = {}
+            for urg_name, values in row.get("metrics", {}).items():
+                public_name = public_names.get(urg_name)
+                if public_name is None:
+                    continue
+                covered = int(values["covered"])
+                coverable = int(values["coverable"])
+                metrics[public_name] = {
+                    "covered": covered,
+                    "coverable": coverable,
+                    "missing": coverable - covered,
+                    "pct": round(100.0 * covered / coverable, 2) if coverable else 0.0,
+                }
+            result[scope] = metrics
         return result
 
     def scopes(self) -> List[Json]:

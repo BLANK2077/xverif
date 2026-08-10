@@ -288,7 +288,7 @@ def test_cov_scope_children(monkeypatch, test_vdb, xverif_home):
 
 
 def test_cov_export_code_coverage(monkeypatch, test_vdb, xverif_home, tmp_path):
-    """xverif_cov_query(export.code_coverage) 导出 URG modinfo."""
+    """xverif_cov_query(export.code_coverage) 导出严格单实例 bundle。"""
     overrides = {
         "XVERIF_HOME": xverif_home,
         "XVERIF_MCP_BACKEND": "direct",
@@ -304,6 +304,8 @@ def test_cov_export_code_coverage(monkeypatch, test_vdb, xverif_home, tmp_path):
         "session_id": "mcp_int_export",
         "action": "export.code_coverage",
         "args": {
+            "scopes": ["top.u_core0", "top.u_core1"],
+            "metrics": ["line"],
             "output": {"path": output_dir},
         },
         "output_format": "json",
@@ -311,9 +313,13 @@ def test_cov_export_code_coverage(monkeypatch, test_vdb, xverif_home, tmp_path):
     payload = json.loads(content[0].text)
     assert payload["ok"] is True
 
-    # Check output files exist
-    found = list(Path(output_dir).glob("*.modinfo")) + list(Path(output_dir).glob("*"))
-    assert len(found) > 0, f"no export output in {output_dir}"
+    assert len(payload["data"]["items"]) == 2
+    for item in payload["data"]["items"]:
+        instance_dir = Path(item["directory"])
+        assert (instance_dir / "navigation.xout").is_file()
+        assert (instance_dir / "line.json").is_file()
+        assert (instance_dir / "line.xout").is_file()
+        assert (instance_dir / "line.urg.txt").is_file()
 
     _call_tool(server, "xverif_cov_session_close", {
         "session_id": "mcp_int_export",

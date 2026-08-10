@@ -146,7 +146,7 @@ ACTION_REGISTRY: Dict[str, ActionContract] = {
     ),
     "export.code_coverage": ActionContract(
         "export.code_coverage", "_export", True,
-        "Write detailed code-coverage holes to a Markdown artifact.",
+        "Write strict per-instance code-coverage JSON, XOUT, and raw URG artifacts.",
         "Do not use for inline hierarchy summaries.",
     ),
     "export.functional_coverage": ActionContract(
@@ -488,6 +488,8 @@ class Dispatcher:
     def _export(self, req: Json, sess) -> Json:
         action = req["action"]
         args = action_args(req)
+        if action == "export.code_coverage":
+            return self._export_code_coverage(req, sess, args)
         output_dir = (args.get("output") or {}).get("path") or args.get("output_dir")
         if not output_dir:
             raise XcovError("SCHEMA_INVALID", "export requires output.path or output_dir")
@@ -533,6 +535,150 @@ class Dispatcher:
             "note": "URG text report written to output_dir. See modinfo.txt for details.",
         }
         return ok_response(req, summary, {})
+
+    def _export_code_coverage(self, req: Json, sess, args: Json) -> Json:
+        import json
+        import os
+        import shutil
+        import tempfile
+        from datetime import datetime
+        from pathlib import Path
+
+        from .code_export import (
+            CoverageExportParseError, PUBLIC_METRICS, URG_METRICS,
+            navigation_payload, parse_metric_report, render_metric_xout,
+            render_navigation_xout, write_json,
+        )
+        from .urg_runner import UrgRunner
+
+        scopes = list(args["scopes"])
+        metrics = list(args.get("metrics") or PUBLIC_METRICS)
+        if len(set(scopes)) != len(scopes):
+            raise XcovError("DUPLICATE_SCOPE", "scopes must not contain duplicates")
+        if len(set(metrics)) != len(metrics):
+            raise XcovError("DUPLICATE_METRIC", "metrics must not contain duplicates")
+        output_root = Path(args["output"]["path"])
+        output_root.mkdir(parents=True, exist_ok=True)
+        if not output_root.is_dir():
+            raise XcovError("OUTPUT_INVALID", "output.path is not a directory", path=str(output_root))
+
+        scope_rows = sess.backend.scopes()
+        known_scopes = {row["full_name"] for row in scope_rows}
+        scope_metrics = sess.backend.scope_metrics()
+        missing = [scope for scope in scopes if scope not in known_scopes or scope not in scope_metrics]
+        if missing:
+            raise XcovError("SCOPE_NOT_FOUND", "scope is not an elaborated coverage instance",
+                            scopes=missing)
+        top_scopes = [row["full_name"] for row in sess.backend.top_scopes()]
+        self_metric_pairs = {
+            (row.get("scope"), row.get("metric"))
+            for row in sess.backend.items(metrics=metrics)
+            if row.get("scope") in scopes
+        }
+        children = {
+            scope: sorted(
+                row["full_name"] for row in scope_rows if row.get("parent") == scope
+            )
+            for scope in scopes
+        }
+
+        run_name = "xcov_code_coverage_" + datetime.now().strftime("%Y%m%d_%H%M%S")
+        final_dir = output_root / run_name
+        if final_dir.exists():
+            raise XcovError("OUTPUT_RUN_DIR_EXISTS", "timestamped output directory already exists",
+                            path=str(final_dir))
+        stage_dir = output_root / f".{run_name}.tmp-{os.getpid()}"
+        if stage_dir.exists():
+            raise XcovError("OUTPUT_STAGING_EXISTS", "staging directory already exists",
+                            path=str(stage_dir))
+        stage_dir.mkdir()
+        items: List[Json] = []
+        try:
+            for scope_index, scope in enumerate(scopes, 1):
+                instance_dir = stage_dir / f"instance-{scope_index:04d}"
+                instance_dir.mkdir()
+                navigation = navigation_payload(scope, scope_metrics, children[scope])
+                write_json(instance_dir / "navigation.json", navigation)
+                (instance_dir / "navigation.xout").write_text(
+                    render_navigation_xout(navigation), encoding="utf-8"
+                )
+                metric_artifacts = []
+                for metric in metrics:
+                    raw_name = f"{metric}.urg.txt"
+                    with tempfile.TemporaryDirectory(dir=instance_dir, prefix=f".{metric}-urg-") as report_dir:
+                        hier_path = Path(report_dir) / "scope.hier"
+                        hier_lines = [f"-tree {top}" for top in top_scopes]
+                        hier_lines.append(f"+tree {scope}")
+                        hier_lines.extend(f"-tree {child}" for child in children[scope])
+                        hier_path.write_text("\n".join(hier_lines) + "\n", encoding="utf-8")
+                        urg_metric = URG_METRICS[metric]
+                        urg_args = [
+                            "urg", "-dir", sess.vdb, "-report", report_dir,
+                            "-format", "text", "-legacy", "-metric", urg_metric,
+                            "-hier", str(hier_path),
+                        ]
+                        if (scope, metric) in self_metric_pairs:
+                            urg_args.extend(["-show", "brief"])
+                        urg_args.extend(sess.el_file_arg)
+                        result = UrgRunner().run(urg_args, timeout=300)
+                        if result.returncode != 0:
+                            raise XcovError(
+                                "URG_FAILED", f"URG export failed (exit {result.returncode})",
+                                scope=scope, metric=metric, stderr=result.stderr[:500],
+                            )
+                        modinfo = Path(report_dir) / "modinfo.txt"
+                        if not modinfo.is_file():
+                            raise XcovError("URG_ARTIFACT_MISSING", "URG did not produce modinfo.txt",
+                                            scope=scope, metric=metric)
+                        text = modinfo.read_text(encoding="utf-8", errors="replace")
+                        try:
+                            payload = parse_metric_report(text, scope, metric)
+                        except CoverageExportParseError as error:
+                            raise XcovError(
+                                "URG_DETAIL_PARSE_INCOMPLETE", error.reason,
+                                scope=scope, metric=metric,
+                            ) from error
+                        shutil.copyfile(modinfo, instance_dir / raw_name)
+                    json_name = f"{metric}.json"
+                    xout_name = f"{metric}.xout"
+                    write_json(instance_dir / json_name, payload)
+                    (instance_dir / xout_name).write_text(
+                        render_metric_xout(payload, raw_name), encoding="utf-8"
+                    )
+                    metric_artifacts.append({
+                        "metric": metric,
+                        "json": json_name,
+                        "xout": xout_name,
+                        "raw": raw_name,
+                    })
+                items.append({
+                    "scope": scope,
+                    "directory": f"instance-{scope_index:04d}",
+                    "navigation": {"json": "navigation.json", "xout": "navigation.xout"},
+                    "metrics": metric_artifacts,
+                })
+            os.replace(stage_dir, final_dir)
+        except Exception:
+            shutil.rmtree(stage_dir, ignore_errors=True)
+            raise
+
+        for item in items:
+            item["directory"] = str(final_dir / item["directory"])
+        summary: Json = {
+            "session_id": sess.session_id,
+            "scopes": scopes,
+            "metrics": metrics,
+            "output_mode": "file",
+            "output_dir": str(final_dir),
+            "artifact_format": "xcov_code_coverage_bundle.v1",
+            "total_count": len(items),
+            "returned_count": len(items),
+            "response_truncated": False,
+            "scan_complete": True,
+            "analysis_complete": True,
+            "truncation_scopes": [],
+        }
+        return ok_response(req, summary, {"items": items})
 
     def _exclude_load(self, req: Json, sess) -> Json:
         args = action_args(req)

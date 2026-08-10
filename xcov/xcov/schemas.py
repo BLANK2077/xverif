@@ -411,6 +411,7 @@ def _error_schema(action: str | None = None) -> Json:
         "detail.line": _integer(0),
         "detail.match_field": _string(min_length=1),
         "detail.max_items": _integer(0),
+        "detail.metric": _string(min_length=1),
         "detail.method": _string(min_length=1),
         "detail.object_type": _string(min_length=1),
         "detail.operation": _string(min_length=1),
@@ -422,8 +423,10 @@ def _error_schema(action: str | None = None) -> Json:
         "detail.requested_action": _string(),
         "detail.row_index": _integer(0),
         "detail.scope": _string(min_length=1),
+        "detail.scopes": _string_array(min_items=1),
         "detail.session_id": _string(min_length=1),
         "detail.supported": _string(min_length=1),
+        "detail.stderr": _string(),
         "detail.test": _string(min_length=1),
         "detail.total_count": _integer(0),
         "detail.unknown_fields": _string_array(),
@@ -1124,21 +1127,38 @@ SCHEMAS: Dict[str, Json] = {
             "export.code_coverage",
             target=SESSION_TARGET,
             args=_args({
-                "scope": _string(min_length=1),
+                "scopes": _array(_string(min_length=1), min_items=1),
+                "metrics": _array(
+                    _string(enum=["line", "condition", "branch", "toggle", "fsm"]),
+                    min_items=1,
+                ),
                 "output": _export_output(),
-            }, required=["output"]),
+            }, required=["scopes", "output"]),
             require_target=True,
             require_args=True,
         ),
         _completeness_summary({
             "session_id": _string(min_length=1),
-            "scope": NULLABLE_STRING,
+            "scopes": _string_array(),
+            "metrics": _string_array(),
             "output_mode": {"const": "file"},
             "output_dir": _string(min_length=1),
-            "artifact_format": {"const": "urg_text"},
-            "note": _string(min_length=1),
+            "artifact_format": {"const": "xcov_code_coverage_bundle.v1"},
         }),
-        _object(),
+        _items_data(_object({
+            "scope": _string(min_length=1),
+            "directory": _string(min_length=1),
+            "navigation": _object({
+                "json": _string(min_length=1),
+                "xout": _string(min_length=1),
+            }, required=["json", "xout"]),
+            "metrics": _array(_object({
+                "metric": _string(enum=["line", "condition", "branch", "toggle", "fsm"]),
+                "json": _string(min_length=1),
+                "xout": _string(min_length=1),
+                "raw": _string(min_length=1),
+            }, required=["metric", "json", "xout", "raw"])),
+        }, required=["scope", "directory", "navigation", "metrics"])),
     ),
     "export.functional_coverage": _schema_entry(
         "export.functional_coverage",
@@ -1758,8 +1778,19 @@ def _validate_response_semantics(rsp: Json) -> None:
             )
         return
 
+    if action == "export.code_coverage":
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, list) or returned_count != len(items) or total_count != len(items):
+            raise SchemaValidationError(
+                "$.summary", "export.code_coverage counts must match data.items",
+            )
+        if response_truncated:
+            raise SchemaValidationError(
+                "$.summary.response_truncated", "export.code_coverage cannot be truncated",
+            )
+        return
+
     if action in {
-        "export.code_coverage",
         "export.functional_coverage",
         "export.assert",
         "export.exclude",

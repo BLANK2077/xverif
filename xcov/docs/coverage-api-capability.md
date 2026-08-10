@@ -54,7 +54,7 @@ Python method 映射后可用：
 真实 VDB probe 证实 `npiCovToggleBin.toggle_type(test)` 返回 `npiCovToggle01` 或
 `npiCovToggle10`，可聚合为 `0 -> 1` 和 `1 -> 0`。
 
-公开接口：`export.code_coverage` 中的 toggle Markdown 行，只表达 signal/bit、
+公开接口：`export.code_coverage` 中的 toggle JSON/XOUT 记录，只表达 signal/bit、
 `0 -> 1` 是否覆盖、`1 -> 0` 是否覆盖和 file:line。交互式 `code_coverage.holes`
 只输出 hierarchy 覆盖率概览，不展开 bit 明细。
 
@@ -131,8 +131,9 @@ union、strict mode 对 covered/uncovered 对象的差异，以及新进程只�
 
 ## 实现边界
 
-- 不读取 `urgReport/asserts.html`、`mod*.html`、`session.xml`。
-- 不把 HTML 内容作为 xcov 输出的数据源。
+- 不读取 `urgReport/asserts.html` 或 `mod*.html`，不把 HTML 作为数据源。
+- `export.code_coverage` 使用 URG `session.xml` 生成 subtree navigation，并解析严格
+  hierarchy 过滤后的单 metric `modinfo.txt` 生成 instance-self JSON/XOUT。
 - 不在 schema 中放未证实字段。
 - 不用 `note/unavailable_fields` 伪装接口兼容；字段做不到就不暴露。
 - Python NPI backend 初始化时建立唯一的 method/signature 合同；每个 operation

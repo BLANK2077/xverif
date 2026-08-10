@@ -145,7 +145,7 @@ assert 汇总：
 导出 code coverage 未达标项：
 
 ```json
-{"api_version":"xcov.v1","action":"export.code_coverage","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","output":{"path":"code_coverage.md"}}}
+{"api_version":"xcov.v1","action":"export.code_coverage","target":{"session_id":"cov0"},"args":{"scopes":["uart_tb.u_uart"],"metrics":["line","toggle"],"output":{"path":"coverage_artifacts"}}}
 ```
 
 导出 functional coverage 未达标 bin：
@@ -290,11 +290,14 @@ Python NPI 层只把文档定义的 SDK “不适用”返回值映射为 `null`
   attempts/real successes/without attempts；不输出 kind/category/severity/failures/
   incomplete/first_match/file/line。详细报告请使用 `export.assert`。
 
-## Markdown 导出
+## 文件导出
 
-`export.code_coverage`、`export.functional_coverage`、`export.assert` 只输出 Markdown
-文件，不保留 `output.artifact_format` 选择。响应的 `summary.note` 会提示：需要复杂
-处理、二次统计或跨报告加工时，请调用 `x-npi` 学习 `pynpi` coverage API 并编写脚本。
+`export.code_coverage` 不输出 Markdown。它要求 `scopes` 指定一个或多个具体 elaborated
+instance，在 `output.path` 下建立秒级时间戳目录，并为每个 instance、每个请求 metric
+分别输出 JSON、XOUT 和原始 URG text。`navigation.json/xout` 使用总体 `session.xml`
+提供直接子实例的 subtree 统计；metric detail 严格只表示所选 instance 自身。
+
+`export.functional_coverage` 与 `export.assert` 保持各自既有合同。
 
 ## XOUT 输出
 

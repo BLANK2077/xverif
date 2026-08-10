@@ -117,7 +117,22 @@ suites:
     capabilities: [child_process, npi]
     hermetic: false
     deterministic: true
+    gates: [regression, nightly]
     cost: {class: slow, estimate_sec: 60}
+    timeouts: {execute_sec: 300, cleanup_sec: 20}
+
+  - id: xcov.modinfo_complex
+    owner: xcov
+    level: system
+    intent: [contract, semantics]
+    domains: [coverage]
+    runner: {kind: pytest, path: xcov/tests/test_modinfo_complex.py}
+    fixtures: [xcov.modinfo_complex]
+    capabilities: [child_process, npi]
+    hermetic: false
+    deterministic: true
+    gates: [regression, nightly]
+    cost: {class: slow, estimate_sec: 45}
     timeouts: {execute_sec: 300, cleanup_sec: 20}
 
   - id: xcov.mcp_integration

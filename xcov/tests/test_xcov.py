@@ -1783,3 +1783,67 @@ def test_stdio_quit_rejects_missing_or_unknown_control_fields(control, code):
     assert rc == 0
     assert out[1]["ok"] is False
     assert out[1]["json"]["error"]["code"] == code
+
+
+def test_branch_v2_groups_real_urg_vectors_by_decision_path():
+    from xcov.code_export import parse_metric_report, render_metric_xout
+
+    scope = "top.u_dut"
+    report = """===============================================================================
+Module : dut
+===============================================================================
+Source File(s) :
+
+/workspace/dut.sv
+
+Module self-instances :
+
+SCORE  BRANCH NAME
+ 75.00  75.00 top.u_dut
+
+===============================================================================
+Module Instance : top.u_dut
+===============================================================================
+
+Branch Coverage for Instance : top.u_dut
+         Line No. Total Covered Percent
+Branches          4     2       50.00
+IF       7        4     2       50.00
+
+7              if (a == 0) sum = b;
+               -1-
+               ==>
+8              else if (b == 0) sum = a;
+                    -2-
+               ==>
+9              else if (a == b) sum = a + 1;
+                    -3-
+               ==>
+10             else sum = a + b;
+               ==>
+
+Branches:
+
+-1- -2- -3- Status
+1   -   -   Covered
+0   1   -   Not Covered
+0   0   1   Covered
+0   0   0   Not Covered
+
+"""
+    payload = parse_metric_report(report, scope, "branch")
+
+    assert payload["schema"] == "xcov.code_coverage.branch.v2"
+    assert payload["decision_group_count"] == 1
+    assert payload["gap_count"] == 2
+    group = payload["decision_groups"][0]
+    assert [item["marker"] for item in group["decision_path"]] == ["-1-", "-2-", "-3-"]
+    assert [row["values"] for row in group["uncovered"]] == [["0", "1", "-"], ["0", "0", "0"]]
+    assert [row["gap_id"] for row in group["uncovered"]] == ["B0001", "B0002"]
+    xout = render_metric_xout(payload, "branch.urg.txt")
+    assert xout.startswith("@xcov.code_coverage.branch.v2\n")
+    assert "marker  kind" in xout
+    assert "gap_id  -1-  -2-  -3-" in xout
+    assert "status" not in xout
+    assert "\n  uncovered:\n" in xout
+    assert "\n\n  uncovered:\n" not in xout

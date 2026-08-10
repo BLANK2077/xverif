@@ -277,3 +277,15 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 - 错误现象：host regression 的外层执行单元返回持久执行 session id 后，误把外层单元完成判断为 pytest 提前结束，并把 session id 当作进程 PID 查询。
 - 误判原因：混淆了 functions.exec cell、exec_command 持久 session 与宿主进程 PID 三种标识。
 - 以后规则：长运行 pytest 返回 SESSION_ID 时只用 write_stdin 继续轮询该 session；结果目录存在 RUNNING 时先确认持久 session 状态，不用 ps -p session-id 推断测试是否退出。
+
+### 2026-08-09 环境错误复盘
+
+- 错误现象：运行 `xcov.unit` focused suite 时误用 fast gate，被 suite membership 门禁在收集前拒绝。
+- 误判原因：根据 suite 的 cost=fast 推断 gate membership，没有先查询当前 catalog plan；cost class 不等于 gate。
+- 以后规则：focused suite 执行前先用目标 gate 的 `--xverif-plan` 核对 membership；不能根据 cost、level 或相邻 suite 推断 gate。
+
+### 2026-08-10 环境错误复盘
+
+- 错误现象：实现 branch XOUT v2 后直接以 regression gate 运行 `xcov.urg_backend`，被 suite membership 门禁拒绝。
+- 误判原因：只检查了 catalog 中的 suite 定义和既有经验，没有在执行 focused suite 前查询当前 gate plan。
+- 以后规则：每次运行 focused suite 都先查询目标 gate 的 `--xverif-plan`；若产品要求调整 membership，显式修改并测试 catalog gate 合同，不通过 cost 分类伪装。

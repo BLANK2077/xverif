@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -247,7 +248,7 @@ def test_el_lazy_export(xverif_fixture, tmp_path):
 
 
 def test_export_code_to_dir(xverif_fixture, tmp_path):
-    """export.code_coverage writes URG output to specified directory."""
+    """export.code_coverage writes strict per-instance structured artifacts."""
     resources = xverif_fixture("xcov.comprehensive")
     vdb = resources / "comprehensive.vdb"
 
@@ -270,14 +271,29 @@ def test_export_code_to_dir(xverif_fixture, tmp_path):
             "api_version": "xcov.v1",
             "action": "export.code_coverage",
             "target": {"session_id": "export_test"},
-            "args": {"output": {"path": export_dir}},
+            "args": {
+                "scopes": ["top.u_core0", "top.u_core1"],
+                "metrics": ["line"],
+                "output": {"path": export_dir},
+            },
         })
         assert rsp["ok"], f"export failed: {rsp.get('error', {}).get('message', '?')}"
-        assert rsp["summary"]["output_dir"] == export_dir
-
-        # Verify files exist
-        assert os.path.isdir(export_dir)
-        files = os.listdir(export_dir)
-        assert len(files) > 0, f"Export dir empty: {export_dir}"
+        run_dir = Path(rsp["summary"]["output_dir"])
+        assert run_dir.parent == Path(export_dir)
+        assert re.fullmatch(r"xcov_code_coverage_\d{8}_\d{6}", run_dir.name)
+        assert len(rsp["data"]["items"]) == 2
+        for item in rsp["data"]["items"]:
+            instance_dir = Path(item["directory"])
+            assert instance_dir.parent == run_dir
+            assert (instance_dir / "navigation.json").is_file()
+            assert (instance_dir / "navigation.xout").is_file()
+            assert (instance_dir / "line.json").is_file()
+            assert (instance_dir / "line.xout").is_file()
+            assert (instance_dir / "line.urg.txt").is_file()
+            assert not (instance_dir / "toggle.json").exists()
+            payload = json.loads((instance_dir / "line.json").read_text(encoding="utf-8"))
+            assert payload["scope"] == item["scope"]
+            assert payload["coverage_basis"] == "self"
+            assert payload["analysis_complete"] is True
     finally:
         sess.close()

@@ -7,7 +7,7 @@
 优先用 xcov 做交互式查询：
 
 - `scope.summary`、`scope.children`、`code_coverage.summary`、`code_coverage.holes` 看层次覆盖率。
-- `export.code_coverage`、`export.functional_coverage`、`export.assert` 导出 Markdown 给 AI/人审阅。
+- `export.code_coverage` 为具体 instance 按 metric 导出 JSON/XOUT/raw URG bundle；其它 export action 按各自 schema 使用。
 
 切到 x-npi/pynpi 的场景：
 

@@ -74,6 +74,12 @@
           }
         },
         "impact": {"type": "object"},
+        "gates": {
+          "type": "array",
+          "items": {"enum": ["fast", "regression", "nightly"]},
+          "uniqueItems": true,
+          "minItems": 1
+        },
         "enabled": {"type": "boolean"}
       }
     }

@@ -214,7 +214,23 @@ def _render_human_xout(rsp: Json, *, action: str, include_envelope: bool) -> str
         if isinstance(items, list):
             rows = [item for item in items if isinstance(item, dict)]
             lines.extend(["", "items:"])
-            if action == "scope.summary" and len(rows) == len(items):
+            if action == "export.code_coverage" and len(rows) == len(items):
+                for row in rows:
+                    lines.append(f"- scope: {_scalar(row.get('scope'))}")
+                    lines.append(f"  directory: {_scalar(row.get('directory'))}")
+                    navigation = row.get("navigation") or {}
+                    lines.append(
+                        "  navigation: "
+                        f"json={_scalar(navigation.get('json'))} xout={_scalar(navigation.get('xout'))}"
+                    )
+                    lines.append("  artifacts:")
+                    for artifact in row.get("metrics") or []:
+                        lines.append(
+                            f"    {artifact.get('metric')}: json={artifact.get('json')} "
+                            f"xout={artifact.get('xout')} raw={artifact.get('raw')}"
+                        )
+                items = None
+            if items is not None and action == "scope.summary" and len(rows) == len(items):
                 projected = [{key: row.get(key) for key in _SCOPE_COLUMNS} for row in rows]
                 lines.extend(_render_table(projected))
                 coverage = []
@@ -233,9 +249,9 @@ def _render_human_xout(rsp: Json, *, action: str, include_envelope: bool) -> str
                             coverage.append(coverage_row)
                 if coverage:
                     lines.extend(["", "coverage:", *_render_table(coverage)])
-            elif len(rows) == len(items):
+            elif items is not None and len(rows) == len(items):
                 lines.extend(_render_table(rows))
-            else:
+            elif items is not None:
                 lines.extend(f"  - {_scalar(item)}" for item in items)
     warnings = rsp.get("warnings") or []
     if warnings:

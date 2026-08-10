@@ -213,7 +213,7 @@ NPI traversal 或 fact 合同失败使用结构化错误，并明确声明结果
 ### Markdown export 请求
 
 ```json
-{"api_version":"xcov.v1","request_id":"export-code","action":"export.code_coverage","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","output":{"path":"code_coverage.md"}}}
+{"api_version":"xcov.v1","request_id":"export-code","action":"export.code_coverage","target":{"session_id":"cov0"},"args":{"scopes":["uart_tb.u_uart"],"metrics":["line","condition","branch","toggle","fsm"],"output":{"path":"coverage_artifacts"}}}
 ```
 
 ```json

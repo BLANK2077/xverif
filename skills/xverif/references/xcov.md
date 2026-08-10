@@ -60,7 +60,7 @@ assert summary：
 code coverage export：
 
 ```json
-{"api_version":"xcov.v1","action":"export.code_coverage","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","output":{"path":"code_coverage.md"}}}
+{"api_version":"xcov.v1","action":"export.code_coverage","target":{"session_id":"cov0"},"args":{"scopes":["uart_tb.u_uart"],"metrics":["line","toggle"],"output":{"path":"coverage_artifacts"}}}
 ```
 
 function coverage export：
@@ -100,10 +100,16 @@ assert export：
   `metric/name/full_name/score_basis/score_item_count/raw_covered/raw_coverable/raw_missing`；
   `functional_coverage.summary` 也不输出 `raw_coverage_pct`。
 - xout 的 `items:` 是对齐纯文本表格，不是 Markdown 表格；JSON 响应结构不变。
-- 详细未覆盖项必须用 `export.code_coverage`、`export.functional_coverage`、
-  `export.assert` 导出 Markdown 查看。
-- 三个 export action 只支持 Markdown；复杂二次统计、跨报告处理或自定义格式，转用
-  `x-npi` 编写 `pynpi` coverage 脚本。
+- 详细 code coverage 未覆盖项使用 `export.code_coverage` 的分 metric JSON/XOUT 查看；
+  functional/assertion 使用各自 export action 的当前 schema。
+- `export.code_coverage` 不输出 Markdown。它为每个具体 instance 建立独立目录，按 metric
+  输出 JSON、XOUT 和原始 URG text；先读 `navigation.xout` 选择子层级，再读 metric XOUT
+  获取目标 instance 自身的具体缺口。
+- branch 使用 `xcov.code_coverage.branch.v2`：相同 decision path 的缺口合并为一个 group，
+  先用字段表描述 marker 对应的源码 decision，随后紧接真值表列出各 `gap_id` 的
+  marker value；这些行均为未覆盖缺口，因此不重复输出固定的 status 列；`-` 表示该
+  decision 在这条路径中未求值。
+- `navigation.xout` 的覆盖率是 subtree 统计；metric XOUT 的覆盖率是 self 统计，不得混用。
 - `assert.summary` 输出基础覆盖率和 attempts/real successes/without attempts；不输出
   kind/category/severity/failures/incomplete/first_match/file/line。需要完整 assertion
   Markdown 时使用 `export.assert`。

@@ -10,6 +10,7 @@ import yaml
 
 LEVELS = {"static", "unit", "component", "integration", "system"}
 COST_ORDER = {"fast": 0, "medium": 1, "slow": 2}
+GATE_ORDER = {"fast": 0, "regression": 1, "nightly": 2}
 
 
 class CatalogError(ValueError):
@@ -35,6 +36,7 @@ class Suite:
     timeouts: dict[str, int]
     impact: dict[str, Any]
     enabled: bool
+    gates: tuple[str, ...]
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "Suite":
@@ -57,6 +59,7 @@ class Suite:
             timeouts={key: int(value) for key, value in data.get("timeouts", {}).items()},
             impact=dict(data.get("impact", {})),
             enabled=bool(data.get("enabled", True)),
+            gates=tuple(data.get("gates", [])),
         )
 
     def pytest_paths(self) -> tuple[str, ...]:
@@ -118,6 +121,11 @@ class Catalog:
                 raise CatalogError(f"invalid level for {suite.id}: {suite.level}")
             if suite.cost_class not in COST_ORDER:
                 raise CatalogError(f"invalid cost class for {suite.id}: {suite.cost_class}")
+            if suite.gates:
+                gate_indexes = {GATE_ORDER[gate] for gate in suite.gates}
+                first = min(gate_indexes)
+                if gate_indexes != set(range(first, len(GATE_ORDER))):
+                    raise CatalogError(f"non-monotonic explicit gates for {suite.id}: {suite.gates}")
             for path in suite.pytest_paths():
                 key = (path, suite.pytest_marker())
                 previous = path_owners.get(key)
@@ -140,7 +148,10 @@ class Catalog:
         for suite in self.suites:
             if not suite.enabled:
                 continue
-            if gate == "fast":
+            if suite.gates:
+                include = gate in suite.gates
+                reason = "explicit suite gate membership selected by catalog"
+            elif gate == "fast":
                 include = suite.hermetic and suite.level in {"static", "unit", "component"}
                 reason = "hermetic execution boundary selected by fast"
             elif gate == "regression":
