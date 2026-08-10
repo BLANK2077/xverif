@@ -298,6 +298,12 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 
 ### 2026-08-10 环境错误复盘
 
+- 错误现象：运行 `xcov.mcp_integration` focused suite 时沿用 regression gate，被 suite membership 门禁拒绝。
+- 误判原因：按本轮其它 xcov suite 的 gate 推断 MCP 集成 suite，未先核对当前 catalog 中它只属于 nightly。
+- 以后规则：每个 focused suite 启动前都用目标 gate 的 `--xverif-plan` 核对当前 membership；同一子系统和同一轮已运行过的相邻 suite 也不能替代核对。
+
+### 2026-08-10 环境错误复盘
+
 - 错误现象：实现 branch XOUT v2 后直接以 regression gate 运行 `xcov.urg_backend`，被 suite membership 门禁拒绝。
 - 误判原因：只检查了 catalog 中的 suite 定义和既有经验，没有在执行 focused suite 前查询当前 gate plan。
 - 以后规则：每次运行 focused suite 都先查询目标 gate 的 `--xverif-plan`；若产品要求调整 membership，显式修改并测试 catalog gate 合同，不通过 cost 分类伪装。

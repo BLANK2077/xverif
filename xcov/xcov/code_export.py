@@ -171,34 +171,99 @@ def _not_covered_vectors(block: str) -> Tuple[List[int], List[List[str]]]:
     return ids, rows
 
 
-def _condition_gaps(section: str, source_files: List[str]) -> List[Json]:
-    starts = list(re.finditer(r"^\s*EXPRESSION\s+(.+)$", section, re.MULTILINE))
-    gaps: List[Json] = []
+def _strip_balanced_outer_parens(value: str) -> str:
+    result = value.strip()
+    while result.startswith("(") and result.endswith(")"):
+        depth = 0
+        encloses_all = True
+        for index, char in enumerate(result):
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0 and index != len(result) - 1:
+                    encloses_all = False
+                    break
+        if not encloses_all or depth != 0:
+            break
+        result = result[1:-1].strip()
+    return result
+
+
+def _condition_terms(label_line: str, annotation_line: str, ids: List[int]) -> List[Json]:
+    label = re.match(r"^\s*(?:EXPRESSION|SUB-EXPRESSION)\s+(.+)$", label_line)
+    if not label:
+        raise CoverageExportParseError("condition", "", "condition expression label is missing")
+    expression = label.group(1)
+    expression_column = label.start(1)
+    spans = list(re.finditer(r"-+(\d+)-+", annotation_line))
+    by_id: Dict[int, str] = {}
+    for span in spans:
+        start = max(0, span.start() - expression_column)
+        end = max(start, span.end() - expression_column)
+        term = _strip_balanced_outer_parens(expression[start:end])
+        by_id[int(span.group(1))] = term
+    if any(term_id not in by_id or not by_id[term_id] for term_id in ids):
+        raise CoverageExportParseError("condition", "", "condition marker cannot be mapped to expression")
+    return [{"marker": f"-{term_id}-", "expression": by_id[term_id]} for term_id in ids]
+
+
+def _condition_groups(section: str, source_files: List[str]) -> Tuple[List[Json], int]:
+    starts = list(re.finditer(r"^\s*LINE\s+(\d+)\s*$", section, re.MULTILINE))
+    groups: List[Json] = []
+    by_terms: Dict[Tuple[Any, ...], Json] = {}
+    coverage_object_gap_count = 0
     for index, start in enumerate(starts):
         end = starts[index + 1].start() if index + 1 < len(starts) else len(section)
-        block = section[start.start():end]
-        prior = section[max(0, start.start() - 500):start.start()]
-        numbered = list(re.finditer(r"^\s*(\d+)\s+(.+)$", prior, re.MULTILINE))
-        line_no = int(numbered[-1].group(1)) if numbered else None
-        expression = start.group(1).strip()
-        terms = _logical_terms(expression)
+        block = section[start.end():end]
+        lines = block.splitlines()
+        label_index = next((position for position, line in enumerate(lines)
+                            if re.match(r"^\s*(?:EXPRESSION|SUB-EXPRESSION)\s+", line)), None)
+        if label_index is None or label_index + 1 >= len(lines):
+            continue
+        label_line = lines[label_index]
+        label = re.match(r"^\s*(EXPRESSION|SUB-EXPRESSION)\s+(.+)$", label_line)
+        if not label:
+            continue
+        kind = label.group(1).lower().replace("-", "_")
+        raw_expression = label.group(2).strip()
         ids, vectors = _not_covered_vectors(block)
+        if not vectors:
+            continue
+        terms = _condition_terms(label_line, lines[label_index + 1], ids)
+        at = _at(source_files, int(start.group(1)))
+        group_key = (at, tuple((term["marker"], term["expression"]) for term in terms))
+        group = by_terms.get(group_key)
+        if group is None:
+            group = {
+                "condition": {"at": at, "expression": raw_expression},
+                "terms": terms,
+                "uncovered": [],
+                "_by_values": {},
+            }
+            by_terms[group_key] = group
+            groups.append(group)
+        elif kind == "expression" and group["condition"]["expression"] != raw_expression:
+            group["condition"]["expression"] = raw_expression
+        origin = {"kind": kind, "raw_expression": raw_expression}
         for values in vectors:
-            mapping = [
-                {"id": term_id, "expression": terms[pos] if pos < len(terms) else None, "value": value}
-                for pos, (term_id, value) in enumerate(zip(ids, values))
-            ]
-            gaps.append({
-                "at": _at(source_files, line_no),
-                "expression": expression,
-                "urg_vector": " ".join(f"-{term_id}-={value}" for term_id, value in zip(ids, values)),
-                "decoded_vector": "; ".join(
-                    f"{item['expression'] or ('term' + str(item['id']))}={item['value']}" for item in mapping
-                ),
-                "terms": mapping,
-                "required": "evaluate the expression with this term-value combination",
-            })
-    return gaps
+            coverage_object_gap_count += 1
+            values_key = tuple(values)
+            row = group["_by_values"].get(values_key)
+            if row is None:
+                row = {"values": values, "origins": []}
+                group["_by_values"][values_key] = row
+                group["uncovered"].append(row)
+            if origin not in row["origins"]:
+                row["origins"].append(origin)
+    gap_index = 1
+    for group_index, group in enumerate(groups, 1):
+        group["group_id"] = f"CG{group_index:04d}"
+        group.pop("_by_values")
+        for row in group["uncovered"]:
+            row["gap_id"] = f"C{gap_index:04d}"
+            gap_index += 1
+    return groups, coverage_object_gap_count
 
 
 def _source_statement(source_path: str | None, start_line: int) -> str:
@@ -496,8 +561,6 @@ def parse_metric_report(text: str, scope: str, metric: str) -> Json:
     absolute_sources = _source_files(text, module)
     source_root, sources = _source_context(absolute_sources)
     parsers = {
-        "line": lambda: _line_gaps(section, sources),
-        "condition": lambda: _condition_gaps(section, sources),
         "toggle": lambda: _toggle_gaps(section),
         "fsm": lambda: _fsm_gaps(section, sources),
     }
@@ -521,6 +584,30 @@ def parse_metric_report(text: str, scope: str, metric: str) -> Json:
             "non_actionable_count": len(_non_actionable(section)),
             "analysis_complete": True,
             "line_groups": groups,
+            "non_actionable": _non_actionable(section),
+        }
+    if metric == "condition":
+        groups, coverage_object_gap_count = _condition_groups(section, sources)
+        gap_count = sum(len(group["uncovered"]) for group in groups)
+        if coverage_object_gap_count != coverage["missing"]:
+            raise CoverageExportParseError(
+                metric, scope, "condition coverage object gap count does not match coverage missing"
+            )
+        return {
+            "schema": "xcov.code_coverage.condition.v2",
+            "scope": scope,
+            "module": module,
+            "source_root": source_root,
+            "source_files": sources,
+            "metric": metric,
+            "coverage_basis": "self",
+            "coverage": coverage,
+            "condition_group_count": len(groups),
+            "coverage_object_gap_count": coverage_object_gap_count,
+            "gap_count": gap_count,
+            "non_actionable_count": len(_non_actionable(section)),
+            "analysis_complete": True,
+            "condition_groups": groups,
             "non_actionable": _non_actionable(section),
         }
     if metric == "branch":
@@ -580,6 +667,8 @@ def _scalar(value: Any) -> str:
 def render_metric_xout(payload: Json, raw_name: str) -> str:
     if payload["metric"] == "line" and payload["schema"] == "xcov.code_coverage.line.v2":
         return _render_line_xout(payload, raw_name)
+    if payload["metric"] == "condition" and payload["schema"] == "xcov.code_coverage.condition.v2":
+        return _render_condition_xout(payload, raw_name)
     if payload["metric"] == "branch" and payload["schema"] == "xcov.code_coverage.branch.v2":
         return _render_branch_xout(payload, raw_name)
     coverage = payload["coverage"]
@@ -653,6 +742,51 @@ def _render_line_xout(payload: Json, raw_name: str) -> str:
         lines.extend(_aligned_table(
             ["gap_id", "at", "statement"],
             [[row[key] for key in ("gap_id", "at", "statement")] for row in group["uncovered"]],
+        ))
+    lines.extend(["", "non_actionable:"])
+    for item in payload["non_actionable"]:
+        lines.append(f"- object: {_scalar(item['object'])}")
+        lines.append(f"  status: {item['status']}")
+    return "\n".join(lines) + "\n"
+
+
+def _render_condition_xout(payload: Json, raw_name: str) -> str:
+    coverage = payload["coverage"]
+    lines = [
+        "@xcov.code_coverage.condition.v2",
+        f"scope: {_scalar(payload['scope'])}",
+        f"module: {_scalar(payload['module'])}",
+        f"source_root: {_scalar(payload['source_root'])}",
+        "coverage_basis: self",
+        "coverage: " + " ".join(
+            f"{key}={coverage[key]}" for key in ("covered", "coverable", "missing", "pct")
+        ),
+        f"condition_group_count: {payload['condition_group_count']}",
+        f"coverage_object_gap_count: {payload['coverage_object_gap_count']}",
+        f"gap_count: {payload['gap_count']}",
+        f"non_actionable_count: {payload['non_actionable_count']}",
+        "analysis_complete: true",
+        f"raw: {raw_name}",
+        "",
+        "condition_groups:",
+    ]
+    for group in payload["condition_groups"]:
+        condition = group["condition"]
+        lines.extend([f"- group_id: {group['group_id']}", "  condition:"])
+        lines.extend(_aligned_table(
+            ["at", "expression"],
+            [[condition["at"], condition["expression"]]],
+        ))
+        lines.append("  terms:")
+        lines.extend(_aligned_table(
+            ["marker", "expression"],
+            [[term["marker"], term["expression"]] for term in group["terms"]],
+        ))
+        lines.append("  uncovered:")
+        markers = [term["marker"] for term in group["terms"]]
+        lines.extend(_aligned_table(
+            ["gap_id", *markers],
+            [[row["gap_id"], *row["values"]] for row in group["uncovered"]],
         ))
     lines.extend(["", "non_actionable:"])
     for item in payload["non_actionable"]:

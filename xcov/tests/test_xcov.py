@@ -1964,3 +1964,86 @@ ALWAYS             20        2        1    50.00
     assert "\n\n  uncovered:\n" not in xout
     assert "hits" not in xout
     assert "required" not in xout
+
+
+def test_condition_v2_merges_equivalent_expression_and_subexpression_gaps():
+    from xcov.code_export import parse_metric_report, render_metric_xout
+
+    scope = "top.u_dut"
+    report = """===============================================================================
+Module : dut
+===============================================================================
+Source File(s) :
+
+/workspace/dut.sv
+
+Module self-instances :
+
+SCORE  COND NAME
+ 50.00  50.00 top.u_dut
+
+===============================================================================
+Module Instance : top.u_dut
+===============================================================================
+
+Cond Coverage for Instance : top.u_dut
+
+               Total   Covered  Percent
+Conditions          2        0     0.00
+Logical             2        0     0.00
+Non-Logical         0        0
+Event               0        0
+
+ LINE       46
+ EXPRESSION ((request.data[3:0] == 4'he) ? 2'b10 : 2'b1)
+             -------------1-------------
+
+-1- Status
+ 1  Not Covered
+
+ LINE       46
+ SUB-EXPRESSION (request.data[3:0] == 4'he)
+                -------------1-------------
+
+-1- Status
+ 1  Not Covered
+
+"""
+
+    payload = parse_metric_report(report, scope, "condition")
+
+    assert payload["schema"] == "xcov.code_coverage.condition.v2"
+    assert payload["condition_group_count"] == 1
+    assert payload["coverage_object_gap_count"] == 2
+    assert payload["gap_count"] == 1
+    group = payload["condition_groups"][0]
+    assert group["condition"] == {
+        "at": "dut.sv:46",
+        "expression": "((request.data[3:0] == 4'he) ? 2'b10 : 2'b1)",
+    }
+    assert group["terms"] == [{"marker": "-1-", "expression": "request.data[3:0] == 4'he"}]
+    assert group["uncovered"] == [{
+        "values": ["1"],
+        "origins": [
+            {
+                "kind": "expression",
+                "raw_expression": "((request.data[3:0] == 4'he) ? 2'b10 : 2'b1)",
+            },
+            {
+                "kind": "sub_expression",
+                "raw_expression": "(request.data[3:0] == 4'he)",
+            },
+        ],
+        "gap_id": "C0001",
+    }]
+    xout = render_metric_xout(payload, "condition.urg.txt")
+    assert xout.startswith("@xcov.code_coverage.condition.v2\n")
+    assert "coverage_object_gap_count: 2" in xout
+    assert "gap_count: 1" in xout
+    assert xout.count("C0001") == 1
+    assert "origins" not in xout
+    assert "urg_vector" not in xout
+    assert "decoded_vector" not in xout
+    assert "required" not in xout
+    assert "\n  uncovered:\n" in xout
+    assert "\n\n  uncovered:\n" not in xout

@@ -95,6 +95,10 @@ def test_complex_modinfo_export_has_diverse_incomplete_branch_groups(xverif_fixt
         ACTIVE_SCOPE: {"line_group_count": 6, "gap_count": 9},
         SPARSE_SCOPE: {"line_group_count": 7, "gap_count": 14},
     }
+    expected_condition = {
+        ACTIVE_SCOPE: {"coverage_object_gap_count": 26, "gap_count": 24},
+        SPARSE_SCOPE: {"coverage_object_gap_count": 36, "gap_count": 33},
+    }
     for item in response["data"]["items"]:
         scope = item["scope"]
         instance_dir = Path(item["directory"])
@@ -122,6 +126,30 @@ def test_complex_modinfo_export_has_diverse_incomplete_branch_groups(xverif_fixt
         assert "\n\n  uncovered:\n" not in line_xout
         assert "hits" not in line_xout
         assert "required" not in line_xout
+
+        condition = json.loads((instance_dir / "condition.json").read_text(encoding="utf-8"))
+        assert condition["schema"] == "xcov.code_coverage.condition.v2"
+        assert condition["coverage_object_gap_count"] == expected_condition[scope]["coverage_object_gap_count"]
+        assert condition["gap_count"] == expected_condition[scope]["gap_count"]
+        assert condition["coverage_object_gap_count"] == condition["coverage"]["missing"]
+        assert all(group["uncovered"] for group in condition["condition_groups"])
+        assert all(group["condition"]["at"] != "lane_worker.sv:1"
+                   for group in condition["condition_groups"])
+        xor_group = next(
+            group for group in condition["condition_groups"]
+            if group["condition"]["at"] == "lane_worker.sv:105"
+        )
+        assert [term["expression"] for term in xor_group["terms"]] == [
+            "request.data[(WIDTH - 1)]",
+            "request.data[(WIDTH - 2)]",
+        ]
+        condition_xout = (instance_dir / "condition.xout").read_text(encoding="utf-8")
+        assert "\n  uncovered:\n" in condition_xout
+        assert "\n\n  uncovered:\n" not in condition_xout
+        assert "origins" not in condition_xout
+        assert "urg_vector" not in condition_xout
+        assert "decoded_vector" not in condition_xout
+        assert "required" not in condition_xout
 
         branch = json.loads((instance_dir / "branch.json").read_text(encoding="utf-8"))
         assert branch["schema"] == "xcov.code_coverage.branch.v2"
