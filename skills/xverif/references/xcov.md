@@ -109,15 +109,15 @@ assert export：
   先用字段表描述 marker 对应的源码 decision，随后紧接真值表列出各 `gap_id` 的
   marker value；这些行均为未覆盖缺口，因此不重复输出固定的 status 列；`-` 表示该
   decision 在这条路径中未求值。Decision kind 支持 `if/case/casez/casex/ternary`；
-  多行三目的 `at` 指向 predicate 实际行，`outcomes` 列以
-  `0:false-result | 1:true-result` 明确实际缺失的结果分支。
+  多行三目的 `at` 指向 predicate 实际行；真值表中的 `0/1` 直接表示 predicate 的
+  false/true 分支。
 - line 使用 `xcov.code_coverage.line.v2`：只输出有缺口的过程块，先读 context 表的
   kind/at/covered/coverable/missing/pct，再读紧邻 uncovered 表的 gap_id/at/statement。
 - condition 使用 `xcov.code_coverage.condition.v2`：condition 表给出位置与完整表达式，
   terms 表解释 marker，uncovered 真值表给出需补 values。相同位置、terms、values 的
   EXPRESSION/SUB-EXPRESSION 合并为一个 gap；`coverage_object_gap_count` 是 URG 原始
   missing object 数，`gap_count` 是 AI 实际需要处理的语义 gap 数；三目 condition
-  同样使用 `outcomes` 映射 predicate value 与结果表达式。
+  的 `0/1` 同样直接表示 false/true 分支。
 - fsm 使用 `xcov.code_coverage.fsm.v2`：实例内不同 FSM 分段输出，每段先给出 transition
   coverage，再以 `gap_id/kind/object/at` 表格逐行列出 state、transition 或 sequence 缺口。
 - `navigation.xout` 的覆盖率是 subtree 统计；metric XOUT 的覆盖率是 self 统计，不得混用。

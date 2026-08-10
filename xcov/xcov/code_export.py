@@ -235,24 +235,16 @@ def _condition_groups(section: str, source_files: List[str]) -> Tuple[List[Json]
         group_key = (at, tuple((term["marker"], term["expression"]) for term in terms))
         group = by_terms.get(group_key)
         if group is None:
-            outcomes = _ternary_outcomes(raw_expression)
             group = {
                 "condition": {"at": at, "expression": raw_expression},
                 "terms": terms,
                 "uncovered": [],
                 "_by_values": {},
             }
-            if outcomes is not None:
-                group["condition"]["outcomes"] = outcomes
             by_terms[group_key] = group
             groups.append(group)
         elif kind == "expression" and group["condition"]["expression"] != raw_expression:
             group["condition"]["expression"] = raw_expression
-            outcomes = _ternary_outcomes(raw_expression)
-            if outcomes is not None:
-                group["condition"]["outcomes"] = outcomes
-            else:
-                group["condition"].pop("outcomes", None)
         origin = {"kind": kind, "raw_expression": raw_expression}
         for values in vectors:
             coverage_object_gap_count += 1
@@ -294,77 +286,6 @@ def _source_statement(source_path: str | None, start_line: int) -> str:
 def _assignment_rhs(source: str) -> str | None:
     match = re.search(r"(?:<=|(?<![=!<>])=(?!=))\s*(.+)$", source)
     return match.group(1).strip() if match else None
-
-
-def _split_ternary(expression: str) -> Tuple[str, str, str] | None:
-    value = _strip_balanced_outer_parens(expression.strip().rstrip(";"))
-    pairs = {"(": ")", "[": "]", "{": "}"}
-    stack: List[str] = []
-    quote: str | None = None
-    escaped = False
-    question: int | None = None
-    question_depth = 0
-    nested = 0
-    for index, char in enumerate(value):
-        if quote is not None:
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == quote:
-                quote = None
-            continue
-        if char == '"':
-            quote = char
-            continue
-        if char in pairs:
-            stack.append(pairs[char])
-            continue
-        if stack and char == stack[-1]:
-            stack.pop()
-            continue
-        if char == "?" and not (index > 0 and value[index - 1] in {"=", "!"}):
-            if question is None:
-                question = index
-                question_depth = len(stack)
-            elif len(stack) == question_depth:
-                nested += 1
-            continue
-        if char == ":" and question is not None and len(stack) == question_depth:
-            if nested:
-                nested -= 1
-                continue
-            condition = value[:question].strip()
-            true_result = value[question + 1:index].strip()
-            false_result = value[index + 1:].strip()
-            if condition and true_result and false_result:
-                return condition, true_result, false_result
-            return None
-    return None
-
-
-def _normalized_expression(expression: str) -> str:
-    return re.sub(r"\s+", "", _strip_balanced_outer_parens(expression))
-
-
-def _ternary_outcomes(expression: str, predicate: str | None = None) -> Json | None:
-    split = _split_ternary(expression)
-    if split is None:
-        return None
-    condition, true_result, false_result = split
-    if predicate is None or _normalized_expression(condition) == _normalized_expression(predicate):
-        return {"0": false_result, "1": true_result}
-    for result in (true_result, false_result):
-        nested = _ternary_outcomes(result, predicate)
-        if nested is not None:
-            return nested
-    return None
-
-
-def _render_outcomes(outcomes: Json | None) -> str:
-    if not outcomes:
-        return "-"
-    return f"0:{outcomes['0']} | 1:{outcomes['1']}"
 
 
 def _branch_terms(block: str, source_files: List[str], absolute_sources: List[str]) -> List[Json]:
@@ -415,14 +336,6 @@ def _branch_terms(block: str, source_files: List[str], absolute_sources: List[st
                 "expression": expression,
                 "source": rendered_source,
             }
-            if kind == "ternary":
-                rhs = _assignment_rhs(rendered_source.rstrip(";")) or rendered_source
-                outcomes = _ternary_outcomes(rhs, expression)
-                if outcomes is None:
-                    raise CoverageExportParseError(
-                        "branch", "", "branch ternary outcomes cannot be mapped to source"
-                    )
-                term["outcomes"] = outcomes
             terms.append(term)
         prior_numbered = (line_no, source)
     unique = {item["id"]: item for item in terms}
@@ -489,12 +402,10 @@ def _branch_groups(section: str, source_files: List[str], absolute_sources: List
         for term_id in ids:
             item = {key: by_id[term_id][key]
                     for key in ("marker", "kind", "at", "expression", "source")}
-            if "outcomes" in by_id[term_id]:
-                item["outcomes"] = by_id[term_id]["outcomes"]
             path.append(item)
         path_key = tuple(tuple(
-            item.get(key) if key != "outcomes" else tuple(sorted(item.get("outcomes", {}).items()))
-            for key in ("marker", "kind", "at", "expression", "outcomes", "source")
+            item.get(key)
+            for key in ("marker", "kind", "at", "expression", "source")
         ) for item in path)
         group = by_path.get(path_key)
         if group is None:
@@ -936,8 +847,8 @@ def _render_condition_xout(payload: Json, raw_name: str) -> str:
         condition = group["condition"]
         lines.extend([f"- group_id: {group['group_id']}", "  condition:"])
         lines.extend(_aligned_table(
-            ["at", "expression", "outcomes"],
-            [[condition["at"], condition["expression"], _render_outcomes(condition.get("outcomes"))]],
+            ["at", "expression"],
+            [[condition["at"], condition["expression"]]],
         ))
         lines.append("  terms:")
         lines.extend(_aligned_table(
@@ -979,9 +890,9 @@ def _render_branch_xout(payload: Json, raw_name: str) -> str:
     for group in payload["decision_groups"]:
         lines.extend([f"- group_id: {group['group_id']}", "  decision_path:"])
         lines.extend(_aligned_table(
-            ["marker", "kind", "at", "expression", "outcomes", "source"],
+            ["marker", "kind", "at", "expression", "source"],
             [[item["marker"], item["kind"], item["at"], item["expression"],
-              _render_outcomes(item.get("outcomes")), item["source"]]
+              item["source"]]
              for item in group["decision_path"]],
         ))
         lines.append("  uncovered:")

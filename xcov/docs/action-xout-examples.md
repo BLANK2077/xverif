@@ -220,7 +220,7 @@ NPI traversal 或 fact 合同失败使用结构化错误，并明确声明结果
 metric 写出 JSON、XOUT 和原始 URG text。Line v2 的 group 由过程块 context 表和紧邻的
 uncovered statement 表组成。Condition v2 使用 condition、terms、uncovered 三张表；
 相同位置、terms 和 values 的 EXPRESSION/SUB-EXPRESSION 只输出一个 gap。Branch/Condition
-中的三目节点通过 outcomes 列给出 `0:false-result | 1:true-result`。FSM v2 按状态机分段，
+中的三目节点由 predicate 的真值 `0/1` 直接区分 false/true 分支。FSM v2 按状态机分段，
 每段包含 transition coverage 摘要和逐 gap 表格。
 
 ```text
@@ -245,8 +245,8 @@ gap_count: 24
 condition_groups:
 - group_id: CG0002
   condition:
-    at                 expression                                            outcomes
-    lane_worker.sv:46  ((request.data[3:0] == 4'he) ? 2'b10 : 2'b1)          0:2'b1 | 1:2'b10
+    at                 expression
+    lane_worker.sv:46  ((request.data[3:0] == 4'he) ? 2'b10 : 2'b1)
   terms:
     marker  expression
     -1-     request.data[3:0] == 4'he

@@ -138,11 +138,11 @@ union、strict mode 对 covered/uncovered 对象的差异，以及新进程只�
   statement；continuous assign 未被 URG 计入 line 时不构造虚假对象。
 - Condition detail 使用 `xcov.code_coverage.condition.v2`，按 `LINE` 与 underline marker
   恢复 term，并合并相同位置、terms、values 的 EXPRESSION/SUB-EXPRESSION。原始 object
-  数由 `coverage_object_gap_count` 表达，语义 gap 数由 `gap_count` 表达。三目表达式额外
-  发布 `outcomes`，明确 `0` 和 `1` 对应的结果表达式。
+  数由 `coverage_object_gap_count` 表达，语义 gap 数由 `gap_count` 表达。三目表达式的
+  predicate 值 `0` 和 `1` 分别表示 false 和 true 分支。
 - Branch v2 的 decision kind 包括 `if/case/casez/casex/ternary`；多行 ternary 的位置
-  指向 predicate 实际源码行，source 保存归一化后的完整赋值语句，ternary 节点通过
-  `outcomes` 明确两个结果分支。
+  指向 predicate 实际源码行，source 保存归一化后的完整赋值语句；真值表中的 `0/1`
+  直接表示 predicate 的 false/true 分支。
 - FSM detail 使用 `xcov.code_coverage.fsm.v2`，解析实例内全部 FSM，聚合 transition
   coverage，并按 FSM 分段输出 state/transition/sequence gap 表格。
 - 不在 schema 中放未证实字段。

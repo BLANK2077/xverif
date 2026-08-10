@@ -171,8 +171,7 @@ def test_complex_modinfo_export_has_diverse_incomplete_branch_groups(xverif_fixt
         branch_xout = (instance_dir / "branch.xout").read_text(encoding="utf-8")
         assert "\n  uncovered:\n" in branch_xout
         assert "\n\n  uncovered:\n" not in branch_xout
-        assert "0:request.data[0] | 1:reject_maintenance" in branch_xout
-        assert "0:2'b01 | 1:2'b10" in branch_xout
+        assert "outcomes" not in branch_xout
 
         fsm = json.loads((instance_dir / "fsm.json").read_text(encoding="utf-8"))
         assert fsm["schema"] == "xcov.code_coverage.fsm.v2"

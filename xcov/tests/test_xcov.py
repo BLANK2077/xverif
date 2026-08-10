@@ -1905,11 +1905,10 @@ Branches:
         "at": "dut.sv:151",
         "expression": "data[7:4] == 4'hd",
         "source": "assign feature = (data[7:4] == 4'hd) ? reject : data[0];",
-        "outcomes": {"0": "data[0]", "1": "reject"},
     }
     xout = render_metric_xout(payload, "branch.urg.txt")
     assert "-1-     ternary  dut.sv:151" in xout
-    assert "0:data[0] | 1:reject" in xout
+    assert "outcomes" not in xout
 
 
 def test_branch_v2_preserves_spaced_concatenation_case_value():
@@ -1988,7 +1987,7 @@ Branches:
 
     decision = payload["decision_groups"][0]["decision_path"][0]
     assert decision["at"] == "dut.sv:47"
-    assert decision["outcomes"] == {"0": "2'b01", "1": "2'b10"}
+    assert "outcomes" not in decision
 
 
 def test_line_v2_groups_uncovered_statements_by_construct():
@@ -2101,7 +2100,6 @@ Event               0        0
     assert group["condition"] == {
         "at": "dut.sv:46",
         "expression": "((request.data[3:0] == 4'he) ? 2'b10 : 2'b1)",
-        "outcomes": {"0": "2'b1", "1": "2'b10"},
     }
     assert group["terms"] == [{"marker": "-1-", "expression": "request.data[3:0] == 4'he"}]
     assert group["uncovered"] == [{
@@ -2127,7 +2125,7 @@ Event               0        0
     assert "urg_vector" not in xout
     assert "decoded_vector" not in xout
     assert "required" not in xout
-    assert "0:2'b1 | 1:2'b10" in xout
+    assert "outcomes" not in xout
     assert "\n  uncovered:\n" in xout
     assert "\n\n  uncovered:\n" not in xout
 
