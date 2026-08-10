@@ -23,6 +23,29 @@ tools/xcov --stdio-loop
 
 真实 NPI coverage 查询需要 Synopsys license；受限沙箱内 license 可能不可达。
 
+## Exclusion 关键生命周期
+
+> **不要在持久化前关闭 session。** `exclude.add` 的 reason 仅保存在当前 session 内存中；
+> `session.close`、进程退出或 session 丢失都会永久丢失尚未导出的 reason。必须先成功执行
+> `exclude.csv.export`，再执行 `export.exclude`，最后才能关闭 session。
+
+Coverage 分析和 exclusion 的标准顺序：
+
+1. 打开 VDB session。
+2. 按用户需要选择一种初始状态：用 `exclude.load` 导入 EL、用 `exclude.csv.apply` 导入三类
+   CSV，或不加载任何 exclusion。不要自动选择或静默 fallback。
+3. 先用 `scope.summary`、`scope.children`、`code_coverage.summary` 和 holes action 查询覆盖率。
+4. 用 `export.code_coverage`、`export.functional_coverage` 或 `export.assert` 导出具体缺口，不能
+   只依据压缩摘要决定排除。
+5. 对每个 gap 选择补充激励，或调用 `exclude.add` 并为每个条目提供具体非空 `reason`。
+6. 重新查询覆盖率并再次导出具体缺口，确认目的没有退化。
+7. 调用 `exclude.csv.export` 原子合并 reason-bearing CSV；随后调用 `export.exclude` 保存 EL。
+8. 确认 CSV 和 EL 均成功落盘后，才允许关闭 session。
+
+EL 不保存 reason。从 EL 加载的既有 exclusion 无法补回原因；`exclude.csv.export` 会明确告警，
+并只导出当前 session 中已知 reason 且具有可移植 CSV 身份的条目。CSV 是 reason 的持久化来源，
+EL 是 Synopsys 原生 exclusion 状态的持久化来源，两者都应在关闭前导出。
+
 ## 常用请求
 
 open：
@@ -61,6 +84,22 @@ code coverage export：
 
 ```json
 {"api_version":"xcov.v1","action":"export.code_coverage","target":{"session_id":"cov0"},"args":{"scopes":["uart_tb.u_uart"],"metrics":["line","toggle"],"output":{"path":"coverage_artifacts"}}}
+```
+
+按导出 gap 添加 exclusion；每个条目必须单独给出原因：
+
+```json
+{"api_version":"xcov.v1","action":"exclude.add","target":{"session_id":"cov0"},"args":{"exports":[{"path":"/abs/path/branch.json","items":[{"gap_id":"B0001","reason":"规格禁止该模式组合"},{"gap_id":"B0002","reason":"该分支仅用于失效保护"}]}]}}
+```
+
+关闭 session 前先导出 reason-bearing CSV，再导出原生 EL：
+
+```json
+{"api_version":"xcov.v1","action":"exclude.csv.export","target":{"session_id":"cov0"},"args":{"directory":"coverage_exclusions"}}
+```
+
+```json
+{"api_version":"xcov.v1","action":"export.exclude","target":{"session_id":"cov0"},"args":{"output":{"path":"coverage_exclusions/merged.el"}}}
 ```
 
 function coverage export：
@@ -120,9 +159,15 @@ assert export：
   的 `0/1` 同样直接表示 false/true 分支。
 - fsm 使用 `xcov.code_coverage.fsm.v2`：实例内不同 FSM 分段输出，每段先给出 transition
   coverage，再以 `gap_id/kind/object/at` 表格逐行列出 state、transition 或 sequence 缺口。
-- `exclude.add.args.exports` 接受 metric JSON 绝对路径及 `gap_ids` 数组。xcov 使用 JSON 内
+- `exclude.add.args.exports` 接受 metric JSON 绝对路径及 `items` 数组；每项必须包含
+  `gap_id` 和非空 `reason`。xcov 使用 JSON 内
   的固定 NPI locator 直接排除，不扫描 VDB；非 FSM 失败整批回滚，只有 FSM 允许返回
   明确的 `partial_success` 和逐 gap 失败原因。
+- 同一 session 内重复 add 同一身份但提供新 reason 时，内存 reason 更新；若
+  `exclude.csv.export` 发现目标 CSV 已有同一身份但 reason 不同，则三类文件均不写入，必须
+  先由用户决定保留哪一个原因。
+- toggle coverage 的 NPI 对象可能没有源码行号；CSV 允许 toggle 的 `line` 为空，并通过
+  `scope + signal + transition` 精确解析。其它 coverage 类型仍要求可验证的源码行号。
 - `navigation.xout` 的覆盖率是 subtree 统计；metric XOUT 的覆盖率是 self 统计，不得混用。
 - `assert.summary` 输出基础覆盖率和 attempts/real successes/without attempts；不输出
   kind/category/severity/failures/incomplete/first_match/file/line。需要完整 assertion

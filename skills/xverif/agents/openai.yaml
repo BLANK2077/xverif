@@ -1,4 +1,4 @@
 interface:
   display_name: "xverif"
   short_description: "按验证任务选择 xdebug、xcov、xbit、xentry、xloc、xsva 或 xwaveform"
-  default_prompt: "使用 $xverif 先按问题类型选择能力，再按当前环境选择 MCP 或 CLI。xdebug 任务先调用一次 xverif_tools 并完整读取所有 action 的名称、状态与作用，再查询选定 action 的 schema。对关键信号或接口生成 schema-valid JSON，通过 list.load、stream.config.load、axi.config.load 或 apb.config.load 加载后查看；加载成功后优先按 recommended_actions 使用 value.at，通过 signal/list/apb/stream/axi 之一和 time/times 批量查询，不反复调用 batch，也不自动 fallback。"
+  default_prompt: "使用 $xverif 先按问题类型选择能力，再按当前环境选择 MCP 或 CLI。xdebug 任务先调用一次 xverif_tools 并完整读取所有 action 的名称、状态与作用，再查询选定 action 的 schema。对关键信号或接口生成 schema-valid JSON，通过 list.load、stream.config.load、axi.config.load 或 apb.config.load 加载后查看；加载成功后优先按 recommended_actions 使用 value.at，通过 signal/list/apb/stream/axi 之一和 time/times 批量查询，不反复调用 batch，也不自动 fallback。xcov exclusion 的 reason 只存在于 session，必须先导出 CSV、再导出 EL，确认成功后才关闭 session。"

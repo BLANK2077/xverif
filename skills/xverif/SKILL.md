@@ -11,6 +11,10 @@ description: >
 
 这是唯一通用隐式入口。先判断用户要解决的问题，不要先猜 CLI/MCP。
 
+> **Coverage exclusion 必须先持久化再关闭 session。** `exclude.add` 的 reason 只存在于
+> 当前 xcov session；关闭 session 会永久丢失尚未导出的 reason。完成 coverage 分析后，
+> 必须先执行 `exclude.csv.export`，再执行 `export.exclude`，确认两类文件均成功后才能关闭。
+
 ## 任务路由
 
 | 用户意图 | 能力参考 |
@@ -51,6 +55,8 @@ description: >
 7. 先执行最小受限查询，再根据证据扩展。
 8. 输出结论、signal/path、time/range、value、file:line、action/tool、error/finding；
    同时报告 canonical 完整性字段并保留 action-specific status 与 unknowns。
+9. xcov exclusion 任务严格遵循“可选加载 exclusion、查询摘要、导出具体缺口、补激励或带
+   reason 排除、复查、先导出 CSV 再导出 EL、最后关闭 session”的流程；详见 xcov reference。
 
 ## 禁止事项
 
