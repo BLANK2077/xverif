@@ -230,7 +230,10 @@ def test_export_gap_ids_are_excluded_without_database_traversal(xverif_fixture, 
                 ids = [gap["gap_id"] for group in payload["fsm_groups"] for gap in group["gaps"]]
             assert ids
             expected_ids.extend((metric, gap_id) for gap_id in ids)
-            export_entries.append({"path": str(path), "gap_ids": ids})
+            export_entries.append({
+                "path": str(path),
+                "items": [{"gap_id": gap_id, "reason": f"验证 {metric} gap exclude"} for gap_id in ids],
+            })
 
         def forbidden_traversal(*args, **kwargs):
             raise AssertionError("exclude.add exports must not call _npi_items")
@@ -263,7 +266,10 @@ def test_export_gap_ids_are_excluded_without_database_traversal(xverif_fixture, 
             "target": {"session_id": session.session_id},
             "args": {"exports": [{
                 "path": str(broken_fsm_path),
-                "gap_ids": [fsm_gaps[0]["gap_id"], fsm_gaps[1]["gap_id"]],
+                "items": [
+                    {"gap_id": fsm_gaps[0]["gap_id"], "reason": "FSM 不可达路径"},
+                    {"gap_id": fsm_gaps[1]["gap_id"], "reason": "FSM 未计划路径"},
+                ],
             }]},
         })
         assert partial["ok"] is True, json.dumps(partial, ensure_ascii=False, indent=2)
@@ -282,7 +288,10 @@ def test_export_gap_ids_are_excluded_without_database_traversal(xverif_fixture, 
             "request_id": "exclude-branch-atomic-failure",
             "action": "exclude.add",
             "target": {"session_id": session.session_id},
-            "args": {"exports": [{"path": str(broken_branch_path), "gap_ids": [branch_gap["gap_id"]]}]},
+            "args": {"exports": [{
+                "path": str(broken_branch_path),
+                "items": [{"gap_id": branch_gap["gap_id"], "reason": "分支异常回滚验证"}],
+            }]},
         })
         assert rejected["ok"] is False
         assert rejected["error"]["code"] == "EXCLUSION_APPLY_FAILED"

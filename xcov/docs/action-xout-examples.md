@@ -155,13 +155,13 @@ NPI traversal 或 fact 合同失败使用结构化错误，并明确声明结果
 ```
 
 ```json
-{"api_version":"xcov.v1","request_id":"exclude-add","action":"exclude.add","target":{"session_id":"cov0"},"args":{"coverage_refs":["xcovref.v1:<sha256>"]}}
+{"api_version":"xcov.v1","request_id":"exclude-add","action":"exclude.add","target":{"session_id":"cov0"},"args":{"coverage_refs":[{"coverage_ref":"xcovref.v1:<sha256>","reason":"规格确认不可达"}]}}
 ```
 
 导出 gap ID 直接排除：
 
 ```json
-{"api_version":"xcov.v1","request_id":"exclude-export-gaps","action":"exclude.add","target":{"session_id":"cov0"},"args":{"exports":[{"path":"/abs/path/branch.json","gap_ids":["B0001","B0002"]},{"path":"/abs/path/fsm.json","gap_ids":["F0001"]}]}}
+{"api_version":"xcov.v1","request_id":"exclude-export-gaps","action":"exclude.add","target":{"session_id":"cov0"},"args":{"exports":[{"path":"/abs/path/branch.json","items":[{"gap_id":"B0001","reason":"规格禁止组合"},{"gap_id":"B0002","reason":"无效操作模式"}]},{"path":"/abs/path/fsm.json","items":[{"gap_id":"F0001","reason":"不可达状态"}]}]}}
 ```
 
 非 FSM 失败时整批回滚并明确本次请求零成功；只有 FSM 失败允许返回

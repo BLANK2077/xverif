@@ -1154,10 +1154,21 @@ class NpiCoverageBackend(CoverageBackend):
         }[metric]
         records: List[Json] = []
 
-        def walk(handle: Any, path: tuple[int, ...], ancestors: List[Json]) -> None:
+        def walk(handle: Any, path: tuple[int, ...], ancestors: List[Json],
+                 inherited_file: str = "", inherited_line: int = 0) -> None:
             typ = handle.type()
             name = str(handle.name() or "")
             current = {"type": typ, "name": name}
+            try:
+                handle_file = str(handle.file_name() or "")
+            except Exception:
+                handle_file = ""
+            try:
+                handle_line = int(handle.line_no(test_hdl) or 0)
+            except Exception:
+                handle_line = 0
+            source_file = handle_file or inherited_file
+            source_line = handle_line or inherited_line
             if typ in leaf_types:
                 covered = int(handle.covered(test_hdl))
                 coverable = int(handle.coverable(test_hdl))
@@ -1168,11 +1179,16 @@ class NpiCoverageBackend(CoverageBackend):
                         "name": name,
                         "missing": coverable - covered,
                         "ancestors": [*ancestors, current],
+                        "source_file": source_file,
+                        "source_line": source_line,
                     })
             children = handle.child_handles()
             for index, child in enumerate(children):
                 try:
-                    walk(child, (*path, index), [*ancestors, current])
+                    walk(
+                        child, (*path, index), [*ancestors, current],
+                        source_file, source_line,
+                    )
                 finally:
                     self.release_if_handle(child)
 
@@ -1183,12 +1199,27 @@ class NpiCoverageBackend(CoverageBackend):
             self.release_if_handle(inst)
 
         def locator(record: Json) -> Json:
+            ancestors = record["ancestors"]
+            object_types = {
+                "toggle": {"npiCovSignal", "npiCovSignalBit"},
+                "branch": {"npiCovBranch"},
+                "condition": {"npiCovCondition"},
+                "fsm": {"npiCovFSM", "npiCovFsm"},
+            }.get(metric, set())
+            csv_object = next(
+                (item["name"] for item in reversed(ancestors[:-1]) if item["type"] in object_types),
+                "",
+            )
             return {
                 "scope": scope,
                 "metric": metric,
                 "path": record["path"],
                 "type": record["type"],
                 "name": record["name"],
+                "csv_object": csv_object,
+                "csv_bin": record["name"].replace(" -> ", "->"),
+                "csv_source_file": record["source_file"],
+                "csv_line": record["source_line"],
             }
 
         if metric == "line":

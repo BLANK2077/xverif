@@ -13,8 +13,14 @@ from .backend import METRICS
 from .coverage_contract import is_score_bearing_row
 from .errors import XcovError, error_response
 from .exclusions_csv import (
+    FILE_NAMES,
+    KINDS,
+    ExclusionDocument,
+    ExclusionGroup,
     exclusion_paths,
+    format_document,
     format_directory,
+    parse_document,
     parse_directory,
     resolve_documents,
 )
@@ -204,6 +210,11 @@ ACTION_REGISTRY: Dict[str, ActionContract] = {
         "exclude.csv.format", "_exclude_csv_format", False,
         "Check stable grouped CSV ordering, or write it only with write=true.",
         "Do not change exclusion semantics.",
+    ),
+    "exclude.csv.export": ActionContract(
+        "exclude.csv.export", "_exclude_csv_export", True,
+        "Atomically merge reason-bearing session exclusions into portable CSV files.",
+        "Does not persist exclusions that originated only from native EL files.",
     ),
 }
 
@@ -697,6 +708,7 @@ class Dispatcher:
                 raise
         sess.set_el_path(None)  # EL paths loaded via NPI — re-export on next URG call
         sess.mark_exclusion_dirty()
+        sess.loaded_el_without_reasons = True
         return ok_response(
             req,
             completeness_summary(len(rows), len(rows)),
@@ -706,7 +718,13 @@ class Dispatcher:
     def _exclude_set(self, req: Json, sess) -> Json:
         args = action_args(req)
         _require_merged(args)
-        refs = args.get("coverage_refs") or []
+        ref_entries = args.get("coverage_refs") or []
+        adding = req["action"] == "exclude.add"
+        refs = [entry["coverage_ref"] for entry in ref_entries] if adding else list(ref_entries)
+        ref_reasons = {
+            entry["coverage_ref"]: _required_reason(entry["reason"])
+            for entry in ref_entries
+        } if adding else {}
         selectors = args.get("selectors") or []
         exports = args.get("exports") or []
         if exports:
@@ -723,16 +741,29 @@ class Dispatcher:
                 "至少需要 coverage_refs 或 selectors 之一",
                 path="$.args",
             )
-        excluded = req["action"] == "exclude.add"
+        excluded = adding
         rows: list = []
 
         # 向后兼容: coverage_refs
         for ref in refs:
-            rows.append(sess.backend.set_exclusion(ref, excluded, test="merged"))
+            result = sess.backend.set_exclusion(ref, excluded, test="merged")
+            if result.get("status") in {"changed", "already_in_state"}:
+                if excluded:
+                    reason = ref_reasons[ref]
+                    result["reason"] = reason
+                    result["metadata_status"] = sess.record_exclusion(
+                        "coverage_ref:" + ref,
+                        {"reason": reason, "coverage_ref": ref, "csv_row": None},
+                    )
+                else:
+                    sess.remove_exclusion_record("coverage_ref:" + ref)
+            rows.append(result)
 
         # 新 selector 路径
         for sel in selectors:
-            resolved = sess.backend.resolve_selector(sel)
+            reason = _required_reason(sel["reason"]) if adding else None
+            selector = {key: value for key, value in sel.items() if key != "reason"}
+            resolved = sess.backend.resolve_selector(selector)
             if not resolved["valid"]:
                 rows.append({
                     "coverage_ref": None,
@@ -744,6 +775,15 @@ class Dispatcher:
                 result = sess.backend.set_exclusion(
                     resolved["coverage_ref"], excluded, test="merged"
                 )
+                if result.get("status") in {"changed", "already_in_state"}:
+                    key = "selector:" + json.dumps(selector, sort_keys=True, separators=(",", ":"))
+                    if excluded:
+                        result["reason"] = reason
+                        result["metadata_status"] = sess.record_exclusion(
+                            key, {"reason": reason, "selector": selector, "csv_row": _selector_csv_row(selector)},
+                        )
+                    else:
+                        sess.remove_exclusion_record(key)
                 rows.append(result)
 
         sess.mark_exclusion_dirty()
@@ -783,47 +823,67 @@ class Dispatcher:
                 continue
             gap_rows = {}
             if metric == "line":
-                rows = [gap for group in payload.get("line_groups", []) for gap in group.get("uncovered", [])]
+                groups = payload.get("line_groups", [])
             elif metric == "condition":
-                rows = [gap for group in payload.get("condition_groups", []) for gap in group.get("uncovered", [])]
+                groups = payload.get("condition_groups", [])
             elif metric == "branch":
-                rows = [gap for group in payload.get("decision_groups", []) for gap in group.get("uncovered", [])]
+                groups = payload.get("decision_groups", [])
             elif metric == "toggle":
-                rows = payload.get("gaps", [])
+                groups = [{"gaps": payload.get("gaps", [])}]
             else:
-                rows = [gap for group in payload.get("fsm_groups", []) for gap in group.get("gaps", [])]
-            gap_rows = {gap.get("gap_id"): gap for gap in rows}
-            for gap_id in entry["gap_ids"]:
+                groups = payload.get("fsm_groups", [])
+            for group in groups:
+                rows = group.get("uncovered", group.get("gaps", []))
+                for gap in rows:
+                    gap_rows[gap.get("gap_id")] = (gap, group)
+            for gap_entry in entry["items"]:
+                gap_id = gap_entry["gap_id"]
+                reason = _required_reason(gap_entry["reason"])
                 key = (str(path.resolve()), gap_id)
                 if key in seen:
                     preflight_errors.append({"code": "DUPLICATE_EXPORT_GAP", "path": str(path), "gap_id": gap_id})
                     continue
                 seen.add(key)
-                gap = gap_rows.get(gap_id)
-                if gap is None:
+                gap_record = gap_rows.get(gap_id)
+                if gap_record is None:
                     preflight_errors.append({"code": "EXPORT_GAP_ID_NOT_FOUND", "path": str(path), "gap_id": gap_id})
                     continue
+                gap, group = gap_record
                 targets = gap.get("_exclude_targets")
                 if not isinstance(targets, list) or (not targets and metric != "fsm"):
                     preflight_errors.append({"code": "EXPORT_GAP_RESOLVE_MISSING", "path": str(path), "gap_id": gap_id})
                     continue
-                requested.append({
+                candidate = {
                     "path": str(path.resolve()), "gap_id": gap_id, "metric": metric, "targets": targets,
-                    "preflight_error": gap.get("_exclude_error"),
-                })
+                    "preflight_error": gap.get("_exclude_error"), "reason": reason,
+                    "source_files": payload.get("source_files") or [], "gap": gap,
+                    "group": group, "scope": payload.get("scope"),
+                }
+                if targets:
+                    try:
+                        candidate["csv_rows"] = _gap_csv_rows(candidate)
+                    except XcovError as exc:
+                        preflight_errors.append({
+                            "code": "EXCLUSION_CSV_IDENTITY_MISSING",
+                            "path": str(path), "gap_id": gap_id,
+                            "message": str(exc),
+                        })
+                        continue
+                requested.append(candidate)
         non_fsm_errors = [error for error in preflight_errors if not str(error.get("gap_id", "")).startswith("F")]
         if non_fsm_errors or (preflight_errors and not requested):
             raise XcovError(
                 "EXCLUSION_EXPORT_PREFLIGHT_FAILED",
                 "本次 exclude.add 请求未生效任何条目",
                 atomic_result="none_applied", atomic=True, transaction_committed=False,
-                requested_gap_count=sum(len(entry["gap_ids"]) for entry in exports),
+                requested_gap_count=sum(len(entry["items"]) for entry in exports),
                 successful_gap_count=0, applied_gap_count=0, applied_target_count=0,
                 rollback_performed=False, errors=preflight_errors,
             )
         with tempfile.TemporaryDirectory(prefix=".xcov-gap-exclude-") as temporary:
             baseline = Path(temporary) / "baseline.el"
             sess.backend.save_exclusions(str(baseline), test="merged")
+            metadata_baseline = dict(sess.exclusion_records)
             items = []
             applied_targets = 0
             non_fsm_failure = None
@@ -846,6 +906,17 @@ class Dispatcher:
                     "target_count": len(item["targets"]),
                     "error": item["preflight_error"] if not success else None,
                 }
+                if success:
+                    statuses = []
+                    for csv_row in item["csv_rows"]:
+                        key = "csv:" + json.dumps(csv_row, sort_keys=True, separators=(",", ":"))
+                        statuses.append(sess.record_exclusion(
+                            key, {"reason": item["reason"], "csv_row": csv_row},
+                        ))
+                    row["reason"] = item["reason"]
+                    row["metadata_status"] = (
+                        "updated" if "updated" in statuses else "created" if "created" in statuses else "unchanged"
+                    )
                 items.append(row)
                 if not success and item["metric"] != "fsm":
                     non_fsm_failure = row
@@ -854,6 +925,7 @@ class Dispatcher:
                 try:
                     sess.backend.unload_exclusions(test="merged")
                     sess.backend.load_exclusions([str(baseline)], test="merged")
+                    sess.exclusion_records = metadata_baseline
                 except Exception as rollback_error:
                     sess.close()
                     raise XcovError(
@@ -1038,7 +1110,7 @@ class Dispatcher:
         return ok_response(req, completeness_summary(len(shown), len(all_errors)), {"items": shown})
 
     def _exclude_csv_apply(self, req: Json, sess) -> Json:
-        _documents, resolutions = _resolve_csv(req, sess)
+        documents, resolutions = _resolve_csv(req, sess)
         failures = [row for row in resolutions if row["status"] != "matched"]
         if failures:
             raise XcovError(
@@ -1047,6 +1119,7 @@ class Dispatcher:
                 failed_count=len(failures),
             )
         rows = _apply_csv_refs_transactionally(sess, resolutions)
+        _record_csv_documents(sess, documents)
         return _items_ok(req, rows)
 
     def _exclude_csv_compile(self, req: Json, sess) -> Json:
@@ -1128,6 +1201,9 @@ class Dispatcher:
                         ],
                         test="merged",
                     )
+                    sess.exclusion_records.clear()
+                    _record_csv_documents(sess, documents)
+                    sess.loaded_el_without_reasons = False
                 except Exception:
                     for kind in reversed(("code", "functional", "assertion")):
                         destination = output_dir / f"{kind}.el"
@@ -1141,6 +1217,119 @@ class Dispatcher:
                 sess.backend.load_exclusions([str(baseline)], test="merged")
                 raise
         return _items_ok(req, published)
+
+    def _exclude_csv_export(self, req: Json, sess) -> Json:
+        args = action_args(req)
+        directory = Path(_csv_directory(req))
+        if directory.is_absolute() and not args.get("allow_absolute_path", False):
+            raise XcovError(
+                "OUTPUT_PATH_UNSAFE",
+                "absolute directory requires allow_absolute_path=true",
+                path=str(directory),
+            )
+        if any(part == ".." for part in directory.parts):
+            raise XcovError(
+                "OUTPUT_PATH_UNSAFE", "directory must not contain '..'", path=str(directory),
+            )
+
+        documents = []
+        paths = exclusion_paths(directory)
+        for kind in KINDS:
+            path = paths[kind]
+            documents.append(
+                parse_document(path, kind) if path.exists()
+                else ExclusionDocument(kind, path, [])
+            )
+
+        exportable = [
+            record for record in sess.exclusion_records.values()
+            if isinstance(record.get("csv_row"), dict)
+        ]
+        unexportable_count = len(sess.exclusion_records) - len(exportable)
+        by_kind = {document.kind: document for document in documents}
+        identities: Dict[tuple, str] = {}
+        for document in documents:
+            for group in document.groups:
+                for row in group.rows:
+                    identity = _csv_row_identity(document.kind, group.source_file, row)
+                    identities[identity] = row["reason"]
+
+        added_count = 0
+        for record in exportable:
+            row = dict(record["csv_row"])
+            kind = row.pop("coverage_kind")
+            source_file = row.pop("source_file")
+            row["reason"] = record["reason"]
+            identity = _csv_row_identity(kind, source_file, row)
+            previous_reason = identities.get(identity)
+            if previous_reason is not None and previous_reason != row["reason"]:
+                raise XcovError(
+                    "EXCLUSION_REASON_CONFLICT",
+                    "同一 exclusion 身份已有不同 reason；本次 CSV 导出未写入任何文件",
+                    coverage_kind=kind, source_file=source_file,
+                    existing_reason=previous_reason, requested_reason=row["reason"],
+                    atomic_result="none_published",
+                )
+            if previous_reason is not None:
+                continue
+            document = by_kind[kind]
+            group = next((item for item in document.groups if item.source_file == source_file), None)
+            if group is None:
+                group = ExclusionGroup(source_file, [])
+                document.groups.append(group)
+            group.rows.append(row)
+            identities[identity] = row["reason"]
+            added_count += 1
+
+        formatted = {document.kind: format_document(document) for document in documents}
+        directory.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix=".xcov-csv-export-", dir=str(directory)) as temporary:
+            temp_root = Path(temporary)
+            staged = {}
+            backups = {}
+            replaced = []
+            try:
+                for document in documents:
+                    staged_path = temp_root / FILE_NAMES[document.kind]
+                    staged_path.write_text(formatted[document.kind], encoding="utf-8")
+                    staged[document.kind] = staged_path
+                for document in documents:
+                    destination = document.path
+                    if destination.exists():
+                        backup = temp_root / (FILE_NAMES[document.kind] + ".previous")
+                        os.replace(destination, backup)
+                        backups[document.kind] = backup
+                    os.replace(staged[document.kind], destination)
+                    replaced.append(document.kind)
+            except Exception:
+                for kind in reversed(KINDS):
+                    destination = paths[kind]
+                    if kind in replaced and destination.exists():
+                        destination.unlink()
+                    if kind in backups:
+                        os.replace(backups[kind], destination)
+                raise
+
+        items = [{
+            "coverage_kind": document.kind,
+            "path": str(document.path),
+            "status": "published",
+            "group_count": len(document.groups),
+            "record_count": document.row_count,
+        } for document in documents]
+        summary = completeness_summary(len(items), len(items))
+        summary.update({
+            "exported_session_record_count": len(exportable),
+            "added_record_count": added_count,
+            "unexportable_session_record_count": unexportable_count,
+            "el_reason_unknown": sess.loaded_el_without_reasons,
+        })
+        warnings = []
+        if sess.loaded_el_without_reasons:
+            warnings.append("当前 session 从 EL 导入的 exclusion 没有 reason，未写入 CSV")
+        if unexportable_count:
+            warnings.append(f"{unexportable_count} 条 session exclusion 缺少可移植 CSV 身份，未写入 CSV")
+        return ok_response(req, summary, {"items": items}, warnings=warnings)
 
     def _exclude_csv_format(self, req: Json) -> Json:
         args = action_args(req)
@@ -1204,7 +1393,9 @@ def _check_csv_row_format(kind: str, row: dict, csv_line: int) -> dict | None:
             "message": "scope 列不能为空",
         }
     line_val = row.get("line", "")
-    if line_val == "" or line_val is None:
+    if (line_val == "" or line_val is None) and not (
+        kind == "code" and row.get("metric") == "toggle"
+    ):
         return {
             "status": "error", "row": csv_line, "coverage_kind": kind,
             "source_file": row.get("_source_file") or "",
@@ -1212,7 +1403,8 @@ def _check_csv_row_format(kind: str, row: dict, csv_line: int) -> dict | None:
             "message": "line 列不能为空",
         }
     try:
-        int(line_val)
+        if line_val not in ("", None):
+            int(line_val)
     except (ValueError, TypeError):
         return {
             "status": "error", "row": csv_line, "coverage_kind": kind,
@@ -1255,6 +1447,118 @@ def _apply_csv_refs_transactionally(sess, resolutions: List[Json]) -> List[Json]
             sess.backend.load_exclusions([str(baseline)], test="merged")
             raise
     return rows
+
+
+def _required_reason(value: Any) -> str:
+    reason = str(value).strip()
+    if not reason:
+        raise XcovError("SCHEMA_INVALID", "reason 不能为空", path="$.args")
+    return reason
+
+
+def _source_and_line(item: Json) -> tuple[str, int]:
+    source_files = item.get("source_files") or []
+    source_file = str(source_files[0]) if source_files else ""
+    if source_file and Path(source_file).is_absolute():
+        try:
+            source_file = str(Path(source_file).resolve().relative_to(Path.cwd().resolve()))
+        except ValueError:
+            source_file = Path(source_file).name
+    for target in item.get("targets") or []:
+        target_line = target.get("csv_line")
+        target_file = str(target.get("csv_source_file") or "")
+        if isinstance(target_line, int) and target_line > 0:
+            if target_file and Path(target_file).is_absolute():
+                try:
+                    target_file = str(Path(target_file).resolve().relative_to(Path.cwd().resolve()))
+                except ValueError:
+                    target_file = Path(target_file).name
+            return source_file or target_file, target_line
+    candidates = [item.get("gap") or {}, item.get("group") or {}]
+    pending: List[Any] = list(candidates)
+    while pending:
+        candidate = pending.pop(0)
+        if isinstance(candidate, dict):
+            at = candidate.get("at")
+            if isinstance(at, str) and ":" in at:
+                file_name, line_text = at.rsplit(":", 1)
+                if line_text.isdigit():
+                    return source_file or file_name, int(line_text)
+            line = candidate.get("line")
+            if isinstance(line, int) and line > 0:
+                return source_file, line
+            pending.extend(candidate.values())
+        elif isinstance(candidate, list):
+            pending.extend(candidate)
+    if item.get("metric") == "toggle" and source_file:
+        return source_file, 0
+    raise XcovError(
+        "EXCLUSION_CSV_IDENTITY_MISSING",
+        "gap 缺少可持久化的源码行号；本次 exclude.add 未生效任何条目",
+        gap_id=item.get("gap_id"), atomic_result="none_applied",
+    )
+
+
+def _gap_csv_rows(item: Json) -> List[Json]:
+    source_file, line = _source_and_line(item)
+    metric = item["metric"]
+    rows = []
+    for target in item["targets"]:
+        obj = target.get("csv_object", "")
+        bin_name = target.get("csv_bin", "")
+        if metric != "line" and (not obj or not bin_name):
+            raise XcovError(
+                "EXCLUSION_CSV_IDENTITY_MISSING",
+                "gap 的直接 NPI locator 缺少 CSV 身份；本次 exclude.add 未生效任何条目",
+                gap_id=item.get("gap_id"), atomic_result="none_applied",
+            )
+        rows.append({
+            "coverage_kind": "code", "source_file": source_file,
+            "scope": item["scope"], "metric": metric,
+            "line": "" if metric == "toggle" and line == 0 else str(line),
+            "object": obj, "bin": bin_name,
+        })
+    return rows
+
+
+def _selector_csv_row(selector: Json) -> Optional[Json]:
+    source_file = selector.get("file")
+    line = selector.get("line")
+    metric = selector.get("metric")
+    if not source_file or not isinstance(line, int) or line < 1:
+        return None
+    if metric in {"line", "toggle", "branch", "condition", "fsm"}:
+        object_key, bin_key = {
+            "line": (None, None), "toggle": ("signal", "transition"),
+            "branch": ("branch", "arm"), "condition": ("condition", "term"),
+            "fsm": ("fsm", "name"),
+        }[metric]
+        return {
+            "coverage_kind": "code", "source_file": source_file,
+            "scope": selector["scope"], "metric": metric, "line": str(line),
+            "object": selector.get(object_key, "") if object_key else "",
+            "bin": selector.get(bin_key, "") if bin_key else "",
+        }
+    return None
+
+
+def _record_csv_documents(sess, documents: List[Any]) -> None:
+    for document in documents:
+        for group in document.groups:
+            for source_row in group.rows:
+                row = {key: value for key, value in source_row.items() if not key.startswith("_") and key != "reason"}
+                row.update({"coverage_kind": document.kind, "source_file": group.source_file})
+                key = "csv:" + json.dumps(row, sort_keys=True, separators=(",", ":"))
+                sess.record_exclusion(key, {"reason": source_row["reason"], "csv_row": row})
+
+
+def _csv_row_identity(kind: str, source_file: str, row: Json) -> tuple:
+    fields = {
+        "code": ("scope", "metric", "line", "object", "bin"),
+        "functional": ("scope", "line", "covergroup", "coverpoint", "cross", "bin"),
+        "assertion": ("scope", "line", "assertion", "assertion_kind"),
+    }[kind]
+    return (kind, source_file, *(str(row.get(field, "")) for field in fields))
 
 
 def _selector_or_default(

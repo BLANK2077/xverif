@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import secrets
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
@@ -31,12 +31,16 @@ class XcovSession:
 
     _el_path: Optional[str] = None
     _el_dirty: bool = False
+    exclusion_records: Dict[str, Json] = field(default_factory=dict)
+    loaded_el_without_reasons: bool = False
 
     def close(self) -> None:
         self.backend.close()
         self.state = "closed"
         self._el_path = None
         self._el_dirty = False
+        self.exclusion_records.clear()
+        self.loaded_el_without_reasons = False
 
     def public_json(self) -> Json:
         summary = self.backend.summary()
@@ -60,6 +64,17 @@ class XcovSession:
     def clear_exclusions(self) -> None:
         self._el_path = None
         self._el_dirty = False
+        self.exclusion_records.clear()
+        self.loaded_el_without_reasons = False
+
+    def record_exclusion(self, key: str, record: Json) -> str:
+        previous = self.exclusion_records.get(key)
+        status = "created" if previous is None else "unchanged" if previous == record else "updated"
+        self.exclusion_records[key] = record
+        return status
+
+    def remove_exclusion_record(self, key: str) -> None:
+        self.exclusion_records.pop(key, None)
 
     def ensure_el_ready(self) -> Optional[str]:
         if self._el_dirty:

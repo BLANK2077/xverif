@@ -184,7 +184,8 @@ CSV 用 `# source_file=...` 划分连续源码分组；`reason` 必填，同一
 - `exclude.list`：列出 merged test 的 compile/report-time exclusion，并给出当前
   session 的 `coverage_ref`。
 - `exclude.load`：按输入顺序加载一个或多个 EL，使用 pynpi union 语义。
-- `exclude.add` / `exclude.remove`：只接受精确 `coverage_ref`；逐对象复核
+- `exclude.add`：每个 `coverage_ref`、selector 或 export gap 都必须携带非空 `reason`；reason 仅保存在当前 session
+- `exclude.remove`：按精确 `coverage_ref` 或 selector 撤销 report-time exclusion
   before/after，返回 `changed`、`already_in_state`、
   `immutable_compile_time` 或 `failed`。
 - `export.exclude`：固定调用 `save_exclude_file(path, "w")`。
@@ -192,13 +193,19 @@ CSV 用 `# source_file=...` 划分连续源码分组；`reason` 必填，同一
   不用于单项删除。
 
 ```json
-{"api_version":"xcov.v1","action":"exclude.add","target":{"session_id":"cov0"},"args":{"coverage_refs":["xcovref.v1:<sha256>"]}}
+{"api_version":"xcov.v1","action":"exclude.add","target":{"session_id":"cov0"},"args":{"coverage_refs":[{"coverage_ref":"xcovref.v1:<sha256>","reason":"确认无法在当前配置下触发"}]}}
 ```
 
 `exclude.add` 还可直接消费 `export.code_coverage` 生成的 metric JSON：
 
 ```json
-{"api_version":"xcov.v1","action":"exclude.add","target":{"session_id":"cov0"},"args":{"exports":[{"path":"/abs/path/branch.json","gap_ids":["B0001","B0002"]}]}}
+{"api_version":"xcov.v1","action":"exclude.add","target":{"session_id":"cov0"},"args":{"exports":[{"path":"/abs/path/branch.json","items":[{"gap_id":"B0001","reason":"非法输入组合"},{"gap_id":"B0002","reason":"规格禁止路径"}]}]}}
+
+关闭 session 会丢失尚未持久化的 reason。完成排除后应先调用 `exclude.csv.export`，将当前 session 中具备可移植身份的 exclusion 原子合并到三类 CSV；再调用 `export.exclude` 导出原生 EL。仅从 EL 导入的条目没有 reason，CSV 导出会明确告警并省略这些条目。
+
+```json
+{"api_version":"xcov.v1","action":"exclude.csv.export","target":{"session_id":"cov0"},"args":{"directory":"coverage_exclusions"}}
+```
 ```
 
 导出 JSON 内保存 scope-local NPI locator。排除时从 `handle_by_name(scope)` 沿固定 path

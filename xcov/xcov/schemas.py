@@ -393,7 +393,7 @@ def _completeness_summary(extra: Json | None = None) -> Json:
 
 def _error_schema(action: str | None = None) -> Json:
     error_details: Json = {
-        "detail.atomic_result": _string(enum=["none_applied"]),
+        "detail.atomic_result": _string(enum=["none_applied", "none_published"]),
         "detail.atomic": _bool(),
         "detail.transaction_committed": _bool(),
         "detail.requested_gap_count": _integer(0),
@@ -430,6 +430,9 @@ def _error_schema(action: str | None = None) -> Json:
         "detail.group_by": _string(min_length=1),
         "detail.kind": _string(min_length=1),
         "detail.coverage_kind": _string(min_length=1),
+        "detail.source_file": _string(min_length=1),
+        "detail.existing_reason": _string(min_length=1),
+        "detail.requested_reason": _string(min_length=1),
         "detail.line": _integer(0),
         "detail.match_field": _string(min_length=1),
         "detail.max_items": _integer(0),
@@ -780,6 +783,8 @@ EXCLUSION_SET_ITEM = _object({
     "metric": _string(enum=["line", "condition", "branch", "toggle", "fsm"]),
     "target_count": _integer(0),
     "error": NULLABLE_STRING,
+    "reason": _string(min_length=1),
+    "metadata_status": _string(enum=["created", "updated", "unchanged"]),
 }, required=["coverage_ref", "status"])
 
 EXCLUSION_UNLOAD_ITEM = _object({
@@ -884,6 +889,8 @@ def _csv_workflow_args(action: str) -> Json:
         props["test"] = {"const": "merged"}
     if action == "exclude.csv.compile":
         props["output_directory"] = _string(min_length=1)
+        props["allow_absolute_path"] = _bool()
+    if action == "exclude.csv.export":
         props["allow_absolute_path"] = _bool()
     if action == "exclude.csv.format":
         props["write"] = _bool()
@@ -1252,7 +1259,10 @@ SCHEMAS: Dict[str, Json] = {
             "exclude.add",
             target=SESSION_TARGET,
             args=_args({
-                "coverage_refs": _array(_string(min_length=1)),
+                "coverage_refs": _array(_object({
+                    "coverage_ref": _string(min_length=1),
+                    "reason": _string(min_length=1),
+                }, required=["coverage_ref", "reason"]), min_items=1),
                 "selectors": _array(_object({
                 "metric": _string(min_length=1),
                 "scope": _string(min_length=1),
@@ -1271,11 +1281,15 @@ SCHEMAS: Dict[str, Json] = {
                 "coverpoint": _string(min_length=1),
                 "cross": _string(min_length=1),
                 "bin": _string(min_length=1),
-            }), min_items=1),
+                "reason": _string(min_length=1),
+            }, required=["reason"]), min_items=1),
                 "exports": _array(_object({
                     "path": _string(min_length=1),
-                    "gap_ids": _array(_string(min_length=1), min_items=1),
-                }, required=["path", "gap_ids"]), min_items=1),
+                    "items": _array(_object({
+                        "gap_id": _string(min_length=1),
+                        "reason": _string(min_length=1),
+                    }, required=["gap_id", "reason"]), min_items=1),
+                }, required=["path", "items"]), min_items=1),
                 "test": {"const": "merged"},
             }),
             require_target=True,
@@ -1373,15 +1387,22 @@ SCHEMAS: Dict[str, Json] = {
                     "exclude.csv.validate",
                     "exclude.csv.apply",
                     "exclude.csv.compile",
+                    "exclude.csv.export",
                 } else _target(),
                 args=_csv_workflow_args(action),
                 require_target=action in {
                     "exclude.csv.validate",
                     "exclude.csv.apply",
                     "exclude.csv.compile",
+                    "exclude.csv.export",
                 },
             ),
-            _completeness_summary(),
+            _completeness_summary({
+                "exported_session_record_count": _integer(0),
+                "added_record_count": _integer(0),
+                "unexportable_session_record_count": _integer(0),
+                "el_reason_unknown": _bool(),
+            } if action == "exclude.csv.export" else None),
             _items_data(
                 EXCLUSION_SET_ITEM
                 if action == "exclude.csv.apply"
@@ -1393,6 +1414,7 @@ SCHEMAS: Dict[str, Json] = {
             "exclude.csv.apply",
             "exclude.csv.compile",
             "exclude.csv.format",
+            "exclude.csv.export",
         )
     },
 }

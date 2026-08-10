@@ -213,7 +213,10 @@ def test_csv_resolve_is_exact_and_reports_missing(tmp_path):
 def test_native_exclusion_add_remove_export_load_and_unload(tmp_path):
     dispatcher = _dispatcher()
     # 用 selector 语义匹配，不依赖 coverage_ref traversal_path
-    selector = {"metric": "line", "scope": "top", "file": "exclusion_fixture.sv", "line": 72}
+    selector = {
+        "metric": "line", "scope": "top", "file": "exclusion_fixture.sv", "line": 72,
+        "reason": "该行仅用于验证 exclusion 生命周期",
+    }
 
     added = _request(dispatcher, "exclude.add", {"selectors": [selector]})
     assert added["data"]["items"][0]["status"] == "changed"
@@ -230,7 +233,10 @@ def test_native_exclusion_add_remove_export_load_and_unload(tmp_path):
     )
     assert exported["ok"] is True
 
-    removed = _request(dispatcher, "exclude.remove", {"selectors": [selector]})
+    removed = _request(
+        dispatcher, "exclude.remove",
+        {"selectors": [{key: value for key, value in selector.items() if key != "reason"}]},
+    )
     assert removed["data"]["items"][0]["status"] == "changed"
 
     loaded = _request(
@@ -241,6 +247,77 @@ def test_native_exclusion_add_remove_export_load_and_unload(tmp_path):
 
     unloaded = _request(dispatcher, "exclude.unload_all", {"confirm": True})
     assert unloaded["data"]["items"][0]["after_count"] == 0
+
+
+def test_csv_export_persists_session_reasons_and_rejects_conflicting_merge(tmp_path):
+    dispatcher = _dispatcher()
+    selector = {
+        "metric": "line", "scope": "top", "file": "exclusion_fixture.sv", "line": 72,
+        "reason": "第一版排除原因",
+    }
+    added = _request(dispatcher, "exclude.add", {"selectors": [selector]})
+    assert added["data"]["items"][0]["metadata_status"] == "created"
+
+    directory = tmp_path / "exported_csv"
+    exported = _request(
+        dispatcher, "exclude.csv.export",
+        {"directory": str(directory), "allow_absolute_path": True},
+    )
+    assert exported["ok"] is True
+    assert exported["summary"]["exported_session_record_count"] == 1
+    code = parse_directory(directory)[0]
+    assert code.groups[0].rows[0]["reason"] == "第一版排除原因"
+
+    selector["reason"] = "更新后的排除原因"
+    updated = _request(dispatcher, "exclude.add", {"selectors": [selector]})
+    assert updated["data"]["items"][0]["metadata_status"] == "updated"
+    before = {path.name: path.read_text(encoding="utf-8") for path in directory.iterdir()}
+    conflict = _request(
+        dispatcher, "exclude.csv.export",
+        {"directory": str(directory), "allow_absolute_path": True},
+    )
+    assert conflict["ok"] is False
+    assert conflict["error"]["code"] == "EXCLUSION_REASON_CONFLICT"
+    assert {path.name: path.read_text(encoding="utf-8") for path in directory.iterdir()} == before
+
+
+def test_el_import_warns_that_reason_is_not_available_to_csv_export(tmp_path):
+    dispatcher = _dispatcher()
+    selector = {
+        "metric": "line", "scope": "top", "file": "exclusion_fixture.sv", "line": 72,
+        "reason": "仅用于生成原生 EL",
+    }
+    _request(dispatcher, "exclude.add", {"selectors": [selector]})
+    el_path = tmp_path / "native.el"
+    _request(
+        dispatcher, "export.exclude",
+        {"output": {"path": str(el_path), "allow_absolute_path": True}},
+    )
+    _request(dispatcher, "exclude.unload_all", {"confirm": True})
+    _request(
+        dispatcher, "exclude.load",
+        {"paths": [str(el_path)], "allow_absolute_path": True},
+    )
+    exported = _request(
+        dispatcher, "exclude.csv.export",
+        {"directory": str(tmp_path / "csv"), "allow_absolute_path": True},
+    )
+    assert exported["summary"]["el_reason_unknown"] is True
+    assert any("EL" in warning and "reason" in warning for warning in exported["warnings"])
+
+
+def test_session_close_discards_unsaved_exclusion_reasons():
+    from xcov.session import XcovSession
+
+    class Backend:
+        def close(self):
+            pass
+
+    session = XcovSession("isolated", "/unused.vdb", Backend(), None)
+    session.record_exclusion("row", {"reason": "未持久化原因", "csv_row": {}})
+    assert session.exclusion_records
+    session.close()
+    assert session.exclusion_records == {}
 
 
 def test_strict_policy_rejects_covered_object():
@@ -272,7 +349,7 @@ response = dispatcher.dispatch({
     "api_version": "xcov.v1",
     "action": "exclude.add",
     "target": {"session_id": "cov"},
-    "args": {"coverage_refs": [ref]},
+    "args": {"coverage_refs": [{"coverage_ref": ref, "reason": "严格策略验证"}]},
 })
 print("XCOV_TEST_RESULT=" + json.dumps(response))
 '''

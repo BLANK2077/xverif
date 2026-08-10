@@ -221,12 +221,14 @@ def _validate_row(path: Path, line_no: int, kind: str, row: Json) -> None:
         _csv_error(path, line_no, "reason is required")
     if not row["scope"].strip():
         _csv_error(path, line_no, "scope is required")
-    try:
-        line = int(row["line"])
-    except ValueError:
-        _csv_error(path, line_no, "line must be a positive integer")
-    if line <= 0 or str(line) != row["line"].strip():
-        _csv_error(path, line_no, "line must be a canonical positive integer")
+    line_text = row["line"].strip()
+    if not (kind == "code" and row.get("metric") == "toggle" and not line_text):
+        try:
+            line = int(line_text)
+        except ValueError:
+            _csv_error(path, line_no, "line must be a positive integer")
+        if line <= 0 or str(line) != line_text:
+            _csv_error(path, line_no, "line must be a canonical positive integer")
     if kind == "code":
         metric = row["metric"]
         if metric not in CODE_METRICS:
@@ -330,15 +332,16 @@ def resolve_documents(
 
 def _matches(kind: str, record: Json, row: Json) -> bool:
     evidence = row.get("evidence") or {}
-    if (
-        row.get("scope") != record["scope"]
-        or evidence.get("line") != int(record["line"])
-        or not _file_matches(evidence.get("file"), record["_source_file"])
-    ):
+    if row.get("scope") != record["scope"]:
         return False
     if kind == "code":
         metric = record["metric"]
         if row.get("metric") != metric:
+            return False
+        if metric != "toggle" and (
+            evidence.get("line") != int(record["line"])
+            or not _file_matches(evidence.get("file"), record["_source_file"])
+        ):
             return False
         if metric == "line":
             return True
@@ -358,6 +361,11 @@ def _matches(kind: str, record: Json, row: Json) -> bool:
             record["object"] in {str(row.get(key, "")) for key in object_fields}
             and record["bin"] in {str(row.get(key, "")) for key in bin_fields}
         )
+    if (
+        evidence.get("line") != int(record["line"])
+        or not _file_matches(evidence.get("file"), record["_source_file"])
+    ):
+        return False
     if kind == "functional":
         return (
             row.get("metric") == "functional"
@@ -406,7 +414,7 @@ def format_document(document: ExclusionDocument) -> str:
         for row in sorted(
             group.rows,
             key=lambda item: tuple(
-                int(item[key]) if key == "line" else item[key]
+                int(item[key]) if key == "line" and item[key] else 0 if key == "line" else item[key]
                 for key in sort_fields
             ),
         ):
