@@ -493,7 +493,8 @@ def test_cov_exclude_add_with_selector(monkeypatch, exclusion_vdb, xverif_home):
     content, _ = _call_tool(server, "xverif_cov_query", {
         "session_id": "mcp_excl_add", "action": "exclude.add",
         "args": {"selectors": [{"metric": "line", "scope": "top",
-                                "file": "exclusion_fixture.sv", "line": 72}]},
+                                "file": "exclusion_fixture.sv", "line": 72,
+                                "reason": "test"}]},
         "output_format": "json",
     })
     payload = json.loads(content[0].text)
@@ -511,7 +512,8 @@ def test_cov_exclude_add_invalid_selector(monkeypatch, exclusion_vdb, xverif_hom
     _call_tool(server, "xverif_cov_session_open", {"name": "mcp_excl_inv", "vdb": exclusion_vdb})
     content, _ = _call_tool(server, "xverif_cov_query", {
         "session_id": "mcp_excl_inv", "action": "exclude.add",
-        "args": {"selectors": [{"metric": "unknown", "scope": "top"}]},
+        "args": {"selectors": [{"metric": "unknown", "scope": "top",
+                                "reason": "test"}]},
         "output_format": "json",
     })
     payload = json.loads(content[0].text)
@@ -536,7 +538,8 @@ def test_cov_exclude_remove_with_selector(monkeypatch, exclusion_vdb, xverif_hom
     content, _ = _call_tool(server, "xverif_cov_query", {
         "session_id": "mcp_excl_rm", "action": "exclude.add",
         "args": {"selectors": [{"metric": "line", "scope": "top",
-                                "file": "exclusion_fixture.sv", "line": 72}]},
+                                "file": "exclusion_fixture.sv", "line": 72,
+                                "reason": "test"}]},
         "output_format": "json",
     })
     assert json.loads(content[0].text)["data"]["items"][0]["status"] == "changed"
