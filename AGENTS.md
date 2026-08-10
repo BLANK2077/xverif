@@ -286,6 +286,12 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 
 ### 2026-08-10 环境错误复盘
 
+- 错误现象：复现 `export.code_coverage` 失败详情时，诊断脚本向 `SessionManager.open` 传入尚未创建的 ignored cache 目录，未进入 NPI 即返回错误。
+- 误判原因：把导出 action 会自动创建的 `output.path` 语义误套到 session `cache_dir`，忽略后者要求调用前已存在。
+- 以后规则：手工复现 xcov session 前分别核对 cache 与 output 生命周期；先显式创建 ignored `cache_dir`，不依赖导出 action 代建。
+
+### 2026-08-10 环境错误复盘
+
 - 错误现象：实现 branch XOUT v2 后直接以 regression gate 运行 `xcov.urg_backend`，被 suite membership 门禁拒绝。
 - 误判原因：只检查了 catalog 中的 suite 定义和既有经验，没有在执行 focused suite 前查询当前 gate plan。
 - 以后规则：每次运行 focused suite 都先查询目标 gate 的 `--xverif-plan`；若产品要求调整 membership，显式修改并测试 catalog gate 合同，不通过 cost 分类伪装。

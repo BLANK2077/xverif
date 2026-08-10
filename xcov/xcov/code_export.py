@@ -201,9 +201,32 @@ def _condition_gaps(section: str, source_files: List[str]) -> List[Json]:
     return gaps
 
 
-def _branch_terms(block: str, source_files: List[str]) -> List[Json]:
+def _source_statement(source_path: str | None, start_line: int) -> str:
+    if not source_path or not os.path.isfile(source_path):
+        raise CoverageExportParseError("branch", "", "branch ternary source file is unavailable")
+    lines = Path(source_path).read_text(encoding="utf-8", errors="replace").splitlines()
+    if start_line < 1 or start_line > len(lines):
+        raise CoverageExportParseError("branch", "", "branch ternary source line is out of range")
+    parts: List[str] = []
+    for source in lines[start_line - 1:]:
+        parts.append(source.strip())
+        if ";" in source:
+            break
+    statement = " ".join(part for part in parts if part)
+    if not statement or ";" not in statement:
+        raise CoverageExportParseError("branch", "", "branch ternary source statement is incomplete")
+    return statement
+
+
+def _assignment_rhs(source: str) -> str | None:
+    match = re.search(r"(?<![=!<>])=(?!=)\s*(.+)$", source)
+    return match.group(1).strip() if match else None
+
+
+def _branch_terms(block: str, source_files: List[str], absolute_sources: List[str]) -> List[Json]:
     terms: List[Json] = []
     source_lines = block.splitlines()
+    prior_numbered: Tuple[int, str] | None = None
     for index, line in enumerate(source_lines):
         numbered = re.match(r"^\s*(\d+)\s+(.+)$", line)
         if not numbered:
@@ -217,18 +240,38 @@ def _branch_terms(block: str, source_files: List[str]) -> List[Json]:
             if_match = re.search(r"\bif\s*\((.+)\)", source)
             if case_match:
                 kind, expression = case_match.group(1), case_match.group(2).strip()
+                at_line = line_no
+                rendered_source = source
             elif if_match:
                 kind, expression = "if", if_match.group(1).strip()
+                at_line = line_no
+                rendered_source = source
+            elif "?" in source:
+                before_question = source.split("?", 1)[0].strip()
+                if before_question:
+                    expression = before_question.strip("() ")
+                    at_line = line_no
+                    start_line = prior_numbered[0] if prior_numbered and prior_numbered[1].rstrip().endswith(("=", "<=", ">=")) else line_no
+                elif prior_numbered:
+                    expression = _assignment_rhs(prior_numbered[1]) or prior_numbered[1]
+                    expression = expression.strip("() ")
+                    at_line = prior_numbered[0]
+                    start_line = prior_numbered[0]
+                else:
+                    raise CoverageExportParseError("branch", "", "branch ternary condition is missing")
+                kind = "ternary"
+                rendered_source = _source_statement(absolute_sources[0] if len(absolute_sources) == 1 else None, start_line)
             else:
                 raise CoverageExportParseError("branch", "", "branch marker source is unsupported")
             terms.append({
                 "id": term_id,
                 "marker": f"-{term_id}-",
                 "kind": kind,
-                "at": _at(source_files, line_no),
+                "at": _at(source_files, at_line),
                 "expression": expression,
-                "source": source,
+                "source": rendered_source,
             })
+        prior_numbered = (line_no, source)
     unique = {item["id"]: item for item in terms}
     return [unique[key] for key in sorted(unique)]
 
@@ -271,7 +314,7 @@ def _branch_tables(section: str) -> List[Tuple[str, List[int], List[List[str]]]]
     return tables
 
 
-def _branch_groups(section: str, source_files: List[str]) -> List[Json]:
+def _branch_groups(section: str, source_files: List[str], absolute_sources: List[str]) -> List[Json]:
     groups: List[Json] = []
     by_path: Dict[Tuple[Tuple[Any, ...], ...], Json] = {}
     for source_block, ids, vectors in _branch_tables(section):
@@ -279,7 +322,7 @@ def _branch_groups(section: str, source_files: List[str]) -> List[Json]:
             continue
         if len(source_files) != 1:
             raise CoverageExportParseError("branch", "", "branch source location is not unique")
-        by_id = {item["id"]: item for item in _branch_terms(source_block, source_files)}
+        by_id = {item["id"]: item for item in _branch_terms(source_block, source_files, absolute_sources)}
         if any(term_id not in by_id for term_id in ids):
             raise CoverageExportParseError("branch", "", "branch marker cannot be mapped to source")
         path = [{key: by_id[term_id][key] for key in ("marker", "kind", "at", "expression", "source")}
@@ -407,7 +450,7 @@ def parse_metric_report(text: str, scope: str, metric: str) -> Json:
     }
     coverage = _coverage(section, metric)
     if metric == "branch":
-        groups = _branch_groups(section, sources)
+        groups = _branch_groups(section, sources, absolute_sources)
         gap_count = sum(len(group["uncovered"]) for group in groups)
         if coverage["missing"] and not gap_count:
             raise CoverageExportParseError(metric, scope, "uncovered objects could not be resolved")

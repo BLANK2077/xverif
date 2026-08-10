@@ -27,6 +27,31 @@ def test_fixture_keeps_one_design_unit_per_source_file():
         assert len(units) == 1, (filename, units)
 
 
+def test_lane_worker_has_diverse_observable_continuous_and_procedural_ternaries():
+    text = (FIXTURE_SOURCE / "lane_worker.sv").read_text(encoding="utf-8")
+    assignments = re.findall(
+        r"assign\s+assign_features\[(\d+)\]\s*=\s*(.*?);",
+        text,
+        re.DOTALL,
+    )
+
+    assert [int(index) for index, _ in assignments] == list(range(12))
+    normalized_rhs = [" ".join(rhs.split()) for _, rhs in assignments]
+    assert len(set(normalized_rhs)) == 12
+    assert any("?" in rhs and ":" in rhs for rhs in normalized_rhs)
+    assert re.search(
+        r"always_ff\b.*?response_class\s*<=\s*"
+        r"\(request\.data\[3:0\]\s*==\s*4'he\)\s*\?\s*2'b10\s*:\s*2'b01\s*;",
+        text,
+        re.DOTALL,
+    )
+    assert re.search(
+        r"assign\s+request_rejected\s*=.*?\(\^assign_features\)\s*;",
+        text,
+        re.DOTALL,
+    )
+
+
 def test_complex_modinfo_export_has_diverse_incomplete_branch_groups(xverif_fixture, tmp_path):
     from xcov.actions import Dispatcher
     from xcov.backend import NpiCoverageBackend
@@ -90,6 +115,14 @@ def test_complex_modinfo_export_has_diverse_incomplete_branch_groups(xverif_fixt
             for group in branch["decision_groups"]
         ]
         assert len(set(kind_sequences)) == len(kind_sequences), kind_sequences
+        ternary_nodes = [
+            node
+            for group in branch["decision_groups"]
+            for node in group["decision_path"]
+            if node["kind"] == "ternary"
+        ]
+        assert any(node["at"] == "lane_worker.sv:151" for node in ternary_nodes)
+        assert any(node["at"] == "lane_worker.sv:47" for node in ternary_nodes)
         branch_xout = (instance_dir / "branch.xout").read_text(encoding="utf-8")
         assert "\n  uncovered:\n" in branch_xout
         assert "\n\n  uncovered:\n" not in branch_xout

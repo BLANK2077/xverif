@@ -82,6 +82,7 @@ module top;
     send_a(8'h21);
     send_a(8'h32);
     send_a(8'h43);
+    send_a(8'h49);
     send_b(8'h32);
     send_sparse(8'h10);
     repeat (5) @(posedge clk);

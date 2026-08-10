@@ -19,6 +19,7 @@ module lane_worker #(
   logic reject_maintenance;
   logic reject_low_range;
   logic request_rejected;
+  logic [11:0] assign_features;
 
   always_comb begin
     next_state = state;
@@ -42,7 +43,8 @@ module lane_worker #(
         sampled_data <= request.data;
         unique case (request.data[WIDTH-1 -: 2])
           2'b00: response_class <= 2'b00;
-          2'b01: response_class <= 2'b01;
+          2'b01: response_class <=
+            (request.data[3:0] == 4'he) ? 2'b10 : 2'b01;
           2'b10: response_class <= 2'b10;
           default: response_class <= 2'b11;
         endcase
@@ -143,8 +145,24 @@ module lane_worker #(
     end
   end
 
+  assign assign_features[0]  = request.valid && (state == IDLE);
+  assign assign_features[1]  = reject_zero || reject_broadcast;
+  assign assign_features[2]  = request.data[7] ^ request.data[6];
+  assign assign_features[3]  = (request.data[7:4] == 4'hd)
+                             ? reject_maintenance
+                             : request.data[0];
+  assign assign_features[4]  = state inside {ACCEPT, EXECUTE};
+  assign assign_features[5]  = request.data[3:0] ==? 4'b1?0?;
+  assign assign_features[6]  = &request.data[7:4];
+  assign assign_features[7]  = ^{request.data[3:0], response_class};
+  assign assign_features[8]  = {request.data[1:0], state} == {2'b01, RESPOND};
+  assign assign_features[9]  = (request.data + sampled_data) > 8'h80;
+  assign assign_features[10] = request.data[LANE_ID +: 2] != 2'b00;
+  assign assign_features[11] = $onehot0({request.valid, request.data[2:0]});
+
   assign request_rejected = reject_zero || reject_broadcast || reject_opcode ||
-                            reject_class || reject_maintenance || reject_low_range;
+                            reject_class || reject_maintenance || reject_low_range ||
+                            (^assign_features);
   assign done = (state == RESPOND) && (response_class != 2'b11) && !request_rejected;
 
   lane_math #(.WIDTH(WIDTH), .LANE_ID(LANE_ID)) u_math (

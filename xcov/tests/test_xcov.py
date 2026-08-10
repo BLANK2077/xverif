@@ -1847,3 +1847,64 @@ Branches:
     assert "status" not in xout
     assert "\n  uncovered:\n" in xout
     assert "\n\n  uncovered:\n" not in xout
+
+
+def test_branch_v2_recovers_multiline_continuous_assign_ternary(tmp_path):
+    from xcov.code_export import parse_metric_report, render_metric_xout
+
+    source = tmp_path / "dut.sv"
+    source.write_text(
+        "\n" * 150
+        + "  assign feature = (data[7:4] == 4'hd)\n"
+        + "                 ? reject\n"
+        + "                 : data[0];\n",
+        encoding="utf-8",
+    )
+    scope = "top.u_dut"
+    report = f"""===============================================================================
+Module : dut
+===============================================================================
+Source File(s) :
+
+{source}
+
+Module self-instances :
+
+SCORE  BRANCH NAME
+ 50.00  50.00 top.u_dut
+
+===============================================================================
+Module Instance : top.u_dut
+===============================================================================
+
+Branch Coverage for Instance : top.u_dut
+         Line No. Total Covered Percent
+Branches          2     1       50.00
+
+151          assign feature = (data[7:4] == 4'hd)
+152                           ? reject
+                              -1-
+                              ==>
+                              ==>
+
+Branches:
+
+-1- Status
+1   Not Covered
+0   Covered
+
+"""
+
+    payload = parse_metric_report(report, scope, "branch")
+
+    assert payload["gap_count"] == 1
+    decision = payload["decision_groups"][0]["decision_path"][0]
+    assert decision == {
+        "marker": "-1-",
+        "kind": "ternary",
+        "at": "dut.sv:151",
+        "expression": "data[7:4] == 4'hd",
+        "source": "assign feature = (data[7:4] == 4'hd) ? reject : data[0];",
+    }
+    xout = render_metric_xout(payload, "branch.urg.txt")
+    assert "-1-     ternary  dut.sv:151" in xout
