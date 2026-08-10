@@ -235,16 +235,24 @@ def _condition_groups(section: str, source_files: List[str]) -> Tuple[List[Json]
         group_key = (at, tuple((term["marker"], term["expression"]) for term in terms))
         group = by_terms.get(group_key)
         if group is None:
+            outcomes = _ternary_outcomes(raw_expression)
             group = {
                 "condition": {"at": at, "expression": raw_expression},
                 "terms": terms,
                 "uncovered": [],
                 "_by_values": {},
             }
+            if outcomes is not None:
+                group["condition"]["outcomes"] = outcomes
             by_terms[group_key] = group
             groups.append(group)
         elif kind == "expression" and group["condition"]["expression"] != raw_expression:
             group["condition"]["expression"] = raw_expression
+            outcomes = _ternary_outcomes(raw_expression)
+            if outcomes is not None:
+                group["condition"]["outcomes"] = outcomes
+            else:
+                group["condition"].pop("outcomes", None)
         origin = {"kind": kind, "raw_expression": raw_expression}
         for values in vectors:
             coverage_object_gap_count += 1
@@ -284,8 +292,79 @@ def _source_statement(source_path: str | None, start_line: int) -> str:
 
 
 def _assignment_rhs(source: str) -> str | None:
-    match = re.search(r"(?<![=!<>])=(?!=)\s*(.+)$", source)
+    match = re.search(r"(?:<=|(?<![=!<>])=(?!=))\s*(.+)$", source)
     return match.group(1).strip() if match else None
+
+
+def _split_ternary(expression: str) -> Tuple[str, str, str] | None:
+    value = _strip_balanced_outer_parens(expression.strip().rstrip(";"))
+    pairs = {"(": ")", "[": "]", "{": "}"}
+    stack: List[str] = []
+    quote: str | None = None
+    escaped = False
+    question: int | None = None
+    question_depth = 0
+    nested = 0
+    for index, char in enumerate(value):
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            continue
+        if char == '"':
+            quote = char
+            continue
+        if char in pairs:
+            stack.append(pairs[char])
+            continue
+        if stack and char == stack[-1]:
+            stack.pop()
+            continue
+        if char == "?" and not (index > 0 and value[index - 1] in {"=", "!"}):
+            if question is None:
+                question = index
+                question_depth = len(stack)
+            elif len(stack) == question_depth:
+                nested += 1
+            continue
+        if char == ":" and question is not None and len(stack) == question_depth:
+            if nested:
+                nested -= 1
+                continue
+            condition = value[:question].strip()
+            true_result = value[question + 1:index].strip()
+            false_result = value[index + 1:].strip()
+            if condition and true_result and false_result:
+                return condition, true_result, false_result
+            return None
+    return None
+
+
+def _normalized_expression(expression: str) -> str:
+    return re.sub(r"\s+", "", _strip_balanced_outer_parens(expression))
+
+
+def _ternary_outcomes(expression: str, predicate: str | None = None) -> Json | None:
+    split = _split_ternary(expression)
+    if split is None:
+        return None
+    condition, true_result, false_result = split
+    if predicate is None or _normalized_expression(condition) == _normalized_expression(predicate):
+        return {"0": false_result, "1": true_result}
+    for result in (true_result, false_result):
+        nested = _ternary_outcomes(result, predicate)
+        if nested is not None:
+            return nested
+    return None
+
+
+def _render_outcomes(outcomes: Json | None) -> str:
+    if not outcomes:
+        return "-"
+    return f"0:{outcomes['0']} | 1:{outcomes['1']}"
 
 
 def _branch_terms(block: str, source_files: List[str], absolute_sources: List[str]) -> List[Json]:
@@ -328,14 +407,23 @@ def _branch_terms(block: str, source_files: List[str], absolute_sources: List[st
                 rendered_source = _source_statement(absolute_sources[0] if len(absolute_sources) == 1 else None, start_line)
             else:
                 raise CoverageExportParseError("branch", "", "branch marker source is unsupported")
-            terms.append({
+            term: Json = {
                 "id": term_id,
                 "marker": f"-{term_id}-",
                 "kind": kind,
                 "at": _at(source_files, at_line),
                 "expression": expression,
                 "source": rendered_source,
-            })
+            }
+            if kind == "ternary":
+                rhs = _assignment_rhs(rendered_source.rstrip(";")) or rendered_source
+                outcomes = _ternary_outcomes(rhs, expression)
+                if outcomes is None:
+                    raise CoverageExportParseError(
+                        "branch", "", "branch ternary outcomes cannot be mapped to source"
+                    )
+                term["outcomes"] = outcomes
+            terms.append(term)
         prior_numbered = (line_no, source)
     unique = {item["id"]: item for item in terms}
     return [unique[key] for key in sorted(unique)]
@@ -351,6 +439,7 @@ def _branch_tables(section: str) -> List[Tuple[str, List[int], List[List[str]]]]
         if not header:
             raise CoverageExportParseError("branch", "", "branch status header is missing")
         ids = [int(value) for value in re.findall(r"-(\d+)-", header.group(1))]
+        marker_starts = [match.start() for match in re.finditer(r"-\d+-", header.group(1))]
         vectors: List[List[str]] = []
         saw_status = False
         consumed = header.end()
@@ -367,7 +456,13 @@ def _branch_tables(section: str) -> List[Tuple[str, List[int], List[List[str]]]]
                     break
                 continue
             saw_status = True
-            values = status.group(1).split()
+            value_text = status.group(1)
+            values = [
+                value_text[start:marker_starts[value_index + 1]].strip()
+                if value_index + 1 < len(marker_starts)
+                else value_text[start:].strip()
+                for value_index, start in enumerate(marker_starts)
+            ]
             if len(values) != len(ids):
                 raise CoverageExportParseError("branch", "", "branch vector width does not match markers")
             if status.group(2) == "Not Covered":
@@ -390,10 +485,17 @@ def _branch_groups(section: str, source_files: List[str], absolute_sources: List
         by_id = {item["id"]: item for item in _branch_terms(source_block, source_files, absolute_sources)}
         if any(term_id not in by_id for term_id in ids):
             raise CoverageExportParseError("branch", "", "branch marker cannot be mapped to source")
-        path = [{key: by_id[term_id][key] for key in ("marker", "kind", "at", "expression", "source")}
-                for term_id in ids]
-        path_key = tuple(tuple(item[key] for key in ("marker", "kind", "at", "expression", "source"))
-                         for item in path)
+        path = []
+        for term_id in ids:
+            item = {key: by_id[term_id][key]
+                    for key in ("marker", "kind", "at", "expression", "source")}
+            if "outcomes" in by_id[term_id]:
+                item["outcomes"] = by_id[term_id]["outcomes"]
+            path.append(item)
+        path_key = tuple(tuple(
+            item.get(key) if key != "outcomes" else tuple(sorted(item.get("outcomes", {}).items()))
+            for key in ("marker", "kind", "at", "expression", "outcomes", "source")
+        ) for item in path)
         group = by_path.get(path_key)
         if group is None:
             group = {"decision_path": path, "uncovered": []}
@@ -509,12 +611,10 @@ def _toggle_gaps(section: str) -> List[Json]:
     return gaps
 
 
-def _fsm_gaps(section: str, source_files: List[str]) -> List[Json]:
-    fsm_match = re.search(r"^Summary for FSM :: (.+)$", section, re.MULTILINE)
-    fsm = fsm_match.group(1).strip() if fsm_match else "unknown"
+def _fsm_block_gaps(block: str, fsm: str, source_files: List[str]) -> List[Json]:
     gaps: List[Json] = []
     kind: str | None = None
-    for line in section.splitlines():
+    for line in block.splitlines():
         stripped = line.strip()
         lowered = stripped.lower()
         if lowered.startswith("states") and "line no." in lowered:
@@ -535,13 +635,55 @@ def _fsm_gaps(section: str, source_files: List[str]) -> List[Json]:
         obj = " ".join(fields[:-1])
         verb = {"state": "enter", "transition": "traverse", "sequence": "observe"}[kind]
         gaps.append({
-            "fsm": fsm,
             "object_kind": kind,
             "object": obj,
             "at": _at(source_files, line_no),
-            "required": f"{verb} this FSM {kind}",
         })
     return gaps
+
+
+def _fsm_groups(section: str, source_files: List[str]) -> Tuple[List[Json], Json]:
+    starts = list(re.finditer(r"^Summary for FSM :: (.+)$", section, re.MULTILINE))
+    if not starts:
+        raise CoverageExportParseError("fsm", "", "FSM summary is missing")
+    groups: List[Json] = []
+    total_covered = 0
+    total_coverable = 0
+    gap_index = 1
+    for index, start in enumerate(starts):
+        end = starts[index + 1].start() if index + 1 < len(starts) else len(section)
+        block = section[start.end():end]
+        coverage_match = re.search(
+            r"^Transitions\s+(\d+)\s+(\d+)\s+([\d.]+)", block, re.MULTILINE
+        )
+        if not coverage_match:
+            raise CoverageExportParseError("fsm", "", "FSM transition coverage is missing")
+        coverable, covered = int(coverage_match.group(1)), int(coverage_match.group(2))
+        total_coverable += coverable
+        total_covered += covered
+        gaps = _fsm_block_gaps(block, start.group(1).strip(), source_files)
+        for gap in gaps:
+            gap["gap_id"] = f"F{gap_index:04d}"
+            gap_index += 1
+        if gaps:
+            groups.append({
+                "fsm": start.group(1).strip(),
+                "transition_coverage": {
+                    "covered": covered,
+                    "coverable": coverable,
+                    "missing": coverable - covered,
+                    "pct": round(float(coverage_match.group(3)), 2),
+                },
+                "gaps": gaps,
+            })
+    missing = total_coverable - total_covered
+    aggregate = {
+        "covered": total_covered,
+        "coverable": total_coverable,
+        "missing": missing,
+        "pct": round(100.0 * total_covered / total_coverable, 2) if total_coverable else 0.0,
+    }
+    return groups, aggregate
 
 
 def _non_actionable(section: str) -> List[Json]:
@@ -560,10 +702,7 @@ def parse_metric_report(text: str, scope: str, metric: str) -> Json:
     section = _section(text, metric, scope, module)
     absolute_sources = _source_files(text, module)
     source_root, sources = _source_context(absolute_sources)
-    parsers = {
-        "toggle": lambda: _toggle_gaps(section),
-        "fsm": lambda: _fsm_gaps(section, sources),
-    }
+    parsers = {"toggle": lambda: _toggle_gaps(section)}
     coverage = _coverage(section, metric)
     if metric == "line":
         groups = _line_groups(section, sources)
@@ -631,6 +770,27 @@ def parse_metric_report(text: str, scope: str, metric: str) -> Json:
             "decision_groups": groups,
             "non_actionable": _non_actionable(section),
         }
+    if metric == "fsm":
+        groups, aggregate = _fsm_groups(section, sources)
+        gap_count = sum(len(group["gaps"]) for group in groups)
+        if aggregate["missing"] and not gap_count:
+            raise CoverageExportParseError(metric, scope, "uncovered objects could not be resolved")
+        return {
+            "schema": "xcov.code_coverage.fsm.v2",
+            "scope": scope,
+            "module": module,
+            "source_root": source_root,
+            "source_files": sources,
+            "metric": metric,
+            "coverage_basis": "self",
+            "coverage": aggregate,
+            "fsm_group_count": len(groups),
+            "gap_count": gap_count,
+            "non_actionable_count": len(_non_actionable(section)),
+            "analysis_complete": True,
+            "fsm_groups": groups,
+            "non_actionable": _non_actionable(section),
+        }
     gaps = parsers[metric]()
     if coverage["missing"] and not gaps:
         raise CoverageExportParseError(metric, scope, "uncovered objects could not be resolved")
@@ -671,6 +831,8 @@ def render_metric_xout(payload: Json, raw_name: str) -> str:
         return _render_condition_xout(payload, raw_name)
     if payload["metric"] == "branch" and payload["schema"] == "xcov.code_coverage.branch.v2":
         return _render_branch_xout(payload, raw_name)
+    if payload["metric"] == "fsm" and payload["schema"] == "xcov.code_coverage.fsm.v2":
+        return _render_fsm_xout(payload, raw_name)
     coverage = payload["coverage"]
     lines = [
         f"@{payload['schema']}",
@@ -774,8 +936,8 @@ def _render_condition_xout(payload: Json, raw_name: str) -> str:
         condition = group["condition"]
         lines.extend([f"- group_id: {group['group_id']}", "  condition:"])
         lines.extend(_aligned_table(
-            ["at", "expression"],
-            [[condition["at"], condition["expression"]]],
+            ["at", "expression", "outcomes"],
+            [[condition["at"], condition["expression"], _render_outcomes(condition.get("outcomes"))]],
         ))
         lines.append("  terms:")
         lines.extend(_aligned_table(
@@ -817,8 +979,9 @@ def _render_branch_xout(payload: Json, raw_name: str) -> str:
     for group in payload["decision_groups"]:
         lines.extend([f"- group_id: {group['group_id']}", "  decision_path:"])
         lines.extend(_aligned_table(
-            ["marker", "kind", "at", "expression", "source"],
-            [[item[key] for key in ("marker", "kind", "at", "expression", "source")]
+            ["marker", "kind", "at", "expression", "outcomes", "source"],
+            [[item["marker"], item["kind"], item["at"], item["expression"],
+              _render_outcomes(item.get("outcomes")), item["source"]]
              for item in group["decision_path"]],
         ))
         lines.append("  uncovered:")
@@ -826,6 +989,47 @@ def _render_branch_xout(payload: Json, raw_name: str) -> str:
         lines.extend(_aligned_table(
             ["gap_id", *markers],
             [[row["gap_id"], *row["values"]] for row in group["uncovered"]],
+        ))
+    lines.extend(["", "non_actionable:"])
+    for item in payload["non_actionable"]:
+        lines.append(f"- object: {_scalar(item['object'])}")
+        lines.append(f"  status: {item['status']}")
+    return "\n".join(lines) + "\n"
+
+
+def _render_fsm_xout(payload: Json, raw_name: str) -> str:
+    coverage = payload["coverage"]
+    lines = [
+        "@xcov.code_coverage.fsm.v2",
+        f"scope: {_scalar(payload['scope'])}",
+        f"module: {_scalar(payload['module'])}",
+        f"source_root: {_scalar(payload['source_root'])}",
+        "coverage_basis: self",
+        "coverage: " + " ".join(
+            f"{key}={coverage[key]}" for key in ("covered", "coverable", "missing", "pct")
+        ),
+        f"fsm_group_count: {payload['fsm_group_count']}",
+        f"gap_count: {payload['gap_count']}",
+        f"non_actionable_count: {payload['non_actionable_count']}",
+        "analysis_complete: true",
+        f"raw: {raw_name}",
+        "",
+        "fsm_groups:",
+    ]
+    for index, group in enumerate(payload["fsm_groups"]):
+        if index:
+            lines.append("")
+        group_coverage = group["transition_coverage"]
+        lines.append(f"- fsm: {group['fsm']}")
+        lines.append("  transition_coverage: " + " ".join(
+            f"{key}={group_coverage[key]}"
+            for key in ("covered", "coverable", "missing", "pct")
+        ))
+        lines.append("  gaps:")
+        lines.extend(_aligned_table(
+            ["gap_id", "kind", "object", "at"],
+            [[gap["gap_id"], gap["object_kind"], gap["object"], gap["at"]]
+             for gap in group["gaps"]],
         ))
     lines.extend(["", "non_actionable:"])
     for item in payload["non_actionable"]:

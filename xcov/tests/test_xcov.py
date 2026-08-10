@@ -1905,9 +1905,90 @@ Branches:
         "at": "dut.sv:151",
         "expression": "data[7:4] == 4'hd",
         "source": "assign feature = (data[7:4] == 4'hd) ? reject : data[0];",
+        "outcomes": {"0": "data[0]", "1": "reject"},
     }
     xout = render_metric_xout(payload, "branch.urg.txt")
     assert "-1-     ternary  dut.sv:151" in xout
+    assert "0:data[0] | 1:reject" in xout
+
+
+def test_branch_v2_preserves_spaced_concatenation_case_value():
+    from xcov.code_export import parse_metric_report
+
+    scope = "top.u_dut"
+    report = """===============================================================================
+Module : dut
+===============================================================================
+Source File(s) :
+
+/workspace/dut.sv
+
+Module Instance : top.u_dut
+===============================================================================
+
+Branch Coverage for Instance : top.u_dut
+         Line No. Total Covered Percent
+Branches          8     7       87.50
+CASE     20        8     7       87.50
+
+20             unique casez ({state, valid, data[1:0]})
+                         -1-
+21               {BUSY, 1'b1, 2'b10}: next_state = HALT;
+                 ==>
+
+Branches:
+
+-1-                       Status
+{BUSY, 1'b1, 2'b10}       Not Covered
+"""
+
+    payload = parse_metric_report(report, scope, "branch")
+
+    assert payload["decision_groups"][0]["uncovered"][0]["values"] == [
+        "{BUSY, 1'b1, 2'b10}",
+    ]
+
+
+def test_branch_v2_recovers_multiline_nonblocking_ternary(tmp_path):
+    from xcov.code_export import parse_metric_report
+
+    source = tmp_path / "dut.sv"
+    source.write_text(
+        "\n" * 45
+        + "      2'b01: response_class <=\n"
+        + "        (data[3:0] == 4'he) ? 2'b10 : 2'b01;\n",
+        encoding="utf-8",
+    )
+    scope = "top.u_dut"
+    report = f"""===============================================================================
+Module : dut
+===============================================================================
+Source File(s) :
+
+{source}
+
+Module Instance : top.u_dut
+===============================================================================
+
+Branch Coverage for Instance : top.u_dut
+         Line No. Total Covered Percent
+Branches          2     1       50.00
+
+46             2'b01: response_class <=
+47               (data[3:0] == 4'he) ? 2'b10 : 2'b01;
+                                      -1-
+
+Branches:
+
+-1- Status
+1   Not Covered
+"""
+
+    payload = parse_metric_report(report, scope, "branch")
+
+    decision = payload["decision_groups"][0]["decision_path"][0]
+    assert decision["at"] == "dut.sv:47"
+    assert decision["outcomes"] == {"0": "2'b01", "1": "2'b10"}
 
 
 def test_line_v2_groups_uncovered_statements_by_construct():
@@ -2020,6 +2101,7 @@ Event               0        0
     assert group["condition"] == {
         "at": "dut.sv:46",
         "expression": "((request.data[3:0] == 4'he) ? 2'b10 : 2'b1)",
+        "outcomes": {"0": "2'b1", "1": "2'b10"},
     }
     assert group["terms"] == [{"marker": "-1-", "expression": "request.data[3:0] == 4'he"}]
     assert group["uncovered"] == [{
@@ -2045,5 +2127,74 @@ Event               0        0
     assert "urg_vector" not in xout
     assert "decoded_vector" not in xout
     assert "required" not in xout
+    assert "0:2'b1 | 1:2'b10" in xout
     assert "\n  uncovered:\n" in xout
     assert "\n\n  uncovered:\n" not in xout
+
+
+def test_fsm_v2_groups_multiple_fsms_and_renders_gap_tables():
+    from xcov.code_export import parse_metric_report, render_metric_xout
+
+    scope = "top.u_dut"
+    report = """===============================================================================
+Module : dut
+===============================================================================
+Source File(s) :
+
+/workspace/dut.sv
+
+Module self-instances :
+
+SCORE  FSM NAME
+ 54.55 54.55 top.u_dut
+
+===============================================================================
+Module Instance : top.u_dut
+===============================================================================
+
+FSM Coverage for Instance : top.u_dut
+Summary for FSM :: state
+            Total Covered Percent
+States      4     4       100.00  (Not included in score)
+Transitions 6     4       66.67
+Sequences   0     0
+
+State, Transition and Sequence Details for FSM :: state
+states  Line No. Covered
+IDLE    37       Covered
+transitions   Line No. Covered
+ACCEPT->IDLE  37       Not Covered
+EXECUTE->IDLE 37       Not Covered
+
+Summary for FSM :: monitor_state
+            Total Covered Percent
+States      4     3       75.00  (Not included in score)
+Transitions 5     2       40.00
+Sequences   0     0
+
+State, Transition and Sequence Details for FSM :: monitor_state
+states  Line No. Covered
+MON_HALT 205 Not Covered
+transitions   Line No. Covered
+MON_BUSY->MON_HALT 211 Not Covered
+MON_RETRY->MON_HALT 212 Not Covered
+"""
+
+    payload = parse_metric_report(report, scope, "fsm")
+
+    assert payload["schema"] == "xcov.code_coverage.fsm.v2"
+    assert payload["coverage"] == {
+        "covered": 6, "coverable": 11, "missing": 5, "pct": 54.55,
+    }
+    assert payload["fsm_group_count"] == 2
+    assert payload["gap_count"] == 5
+    assert [group["fsm"] for group in payload["fsm_groups"]] == ["state", "monitor_state"]
+    assert [gap["gap_id"] for group in payload["fsm_groups"] for gap in group["gaps"]] == [
+        "F0001", "F0002", "F0003", "F0004", "F0005",
+    ]
+    xout = render_metric_xout(payload, "fsm.urg.txt")
+    assert xout.startswith("@xcov.code_coverage.fsm.v2\n")
+    assert "gap_id  kind        object" in xout
+    assert "- fsm: state" in xout
+    assert "\n\n- fsm: monitor_state" in xout
+    assert "required" not in xout
