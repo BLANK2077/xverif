@@ -286,6 +286,12 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 
 ### 2026-08-10 环境错误复盘
 
+- 错误现象：准备 `xcov.modinfo_complex` fixture 时遗漏 `XVERIF_TEST_EXECUTION_ENV=host`，测试基础设施在启动 VCS 前拒绝执行。
+- 误判原因：只按 fixture id 调用了正式 prepare 入口，没有同步带上真实 EDA fixture 的显式 host 执行合同。
+- 以后规则：所有需要 VCS、NPI 或 license 的 `--xverif-prepare` 命令都必须在首次执行时显式设置 `XVERIF_TEST_EXECUTION_ENV=host`。
+
+### 2026-08-10 环境错误复盘
+
 - 错误现象：复现 `export.code_coverage` 失败详情时，诊断脚本向 `SessionManager.open` 传入尚未创建的 ignored cache 目录，未进入 NPI 即返回错误。
 - 误判原因：把导出 action 会自动创建的 `output.path` 语义误套到 session `cache_dir`，忽略后者要求调用前已存在。
 - 以后规则：手工复现 xcov session 前分别核对 cache 与 output 生命周期；先显式创建 ignored `cache_dir`，不依赖导出 action 代建。

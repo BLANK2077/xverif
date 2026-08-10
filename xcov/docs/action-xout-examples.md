@@ -219,7 +219,9 @@ NPI traversal 或 fact 合同失败使用结构化错误，并明确声明结果
 `export.code_coverage` 不生成 Markdown；它在秒级时间戳目录中为每个具体 instance、每个
 metric 写出 JSON、XOUT 和原始 URG text。Line v2 的 group 由过程块 context 表和紧邻的
 uncovered statement 表组成。Condition v2 使用 condition、terms、uncovered 三张表；
-相同位置、terms 和 values 的 EXPRESSION/SUB-EXPRESSION 只输出一个 gap。
+相同位置、terms 和 values 的 EXPRESSION/SUB-EXPRESSION 只输出一个 gap。Branch/Condition
+中的三目节点通过 outcomes 列给出 `0:false-result | 1:true-result`。FSM v2 按状态机分段，
+每段包含 transition coverage 摘要和逐 gap 表格。
 
 ```text
 @xcov.code_coverage.line.v2
@@ -243,14 +245,27 @@ gap_count: 24
 condition_groups:
 - group_id: CG0002
   condition:
-    at                 expression
-    lane_worker.sv:46  ((request.data[3:0] == 4'he) ? 2'b10 : 2'b1)
+    at                 expression                                            outcomes
+    lane_worker.sv:46  ((request.data[3:0] == 4'he) ? 2'b10 : 2'b1)          0:2'b1 | 1:2'b10
   terms:
     marker  expression
     -1-     request.data[3:0] == 4'he
   uncovered:
     gap_id  -1-
     C0002   1
+```
+
+```text
+@xcov.code_coverage.fsm.v2
+fsm_group_count: 2
+gap_count: 5
+fsm_groups:
+- fsm: state
+  transition_coverage: covered=4 coverable=6 missing=2 pct=66.67
+  gaps:
+    gap_id  kind        object         at
+    F0001   transition  ACCEPT->IDLE   lane_worker.sv:37
+    F0002   transition  EXECUTE->IDLE  lane_worker.sv:37
 ```
 
 ```json
