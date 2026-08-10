@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -633,6 +634,7 @@ class Dispatcher:
                         text = modinfo.read_text(encoding="utf-8", errors="replace")
                         try:
                             payload = parse_metric_report(text, scope, metric)
+                            sess.backend.attach_gap_locators(payload, test="merged")
                         except CoverageExportParseError as error:
                             raise XcovError(
                                 "URG_DETAIL_PARSE_INCOMPLETE", error.reason,
@@ -706,6 +708,15 @@ class Dispatcher:
         _require_merged(args)
         refs = args.get("coverage_refs") or []
         selectors = args.get("selectors") or []
+        exports = args.get("exports") or []
+        if exports:
+            if req["action"] != "exclude.add" or refs or selectors:
+                raise XcovError(
+                    "SCHEMA_INVALID",
+                    "exports 只允许用于 exclude.add，且不能与 coverage_refs/selectors 同时使用",
+                    path="$.args",
+                )
+            return self._exclude_export_gaps(req, sess, exports)
         if not refs and not selectors:
             raise XcovError(
                 "SCHEMA_INVALID",
@@ -741,6 +752,137 @@ class Dispatcher:
             completeness_summary(len(rows), len(rows)),
             {"items": rows},
         )
+
+    def _exclude_export_gaps(self, req: Json, sess, exports: List[Json]) -> Json:
+        requested: List[Json] = []
+        seen = set()
+        preflight_errors = []
+        for entry in exports:
+            path = Path(entry["path"])
+            if not path.is_absolute():
+                preflight_errors.append({"code": "EXPORT_PATH_NOT_ABSOLUTE", "path": str(path)})
+                continue
+            if not path.is_file():
+                preflight_errors.append({"code": "EXPORT_FILE_NOT_FOUND", "path": str(path)})
+                continue
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                preflight_errors.append({
+                    "code": "EXPORT_FILE_INVALID", "path": str(path), "message": str(exc),
+                })
+                continue
+            metric = payload.get("metric")
+            locator_meta = payload.get("exclusion_locator") or {}
+            if metric not in {"line", "condition", "branch", "toggle", "fsm"} \
+                    or locator_meta.get("version") != "xcov.npi_path.v1":
+                preflight_errors.append({"code": "EXPORT_FILE_INVALID", "path": str(path)})
+                continue
+            if os.path.realpath(str(locator_meta.get("vdb", ""))) != os.path.realpath(sess.backend.vdb):
+                preflight_errors.append({"code": "EXPORT_VDB_MISMATCH", "path": str(path)})
+                continue
+            gap_rows = {}
+            if metric == "line":
+                rows = [gap for group in payload.get("line_groups", []) for gap in group.get("uncovered", [])]
+            elif metric == "condition":
+                rows = [gap for group in payload.get("condition_groups", []) for gap in group.get("uncovered", [])]
+            elif metric == "branch":
+                rows = [gap for group in payload.get("decision_groups", []) for gap in group.get("uncovered", [])]
+            elif metric == "toggle":
+                rows = payload.get("gaps", [])
+            else:
+                rows = [gap for group in payload.get("fsm_groups", []) for gap in group.get("gaps", [])]
+            gap_rows = {gap.get("gap_id"): gap for gap in rows}
+            for gap_id in entry["gap_ids"]:
+                key = (str(path.resolve()), gap_id)
+                if key in seen:
+                    preflight_errors.append({"code": "DUPLICATE_EXPORT_GAP", "path": str(path), "gap_id": gap_id})
+                    continue
+                seen.add(key)
+                gap = gap_rows.get(gap_id)
+                if gap is None:
+                    preflight_errors.append({"code": "EXPORT_GAP_ID_NOT_FOUND", "path": str(path), "gap_id": gap_id})
+                    continue
+                targets = gap.get("_exclude_targets")
+                if not isinstance(targets, list) or (not targets and metric != "fsm"):
+                    preflight_errors.append({"code": "EXPORT_GAP_RESOLVE_MISSING", "path": str(path), "gap_id": gap_id})
+                    continue
+                requested.append({
+                    "path": str(path.resolve()), "gap_id": gap_id, "metric": metric, "targets": targets,
+                    "preflight_error": gap.get("_exclude_error"),
+                })
+        non_fsm_errors = [error for error in preflight_errors if not str(error.get("gap_id", "")).startswith("F")]
+        if non_fsm_errors or (preflight_errors and not requested):
+            raise XcovError(
+                "EXCLUSION_EXPORT_PREFLIGHT_FAILED",
+                "本次 exclude.add 请求未生效任何条目",
+                atomic_result="none_applied", atomic=True, transaction_committed=False,
+                requested_gap_count=sum(len(entry["gap_ids"]) for entry in exports),
+                successful_gap_count=0, applied_gap_count=0, applied_target_count=0,
+                rollback_performed=False, errors=preflight_errors,
+            )
+        with tempfile.TemporaryDirectory(prefix=".xcov-gap-exclude-") as temporary:
+            baseline = Path(temporary) / "baseline.el"
+            sess.backend.save_exclusions(str(baseline), test="merged")
+            items = []
+            applied_targets = 0
+            non_fsm_failure = None
+            for item in requested:
+                target_results = []
+                for target in item["targets"]:
+                    result = sess.backend.set_exclusion_locator(target, True, test="merged")
+                    target_results.append(result)
+                    if result["status"] in {"changed", "already_in_state"}:
+                        applied_targets += 1
+                    else:
+                        break
+                success = bool(item["targets"]) and all(
+                    result["status"] in {"changed", "already_in_state"} for result in target_results
+                )
+                row = {
+                    "coverage_ref": f"{item['path']}#{item['gap_id']}",
+                    "gap_id": item["gap_id"], "metric": item["metric"],
+                    "status": "changed" if success else "failed",
+                    "target_count": len(item["targets"]),
+                    "error": item["preflight_error"] if not success else None,
+                }
+                items.append(row)
+                if not success and item["metric"] != "fsm":
+                    non_fsm_failure = row
+                    break
+            if non_fsm_failure is not None:
+                try:
+                    sess.backend.unload_exclusions(test="merged")
+                    sess.backend.load_exclusions([str(baseline)], test="merged")
+                except Exception as rollback_error:
+                    sess.close()
+                    raise XcovError(
+                        "EXCLUSION_ROLLBACK_FAILED", "本次 exclude.add 请求未生效任何条目；session 已作废",
+                        atomic_result="none_applied", transaction_committed=False,
+                        rollback_performed=False, cause_message=str(rollback_error),
+                    ) from rollback_error
+                raise XcovError(
+                    "EXCLUSION_APPLY_FAILED", "本次 exclude.add 请求未生效任何条目",
+                    atomic_result="none_applied", atomic=True, transaction_committed=False,
+                    requested_gap_count=len(requested), successful_gap_count=0,
+                    applied_gap_count=0, applied_target_count=0, rollback_performed=True,
+                    failed_item=non_fsm_failure,
+                )
+        failed = [item for item in items if item["status"] == "failed"]
+        successful = len(items) - len(failed)
+        sess.mark_exclusion_dirty()
+        summary = completeness_summary(len(items), len(items))
+        summary.update({
+            "result": "partial_success" if failed else "success",
+            "atomic": not bool(failed),
+            "transaction_committed": True,
+            "requested_gap_count": len(items),
+            "successful_gap_count": successful,
+            "failed_gap_count": len(failed),
+            "applied_gap_count": successful,
+            "applied_target_count": applied_targets,
+        })
+        return ok_response(req, summary, {"items": items})
 
     def _export_exclude(self, req: Json, sess) -> Json:
         args = action_args(req)

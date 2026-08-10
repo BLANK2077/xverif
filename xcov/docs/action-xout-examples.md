@@ -158,6 +158,15 @@ NPI traversal 或 fact 合同失败使用结构化错误，并明确声明结果
 {"api_version":"xcov.v1","request_id":"exclude-add","action":"exclude.add","target":{"session_id":"cov0"},"args":{"coverage_refs":["xcovref.v1:<sha256>"]}}
 ```
 
+导出 gap ID 直接排除：
+
+```json
+{"api_version":"xcov.v1","request_id":"exclude-export-gaps","action":"exclude.add","target":{"session_id":"cov0"},"args":{"exports":[{"path":"/abs/path/branch.json","gap_ids":["B0001","B0002"]},{"path":"/abs/path/fsm.json","gap_ids":["F0001"]}]}}
+```
+
+非 FSM 失败时整批回滚并明确本次请求零成功；只有 FSM 失败允许返回
+`summary.result:"partial_success"` 和逐 gap 状态。
+
 ```json
 {"api_version":"xcov.v1","request_id":"exclude-remove","action":"exclude.remove","target":{"session_id":"cov0"},"args":{"coverage_refs":["xcovref.v1:<sha256>"]}}
 ```

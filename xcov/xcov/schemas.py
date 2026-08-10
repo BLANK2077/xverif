@@ -393,6 +393,28 @@ def _completeness_summary(extra: Json | None = None) -> Json:
 
 def _error_schema(action: str | None = None) -> Json:
     error_details: Json = {
+        "detail.atomic_result": _string(enum=["none_applied"]),
+        "detail.atomic": _bool(),
+        "detail.transaction_committed": _bool(),
+        "detail.requested_gap_count": _integer(0),
+        "detail.successful_gap_count": _integer(0),
+        "detail.applied_gap_count": _integer(0),
+        "detail.applied_target_count": _integer(0),
+        "detail.rollback_performed": _bool(),
+        "detail.errors": _array(_object({
+            "code": _string(min_length=1),
+            "path": _string(min_length=1),
+            "gap_id": _string(min_length=1),
+            "message": _string(min_length=1),
+        })),
+        "detail.failed_item": _object({
+            "coverage_ref": _string(min_length=1),
+            "gap_id": _string(min_length=1),
+            "metric": _string(min_length=1),
+            "status": _string(min_length=1),
+            "target_count": _integer(0),
+            "error": NULLABLE_STRING,
+        }),
         "detail.actual_type": _string(min_length=1),
         "detail.backend_type": _string(min_length=1),
         "detail.cause_message": _string(),
@@ -754,6 +776,10 @@ EXCLUSION_SET_ITEM = _object({
     })),
     "note": _string(min_length=1),
     "selector": _object(),
+    "gap_id": _string(min_length=1),
+    "metric": _string(enum=["line", "condition", "branch", "toggle", "fsm"]),
+    "target_count": _integer(0),
+    "error": NULLABLE_STRING,
 }, required=["coverage_ref", "status"])
 
 EXCLUSION_UNLOAD_ITEM = _object({
@@ -1247,12 +1273,25 @@ SCHEMAS: Dict[str, Json] = {
                 "cross": _string(min_length=1),
                 "bin": _string(min_length=1),
             }), min_items=1),
+                "exports": _array(_object({
+                    "path": _string(min_length=1),
+                    "gap_ids": _array(_string(min_length=1), min_items=1),
+                }, required=["path", "gap_ids"]), min_items=1),
                 "test": {"const": "merged"},
             }),
             require_target=True,
             require_args=True,
         ),
-        _completeness_summary(),
+        _completeness_summary({
+            "result": _string(enum=["success", "partial_success"]),
+            "atomic": _bool(),
+            "transaction_committed": _bool(),
+            "requested_gap_count": _integer(0),
+            "successful_gap_count": _integer(0),
+            "failed_gap_count": _integer(0),
+            "applied_gap_count": _integer(0),
+            "applied_target_count": _integer(0),
+        }),
         _items_data(EXCLUSION_SET_ITEM),
     ),
     "exclude.remove": _schema_entry(

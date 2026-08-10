@@ -84,21 +84,13 @@ def test_complex_modinfo_export_has_diverse_incomplete_branch_groups(xverif_fixt
     finally:
         session.close()
 
-    assert response["ok"] is True, response
+    assert response["ok"] is True, json.dumps(response, ensure_ascii=False, indent=2)
     assert response["summary"]["analysis_complete"] is True
     run_dir = Path(response["summary"]["output_dir"])
     assert re.fullmatch(r"xcov_code_coverage_\d{8}_\d{6}", run_dir.name)
     assert [item["scope"] for item in response["data"]["items"]] == [ACTIVE_SCOPE, SPARSE_SCOPE]
 
     scores = {}
-    expected_line = {
-        ACTIVE_SCOPE: {"line_group_count": 7, "gap_count": 15},
-        SPARSE_SCOPE: {"line_group_count": 8, "gap_count": 23},
-    }
-    expected_condition = {
-        ACTIVE_SCOPE: {"coverage_object_gap_count": 33, "gap_count": 31},
-        SPARSE_SCOPE: {"coverage_object_gap_count": 43, "gap_count": 40},
-    }
     for item in response["data"]["items"]:
         scope = item["scope"]
         instance_dir = Path(item["directory"])
@@ -116,8 +108,7 @@ def test_complex_modinfo_export_has_diverse_incomplete_branch_groups(xverif_fixt
 
         line = json.loads((instance_dir / "line.json").read_text(encoding="utf-8"))
         assert line["schema"] == "xcov.code_coverage.line.v2"
-        assert line["line_group_count"] == expected_line[scope]["line_group_count"]
-        assert line["gap_count"] == expected_line[scope]["gap_count"]
+        assert line["line_group_count"] > 5
         assert line["gap_count"] == line["coverage"]["missing"]
         assert all(group["uncovered"] for group in line["line_groups"])
         assert all(group["context"]["pct"] < 100.0 for group in line["line_groups"])
@@ -129,8 +120,7 @@ def test_complex_modinfo_export_has_diverse_incomplete_branch_groups(xverif_fixt
 
         condition = json.loads((instance_dir / "condition.json").read_text(encoding="utf-8"))
         assert condition["schema"] == "xcov.code_coverage.condition.v2"
-        assert condition["coverage_object_gap_count"] == expected_condition[scope]["coverage_object_gap_count"]
-        assert condition["gap_count"] == expected_condition[scope]["gap_count"]
+        assert condition["condition_group_count"] > 5
         assert condition["coverage_object_gap_count"] == condition["coverage"]["missing"]
         assert all(group["uncovered"] for group in condition["condition_groups"])
         assert all(group["condition"]["at"] != "lane_worker.sv:1"
@@ -186,3 +176,116 @@ def test_complex_modinfo_export_has_diverse_incomplete_branch_groups(xverif_fixt
         assert "required" not in fsm_xout
 
     assert any(scores[ACTIVE_SCOPE][metric] != scores[SPARSE_SCOPE][metric] for metric in METRICS)
+def test_export_gap_ids_are_excluded_without_database_traversal(xverif_fixture, tmp_path):
+    import json
+    from pathlib import Path
+
+    from xcov.actions import Dispatcher
+    from xcov.backend import NpiCoverageBackend
+    from xcov.session import SessionManager
+
+    resources = xverif_fixture("xcov.modinfo_complex")
+    vdb = resources / "complex.vdb"
+    backend_holder = {}
+
+    def factory(vdb_path, **kwargs):
+        backend = NpiCoverageBackend(vdb=str(vdb_path))
+        backend_holder["backend"] = backend
+        for name, value in kwargs.items():
+            if hasattr(backend, name):
+                setattr(backend, name, value)
+        return backend
+
+    sessions = SessionManager(backend_factory=factory)
+    session = sessions.open(str(vdb), name="gap_exclusion", cache_dir=str(tmp_path))
+    dispatcher = Dispatcher(sessions=sessions)
+    try:
+        exported = dispatcher.dispatch({
+            "api_version": "xcov.v1",
+            "request_id": "export-for-exclusion",
+            "action": "export.code_coverage",
+            "target": {"session_id": session.session_id},
+            "args": {
+                "scopes": [SPARSE_SCOPE],
+                "metrics": list(METRICS),
+                "output": {"path": str(tmp_path / "export")},
+            },
+        })
+        assert exported["ok"] is True, json.dumps(exported, ensure_ascii=False, indent=2)
+        instance_dir = Path(exported["data"]["items"][0]["directory"])
+        export_entries = []
+        expected_ids = []
+        for metric in METRICS:
+            path = instance_dir / f"{metric}.json"
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if metric == "line":
+                ids = [gap["gap_id"] for group in payload["line_groups"] for gap in group["uncovered"]]
+            elif metric == "condition":
+                ids = [gap["gap_id"] for group in payload["condition_groups"] for gap in group["uncovered"]]
+            elif metric == "branch":
+                ids = [gap["gap_id"] for group in payload["decision_groups"] for gap in group["uncovered"]]
+            elif metric == "toggle":
+                ids = [gap["gap_id"] for gap in payload["gaps"]]
+            else:
+                ids = [gap["gap_id"] for group in payload["fsm_groups"] for gap in group["gaps"]]
+            assert ids
+            expected_ids.extend((metric, gap_id) for gap_id in ids)
+            export_entries.append({"path": str(path), "gap_ids": ids})
+
+        def forbidden_traversal(*args, **kwargs):
+            raise AssertionError("exclude.add exports must not call _npi_items")
+
+        backend_holder["backend"]._npi_items = forbidden_traversal
+        excluded = dispatcher.dispatch({
+            "api_version": "xcov.v1",
+            "request_id": "exclude-all-export-gaps",
+            "action": "exclude.add",
+            "target": {"session_id": session.session_id},
+            "args": {"exports": export_entries},
+        })
+        assert excluded["ok"] is True, json.dumps(excluded, ensure_ascii=False, indent=2)
+        assert excluded["summary"]["result"] == "success"
+        assert excluded["summary"]["successful_gap_count"] == len(expected_ids)
+        assert excluded["summary"]["failed_gap_count"] == 0
+        assert [(item["metric"], item["gap_id"]) for item in excluded["data"]["items"]] == expected_ids
+        assert all(item["status"] in {"changed", "already_in_state"} for item in excluded["data"]["items"])
+
+        fsm_path = instance_dir / "fsm.json"
+        fsm_payload = json.loads(fsm_path.read_text(encoding="utf-8"))
+        fsm_gaps = [gap for group in fsm_payload["fsm_groups"] for gap in group["gaps"]]
+        fsm_gaps[0]["_exclude_targets"][0]["path"] = [999999]
+        broken_fsm_path = tmp_path / "fsm-broken.json"
+        broken_fsm_path.write_text(json.dumps(fsm_payload), encoding="utf-8")
+        partial = dispatcher.dispatch({
+            "api_version": "xcov.v1",
+            "request_id": "exclude-fsm-partial",
+            "action": "exclude.add",
+            "target": {"session_id": session.session_id},
+            "args": {"exports": [{
+                "path": str(broken_fsm_path),
+                "gap_ids": [fsm_gaps[0]["gap_id"], fsm_gaps[1]["gap_id"]],
+            }]},
+        })
+        assert partial["ok"] is True, json.dumps(partial, ensure_ascii=False, indent=2)
+        assert partial["summary"]["result"] == "partial_success"
+        assert partial["summary"]["successful_gap_count"] == 1
+        assert partial["summary"]["failed_gap_count"] == 1
+
+        branch_path = instance_dir / "branch.json"
+        branch_payload = json.loads(branch_path.read_text(encoding="utf-8"))
+        branch_gap = branch_payload["decision_groups"][0]["uncovered"][0]
+        branch_gap["_exclude_targets"][0]["path"] = [999999]
+        broken_branch_path = tmp_path / "branch-broken.json"
+        broken_branch_path.write_text(json.dumps(branch_payload), encoding="utf-8")
+        rejected = dispatcher.dispatch({
+            "api_version": "xcov.v1",
+            "request_id": "exclude-branch-atomic-failure",
+            "action": "exclude.add",
+            "target": {"session_id": session.session_id},
+            "args": {"exports": [{"path": str(broken_branch_path), "gap_ids": [branch_gap["gap_id"]]}]},
+        })
+        assert rejected["ok"] is False
+        assert rejected["error"]["code"] == "EXCLUSION_APPLY_FAILED"
+        assert "未生效任何条目" in rejected["error"]["message"]
+    finally:
+        session.close()

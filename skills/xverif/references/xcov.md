@@ -120,6 +120,9 @@ assert export：
   的 `0/1` 同样直接表示 false/true 分支。
 - fsm 使用 `xcov.code_coverage.fsm.v2`：实例内不同 FSM 分段输出，每段先给出 transition
   coverage，再以 `gap_id/kind/object/at` 表格逐行列出 state、transition 或 sequence 缺口。
+- `exclude.add.args.exports` 接受 metric JSON 绝对路径及 `gap_ids` 数组。xcov 使用 JSON 内
+  的固定 NPI locator 直接排除，不扫描 VDB；非 FSM 失败整批回滚，只有 FSM 允许返回
+  明确的 `partial_success` 和逐 gap 失败原因。
 - `navigation.xout` 的覆盖率是 subtree 统计；metric XOUT 的覆盖率是 self 统计，不得混用。
 - `assert.summary` 输出基础覆盖率和 attempts/real successes/without attempts；不输出
   kind/category/severity/failures/incomplete/first_match/file/line。需要完整 assertion

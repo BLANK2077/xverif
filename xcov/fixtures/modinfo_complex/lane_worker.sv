@@ -193,43 +193,39 @@ module lane_worker #(
   endgenerate
 
   typedef enum logic [1:0] {MON_IDLE, MON_BUSY, MON_RETRY, MON_HALT} monitor_state_t;
-  monitor_state_t monitor_state, monitor_next_state;
-
-  always_comb begin
-    monitor_next_state = monitor_state;
-    unique casez (monitor_state)
-      MON_IDLE: begin
-        casez ({request.valid, request.data[0]})
-          2'b10:   monitor_next_state = MON_BUSY;
-          2'b11:   monitor_next_state = MON_RETRY;
-          default: monitor_next_state = MON_IDLE;
-        endcase
-      end
-      MON_BUSY: begin
-        if (!request.valid)
-          monitor_next_state = MON_IDLE;
-        else if (request.data[1:0] == 2'b10)
-          monitor_next_state = MON_HALT;
-      end
-      MON_RETRY: begin
-        priority case ({request.valid, request.data[1:0]})
-          3'b0_00, 3'b0_01, 3'b0_10, 3'b0_11: monitor_next_state = MON_IDLE;
-          3'b1_11:                          monitor_next_state = MON_HALT;
-          default:                          monitor_next_state = MON_RETRY;
-        endcase
-      end
-      MON_HALT: begin
-        if (request.valid && request.data[1:0] == 2'b00)
-          monitor_next_state = MON_IDLE;
-      end
-      default: monitor_next_state = MON_IDLE;
-    endcase
-  end
+  monitor_state_t monitor_state;
 
   always_ff @(posedge request.clk or negedge rst_n) begin
-    if (!rst_n)
+    if (!rst_n) begin
       monitor_state <= MON_IDLE;
-    else
-      monitor_state <= monitor_next_state;
+    end else begin
+      unique casez (monitor_state)
+        MON_IDLE: begin
+          casez ({request.valid, request.data[0]})
+            2'b10:   monitor_state <= MON_BUSY;
+            2'b11:   monitor_state <= MON_RETRY;
+            default: monitor_state <= MON_IDLE;
+          endcase
+        end
+        MON_BUSY: begin
+          if (!request.valid)
+            monitor_state <= MON_IDLE;
+          else if (request.data[1:0] == 2'b10)
+            monitor_state <= MON_HALT;
+        end
+        MON_RETRY: begin
+          priority case ({request.valid, request.data[1:0]})
+            3'b0_00, 3'b0_01, 3'b0_10, 3'b0_11: monitor_state <= MON_IDLE;
+            3'b1_11:                          monitor_state <= MON_HALT;
+            default:                          monitor_state <= MON_RETRY;
+          endcase
+        end
+        MON_HALT: begin
+          if (request.valid && request.data[1:0] == 2'b00)
+            monitor_state <= MON_IDLE;
+        end
+        default: monitor_state <= MON_IDLE;
+      endcase
+    end
   end
 endmodule

@@ -196,6 +196,16 @@ CSV 用 `# source_file=...` / `# source_commit=<40-hex>` 划分连续源码分�
 {"api_version":"xcov.v1","action":"exclude.add","target":{"session_id":"cov0"},"args":{"coverage_refs":["xcovref.v1:<sha256>"]}}
 ```
 
+`exclude.add` 还可直接消费 `export.code_coverage` 生成的 metric JSON：
+
+```json
+{"api_version":"xcov.v1","action":"exclude.add","target":{"session_id":"cov0"},"args":{"exports":[{"path":"/abs/path/branch.json","gap_ids":["B0001","B0002"]}]}}
+```
+
+导出 JSON 内保存 scope-local NPI locator。排除时从 `handle_by_name(scope)` 沿固定 path
+访问 leaf，不遍历 VDB。line/condition/branch/toggle 保持原子提交；只有 FSM 允许因 NPI
+不可见对象返回 `partial_success`，响应逐 gap 标明成功或失败。
+
 ```json
 {"api_version":"xcov.v1","action":"exclude.load","target":{"session_id":"cov0"},"args":{"paths":["code.el","functional.el","assertion.el"]}}
 ```

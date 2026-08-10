@@ -41,6 +41,17 @@ METRIC_METHODS = {
 }
 
 
+def _toggle_gap_object(value: str) -> tuple[str, Optional[set[int]]]:
+    match = __import__("re").match(r"^(.*)\[(\d+)(?::(\d+))?\]$", value)
+    if not match:
+        return value, None
+    base = match.group(1)
+    left = int(match.group(2))
+    right = int(match.group(3)) if match.group(3) is not None else left
+    low, high = sorted((left, right))
+    return base, set(range(low, high + 1))
+
+
 def _coverage_ref_from_path(
     namespace: str,
     metric: str,
@@ -545,6 +556,17 @@ class CanonicalCoverageBackend(CoverageBackend):
             excluded,
             test=test,
         )
+
+    @property
+    def vdb(self) -> str:
+        return self._delegate.vdb
+
+    def attach_gap_locators(self, payload: Json, test: str = "merged") -> Json:
+        return self._delegate.attach_gap_locators(payload, test=test)
+
+    def set_exclusion_locator(self, locator: Json, excluded: bool = True,
+                              test: str = "merged") -> Json:
+        return self._delegate.set_exclusion_locator(locator, excluded, test=test)
 
     def save_exclusions(self, path: str, test: str = "merged") -> None:
         self._delegate.save_exclusions(path, test=test)
@@ -1110,6 +1132,178 @@ class NpiCoverageBackend(CoverageBackend):
                 "current_status": None, "note": _selector_note(metric),
             }
         return {"valid": True, "coverage_ref": ref, "errors": [], "current_status": match.get("status", [])}
+
+    def attach_gap_locators(self, payload: Json, test: str = "merged") -> Json:
+        """Attach direct, scope-local NPI paths to URG gap IDs."""
+        metric = payload["metric"]
+        scope = payload["scope"]
+        test_hdl = self._merged_only(test)
+        inst = self.db.handle_by_name(scope)
+        if not inst:
+            raise XcovError("EXPORT_GAP_RESOLVE_MISSING", "NPI scope is missing", scope=scope)
+        metric_hdl = getattr(inst, METRIC_METHODS[metric])()
+        if not metric_hdl:
+            self.release_if_handle(inst)
+            raise XcovError("EXPORT_GAP_RESOLVE_MISSING", "NPI metric is missing", scope=scope, metric=metric)
+        leaf_types = {
+            "line": {"npiCovStmtBin"},
+            "condition": {"npiCovConditionBin"},
+            "branch": {"npiCovBranchBin"},
+            "toggle": {"npiCovToggleBin"},
+            "fsm": {"npiCovStateBin", "npiCovTransBin", "npiCovSeqBin"},
+        }[metric]
+        records: List[Json] = []
+
+        def walk(handle: Any, path: tuple[int, ...], ancestors: List[Json]) -> None:
+            typ = handle.type()
+            name = str(handle.name() or "")
+            current = {"type": typ, "name": name}
+            if typ in leaf_types:
+                covered = int(handle.covered(test_hdl))
+                coverable = int(handle.coverable(test_hdl))
+                if covered < coverable:
+                    records.append({
+                        "path": list(path),
+                        "type": typ,
+                        "name": name,
+                        "missing": coverable - covered,
+                        "ancestors": [*ancestors, current],
+                    })
+            children = handle.child_handles()
+            for index, child in enumerate(children):
+                try:
+                    walk(child, (*path, index), [*ancestors, current])
+                finally:
+                    self.release_if_handle(child)
+
+        try:
+            walk(metric_hdl, (), [])
+        finally:
+            self.release_if_handle(metric_hdl)
+            self.release_if_handle(inst)
+
+        def locator(record: Json) -> Json:
+            return {
+                "scope": scope,
+                "metric": metric,
+                "path": record["path"],
+                "type": record["type"],
+                "name": record["name"],
+            }
+
+        if metric == "line":
+            gaps = [gap for group in payload["line_groups"] for gap in group["uncovered"]]
+            units = gaps
+            leaves = [record for record in records for _ in range(record["missing"])]
+            self._assign_ordered_gap_locators(metric, scope, units, leaves, locator)
+        elif metric == "branch":
+            gaps = [gap for group in payload["decision_groups"] for gap in group["uncovered"]]
+            leaves = [record for record in records for _ in range(record["missing"])]
+            self._assign_ordered_gap_locators(metric, scope, gaps, leaves, locator)
+        elif metric == "condition":
+            units = []
+            for group in payload["condition_groups"]:
+                for gap in group["uncovered"]:
+                    units.extend([gap] * len(gap.get("origins") or [None]))
+            leaves = [record for record in records for _ in range(record["missing"])]
+            self._assign_ordered_gap_locators(metric, scope, units, leaves, locator)
+        elif metric == "toggle":
+            for gap in payload["gaps"]:
+                base, indices = _toggle_gap_object(gap["object"])
+                wanted_edges = {edge.replace("->", " -> ") for edge in gap["missing_edges"]}
+                matched = []
+                for record in records:
+                    names = [item["name"] for item in record["ancestors"]]
+                    signal_match = base in names
+                    bit_names = {name for name in names if name.startswith(base + "[")}
+                    bit_match = indices is None or any(
+                        int(name.rsplit("[", 1)[1][:-1]) in indices for name in bit_names
+                    ) or (indices == {0} and base in names and not bit_names)
+                    if signal_match and bit_match and record["name"] in wanted_edges:
+                        matched.append(locator(record))
+                if not matched:
+                    raise XcovError("EXPORT_GAP_RESOLVE_MISSING", "toggle gap has no direct NPI target", gap_id=gap["gap_id"])
+                gap["_exclude_targets"] = matched
+        else:
+            for group in payload["fsm_groups"]:
+                fsm_name = group["fsm"]
+                for gap in group["gaps"]:
+                    expected_type = {
+                        "state": "npiCovStateBin",
+                        "transition": "npiCovTransBin",
+                        "sequence": "npiCovSeqBin",
+                    }[gap["object_kind"]]
+                    matched = [
+                        locator(record) for record in records
+                        if record["type"] == expected_type
+                        and record["name"] == gap["object"]
+                        and any(item["type"] in {"npiCovFSM", "npiCovFsm"} and item["name"] == fsm_name
+                                for item in record["ancestors"])
+                    ]
+                    if not matched:
+                        gap["_exclude_targets"] = []
+                        gap["_exclude_error"] = "NPI target is unavailable"
+                    else:
+                        gap["_exclude_targets"] = matched
+        payload["exclusion_locator"] = {
+            "version": "xcov.npi_path.v1",
+            "vdb": os.path.realpath(self.vdb),
+        }
+        return payload
+
+    @staticmethod
+    def _assign_ordered_gap_locators(metric: str, scope: str, gaps: List[Json],
+                                     leaves: List[Json], make_locator: Callable[[Json], Json]) -> None:
+        if len(gaps) != len(leaves):
+            raise XcovError(
+                "EXPORT_GAP_RESOLVE_AMBIGUOUS",
+                "URG gaps and direct NPI coverage units do not align",
+                metric=metric, scope=scope, gap_units=len(gaps), npi_units=len(leaves),
+            )
+        for gap, record in zip(gaps, leaves):
+            target = make_locator(record)
+            targets = gap.setdefault("_exclude_targets", [])
+            if target not in targets:
+                targets.append(target)
+
+    def set_exclusion_locator(self, locator: Json, excluded: bool = True,
+                              test: str = "merged") -> Json:
+        test_hdl = self._merged_only(test)
+        inst = self.db.handle_by_name(locator["scope"])
+        if not inst:
+            return {"status": "failed", "reason": "scope_missing"}
+        current = getattr(inst, METRIC_METHODS[locator["metric"]])()
+        self.release_if_handle(inst)
+        if not current:
+            return {"status": "failed", "reason": "metric_missing"}
+        for index in locator["path"]:
+            children = current.child_handles()
+            if not isinstance(index, int) or index < 0 or index >= len(children):
+                for child in children:
+                    self.release_if_handle(child)
+                self.release_if_handle(current)
+                return {"status": "failed", "reason": "path_missing"}
+            selected = children[index]
+            for child_index, child in enumerate(children):
+                if child_index != index:
+                    self.release_if_handle(child)
+            self.release_if_handle(current)
+            current = selected
+        try:
+            if current.type() != locator["type"] or str(current.name() or "") != locator["name"]:
+                return {"status": "failed", "reason": "identity_mismatch"}
+            before = bool(current.has_status_excluded_at_report_time(test_hdl))
+            if before == excluded:
+                return {"status": "already_in_state", "before": before, "after": before}
+            value = current.set_status_excluded_at_report_time(test_hdl, 1 if excluded else 0)
+            after = bool(current.has_status_excluded_at_report_time(test_hdl))
+            return {
+                "status": "changed" if value == 1 and after == excluded else "failed",
+                "before": before,
+                "after": after,
+            }
+        finally:
+            self.release_if_handle(current)
 
     def set_exclusion(
         self,
