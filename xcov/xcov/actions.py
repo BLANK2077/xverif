@@ -503,9 +503,7 @@ class Dispatcher:
         action = req["action"]
         args = action_args(req)
         query = query_args(action, args)
-        rows = sess.backend.items(metrics=["functional"], scope=args.get("scope"),
-                                  test=str(args.get("test", "merged")),
-                                  functional_only=True)
+        rows = sess.backend.scope_functional_from_urg()
         group_by = str(args.get("group_by", "covergroup"))
         rows = _functional_summary_rows(rows, group_by)
         rows = filter_items(rows, query)

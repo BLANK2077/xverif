@@ -51,6 +51,8 @@ class _TestBackend(_CoverageBackend):
     def set_exclusion(self,ref,excluded,test="merged"): return {"coverage_ref":ref,"status":"changed","before":False,"after":excluded}
     def save_exclusions(self,path,test="merged"): pass
     def unload_exclusions(self,test="merged"): pass
+    def scope_functional_from_urg(self): return []
+    def scope_assert_from_urg(self): return []
 from xcov.errors import XcovError
 from xcov.logging import log_root, sanitize_for_log
 from xcov.provenance import resource_sha256

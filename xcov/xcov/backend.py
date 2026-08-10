@@ -451,6 +451,12 @@ class CoverageBackend:
     def scope_metrics(self) -> Dict[str, Json]:
         raise NotImplementedError
 
+    def scope_functional_from_urg(self) -> List[Json]:
+        raise NotImplementedError
+
+    def scope_assert_from_urg(self) -> List[Json]:
+        raise NotImplementedError
+
     def items(self, metrics: Optional[List[str]] = None,
               scope: Optional[str] = None, test: str = "merged",
               functional_only: bool = False) -> List[Json]:
@@ -530,6 +536,12 @@ class CanonicalCoverageBackend(CoverageBackend):
 
     def scope_metrics(self) -> Dict[str, Json]:
         return self._delegate.scope_metrics()
+
+    def scope_functional_from_urg(self) -> List[Json]:
+        return self._delegate.scope_functional_from_urg()
+
+    def scope_assert_from_urg(self) -> List[Json]:
+        return self._delegate.scope_assert_from_urg()
 
     def items(self, metrics: Optional[List[str]] = None,
               scope: Optional[str] = None, test: str = "merged",
@@ -769,6 +781,8 @@ class NpiCoverageBackend(CoverageBackend):
     _urg_scopes: Dict[str, Json] = field(default_factory=dict, init=False)
     _urg_metrics: List[str] = field(default_factory=list, init=False)
     _urg_top_scopes: List[Json] = field(default_factory=list, init=False)
+    _urg_groups: List[Json] = field(default_factory=list, init=False)
+    _urg_asserts: List[Json] = field(default_factory=list, init=False)
 
     def __post_init__(self) -> None:
         log_lifecycle_event("adhoc", "npi.init.begin", True, {"vdb": self.vdb})
@@ -876,6 +890,8 @@ class NpiCoverageBackend(CoverageBackend):
             self._urg_scopes.clear()
             self._urg_metrics.clear()
             self._urg_top_scopes.clear()
+            self._urg_groups.clear()
+            self._urg_asserts.clear()
 
     def _api(self) -> NpiApiBinding:
         if self.api is None:
@@ -991,6 +1007,15 @@ class NpiCoverageBackend(CoverageBackend):
         if old_cov is not None:
             self._urg_scopes = {}
             self._parse_urg_scopes(old_cov)
+            groups_elem = None
+            asserts_elem = None
+            for child in old_cov:
+                if child.tag == "scope" and child.get("type") == "Groups":
+                    groups_elem = child
+                elif child.tag == "scope" and child.get("type") == "Asserts":
+                    asserts_elem = child
+            self._urg_groups = self._parse_urg_groups(groups_elem) if groups_elem is not None else []
+            self._urg_asserts = self._parse_urg_asserts(asserts_elem) if asserts_elem is not None else []
         self._urg_loaded = True
 
     def _parse_urg_scopes(self, element: Any, parent_name: str = "") -> None:
@@ -1017,6 +1042,99 @@ class NpiCoverageBackend(CoverageBackend):
                 if parent_name == "" or parent_name == name:
                     self._urg_top_scopes.append({"name": full_name, "full_name": full_name})
             self._parse_urg_scopes(scope, full_name)
+
+    def _parse_urg_groups(self, groups_elem: Any) -> List[Json]:
+        """Parse session.xml Groups scope into functional coverage rows."""
+        rows: List[Json] = []
+
+        def _score_value(attr_value: str) -> float:
+            try:
+                return float(attr_value.rstrip("%"))
+            except (ValueError, AttributeError):
+                return 0.0
+
+        def _metric_value(val: str) -> tuple[int, int]:
+            if "/" in (val or ""):
+                c, t = val.split("/", 1)
+                return int(c), int(t)
+            return 0, 0
+
+        def walk(elem: Any, covergroup: str, coverpoint: str, cross: str, instance: str) -> None:
+            etype = elem.get("type", "")
+            ename = elem.get("name", "")
+            if etype == "Cover Group":
+                covergroup = ename
+            elif etype == "Coverage Point":
+                coverpoint = ename
+            elif etype == "Cross Coverage":
+                cross = ename
+            elif etype in ("Covergroup Variant", "Coverage Instance"):
+                instance = ename
+            for child in elem:
+                if child.tag == "scope":
+                    walk(child, covergroup, coverpoint, cross, instance)
+                elif child.tag == "metric":
+                    mname = child.get("name", "")
+                    val = child.get("value", "0/0")
+                    covered, coverable = _metric_value(val)
+                    _type_map = {"Group": "npiCovCovergroup", "Point": "npiCovCoverpoint",
+                                 "Cross": "npiCovCross"}
+                    rows.append({
+                        "type": _type_map.get(mname, "npiCovCoverBin"),
+                        "covergroup": covergroup or None,
+                        "coverpoint": coverpoint or None,
+                        "cross": cross or None,
+                        "bin": None,
+                        "metric": mname.lower(),
+                        "covered": covered,
+                        "coverable": coverable,
+                        "missing": coverable - covered,
+                        "coverage_pct": round(100.0 * covered / coverable, 2) if coverable else 0.0,
+                        "status": [],
+                        "evidence": {},
+                    })
+
+        walk(groups_elem, "", "", "", "")
+        return rows
+
+    def _parse_urg_asserts(self, asserts_elem: Any) -> List[Json]:
+        """Parse session.xml Asserts scope into assertion summary rows."""
+        rows: List[Json] = []
+        for child in asserts_elem.findall("scope"):
+            etype = child.get("type", "")
+            ename = child.get("name", "")
+            if etype in ("Assertion", "Cover Property"):
+                attrs = {}
+                for a in child.findall("attr"):
+                    attrs[a.get("type", "")] = a.get("value", "0")
+                kind = "assertion" if etype == "Assertion" else "cover_property"
+                rows.append({
+                    "name": ename.rsplit(".", 1)[-1] if "." in ename else ename,
+                    "full_name": ename,
+                    "kind": kind,
+                    "attempts": int(attrs.get("attempt", 0)),
+                    "real_successes": int(attrs.get("success", attrs.get("all match", 0))),
+                    "failures": int(attrs.get("failure", 0)),
+                    "incomplete": int(attrs.get("incomplete", 0)),
+                    "covered": int(attrs.get("success", attrs.get("all match", 0))),
+                    "coverable": int(attrs.get("attempt", 0)),
+                    "missing": int(attrs.get("attempt", 0)) - int(attrs.get("success", attrs.get("all match", 0))),
+                    "coverage_pct": round(
+                        100.0 * int(attrs.get("success", attrs.get("all match", 0)))
+                        / int(attrs.get("attempt", 1)), 2
+                    ) if int(attrs.get("attempt", 0)) else 0.0,
+                    "status": [],
+                    "evidence": {},
+                })
+        return rows
+
+    def scope_functional_from_urg(self) -> List[Json]:
+        self._ensure_urg()
+        return list(self._urg_groups)
+
+    def scope_assert_from_urg(self) -> List[Json]:
+        self._ensure_urg()
+        return list(self._urg_asserts)
 
     def items(self, metrics: Optional[List[str]] = None,
               scope: Optional[str] = None, test: str = "merged",
