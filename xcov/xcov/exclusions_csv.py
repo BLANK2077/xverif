@@ -46,13 +46,11 @@ FIELDS = {
 }
 CODE_METRICS = ("line", "toggle", "branch", "condition", "fsm")
 ASSERTION_KINDS = ("assertion", "cover_property", "cover_sequence")
-SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 @dataclass
 class ExclusionGroup:
     source_file: str
-    source_commit: str
     rows: List[Json]
 
 
@@ -93,7 +91,6 @@ def parse_document(path: Path, expected_kind: str) -> ExclusionDocument:
     current: ExclusionGroup | None = None
     seen_files: set[str] = set()
     seen_rows: set[tuple[str, ...]] = set()
-    pending_file: str | None = None
 
     for kind, payload, line_no in entries:
         if kind == "meta":
@@ -107,8 +104,6 @@ def parse_document(path: Path, expected_kind: str) -> ExclusionDocument:
             elif key == "source_file":
                 if header is None:
                     _csv_error(path, line_no, "source_file must follow the CSV header")
-                if pending_file is not None:
-                    _csv_error(path, line_no, "source_file requires source_commit")
                 if value in seen_files:
                     _csv_error(path, line_no, "source_file group is not contiguous")
                 source_path = Path(value)
@@ -122,16 +117,9 @@ def parse_document(path: Path, expected_kind: str) -> ExclusionDocument:
                         line_no,
                         "source_file must be a non-empty portable relative path",
                     )
-                pending_file = value
-            elif key == "source_commit":
-                if pending_file is None:
-                    _csv_error(path, line_no, "source_commit requires source_file")
-                if not SHA_RE.fullmatch(value):
-                    _csv_error(path, line_no, "source_commit must be a 40-character lowercase SHA")
-                current = ExclusionGroup(pending_file, value, [])
+                current = ExclusionGroup(value, [])
                 groups.append(current)
-                seen_files.add(pending_file)
-                pending_file = None
+                seen_files.add(value)
             else:
                 _csv_error(path, line_no, f"unknown metadata key {key!r}")
             continue
@@ -148,7 +136,7 @@ def parse_document(path: Path, expected_kind: str) -> ExclusionDocument:
                 )
             continue
         if current is None:
-            _csv_error(path, line_no, "data row requires a source_file/source_commit group")
+            _csv_error(path, line_no, "data row requires a source_file group")
         if len(row) != len(header):
             _csv_error(path, line_no, "data row field count does not match header")
         item = dict(zip(header, row))
@@ -158,12 +146,9 @@ def parse_document(path: Path, expected_kind: str) -> ExclusionDocument:
             _csv_error(path, line_no, "duplicate exclusion")
         seen_rows.add(identity)
         item["_source_file"] = current.source_file
-        item["_source_commit"] = current.source_commit
         item["_line_no"] = line_no
         current.rows.append(item)
 
-    if pending_file is not None:
-        _csv_error(path, 0, "source_file requires source_commit")
     if header is None:
         _csv_error(path, 0, "missing CSV header")
     if metadata.get("schema_version") != SCHEMA_VERSIONS[expected_kind]:
@@ -329,7 +314,6 @@ def resolve_documents(
                 result = {
                     "coverage_kind": document.kind,
                     "source_file": group.source_file,
-                    "source_commit": group.source_commit,
                     "csv_line": record["_line_no"],
                     "status": status,
                     "validity": validity,
@@ -419,7 +403,6 @@ def format_document(document: ExclusionDocument) -> str:
     for group in groups:
         output.write("\n")
         output.write(f"# source_file={group.source_file}\n")
-        output.write(f"# source_commit={group.source_commit}\n")
         for row in sorted(
             group.rows,
             key=lambda item: tuple(

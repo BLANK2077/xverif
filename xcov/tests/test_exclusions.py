@@ -111,7 +111,6 @@ def _write_csvs(root: Path, *, code_reason: str = "不可达,恢复路径") -> N
         "# coverage_kind=code\n"
         "scope,metric,line,object,bin,reason\n\n"
         "# source_file=exclusion_fixture.sv\n"
-        f"# source_commit={SHA}\n"
         + quoted.getvalue(),
         encoding="utf-8",
     )
@@ -121,7 +120,6 @@ def _write_csvs(root: Path, *, code_reason: str = "不可达,恢复路径") -> N
         "# coverage_kind=functional\n"
         "scope,line,covergroup,coverpoint,cross,bin,reason\n\n"
         "# source_file=exclusion_fixture.sv\n"
-        f"# source_commit={SHA}\n"
         "top,57,top::behavior_cg,sel_cp,,other,量产不支持\n",
         encoding="utf-8",
     )
@@ -131,7 +129,6 @@ def _write_csvs(root: Path, *, code_reason: str = "不可达,恢复路径") -> N
         "# coverage_kind=assertion\n"
         "scope,line,assertion,assertion_kind,reason\n\n"
         "# source_file=exclusion_fixture.sv\n"
-        f"# source_commit={SHA}\n"
         "top.u_dut,40,a_no_unknown,assertion,复位阶段不采集\n",
         encoding="utf-8",
     )
@@ -154,12 +151,11 @@ def _request(
     return dispatcher.dispatch(request)
 
 
-def test_csv_parser_preserves_standard_csv_quoting_and_group_commits(tmp_path):
+def test_csv_parser_preserves_standard_csv_quoting_and_source_groups(tmp_path):
     root = tmp_path / "coverage_exclusions"
     _write_csvs(root, code_reason='不可达,"恢复"路径')
     documents = parse_directory(root)
     code = documents[0]
-    assert code.groups[0].source_commit == SHA
     assert code.groups[0].rows[0]["reason"] == '不可达,"恢复"路径'
     assert parse_document(root / "functional_exclusions.csv", "functional").row_count == 1
 
@@ -171,13 +167,10 @@ def test_csv_parser_rejects_noncontiguous_group_and_unknown_column(tmp_path):
         "# coverage_kind=code\n"
         "scope,metric,line,object,bin,reason\n"
         "# source_file=a.sv\n"
-        f"# source_commit={SHA}\n"
         "top,line,1,,,one\n"
         "# source_file=b.sv\n"
-        f"# source_commit={'2' * 40}\n"
         "top,line,2,,,two\n"
         "# source_file=a.sv\n"
-        f"# source_commit={SHA}\n"
         "top,line,3,,,three\n",
         encoding="utf-8",
     )

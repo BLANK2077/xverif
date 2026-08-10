@@ -175,8 +175,7 @@ coverage_exclusions/
 └── assertion_exclusions.csv
 ```
 
-CSV 用 `# source_file=...` / `# source_commit=<40-hex>` 划分连续源码分组；
-每个分组独立记录最后一次成功针对 VDB 验证时的源码 commit。`reason` 必填，同一
+CSV 用 `# source_file=...` 划分连续源码分组；`reason` 必填，同一
 源码文件只能出现一个连续分组。CSV 只保存可移植的语义 selector；xcov 不读写、
 拼接或解释原生 EL 文本。
 
@@ -212,18 +211,13 @@ CSV 用 `# source_file=...` / `# source_commit=<40-hex>` 划分连续源码分�
 
 CSV action：
 
-- `exclude.csv.validate/status/impact/resolve/apply/compile/rebase/stamp_changed/format`
-  分别负责静态合同、Git 分组状态、变更影响、VDB 精确匹配、session 应用、三 EL
-  发布、建议 patch、验证后 stamp 和稳定排序。
-- `resolve` 对每行要求恰好一个 score object；零匹配为 `missing`，多匹配为
-  `ambiguous`。精确匹配同时返回 `validity:still_valid|now_covered`；零匹配对应
-  `coverage_object_missing`。dirty 源码允许 resolve，但 `stamp_changed` 不更新该组。
+- `exclude.csv.validate/apply/compile/format` 分别负责静态合同、session 应用、三 EL
+  发布和稳定排序；CSV 工作流不读取 Git 状态或 commit。
+- apply/compile 对每行要求恰好一个 score object；零匹配或多匹配都会明确失败。
 - `compile` 先完成三类 validate/resolve/apply，在同一输出目录写临时 EL；全部成功
   后发布 `code.el`、`functional.el`、`assertion.el`，随后按该顺序重新加载。
   任一记录失败不发布产物，并恢复 compile 前的 session exclusion。
-- `rebase` 只为唯一 Git rename 和纯行号偏移生成建议 patch；内容变化、删除或
-  rename 不唯一时要求人工审阅。默认不写文件，显式 `write:true` 只应用这些
-  automatic 候选。`format` 默认 check，只有 `write:true` 才写文件。
+- `format` 默认 check，只有 `write:true` 才写文件。
 
 ```json
 {"api_version":"xcov.v1","action":"exclude.csv.compile","target":{"session_id":"cov0"},"args":{"directory":"coverage_exclusions","output_directory":"coverage_exclusions"}}

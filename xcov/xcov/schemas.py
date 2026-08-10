@@ -799,7 +799,6 @@ CSV_WORKFLOW_ITEM = _object({
     "group_count": _integer(0),
     "record_count": _integer(0),
     "source_file": _string(min_length=1),
-    "source_commit": _string(min_length=1),
     "current_commit": NULLABLE_STRING,
     "csv_line": _integer(1),
     "row": _integer(1),

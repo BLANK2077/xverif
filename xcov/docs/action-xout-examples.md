@@ -184,31 +184,11 @@ NPI traversal 或 fact 合同失败使用结构化错误，并明确声明结果
 ```
 
 ```json
-{"api_version":"xcov.v1","request_id":"csv-status","action":"exclude.csv.status","args":{"directory":"coverage_exclusions","repo_root":"."}}
-```
-
-```json
-{"api_version":"xcov.v1","request_id":"csv-impact","action":"exclude.csv.impact","args":{"directory":"coverage_exclusions","repo_root":"."}}
-```
-
-```json
-{"api_version":"xcov.v1","request_id":"csv-resolve","action":"exclude.csv.resolve","target":{"session_id":"cov0"},"args":{"directory":"coverage_exclusions"}}
-```
-
-```json
 {"api_version":"xcov.v1","request_id":"csv-apply","action":"exclude.csv.apply","target":{"session_id":"cov0"},"args":{"directory":"coverage_exclusions"}}
 ```
 
 ```json
 {"api_version":"xcov.v1","request_id":"csv-compile","action":"exclude.csv.compile","target":{"session_id":"cov0"},"args":{"directory":"coverage_exclusions","output_directory":"coverage_exclusions"}}
-```
-
-```json
-{"api_version":"xcov.v1","request_id":"csv-rebase","action":"exclude.csv.rebase","args":{"directory":"coverage_exclusions","repo_root":"."}}
-```
-
-```json
-{"api_version":"xcov.v1","request_id":"csv-stamp","action":"exclude.csv.stamp_changed","target":{"session_id":"cov0"},"args":{"directory":"coverage_exclusions","repo_root":"."}}
 ```
 
 ```json
