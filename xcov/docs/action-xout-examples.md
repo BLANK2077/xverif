@@ -210,10 +210,47 @@ NPI traversal 或 fact 合同失败使用结构化错误，并明确声明结果
 `export.exclude` 固定为 `save_exclude_file(path, "w")`，不接受 mode。CSV compile
 只有在所有记录都精确匹配后才发布三份 EL。
 
-### Markdown export 请求
+### 文件 export 请求
 
 ```json
 {"api_version":"xcov.v1","request_id":"export-code","action":"export.code_coverage","target":{"session_id":"cov0"},"args":{"scopes":["uart_tb.u_uart"],"metrics":["line","condition","branch","toggle","fsm"],"output":{"path":"coverage_artifacts"}}}
+```
+
+`export.code_coverage` 不生成 Markdown；它在秒级时间戳目录中为每个具体 instance、每个
+metric 写出 JSON、XOUT 和原始 URG text。Line v2 的 group 由过程块 context 表和紧邻的
+uncovered statement 表组成。Condition v2 使用 condition、terms、uncovered 三张表；
+相同位置、terms 和 values 的 EXPRESSION/SUB-EXPRESSION 只输出一个 gap。
+
+```text
+@xcov.code_coverage.line.v2
+line_group_count: 6
+gap_count: 9
+line_groups:
+- group_id: LG0001
+  context:
+    kind    at                 covered  coverable  missing  pct
+    always  lane_worker.sv:36  10       12         2        83.33
+  uncovered:
+    gap_id  at                 statement
+    L0001   lane_worker.sv:48  2'b10: response_class <= 2'b10;
+```
+
+```text
+@xcov.code_coverage.condition.v2
+condition_group_count: 13
+coverage_object_gap_count: 26
+gap_count: 24
+condition_groups:
+- group_id: CG0002
+  condition:
+    at                 expression
+    lane_worker.sv:46  ((request.data[3:0] == 4'he) ? 2'b10 : 2'b1)
+  terms:
+    marker  expression
+    -1-     request.data[3:0] == 4'he
+  uncovered:
+    gap_id  -1-
+    C0002   1
 ```
 
 ```json

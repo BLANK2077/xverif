@@ -134,6 +134,13 @@ union、strict mode 对 covered/uncovered 对象的差异，以及新进程只�
 - 不读取 `urgReport/asserts.html` 或 `mod*.html`，不把 HTML 作为数据源。
 - `export.code_coverage` 使用 URG `session.xml` 生成 subtree navigation，并解析严格
   hierarchy 过滤后的单 metric `modinfo.txt` 生成 instance-self JSON/XOUT。
+- Line detail 使用 `xcov.code_coverage.line.v2`，按 URG 过程块发布局部覆盖率和未覆盖
+  statement；continuous assign 未被 URG 计入 line 时不构造虚假对象。
+- Condition detail 使用 `xcov.code_coverage.condition.v2`，按 `LINE` 与 underline marker
+  恢复 term，并合并相同位置、terms、values 的 EXPRESSION/SUB-EXPRESSION。原始 object
+  数由 `coverage_object_gap_count` 表达，语义 gap 数由 `gap_count` 表达。
+- Branch v2 的 decision kind 包括 `if/case/casez/casex/ternary`；多行 ternary 的位置
+  指向 predicate 实际源码行，source 保存归一化后的完整赋值语句。
 - 不在 schema 中放未证实字段。
 - 不用 `note/unavailable_fields` 伪装接口兼容；字段做不到就不暴露。
 - Python NPI backend 初始化时建立唯一的 method/signature 合同；每个 operation

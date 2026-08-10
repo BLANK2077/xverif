@@ -22,9 +22,9 @@ sequenceDiagram
     xcov->>VDB: NPI 语义匹配 + set_status
     xcov-->>AI: status=changed
 
-    AI->>xcov: export.code_coverage(output_dir)
-    xcov->>VDB: URG 导出
-    xcov-->>AI: modinfo.txt
+    AI->>xcov: export.code_coverage(scopes, metrics, output.path)
+    xcov->>VDB: URG instance-self 单 metric 导出
+    xcov-->>AI: timestamp/instance/metric JSON+XOUT+raw URG bundle
 
     AI->>xcov: session.close
     xcov->>VDB: NPI end

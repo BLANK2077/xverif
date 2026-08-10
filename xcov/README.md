@@ -297,6 +297,13 @@ instance，在 `output.path` 下建立秒级时间戳目录，并为每个 insta
 分别输出 JSON、XOUT 和原始 URG text。`navigation.json/xout` 使用总体 `session.xml`
 提供直接子实例的 subtree 统计；metric detail 严格只表示所选 instance 自身。
 
+Line 与 condition detail 使用 v2 分组合同：line 只列出存在缺口的过程块，以 context 表
+发布局部覆盖率并紧接 uncovered statement 表；condition 按源码位置和 marker term 分组，
+同一 values 的 EXPRESSION/SUB-EXPRESSION 合并为一个语义 gap。Condition 的
+`coverage_object_gap_count` 对应 URG 原始 missing，`gap_count` 对应实际需要补的语义
+组合。Branch v2 支持 if/case/casez/casex/ternary decision，连续赋值三目可独立成组，
+过程内三目保留在所属 decision path。三类 XOUT 的 uncovered 表都不重复输出固定 status。
+
 `export.functional_coverage` 与 `export.assert` 保持各自既有合同。
 
 ## XOUT 输出

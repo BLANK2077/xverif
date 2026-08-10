@@ -9,8 +9,8 @@ xcov 查询 VCS/Verdi coverage database（`simv.vdb`、`merged.vdb`）。它负�
 - 按源码 file/line/window 反查 coverage item。
 - 输出源码窗口和 coverage annotation。
 - 输出 assert/cover property/cover sequence 的结构化 report。
-- 通过 `export.code_coverage`、`export.functional_coverage`、`export.assert` 导出
-  Markdown 查看详细未覆盖项。
+- 通过 `export.code_coverage` 导出分 instance、分 metric 的 JSON/XOUT/raw URG bundle；
+  `export.functional_coverage`、`export.assert` 仍按各自合同导出报告。
 
 ## CLI 入口
 
@@ -108,7 +108,14 @@ assert export：
 - branch 使用 `xcov.code_coverage.branch.v2`：相同 decision path 的缺口合并为一个 group，
   先用字段表描述 marker 对应的源码 decision，随后紧接真值表列出各 `gap_id` 的
   marker value；这些行均为未覆盖缺口，因此不重复输出固定的 status 列；`-` 表示该
-  decision 在这条路径中未求值。
+  decision 在这条路径中未求值。Decision kind 支持 `if/case/casez/casex/ternary`；
+  多行三目的 `at` 指向 predicate 实际行。
+- line 使用 `xcov.code_coverage.line.v2`：只输出有缺口的过程块，先读 context 表的
+  kind/at/covered/coverable/missing/pct，再读紧邻 uncovered 表的 gap_id/at/statement。
+- condition 使用 `xcov.code_coverage.condition.v2`：condition 表给出位置与完整表达式，
+  terms 表解释 marker，uncovered 真值表给出需补 values。相同位置、terms、values 的
+  EXPRESSION/SUB-EXPRESSION 合并为一个 gap；`coverage_object_gap_count` 是 URG 原始
+  missing object 数，`gap_count` 是 AI 实际需要处理的语义 gap 数。
 - `navigation.xout` 的覆盖率是 subtree 统计；metric XOUT 的覆盖率是 self 统计，不得混用。
 - `assert.summary` 输出基础覆盖率和 attempts/real successes/without attempts；不输出
   kind/category/severity/failures/incomplete/first_match/file/line。需要完整 assertion
