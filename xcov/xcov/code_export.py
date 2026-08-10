@@ -40,7 +40,7 @@ def _instance_has_no_self_metric(text: str, scope: str) -> bool:
         return False
     following = re.search(r"^={8,}\nModule : \S+", text[header.end():], re.MULTILINE)
     block = text[header.end():header.end() + following.start() if following else len(text)]
-    return bool(re.search(r"^Instance\s*:\s*\n(?:.*\n){0,4}\s*--\s+--\s*$", block, re.MULTILINE))
+    return bool(re.search(r"^Instance\s*:\s*\n(?:.*\n){0,4}\s*(?:--\s+)+\s*$", block, re.MULTILINE))
 
 
 def _module_has_only_target(text: str, module: str, scope: str) -> bool:

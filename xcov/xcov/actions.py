@@ -395,8 +395,22 @@ class Dispatcher:
 
     def _metrics_list(self, req: Json, sess) -> Json:
         args = action_args(req)
-        items = sess.backend.items(scope=args.get("scope"), test=str(args.get("test", "merged")))
-        rows = _summary_from_items(_coverage_score_rows(items), "metric")
+        try:
+            scope_metrics = sess.backend.scope_metrics()
+        except NotImplementedError:
+            # Fallback: NPI items path for backends without URG cache
+            items = sess.backend.items(scope=args.get("scope"),
+                                       test=str(args.get("test", "merged")))
+            rows = _summary_from_items(_coverage_score_rows(items), "metric")
+        else:
+            scope_filter = args.get("scope")
+            if scope_filter:
+                sf = str(scope_filter)
+                scope_metrics = {
+                    s: m for s, m in scope_metrics.items()
+                    if s == sf or s.startswith(sf + ".")
+                }
+            rows = _metrics_from_urg(scope_metrics)
         rows = _project_code_coverage_summary_rows(rows)
         summary, inline, warnings = apply_output("metrics.list", args, rows)
         summary.update({"session_id": sess.session_id, "scope": args.get("scope"),
@@ -409,10 +423,44 @@ class Dispatcher:
         query = query_args(action, args)
         scopes = _indexed_scopes(sess.backend.scopes())
         metrics = _selector_or_default(args, "metrics", METRICS)
-        items = sess.backend.items(metrics=metrics, scope=args.get("scope"),
-                                  test=str(args.get("test", "merged")))
-        items = _coverage_score_rows(items)
-        coverage = _scope_coverage(items, metrics)
+
+        urgen = [m for m in metrics if m in _URG_METRICS]
+        npi_only = [m for m in metrics if m not in _URG_METRICS]
+
+        # Try URG cache first; fall back to NPI traversal if unavailable
+        try:
+            urg_metrics = sess.backend.scope_metrics()
+        except NotImplementedError:
+            urg_metrics = None
+
+        if urg_metrics is not None and urgen:
+            if npi_only:
+                # Mixed: code metrics from URG cache, functional/assert from NPI
+                coverage = _coverage_from_urg(urg_metrics, scopes, urgen)
+                npi_items = sess.backend.items(metrics=npi_only, scope=args.get("scope"),
+                                               test=str(args.get("test", "merged")))
+                npi_items = _coverage_score_rows(npi_items)
+                npi_cov = _scope_coverage(npi_items, npi_only)
+                for scope_name, cov_data in npi_cov.items():
+                    if scope_name in coverage:
+                        existing = coverage[scope_name]
+                        existing["covered"] += cov_data["covered"]
+                        existing["coverable"] += cov_data["coverable"]
+                        existing["missing"] += cov_data["missing"]
+                        existing["coverage_pct"] = coverage_pct(
+                            existing["covered"], existing["coverable"])
+                        existing["metrics"].extend(cov_data.get("metrics", []))
+                    else:
+                        coverage[scope_name] = cov_data
+            else:
+                # All metrics available from URG cache
+                coverage = _coverage_from_urg(urg_metrics, scopes, urgen)
+        else:
+            # Fallback: NPI traversal for all metrics
+            items = sess.backend.items(metrics=metrics, scope=args.get("scope"),
+                                       test=str(args.get("test", "merged")))
+            items = _coverage_score_rows(items)
+            coverage = _scope_coverage(items, metrics)
         if action == "scope.summary":
             rows = _scope_summary_rows(scopes, coverage, args)
             rows = _project_scope_summary_rows(rows)
@@ -442,10 +490,25 @@ class Dispatcher:
             rows = _code_coverage_hole_scope_rows(scopes, _coverage_score_rows(items), metrics, args)
             rows = _project_code_coverage_hole_rows(rows)
         else:
-            rows = sess.backend.items(metrics=metrics, scope=args.get("scope"),
-                                      test=str(args.get("test", "merged")))
-            rows = _coverage_score_rows(rows)
-            rows = _summary_from_items(rows, str(args.get("group_by", "metric")))
+            group_by = str(args.get("group_by", "metric"))
+            try:
+                scope_metrics = sess.backend.scope_metrics()
+            except NotImplementedError:
+                scope_metrics = None
+            if scope_metrics is not None and group_by in ("metric", "scope"):
+                scope_filter = args.get("scope")
+                if scope_filter:
+                    sf = str(scope_filter)
+                    scope_metrics = {
+                        s: m for s, m in scope_metrics.items()
+                        if s == sf or s.startswith(sf + ".")
+                    }
+                rows = _code_coverage_from_urg(scope_metrics, group_by)
+            else:
+                rows = sess.backend.items(metrics=metrics, scope=args.get("scope"),
+                                          test=str(args.get("test", "merged")))
+                rows = _coverage_score_rows(rows)
+                rows = _summary_from_items(rows, group_by)
             rows = filter_items(rows, query)
             rows = _project_code_coverage_summary_rows(rows)
             already_filtered = True
@@ -516,7 +579,7 @@ class Dispatcher:
         if metric is None:
             raise XcovError("UNKNOWN_ACTION", "unknown export action", action=action)
 
-        urg_args = ["urg", "-dir", sess.vdb, "-report", output_dir,
+        urg_args = ["urg", "-full64", "-dir", sess.vdb, "-report", output_dir,
                     "-format", "text", "-show", "brief", "-metric", metric]
         urg_args.extend(sess.el_file_arg)
         scope = args.get("scope")
@@ -582,17 +645,21 @@ class Dispatcher:
             raise XcovError("SCOPE_NOT_FOUND", "scope is not an elaborated coverage instance",
                             scopes=missing)
         top_scopes = [row["full_name"] for row in sess.backend.top_scopes()]
-        self_metric_pairs = {
-            (row.get("scope"), row.get("metric"))
-            for row in sess.backend.items(metrics=metrics)
-            if row.get("scope") in scopes
-        }
         children = {
             scope: sorted(
                 row["full_name"] for row in scope_rows if row.get("parent") == scope
             )
             for scope in scopes
         }
+
+        # Build combined hier file: all scopes in one, no per-scope URG loop
+        combined_hier_lines: list = [f"-tree {top}" for top in top_scopes]
+        for scope in scopes:
+            combined_hier_lines.append(f"+tree {scope}")
+            for child in children.get(scope, []):
+                combined_hier_lines.append(f"-tree {child}")
+        combined_hier = "\n".join(combined_hier_lines) + "\n"
+        combined_urg_metric = "+".join(URG_METRICS[m] for m in metrics)
 
         run_name = "xcov_code_coverage_" + datetime.now().strftime("%Y%m%d_%H%M%S")
         final_dir = output_root / run_name
@@ -604,6 +671,28 @@ class Dispatcher:
             raise XcovError("OUTPUT_STAGING_EXISTS", "staging directory already exists",
                             path=str(stage_dir))
         stage_dir.mkdir()
+
+        # ── Single URG call for all scopes × all metrics ──
+        with tempfile.TemporaryDirectory(prefix=".xcov-urg-export-") as urg_dir:
+            hier_path = Path(urg_dir) / "combined.hier"
+            hier_path.write_text(combined_hier, encoding="utf-8")
+            urg_args = [
+                "urg", "-full64", "-dir", sess.vdb, "-report", urg_dir,
+                "-format", "text", "-legacy", "-metric", combined_urg_metric,
+                "-hier", str(hier_path),
+            ]
+            urg_args.extend(sess.el_file_arg)
+            result = UrgRunner().run(urg_args, timeout=600)
+            if result.returncode != 0:
+                raise XcovError(
+                    "URG_FAILED", f"URG export failed (exit {result.returncode})",
+                    stderr=result.stderr[:500],
+                )
+            modinfo_path = Path(urg_dir) / "modinfo.txt"
+            if not modinfo_path.is_file():
+                raise XcovError("URG_ARTIFACT_MISSING", "URG did not produce modinfo.txt")
+            combined_text = modinfo_path.read_text(encoding="utf-8", errors="replace")
+
         items: List[Json] = []
         try:
             for scope_index, scope in enumerate(scopes, 1):
@@ -617,41 +706,15 @@ class Dispatcher:
                 metric_artifacts = []
                 for metric in metrics:
                     raw_name = f"{metric}.urg.txt"
-                    with tempfile.TemporaryDirectory(dir=instance_dir, prefix=f".{metric}-urg-") as report_dir:
-                        hier_path = Path(report_dir) / "scope.hier"
-                        hier_lines = [f"-tree {top}" for top in top_scopes]
-                        hier_lines.append(f"+tree {scope}")
-                        hier_lines.extend(f"-tree {child}" for child in children[scope])
-                        hier_path.write_text("\n".join(hier_lines) + "\n", encoding="utf-8")
-                        urg_metric = URG_METRICS[metric]
-                        urg_args = [
-                            "urg", "-dir", sess.vdb, "-report", report_dir,
-                            "-format", "text", "-legacy", "-metric", urg_metric,
-                            "-hier", str(hier_path),
-                        ]
-                        if (scope, metric) in self_metric_pairs:
-                            urg_args.extend(["-show", "brief"])
-                        urg_args.extend(sess.el_file_arg)
-                        result = UrgRunner().run(urg_args, timeout=300)
-                        if result.returncode != 0:
-                            raise XcovError(
-                                "URG_FAILED", f"URG export failed (exit {result.returncode})",
-                                scope=scope, metric=metric, stderr=result.stderr[:500],
-                            )
-                        modinfo = Path(report_dir) / "modinfo.txt"
-                        if not modinfo.is_file():
-                            raise XcovError("URG_ARTIFACT_MISSING", "URG did not produce modinfo.txt",
-                                            scope=scope, metric=metric)
-                        text = modinfo.read_text(encoding="utf-8", errors="replace")
-                        try:
-                            payload = parse_metric_report(text, scope, metric)
-                            sess.backend.attach_gap_locators(payload, test="merged")
-                        except CoverageExportParseError as error:
-                            raise XcovError(
-                                "URG_DETAIL_PARSE_INCOMPLETE", error.reason,
-                                scope=scope, metric=metric,
-                            ) from error
-                        shutil.copyfile(modinfo, instance_dir / raw_name)
+                    try:
+                        payload = parse_metric_report(combined_text, scope, metric)
+                        sess.backend.attach_gap_locators(payload, test="merged")
+                    except CoverageExportParseError as error:
+                        raise XcovError(
+                            "URG_DETAIL_PARSE_INCOMPLETE", error.reason,
+                            scope=scope, metric=metric,
+                        ) from error
+                    (instance_dir / raw_name).write_text(combined_text, encoding="utf-8")
                     json_name = f"{metric}.json"
                     xout_name = f"{metric}.xout"
                     write_json(instance_dir / json_name, payload)
@@ -1689,6 +1752,123 @@ def _scope_coverage(items: List[Json], metrics: List[str]) -> Dict[str, Json]:
                       "coverage_pct": coverage_pct(total_covered, total_coverable),
                       "metrics": metric_rows}
     return out
+
+
+# Metrics available in URG session.xml cache
+_URG_METRICS = frozenset({"line", "toggle", "branch", "condition", "fsm"})
+
+
+def _coverage_from_urg(
+    scope_metrics: Dict[str, Json],
+    scopes: Dict[str, Json],
+    metrics: List[str],
+) -> Dict[str, Json]:
+    """Build per-scope coverage dict from URG cache with ancestor rollup.
+
+    Converts backend.scope_metrics() output to the same {scope: {covered,
+    coverable, missing, coverage_pct, metrics: [...]}} format that
+    _scope_coverage() produces from NPI items.  Only code metrics (line,
+    toggle, branch, condition, fsm) are available in the URG cache.
+    """
+    if not scope_metrics:
+        return {}
+    # Gather all scope names (leaf instances + ancestors)
+    leaf_scopes = set(scope_metrics.keys())
+    all_names = set(leaf_scopes)
+    for sname in leaf_scopes:
+        parts = sname.split(".")
+        for i in range(1, len(parts)):
+            all_names.add(".".join(parts[:i]))
+
+    result: Dict[str, Json] = {}
+    for scope_name in all_names:
+        # Sum metrics from all descendant leaf scopes
+        metric_totals: Dict[str, Dict[str, int]] = {}
+        for leaf, mets in scope_metrics.items():
+            if leaf != scope_name and not leaf.startswith(scope_name + "."):
+                continue
+            for mname, vals in mets.items():
+                if mname not in metrics:
+                    continue
+                if mname not in metric_totals:
+                    metric_totals[mname] = {"covered": 0, "coverable": 0}
+                metric_totals[mname]["covered"] += vals["covered"]
+                metric_totals[mname]["coverable"] += vals["coverable"]
+
+        total_covered = 0
+        total_coverable = 0
+        metric_rows: List[Json] = []
+        for mname in metrics:
+            mt = metric_totals.get(mname, {"covered": 0, "coverable": 0})
+            total_covered += mt["covered"]
+            total_coverable += mt["coverable"]
+            metric_rows.append({
+                "metric": mname,
+                "covered": mt["covered"],
+                "coverable": mt["coverable"],
+                "missing": mt["coverable"] - mt["covered"],
+                "coverage_pct": coverage_pct(mt["covered"], mt["coverable"]),
+            })
+        if total_coverable > 0 or scope_name in scopes:
+            result[scope_name] = {
+                "covered": total_covered,
+                "coverable": total_coverable,
+                "missing": total_coverable - total_covered,
+                "coverage_pct": coverage_pct(total_covered, total_coverable),
+                "metrics": metric_rows,
+            }
+    return result
+
+
+def _code_coverage_from_urg(
+    scope_metrics: Dict[str, Json],
+    group_by: str,
+) -> List[Json]:
+    """Aggregate code coverage from URG scope_metrics by metric or scope."""
+    if group_by == "metric":
+        return _metrics_from_urg(scope_metrics)
+    # group_by == "scope"
+    rows: List[Json] = []
+    for sname in sorted(scope_metrics):
+        mets = scope_metrics[sname]
+        total_covered = 0
+        total_coverable = 0
+        for _mname, vals in mets.items():
+            total_covered += vals["covered"]
+            total_coverable += vals["coverable"]
+        rows.append({
+            "scope": sname,
+            "name": sname.rsplit(".", 1)[-1] if "." in sname else sname,
+            "full_name": sname,
+            "covered": total_covered,
+            "coverable": total_coverable,
+            "missing": total_coverable - total_covered,
+            "coverage_pct": coverage_pct(total_covered, total_coverable),
+        })
+    return rows
+
+
+def _metrics_from_urg(scope_metrics: Dict[str, Json]) -> List[Json]:
+    """Aggregate per-metric totals from URG scope_metrics data."""
+    from collections import defaultdict
+    totals: Dict[str, Dict[str, int]] = defaultdict(lambda: {"covered": 0, "coverable": 0})
+    for _sname, mets in scope_metrics.items():
+        for mname, vals in mets.items():
+            totals[mname]["covered"] += vals["covered"]
+            totals[mname]["coverable"] += vals["coverable"]
+    rows: List[Json] = []
+    for mname in sorted(totals):
+        vals = totals[mname]
+        rows.append({
+            "metric": mname,
+            "name": mname,
+            "full_name": mname,
+            "covered": vals["covered"],
+            "coverable": vals["coverable"],
+            "missing": vals["coverable"] - vals["covered"],
+            "coverage_pct": coverage_pct(vals["covered"], vals["coverable"]),
+        })
+    return rows
 
 
 def _coverage_score_rows(items: List[Json]) -> List[Json]:
