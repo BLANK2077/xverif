@@ -356,6 +356,59 @@ def _line_gaps(section: str, source_files: List[str]) -> List[Json]:
     ]
 
 
+def _line_groups(section: str, source_files: List[str]) -> List[Json]:
+    contexts: List[Json] = []
+    for match in re.finditer(
+        r"^\s*([A-Z][A-Z0-9_-]*)\s+(\d+)\s+(\d+)\s+(\d+)\s+([\d.]+)\s*$",
+        section,
+        re.MULTILINE,
+    ):
+        kind, line_no, coverable, covered, pct = match.groups()
+        contexts.append({
+            "kind": kind.lower(),
+            "line": int(line_no),
+            "at": _at(source_files, int(line_no)),
+            "covered": int(covered),
+            "coverable": int(coverable),
+            "missing": int(coverable) - int(covered),
+            "pct": round(float(pct), 2),
+            "uncovered": [],
+        })
+    if not contexts:
+        return []
+    contexts.sort(key=lambda item: item["line"])
+    gaps = _line_gaps(section, source_files)
+    for gap_index, gap in enumerate(gaps, 1):
+        line_no = int(str(gap["at"]).rsplit(":", 1)[1])
+        owner = None
+        for index, context in enumerate(contexts):
+            next_line = contexts[index + 1]["line"] if index + 1 < len(contexts) else None
+            if line_no >= context["line"] and (next_line is None or line_no < next_line):
+                owner = context
+                break
+        if owner is None:
+            raise CoverageExportParseError("line", "", "line gap cannot be mapped to a construct")
+        owner["uncovered"].append({
+            "gap_id": f"L{gap_index:04d}",
+            "at": gap["at"],
+            "statement": gap["statement"],
+        })
+    groups: List[Json] = []
+    for context in contexts:
+        if not context["uncovered"]:
+            continue
+        if len(context["uncovered"]) != context["missing"]:
+            raise CoverageExportParseError("line", "", "line construct missing count does not match gaps")
+        groups.append({
+            "group_id": f"LG{len(groups) + 1:04d}",
+            "context": {key: context[key] for key in (
+                "kind", "at", "covered", "coverable", "missing", "pct"
+            )},
+            "uncovered": context["uncovered"],
+        })
+    return groups
+
+
 def _toggle_gaps(section: str) -> List[Json]:
     gaps: List[Json] = []
     kind: str | None = None
@@ -449,6 +502,27 @@ def parse_metric_report(text: str, scope: str, metric: str) -> Json:
         "fsm": lambda: _fsm_gaps(section, sources),
     }
     coverage = _coverage(section, metric)
+    if metric == "line":
+        groups = _line_groups(section, sources)
+        gap_count = sum(len(group["uncovered"]) for group in groups)
+        if gap_count != coverage["missing"]:
+            raise CoverageExportParseError(metric, scope, "line gap count does not match coverage missing")
+        return {
+            "schema": "xcov.code_coverage.line.v2",
+            "scope": scope,
+            "module": module,
+            "source_root": source_root,
+            "source_files": sources,
+            "metric": metric,
+            "coverage_basis": "self",
+            "coverage": coverage,
+            "line_group_count": len(groups),
+            "gap_count": gap_count,
+            "non_actionable_count": len(_non_actionable(section)),
+            "analysis_complete": True,
+            "line_groups": groups,
+            "non_actionable": _non_actionable(section),
+        }
     if metric == "branch":
         groups = _branch_groups(section, sources, absolute_sources)
         gap_count = sum(len(group["uncovered"]) for group in groups)
@@ -504,6 +578,8 @@ def _scalar(value: Any) -> str:
 
 
 def render_metric_xout(payload: Json, raw_name: str) -> str:
+    if payload["metric"] == "line" and payload["schema"] == "xcov.code_coverage.line.v2":
+        return _render_line_xout(payload, raw_name)
     if payload["metric"] == "branch" and payload["schema"] == "xcov.code_coverage.branch.v2":
         return _render_branch_xout(payload, raw_name)
     coverage = payload["coverage"]
@@ -545,6 +621,44 @@ def _aligned_table(headers: List[str], rows: List[List[Any]], indent: str = "   
     for row in text_rows:
         rendered.append(indent + "  ".join(value.ljust(widths[index]) for index, value in enumerate(row)).rstrip())
     return rendered
+
+
+def _render_line_xout(payload: Json, raw_name: str) -> str:
+    coverage = payload["coverage"]
+    lines = [
+        "@xcov.code_coverage.line.v2",
+        f"scope: {_scalar(payload['scope'])}",
+        f"module: {_scalar(payload['module'])}",
+        f"source_root: {_scalar(payload['source_root'])}",
+        "coverage_basis: self",
+        "coverage: " + " ".join(
+            f"{key}={coverage[key]}" for key in ("covered", "coverable", "missing", "pct")
+        ),
+        f"line_group_count: {payload['line_group_count']}",
+        f"gap_count: {payload['gap_count']}",
+        f"non_actionable_count: {payload['non_actionable_count']}",
+        "analysis_complete: true",
+        f"raw: {raw_name}",
+        "",
+        "line_groups:",
+    ]
+    for group in payload["line_groups"]:
+        context = group["context"]
+        lines.extend([f"- group_id: {group['group_id']}", "  context:"])
+        lines.extend(_aligned_table(
+            ["kind", "at", "covered", "coverable", "missing", "pct"],
+            [[context[key] for key in ("kind", "at", "covered", "coverable", "missing", "pct")]],
+        ))
+        lines.append("  uncovered:")
+        lines.extend(_aligned_table(
+            ["gap_id", "at", "statement"],
+            [[row[key] for key in ("gap_id", "at", "statement")] for row in group["uncovered"]],
+        ))
+    lines.extend(["", "non_actionable:"])
+    for item in payload["non_actionable"]:
+        lines.append(f"- object: {_scalar(item['object'])}")
+        lines.append(f"  status: {item['status']}")
+    return "\n".join(lines) + "\n"
 
 
 def _render_branch_xout(payload: Json, raw_name: str) -> str:

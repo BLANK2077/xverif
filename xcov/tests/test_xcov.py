@@ -1908,3 +1908,59 @@ Branches:
     }
     xout = render_metric_xout(payload, "branch.urg.txt")
     assert "-1-     ternary  dut.sv:151" in xout
+
+
+def test_line_v2_groups_uncovered_statements_by_construct():
+    from xcov.code_export import parse_metric_report, render_metric_xout
+
+    scope = "top.u_dut"
+    report = """===============================================================================
+Module : dut
+===============================================================================
+Source File(s) :
+
+/workspace/dut.sv
+
+Module self-instances :
+
+SCORE  LINE NAME
+ 40.00  40.00 top.u_dut
+
+===============================================================================
+Module Instance : top.u_dut
+===============================================================================
+
+Line Coverage for Instance : top.u_dut
+
+             Line No.   Total   Covered  Percent
+TOTAL                        5        2    40.00
+ALWAYS             10        3        1    33.33
+ALWAYS             20        2        1    50.00
+
+12         0/1     ==>      first <= 1'b1;
+13         0/1     ==>      second <= 1'b1;
+21         0/1     ==>      third <= 1'b1;
+
+"""
+
+    payload = parse_metric_report(report, scope, "line")
+
+    assert payload["schema"] == "xcov.code_coverage.line.v2"
+    assert payload["line_group_count"] == 2
+    assert payload["gap_count"] == 3
+    assert payload["line_groups"][0]["context"] == {
+        "kind": "always",
+        "at": "dut.sv:10",
+        "covered": 1,
+        "coverable": 3,
+        "missing": 2,
+        "pct": 33.33,
+    }
+    assert [row["gap_id"] for row in payload["line_groups"][0]["uncovered"]] == ["L0001", "L0002"]
+    xout = render_metric_xout(payload, "line.urg.txt")
+    assert xout.startswith("@xcov.code_coverage.line.v2\n")
+    assert "kind    at         covered  coverable  missing  pct" in xout
+    assert "\n  uncovered:\n" in xout
+    assert "\n\n  uncovered:\n" not in xout
+    assert "hits" not in xout
+    assert "required" not in xout

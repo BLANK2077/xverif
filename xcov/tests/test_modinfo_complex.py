@@ -91,6 +91,10 @@ def test_complex_modinfo_export_has_diverse_incomplete_branch_groups(xverif_fixt
     assert [item["scope"] for item in response["data"]["items"]] == [ACTIVE_SCOPE, SPARSE_SCOPE]
 
     scores = {}
+    expected_line = {
+        ACTIVE_SCOPE: {"line_group_count": 6, "gap_count": 9},
+        SPARSE_SCOPE: {"line_group_count": 7, "gap_count": 14},
+    }
     for item in response["data"]["items"]:
         scope = item["scope"]
         instance_dir = Path(item["directory"])
@@ -105,6 +109,19 @@ def test_complex_modinfo_export_has_diverse_incomplete_branch_groups(xverif_fixt
             assert payload["analysis_complete"] is True
             assert (instance_dir / f"{metric}.urg.txt").is_file()
             scores[scope][metric] = coverage["pct"]
+
+        line = json.loads((instance_dir / "line.json").read_text(encoding="utf-8"))
+        assert line["schema"] == "xcov.code_coverage.line.v2"
+        assert line["line_group_count"] == expected_line[scope]["line_group_count"]
+        assert line["gap_count"] == expected_line[scope]["gap_count"]
+        assert line["gap_count"] == line["coverage"]["missing"]
+        assert all(group["uncovered"] for group in line["line_groups"])
+        assert all(group["context"]["pct"] < 100.0 for group in line["line_groups"])
+        line_xout = (instance_dir / "line.xout").read_text(encoding="utf-8")
+        assert "\n  uncovered:\n" in line_xout
+        assert "\n\n  uncovered:\n" not in line_xout
+        assert "hits" not in line_xout
+        assert "required" not in line_xout
 
         branch = json.loads((instance_dir / "branch.json").read_text(encoding="utf-8"))
         assert branch["schema"] == "xcov.code_coverage.branch.v2"

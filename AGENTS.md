@@ -292,6 +292,12 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 
 ### 2026-08-10 环境错误复盘
 
+- 错误现象：读取正式 fixture 当前版本时预设 `current.json` 包含通用 path 字段，诊断命令未解析出 VDB 路径便退出。
+- 误判原因：没有先按 FixtureStore 的真实指针 schema 读取 `version` 字段，错误套用了其它缓存入口的路径表达。
+- 以后规则：手工定位 `.xverif-test-cache/fixtures/<id>` 时先读取 `current.json.version`，再解析到 `versions/<version>/resources`；不猜测 path/current/version_path 字段。
+
+### 2026-08-10 环境错误复盘
+
 - 错误现象：实现 branch XOUT v2 后直接以 regression gate 运行 `xcov.urg_backend`，被 suite membership 门禁拒绝。
 - 误判原因：只检查了 catalog 中的 suite 定义和既有经验，没有在执行 focused suite 前查询当前 gate plan。
 - 以后规则：每次运行 focused suite 都先查询目标 gate 的 `--xverif-plan`；若产品要求调整 membership，显式修改并测试 catalog gate 合同，不通过 cost 分类伪装。
