@@ -1108,22 +1108,29 @@ class NpiCoverageBackend(CoverageBackend):
                 for a in child.findall("attr"):
                     attrs[a.get("type", "")] = a.get("value", "0")
                 kind = "assertion" if etype == "Assertion" else "cover_property"
+                attempts = int(attrs.get("attempt", 0))
+                successes = int(attrs.get("success", attrs.get("all match", 0)))
+                failures = int(attrs.get("failure", 0))
+                if successes > 0:
+                    status = ["covered"]
+                elif failures > 0:
+                    status = ["not_covered"]
+                else:
+                    status = ["not_covered"] if attempts > 0 else []
                 rows.append({
                     "name": ename.rsplit(".", 1)[-1] if "." in ename else ename,
                     "full_name": ename,
                     "kind": kind,
-                    "attempts": int(attrs.get("attempt", 0)),
-                    "real_successes": int(attrs.get("success", attrs.get("all match", 0))),
-                    "failures": int(attrs.get("failure", 0)),
+                    "attempts": attempts,
+                    "real_successes": successes,
+                    "without_attempts": 0,
+                    "failures": failures,
                     "incomplete": int(attrs.get("incomplete", 0)),
-                    "covered": int(attrs.get("success", attrs.get("all match", 0))),
-                    "coverable": int(attrs.get("attempt", 0)),
-                    "missing": int(attrs.get("attempt", 0)) - int(attrs.get("success", attrs.get("all match", 0))),
-                    "coverage_pct": round(
-                        100.0 * int(attrs.get("success", attrs.get("all match", 0)))
-                        / int(attrs.get("attempt", 1)), 2
-                    ) if int(attrs.get("attempt", 0)) else 0.0,
-                    "status": [],
+                    "covered": successes,
+                    "coverable": attempts,
+                    "missing": attempts - successes,
+                    "coverage_pct": round(100.0 * successes / attempts, 2) if attempts else 0.0,
+                    "status": status,
                     "evidence": {},
                 })
         return rows

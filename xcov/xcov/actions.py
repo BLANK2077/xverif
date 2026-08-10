@@ -516,9 +516,7 @@ class Dispatcher:
     def _assert_report(self, req: Json, sess) -> Json:
         args = action_args(req)
         query = query_args("assert.summary", args)
-        rows, _sections = _assert_report_rows(sess.backend.items(metrics=["assert"], scope=args.get("scope"),
-                                                                test=str(args.get("test", "merged"))),
-                                              include_source=False)
+        rows = sess.backend.scope_assert_from_urg()
         rows = _project_assert_summary_rows(rows)
         rows = filter_items(rows, query)
         rows = sort_items("assert.summary", rows, args.get("sort"))
