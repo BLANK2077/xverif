@@ -2069,3 +2069,74 @@ set/save/load/unload 和真实 URG code/assert/functional typed 读取。额外�
 执行 x-npi URG 示例，得到 3,001 scope、30,000 个带 score 的 functional typed node、9,000 个
 assertion/cover-property node和 57,006 个公开 row，全程 `npi_initialized=false`。x-npi 与 xverif
 均已通过 Makefile 安装到 Codex/Claude，排除 manifest/cache 后四组 `diff -qr` 均为 0。
+
+### 16.9 阶段 9：全仓最终验收与交付审计
+
+最终源码提交链保持可审查的阶段边界：
+
+| Commit | 阶段与主要闭环 |
+| --- | --- |
+| `8f71391` | 固化全量评审、URG 实测、XML/summary 能力边界和详细实施门禁 |
+| `20eadf4` | 建立 code/assertion/functional 三套 typed URG IR，收紧 schema 和 SCORE/scope 语义 |
+| `703b0c6` | session open/read 全面 URG-only，NPI 延迟到 exclusion，建立 dirty reason 生命周期 |
+| `35bd1f0` | 内容寻址 URG cache、锁/原子发布/LRU、一次索引和线性复杂度门禁 |
+| `6154ac0` | MCP 一 session 一独立 stdio-loop，外层 `bsub -I` 与 xdebug 同源 queue/job 合同 |
+| `9f014f2` | 内层 URG 独立 `bsub -K`、queue/resource、timeout/bkill 和 cache producer 合同 |
+| `5b69ae6` | manifest v2、EDA provenance、export path、资源预算、可恢复 close 和 observability |
+| `7644d57` | 37.5 万行、3,001 scope、多端口宽接口 full64 fixture 与 cold/warm/复杂度回归 |
+| `6c7966c` | x-npi URG 读取/NPI-only exclusion、严格 CSV→EL 和 xverif skill 同步 |
+| `a676809` | 所有 MCP 子进程 item-local xcov cache/log，以及真实 CSV+EL 持久化后关闭流程 |
+
+P1/P2/P3 完成态按证据映射如下：
+
+| 风险组 | 完成证据 |
+| --- | --- |
+| P1 安全与数据完整性 | `5b69ae6` 的 manifest v2、tool/module provenance、统一 export resolver、atomic publish；`703b0c6`/`5b69ae6` 的 dirty reason close gate |
+| P1 正确性 | `20eadf4` 的 type-separated XML、metrics filter、scope boundary、assert/property 属性和 functional variant/instance 计分 |
+| P1 性能 | `35bd1f0` 的 immutable adjacency/index、1k/10k 2N operation gate、cold/warm invocation count 和 close 0 次 URG；`7644d57` 的大型真实门禁 |
+| P2 生命周期与调度 | `703b0c6` 的 lazy exclusion context；`6154ac0`/`9f014f2` 的 outer/inner 独立 job、queue、timeout、cleanup/tombstone |
+| P2 资源与可靠性 | `5b69ae6` 的 request/artifact/IR/gap/CSV/response budgets、truncation、owned working-dir cleanup 和 logging failure registry |
+| P3 AI/skill 合同 | `6c7966c` 明确 URG 读取、NPI 必须遍历缺陷、`+` 边界、CSV reason sidecar 和不支持无损 EL→CSV |
+| 跨 suite 污染 | `a676809` 使 xcov/MCP 子进程继承 item-local cache/log；最终 regression/nightly 后仓库 `.xverif/xcov` 不存在 |
+
+最终 full gate 在提交 `a676809` 上执行，结果如下：
+
+| 门禁 | 执行位置 | 结果 |
+| --- | --- | --- |
+| `.conda-xverif/bin/pytest --xverif-gate fast` | host/local Python | `525 passed, 676 deselected`，41.66 s |
+| `XVERIF_TEST_EXECUTION_ENV=host ... --xverif-fixture-validation --xverif-all-fixtures` | host EDA | 25/25 fixture validated；包括四个 xcov、AXI/APB VIP、active-trace、XIF、XSVA 和 xloc |
+| `XVERIF_TEST_EXECUTION_ENV=host ... --xverif-gate regression -n auto` | host EDA/NPI | `1104 passed`，267.53 s |
+| `XVERIF_TEST_EXECUTION_ENV=host ... --xverif-gate nightly -n auto` | host EDA/NPI/fake LSF | `1204 passed, 2 skipped`，448.90 s |
+| `xcov.mcp_integration` focused | host + fake LSF | `17 passed`；包含 outer session + inner URG full-chain |
+| `xdebug.mcp_fake_lsf` focused | host + fake LSF | `3 passed` |
+| `xverif_mcp.real_fullchain` focused | host EDA/NPI | `1 passed`；真实 debug+coverage MCP wire、gap exclude、CSV/EL 持久化和 close |
+| `skills.x_npi_real` focused | host EDA/NPI | `5 passed` |
+
+全 fixture validation 通过正式入口重新构建并探测以下 25 个 fixture：`xcov.exclusion`、
+`xcov.comprehensive`、`xcov.modinfo_complex`、`xcov.large_summary`，以及 21 个 xdebug/xsva/xloc
+fixture。large-summary 的当前正式版本仍由 fingerprint `3b7173e6723e...` 标识；生成 RTL/VDB 未
+进入 Git。regression/nightly 随后只消费已验证 cache，没有 cache-miss 自动仿真或 required→SKIP
+降级。
+
+本机没有安装真实 LSF：nightly 唯一两个 skip 均明确标记为 optional `real_lsf`，原因是
+`XDEBUG_ENABLE_REAL_LSF` 未启用且 `bsub/bjobs/bkill` 不存在。按用户指定，本机验收使用与 xdebug
+相同的 fake LSF 正式 suite，不私自 fallback 到 direct：
+
+- 外层 xcov session 断言提交 `bsub -I ... tools/xcov --stdio-loop`，requested/effective/submitted
+  queue、resource、job name/id 和 ready 状态完整；
+- 内层 cache miss 断言提交独立 `bsub -K urg -full64 ...` 和独立 URG queue，cache hit
+  `submitted=false`；
+- scheduler framing/noise 被过滤，PEND、rejection、startup/run timeout、bkill、partial failure、
+  tombstone 和 shutdown cleanup 均由 fake scheduler 的确定性状态覆盖；
+- read-only doctor/summary 的 `npi_initialized=false`，只有 exclusion 才初始化 NPI；所有失败路径
+  都没有 direct backend fallback。
+
+最终 nightly 的两个 optional skip 不是产品失败，也没有被改写为通过。因为用户已明确说明本机
+没有 LSF，并要求参考 xdebug fake LSF，本轮不声称取得真实集群 job 证据；若将来在具备
+`bsub/bjobs/bkill` 的 host 上启用真实 LSF，可再运行两个 optional real-LSF suite，不影响本次本机
+验收结论。
+
+最终审计未发现计划外的未完成产品项。固定
+`-xml_verbose -format text -show summary` 本来不具备的 gap/source/per-test/bin 结构仍明确不支持，
+没有用 NPI 遍历、第二种 URG 格式、HTML 或其它 backend 补齐。所有相关 skill 安装副本与仓库
+source 一致；用户的 `AGENTS.md` 和无关 xdebug 评审/测试输出文档均保持在提交白名单之外。
