@@ -87,6 +87,7 @@ xdebug/xdebug
 xdebug/libexec/
 xdebug/signal.rc
 *_probeLog/
+probeLog/
 *-engineLog/
 npiLog/
 experiments/
