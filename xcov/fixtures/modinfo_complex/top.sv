@@ -42,6 +42,31 @@ module top;
     cross_a: cross cp_a_valid, cp_a_data;
   endgroup
   traffic_cg traffic = new;
+  traffic_cg traffic_mirror = new;
+
+  covergroup response_cg @(negedge clk);
+    option.per_instance = 1;
+    cp_done: coverpoint {done_a, done_b, done_sparse} {
+      bins idle = {3'b000};
+      bins one_done[] = {3'b001, 3'b010, 3'b100};
+      bins multiple = {[3'b011:3'b111]};
+    }
+    cp_result: coverpoint result_a[3:0] {
+      bins low = {[0:3]};
+      bins middle = {[4:11]};
+      bins high = {[12:15]};
+    }
+    done_x_result: cross cp_done, cp_result;
+  endgroup
+  response_cg response_primary = new;
+  response_cg response_secondary = new;
+
+  a_done_implies_known: assert property (@(posedge clk) disable iff (!rst_n)
+    (done_a || done_b || done_sparse) |-> !$isunknown({result_a, result_b, result_sparse}));
+  a_requests_settle: assert property (@(posedge clk) disable iff (!rst_n)
+    request_a.valid |-> ##[1:8] request_a.ready);
+  c_concurrent_done: cover property (@(posedge clk) done_a && done_b);
+  c_sparse_high: cover property (@(posedge clk) done_sparse && result_sparse[7]);
 
   always #5 clk = ~clk;
 

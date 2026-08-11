@@ -21,6 +21,40 @@ module lane_worker #(
   logic request_rejected;
   logic [11:0] assign_features;
 
+  // The same covergroup types exist in every lane_worker module instance.
+  // Different cluster stimulus and LANE_ID values intentionally produce
+  // different instance scores without relying on reset behavior.
+  covergroup lane_instance_cg @(posedge request.clk);
+    option.per_instance = 1;
+    cp_opcode: coverpoint request.data[2:0] iff (request.valid) {
+      bins arithmetic[] = {[0:3]};
+      bins extended[] = {[4:6]};
+      bins reserved = {7};
+    }
+    cp_lane: coverpoint LANE_ID {
+      bins lane0 = {0};
+      bins lane1 = {1};
+      bins lane2 = {2};
+      bins other = {[3:7]};
+    }
+    cp_response: coverpoint response_class iff (state == RESPOND);
+    opcode_x_response: cross cp_opcode, cp_response;
+  endgroup
+  lane_instance_cg lane_instance_coverage = new;
+
+  covergroup lane_aggregate_cg @(negedge request.clk);
+    option.per_instance = 0;
+    cp_state: coverpoint state;
+    cp_result_class: coverpoint result[WIDTH-1 -: 2] iff (done) {
+      bins low = {2'b00};
+      bins middle[] = {2'b01, 2'b10};
+      bins high = {2'b11};
+    }
+    cp_rejected: coverpoint request_rejected;
+    state_x_rejected: cross cp_state, cp_rejected;
+  endgroup
+  lane_aggregate_cg lane_aggregate_coverage = new;
+
   always_comb begin
     next_state = state;
     unique case (state)
