@@ -1,53 +1,85 @@
 #!/usr/bin/env python3
+"""Export a typed coverage summary through URG; this script never loads pynpi."""
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from x_npi.coverage import close_covdb, coverage_items, coverage_summary, merged_test_handle, open_covdb, test_names
 from x_npi.jsonio import error, ok, print_json, split_limited
-from x_npi.runtime import json_stdout_quarantine, pynpi_lifecycle
+from x_npi.urg import export_summary
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Summarize VCS/Verdi coverage database with pynpi.cov.")
-    ap.add_argument("--vdb", required=True, help="Path to simv.vdb or merged.vdb")
-    ap.add_argument("--metric", action="append",
-                    choices=["line", "toggle", "branch", "condition", "fsm", "assert", "functional"],
-                    help="Metric to include. Defaults to all supported metrics.")
-    ap.add_argument("--scope", help="Optional scope/full_name prefix filter")
-    ap.add_argument("--holes-only", action="store_true")
-    ap.add_argument("--limit", type=int, default=200)
-    args = ap.parse_args()
-
-    with json_stdout_quarantine() as json_stream:
-        try:
-            with pynpi_lifecycle([sys.argv[0]]):
-                db = open_covdb(args.vdb)
-                try:
-                    test = merged_test_handle(db)
-                    rows = coverage_items(db, test=test, metrics=args.metric, scope=args.scope,
-                                          holes_only=args.holes_only)
-                    shown, truncated = split_limited(rows, args.limit)
-                    summary = coverage_summary(rows)
-                    summary.update({
-                        "tests": test_names(db),
-                        "row_count": len(rows),
-                        "returned": len(shown),
-                        "truncated": truncated,
-                        "holes_only": args.holes_only,
-                    })
-                finally:
-                    close_covdb(db)
-            print_json(ok("coverage_summary", {"items": shown}, summary), json_stream)
-            return 0
-        except Exception as exc:
-            print_json(error("coverage_summary", "FAILED", str(exc)), json_stream)
-            return 1
+    parser = argparse.ArgumentParser(
+        description="Export fixed full64 URG typed coverage summary without pynpi traversal."
+    )
+    parser.add_argument("--vdb", required=True)
+    parser.add_argument("--report", required=True, help="New directory for fixed URG artifacts")
+    parser.add_argument("--elfile", help="Optional existing native EL applied by URG")
+    parser.add_argument(
+        "--metric", action="append",
+        choices=[
+            "line", "toggle", "branch", "condition", "fsm", "assert", "functional",
+        ],
+    )
+    parser.add_argument("--scope", help="Exact scope or descendant prefix")
+    parser.add_argument("--limit", type=int, default=200)
+    parser.add_argument("--output", help="Optional JSON file containing all typed rows")
+    args = parser.parse_args()
+    try:
+        if args.limit < 0:
+            raise ValueError("--limit must be non-negative")
+        summary = export_summary(args.vdb, args.report, elfile=args.elfile)
+        rows = summary.rows(metrics=args.metric, scope=args.scope)
+        shown, truncated = split_limited(rows, args.limit)
+        root = next((row for row in summary.scopes if row["full_name"] == "top"), None)
+        selected_metrics = list(args.metric or (root["metrics"] if root else []))
+        pct_values = [
+            root["metrics"][metric]["coverage_pct"]
+            for metric in selected_metrics
+            if root and metric in root["metrics"]
+            and root["metrics"][metric]["coverage_pct"] is not None
+        ]
+        result_summary = {
+            "data_source": "urg_fixed_summary",
+            "npi_initialized": False,
+            "tests": list(summary.tests),
+            "scope_count": len(summary.scopes),
+            "functional_row_count": len(summary.functional),
+            "assertion_row_count": len(summary.assertions),
+            "row_count": len(rows),
+            "returned": len(shown),
+            "truncated": truncated,
+            "root_score_pct": (
+                round(sum(pct_values) / len(pct_values), 4) if pct_values else None
+            ),
+            "root_score_basis": "arithmetic_mean_selected_metric_pct",
+            "report_dir": str(summary.report_dir),
+        }
+        if args.output:
+            output = Path(args.output)
+            if output.exists() or output.is_symlink():
+                raise ValueError("--output must not already exist")
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(
+                json.dumps(
+                    ok("coverage_summary", {"items": rows}, result_summary),
+                    ensure_ascii=False, indent=2, sort_keys=True,
+                ) + "\n",
+                encoding="utf-8",
+            )
+            result_summary["output"] = str(output.resolve())
+            shown = []
+        print_json(ok("coverage_summary", {"items": shown}, result_summary))
+        return 0
+    except Exception as exc:
+        print_json(error("coverage_summary", "FAILED", str(exc)))
+        return 1
 
 
 if __name__ == "__main__":

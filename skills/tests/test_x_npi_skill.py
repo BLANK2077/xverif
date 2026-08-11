@@ -4,7 +4,9 @@ import json
 import os
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -18,12 +20,17 @@ sys.path.insert(0, str(SKILL / "scripts"))
 from x_npi.cli import require_output, sampling_contract  # noqa: E402
 from x_npi.coverage import (  # noqa: E402
     CoverageExclusionError,
-    coverage_summary,
+    compile_csv_to_el,
     load_exclusion_files,
     open_covdb,
     save_exclusion_file,
     set_report_time_excluded,
     unload_exclusions,
+)
+from x_npi.exclusion_csv import (  # noqa: E402
+    ExclusionCsvError,
+    format_directory,
+    parse_directory,
 )
 from x_npi.jsonio import split_limited  # noqa: E402
 from x_npi.protocol import (  # noqa: E402
@@ -33,6 +40,7 @@ from x_npi.protocol import (  # noqa: E402
     stream_summary,
 )
 from x_npi.wave import active, known  # noqa: E402
+from x_npi.urg import export_summary, parse_summary  # noqa: E402
 
 
 def test_x_npi_links_and_examples_exist() -> None:
@@ -199,18 +207,7 @@ def test_stream_rejects_partial_boundary_and_orphan_packet_beat() -> None:
     assert info.value.code == "STREAM_ORPHAN_BEAT"
 
 
-def test_coverage_summary_uses_score_rows_and_functional_group_average() -> None:
-    rows = [
-        {"metric": "line", "type": "npiCovStmtBin", "covered": 3, "coverable": 4, "missing": 1},
-        {"metric": "functional", "covergroup": "cg", "type": "npiCovCoverpoint", "coverage_pct": 50.0},
-        {"metric": "functional", "covergroup": "cg", "type": "npiCovCross", "coverage_pct": 100.0},
-    ]
-    result = coverage_summary(rows)
-    assert result["metrics"][0]["coverage_pct"] == 75.0
-    assert result["functional_groups"][0]["coverage_pct"] == 75.0
-
-
-class FakeExclusionItem:
+class RecordingExclusionItem:
     def __init__(self, report_time: bool = False, compile_time: bool = False,
                  setter_result: int = 1) -> None:
         self.report_time = report_time
@@ -231,7 +228,7 @@ class FakeExclusionItem:
         return self.setter_result
 
 
-class FakeExclusionTest:
+class RecordingExclusionTest:
     def __init__(self, results: dict[str, int] | None = None) -> None:
         self.results = results or {}
         self.calls: list[tuple[object, ...]] = []
@@ -242,11 +239,175 @@ class FakeExclusionTest:
 
     def save_exclude_file(self, path: str, mode: str) -> int:
         self.calls.append(("save", path, mode))
+        Path(path).write_text("opaque native el\n", encoding="utf-8")
         return self.results.get("save", 1)
 
     def unload_exclusion(self) -> int:
         self.calls.append(("unload",))
         return self.results.get("unload", 1)
+
+
+def _write_csv_set(root: Path, *, reason: str = "architectural unreachable") -> None:
+    root.mkdir()
+    reason_field = '"' + reason.replace('"', '""') + '"'
+    documents = {
+        "code_exclusions.csv": (
+            "xcov-code-exclusions.v1", "code",
+            "scope,metric,line,object,bin,reason\n"
+            "# source_file=rtl/design.sv\n"
+            f"top,line,10,,,{reason_field}\n",
+        ),
+        "functional_exclusions.csv": (
+            "xcov-functional-exclusions.v1", "functional",
+            "scope,line,covergroup,coverpoint,cross,bin,reason\n"
+            "# source_file=tb/coverage.sv\n"
+            "top,20,cg_mode,cp_mode,,idle,not reachable\n",
+        ),
+        "assertion_exclusions.csv": (
+            "xcov-assertion-exclusions.v1", "assertion",
+            "scope,line,assertion,assertion_kind,reason\n"
+            "# source_file=tb/assertions.sv\n"
+            "top,30,a_reset,assertion,disabled by configuration\n",
+        ),
+    }
+    for name, (schema, kind, body) in documents.items():
+        (root / name).write_text(
+            f"# schema_version={schema}\n# coverage_kind={kind}\n{body}",
+            encoding="utf-8",
+        )
+
+
+def _write_urg_report(root: Path) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "session.xml").write_text(
+        """<session><hvp><old_coverage>
+<scope type="instance" name="top"><metric name="Line" value="3/4" />
+  <scope type="instance" name="u0"><metric name="Line" value="1/2" /></scope>
+</scope>
+<scope type="Groups" name="top"><attr type="Group Summary" value="1/2" />
+ <scope type="Cover Group" name="cg_mode">
+  <scope type="Covergroup Variant" name="top::cg_mode"><metric name="Group" value="1/2" />
+   <scope type="Coverage Instance" name="cg0"><metric name="Group" value="1/2" />
+    <scope type="Coverage Point" name="cp_mode"><metric name="Point" value="1/2" /></scope>
+    <scope type="Cross Coverage" name="cx_mode"><metric name="Cross" value="0/1" /></scope>
+   </scope>
+  </scope>
+ </scope>
+</scope>
+<scope type="Asserts" name="top">
+ <scope type="Assertion" name="top.a_valid"><attr type="attempt" value="3" />
+  <attr type="success" value="2" /><attr type="failure" value="1" />
+  <attr type="incomplete" value="0" /></scope>
+ <scope type="Cover Property" name="top.c_ready"><attr type="attempt" value="2" />
+  <attr type="all match" value="0" /><attr type="mismatches" value="2" />
+  <attr type="incomplete" value="0" /></scope>
+</scope>
+</old_coverage></hvp></session>\n""",
+        encoding="utf-8",
+    )
+    (root / "tests.txt").write_text(
+        "Tests\n\nTotal tests in report: 1\n"
+        "Data from the following tests was used to generate this report\n"
+        "/shared/run/case_a\n\n",
+        encoding="utf-8",
+    )
+    for name in ("dashboard.txt", "modlist.txt", "groups.txt", "asserts.txt"):
+        (root / name).write_text(f"{name}\n", encoding="utf-8")
+
+
+def test_urg_parser_keeps_code_functional_and_assertion_types_separate(tmp_path: Path) -> None:
+    report = tmp_path / "urg-report"
+    _write_urg_report(report)
+    summary = parse_summary(report)
+    assert summary.tests == ("case_a",)
+    assert len(summary.scopes) == 2
+    root = next(row for row in summary.scopes if row["full_name"] == "top")
+    assert root["metrics"]["line"]["coverage_pct"] == 75.0
+    assert {row["node_kind"] for row in summary.functional} == {
+        "Covergroup Variant", "Coverage Instance", "Coverage Point", "Cross Coverage",
+    }
+    assert [row["kind"] for row in summary.assertions] == [
+        "assertion", "cover_property",
+    ]
+    assert summary.assertions[0]["attempts"] == 3
+    assert summary.assertions[1]["coverage_pct"] == 0.0
+    assert not any(row["coverage_kind"] == "code" for row in summary.functional)
+
+
+def test_urg_export_uses_only_fixed_full64_command(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    database = tmp_path / "input.vdb"
+    database.mkdir()
+    executable = tmp_path / "vcs" / "bin" / "urg"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("urg test executable placeholder\n", encoding="utf-8")
+    executable.chmod(0o755)
+    report = tmp_path / "published"
+    observed: list[list[str]] = []
+
+    def recording_run(argv: list[str], **kwargs: object) -> SimpleNamespace:
+        observed.append(argv)
+        staging = Path(argv[argv.index("-report") + 1])
+        _write_urg_report(staging)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setenv("VCS_HOME", str(executable.parents[1]))
+    monkeypatch.setattr(subprocess, "run", recording_run)
+    summary = export_summary(database, report)
+    assert summary.tests == ("case_a",)
+    assert observed == [[
+        str(executable.resolve()), "-full64", "-dir", str(database.resolve()),
+        "-report", observed[0][5], "-xml_verbose", "-format", "text",
+        "-show", "summary",
+    ]]
+    coverage_source = (SKILL / "scripts/x_npi/coverage.py").read_text(encoding="utf-8")
+    urg_source = (SKILL / "scripts/x_npi/urg.py").read_text(encoding="utf-8")
+    assert "_safe_call" not in coverage_source
+    assert "coverage_items" not in coverage_source
+    assert "shutil.which" not in urg_source
+
+
+def test_exclusion_csv_is_strict_stable_and_preserves_multiline_reason(tmp_path: Path) -> None:
+    csv_root = tmp_path / "csv"
+    _write_csv_set(csv_root, reason="first line\nsecond line")
+    documents = parse_directory(csv_root)
+    assert documents[0].groups[0].rows[0]["reason"] == "first line\nsecond line"
+    first = format_directory(csv_root, write=True)
+    second = format_directory(csv_root, write=False)
+    assert any(row["status"] == "formatted" for row in first)
+    assert all(row["status"] == "current" for row in second)
+    bad = (csv_root / "code_exclusions.csv").read_text(encoding="utf-8").replace(
+        "rtl/design.sv", "../rtl/design.sv",
+    )
+    (csv_root / "code_exclusions.csv").write_text(bad, encoding="utf-8")
+    with pytest.raises(ExclusionCsvError, match="portable relative"):
+        parse_directory(csv_root)
+
+
+def test_csv_to_el_uses_fresh_contexts_and_publishes_three_native_files(tmp_path: Path) -> None:
+    csv_root = tmp_path / "csv"
+    _write_csv_set(csv_root)
+    native_test = RecordingExclusionTest()
+    targets: list[tuple[str, str, dict[str, object]]] = []
+
+    @contextmanager
+    def target_context(item: RecordingExclusionItem):
+        yield item
+
+    def resolver(kind: str, source_file: str, row: dict[str, object]):
+        targets.append((kind, source_file, row))
+        return target_context(RecordingExclusionItem())
+
+    published = compile_csv_to_el(native_test, csv_root, tmp_path / "el", resolver)
+    assert [row["coverage_kind"] for row in published] == [
+        "code", "functional", "assertion",
+    ]
+    assert [item[0] for item in targets] == ["code", "functional", "assertion"]
+    assert all(Path(row["path"]).read_text(encoding="utf-8") for row in published)
+    assert native_test.calls[-3:] == [
+        ("load", str(tmp_path / "el" / "code.el")),
+        ("load", str(tmp_path / "el" / "functional.el")),
+        ("load", str(tmp_path / "el" / "assertion.el")),
+    ]
 
 
 def test_value_and_json_helpers_are_deterministic() -> None:

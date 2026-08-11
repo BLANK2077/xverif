@@ -28,6 +28,14 @@ manager 为每个 session 启动独立 `tools/xcov --stdio-loop`（LSF 下即独
 处理才惰性加载 pynpi、打开 VDB 并执行必要遍历；真实 exclusion 需要 Synopsys
 license，受限沙箱内 license 可能不可达。
 
+离线 Python 自定义 coverage 报告也使用 x-npi 的 `x_npi.urg`：固定命令为
+`$VCS_HOME/bin/urg -full64 -dir <vdb> -report <staging> -xml_verbose -format text -show summary`，
+已有 exclusion 时只追加 `-elfile <el>`。Python NPI coverage wrapper 没有 bulk summary，必须按
+instance/metric/object/bin 全树遍历且容易重复计入 aggregate/leaf，因此不再用于 coverage read。
+x-npi 的 NPI coverage helper 只保留 exclusion target 遍历和 EL load/set/save/unload；CSV reason
+是 sidecar，原生 EL 无法无损转换回带 reason 的 CSV。`+` 仅能用于 URG help 明确声明的 metric
+list（如 `-show brief line+cond`），不能写成 `-show summary+tests` 组合多个信息类别。
+
 ## Exclusion 关键生命周期
 
 > **不要在持久化前关闭 session。** `exclude.add` 的 reason 仅保存在当前 session 内存中；

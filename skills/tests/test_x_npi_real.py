@@ -122,3 +122,41 @@ def test_x_npi_exclusion_helpers_against_real_vdb(
     ]
     assert result["after_load"] is True
     assert result["after_unload"] is False
+
+
+def test_x_npi_urg_reads_all_coverage_types_without_npi(
+    xverif_fixture: Any, tmp_path: Path,
+) -> None:
+    resources = xverif_fixture("xcov.exclusion")
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(SKILL / "scripts")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(EXAMPLES / "coverage_summary.py"),
+            "--vdb", str(resources / "exclusion.vdb"),
+            "--report", str(tmp_path / "urg-summary"),
+            "--limit", "200",
+        ],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=180,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr[-8000:] + "\n" + proc.stdout[-4000:]
+    document = json.loads(proc.stdout)
+    assert document["ok"] is True
+    assert document["summary"]["data_source"] == "urg_fixed_summary"
+    assert document["summary"]["npi_initialized"] is False
+    assert document["summary"]["tests"] == ["variant0", "variant1"]
+    assert document["summary"]["scope_count"] == 2
+    assert document["summary"]["functional_row_count"] == 8
+    assert document["summary"]["assertion_row_count"] == 2
+    assert document["summary"]["root_score_pct"] == 60.8961
+    kinds = {row["coverage_kind"] for row in document["data"]["items"]}
+    assert kinds == {"code", "functional", "assertion"}
+    assert "NPI - Native Programming Interface" not in proc.stdout
+    assert "NPI - Native Programming Interface" not in proc.stderr

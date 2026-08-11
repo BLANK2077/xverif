@@ -1,164 +1,130 @@
-# Coverage Analysis Patterns
+# Coverage：URG 读取，NPI 仅处理 exclusion
 
-使用 Verdi Python coverage wrapper 查询 VCS/Verdi coverage database，例如 `simv.vdb` 或 `merged.vdb`。这类脚本适合离线批量导出 coverage summary、holes、scope metrics 和 functional coverage bins。
+## 固定分工
 
-## When To Switch From xcov
+coverage 工作必须先区分读取与修改：
 
-优先用 xcov 做交互式查询：
+| 工作 | 正式入口 | 是否加载 pynpi |
+| --- | --- | --- |
+| test list、scope hierarchy、code/assert/functional summary | URG fixed summary | 否 |
+| code/assert/functional gap detail | 受 scope/metric 限定的 URG text detail | 否 |
+| EL load、report-time set/remove、save、unload | Python NPI | 是 |
+| 严格 CSV 校验/格式化 | `x_npi.exclusion_csv` | 否 |
+| CSV → EL | CSV parser + exclusion-only NPI resolver/compiler | 是 |
 
-- `scope.summary`、`scope.children`、`code_coverage.summary`、`code_coverage.holes` 看层次覆盖率。
-- `export.code_coverage` 为具体 instance 按 metric 导出 JSON/XOUT/raw URG bundle；其它 export action 按各自 schema 使用。
+Python NPI coverage wrapper 没有 bulk summary 或按任意 bin 名直达的稳定接口。读取一个大型 VDB
+必须执行 `database.instance_handles -> instance metric -> child_handles` 的全树递归，functional
+还要从 `testbench_metric_handle` 重新遍历；复杂度至少与所有 coverage handle 数量成正比，Python
+wrapper 调用和 handle release 成本很高。更危险的是中间 aggregate 与 leaf bin 同时出现，直接
+相加会重复计分并偏离 URG SCORE。
 
-切到 x-npi/pynpi 的场景：
+因此，**不要用 NPI 构造 coverage summary/export**。x-npi 中的 NPI coverage helper 已收缩为
+exclude-only；需要读取时使用 `x_npi.urg` 或直接使用 xcov。NPI 必须遍历的缺陷只在用户明确
+修改 exclusion 时承担，且 resolver 每行重新遍历、要求零/一/多匹配 fail-closed，不长期缓存
+handle。
 
-- 需要 JSON/CSV/数据库等非 Markdown 自定义输出。
-- 需要跨多个 VDB 或多个 report 做二次统计。
-- 需要自定义 hierarchy pruning、bin 聚合、排序或阈值策略。
-- 需要把 coverage 与 FSDB、RTL 静态结构或项目自定义映射表关联。
-- xcov 明确说明某个 URG 字段没有稳定 NPI API，不提供接口；不要从 URG HTML 反解析。
+## 推荐 URG 命令
 
-## Runtime
+固定 summary 命令：
 
-coverage API 入口：
-
-```python
-from pynpi import cov
-
-db = cov.open("simv.vdb")
+```bash
+"$VCS_HOME/bin/urg" \
+  -full64 \
+  -dir <absolute-vdb> \
+  -report <same-filesystem-staging-report> \
+  -xml_verbose \
+  -format text \
+  -show summary
 ```
 
-仍然必须先通过 `npisys.init(...)` 初始化；使用 skill helper 时：
+需要把已有 exclusion 应用于统计时，只追加：
+
+```bash
+-elfile <absolute-working.el>
+```
+
+`x_npi.urg.export_summary()` 严格解析 `$VCS_HOME/bin/urg`，不查询 `PATH`；目标 report 必须
+不存在。helper 在目标父目录创建随机 staging，运行 URG、校验六件套并解析 typed XML，成功后
+才发布目录；URG 失败不会切换 NPI、HTML 或其它 backend。
+
+```python
+from x_npi.urg import export_summary
+
+summary = export_summary(
+    "merged.vdb",
+    "coverage-report",
+    elfile="working.el",  # 可省略
+)
+rows = summary.rows(metrics=["line", "toggle", "assert", "functional"])
+```
+
+固定产物必须全部存在且非空：
+
+```text
+session.xml
+tests.txt
+dashboard.txt
+modlist.txt
+groups.txt
+asserts.txt
+```
+
+其中 `session.xml` 必须按 XML `type` 分开解析：code coverage 使用 instance subtree metric；
+assertion/cover property 与 functional covergroup/variant/instance/point/cross 是不同结构，不能套用
+code bin 模型。`tests.txt` 已包含 canonical merged test list，不再为 test list 启动第二次 URG。
+
+## 选项作用与边界
+
+| 选项 | 作用 | 不能推导的能力 |
+| --- | --- | --- |
+| `-full64` | 使用 64-bit URG；所有正式调用必带 | 不是可选性能 hint |
+| `-dir <vdb>` | 指定 coverage database | 不接受 FSDB/daidir |
+| `-report <dir>` | 指定完整 report 输出目录 | 应指向 staging，而非直接覆盖既有目标 |
+| `-xml_verbose` | 生成完整 typed instance/assert/functional XML | `-xml_advanced` 不能替代完整 typed tree |
+| `-format text` | 生成 tests/dashboard/modlist/groups/asserts 文本 | 单独使用会额外生成大型 modinfo/grpinfo |
+| `-show summary` | 只保留 summary 六件套，抑制 HTML/modinfo/grpinfo/hierarchy | 不支持 gap/bin/source detail |
+| `-metric <list>` | 在 URG 明确支持的 detail 模式中限制 metric | 不应把多个 action 各自启动 URG 当作 summary 优化 |
+| `-tests <file>` | URG test 选择 | 当前 merged summary API 不支持 per-test selector |
+| `-elfile <el>` | 在 URG report 中应用 opaque native exclusion | EL 不含 CSV reason |
+| `-show brief` | 适合限定的 uncovered detail export | 不适合 session summary cache |
+
+### `+` 的准确规则
+
+`+` 不是通用 `-show` suboption 连接符。以下形式在已验证版本中均返回
+`URG-US Unknown suboption`：
+
+```text
+-show summary+availabletests
+-show summary+tests
+-show summary+testrecords
+```
+
+只有 URG help 明确声明为 metric list 的位置才能使用 `+`，例如：
+
+```text
+-show brief line+cond
+```
+
+重复 `-show` 也不是可靠合并：`summary + availabletests` 会由 availabletests 主导并提前退出；
+`summary + tests` 的 tests 表示每个对象的 test attribution，不是 test list，并会扩大 XML；
+`summary + testrecords` 会增加 simulation record 表。普通 x-npi/xcov summary 不启用这些组合。
+
+## Summary 语义
+
+- 父 scope 直接使用 URG 提供的 subtree ratio，不再累计 descendants。
+- 单 metric `coverage_pct = covered / coverable * 100`。
+- 多 metric scope/root SCORE 是所选 metric pct 的算术平均；不要发布没有明确分母的跨 metric
+  `covered/coverable/missing`。
+- functional Group SCORE 按 URG typed XML 发布，不从 code coverage 结构推断。
+- 固定 summary 不支持 per-test attribution、code source-file/type 聚合、functional bin、源码
+  file/line 或完整 gap locator。缺字段就是不支持，不能静默回退 NPI traversal。
+
+## Exclusion-only NPI
 
 ```python
 from x_npi.runtime import pynpi_lifecycle
-from x_npi.coverage import open_covdb, close_covdb, merged_test_handle, coverage_items
-
-with pynpi_lifecycle([sys.argv[0]]):
-    db = open_covdb("simv.vdb")
-    try:
-        test = merged_test_handle(db)
-        rows = coverage_items(db, test=test, metrics=["line", "toggle"])
-    finally:
-        close_covdb(db)
-```
-
-## Common Handles
-
-常用 handle 方法：
-
-| API | 用途 |
-| --- | --- |
-| `db.test_handles()` | 列出 coverage tests |
-| `db.instance_handles()` | 顶层 instance handles |
-| `inst.instance_handles()` | 子层次 |
-| `inst.line_metric_handle()` | line coverage metric |
-| `inst.toggle_metric_handle()` | toggle coverage metric |
-| `inst.branch_metric_handle()` | branch coverage metric |
-| `inst.condition_metric_handle()` | condition coverage metric |
-| `inst.fsm_metric_handle()` | FSM coverage metric |
-| `inst.assert_metric_handle()` | assertion coverage metric |
-| `test.testbench_metric_handle()` | functional coverage metric |
-| `hdl.child_handles()` | coverage object 或 bin 子节点 |
-| `hdl.covered(test)` / `hdl.coverable(test)` | 覆盖对象数和可覆盖对象数 |
-| `hdl.count(test)` | hit/sample count |
-| `hdl.file_name()` / `hdl.line_no(test)` | source evidence |
-
-## Code Coverage
-
-遍历 code coverage 时，从 instance 进入 metric handle，再递归 `child_handles()` 到 object/bin：
-
-```python
-with pynpi_lifecycle([sys.argv[0]]):
-    db = open_covdb(args.vdb)
-    try:
-        test = merged_test_handle(db)
-        rows = coverage_items(
-            db,
-            test=test,
-            metrics=["line", "toggle", "branch", "condition", "fsm", "assert"],
-            scope=args.scope,
-        )
-    finally:
-        close_covdb(db)
-```
-
-直接使用 pynpi API 时，基本遍历形态如下。真实脚本应把 `VERDI_HOME`、`npisys.init/end`
-放进 `pynpi_lifecycle`，并在 finally 中释放 handle/关闭 db。
-
-```python
-from pynpi import cov
-
-db = cov.open("merged.vdb")
-test = None
-for th in db.test_handles():
-    test = th if test is None else cov.merge_test(test, th)
-
-for inst in db.instance_handles():
-    metric = inst.toggle_metric_handle()
-    if not metric:
-        continue
-    stack = list(metric.child_handles() or [])
-    while stack:
-        hdl = stack.pop()
-        row = {
-            "type": hdl.type(),
-            "name": hdl.name(),
-            "full_name": hdl.full_name(),
-            "covered": hdl.covered(test),
-            "coverable": hdl.coverable(test),
-            "count": hdl.count(test),
-            "file_name": hdl.file_name(),
-            "line_no": hdl.line_no(test),
-        }
-        children = hdl.child_handles() or []
-        stack.extend(children)
-```
-
-每行推荐输出：
-
-```json
-{
-  "metric": "line",
-  "type": "npiCovStmtBin",
-  "scope": "top.u_dut",
-  "name": "stmt_12",
-  "full_name": "top.u_dut.stmt_12",
-  "covered": 0,
-  "coverable": 1,
-  "missing": 1,
-  "coverage_pct": 0.0,
-  "count": 0,
-  "status": ["not_covered"],
-  "evidence": {"file": "rtl/dut.sv", "line": 12}
-}
-```
-
-## Functional Coverage
-
-functional coverage 从 test 的 `testbench_metric_handle()` 进入：
-
-```python
-rows = coverage_items(db, test=test, metrics=["functional"])
-```
-
-自定义导出时，按 covergroup 分块，再按 coverpoint/cross 下的 bin 输出。bin 自身没有
-file/line 时，使用最近父 covergroup/coverpoint/cross 的 evidence；不要编造 bin 的
-源码位置。
-
-Functional hierarchy 通常是：
-
-- covergroup
-- coverpoint 或 cross
-- bin
-
-cross bin 表示一个组合，不要拆成多个独立 bin。
-
-## Exclusion Management
-
-使用统一 helper 管理 pynpi exclusion API：
-
-```python
 from x_npi.coverage import (
+    close_covdb,
     load_exclusion_files,
     merged_test_handle,
     open_covdb,
@@ -167,41 +133,75 @@ from x_npi.coverage import (
     unload_exclusions,
 )
 
-db = open_covdb(vdb, strict=strict)
-test = merged_test_handle(db)
-load_exclusion_files(test, ["code.el", "functional.el", "assertion.el"])
-result = set_report_time_excluded(item, test, True)
-result = set_report_time_excluded(item, test, False)
-save_exclusion_file(test, "current.el")
-unload_exclusions(test)
+with pynpi_lifecycle(["exclude-job"]):
+    db = open_covdb("merged.vdb", strict=False)
+    try:
+        test = merged_test_handle(db)
+        load_exclusion_files(test, ["existing.el"])
+        # target 必须由当前 VDB traversal 唯一解析，使用后立即 release。
+        result = set_report_time_excluded(target, test, True)
+        save_exclusion_file(test, "working.el")
+        unload_exclusions(test)
+    finally:
+        close_covdb(db)
 ```
 
-- `set_report_time_excluded()` 内部执行 before、setter、after 复核，返回
-  `changed`、`already_in_state`、`immutable_compile_time` 或 `failed`；它只调用
-  `set_status_excluded_at_report_time(test, 1|0)`，不调用 `set_status_excluded()`。
-- `save_exclusion_file()` 固定使用 `save_exclude_file(path, "w")`；不要使用 `a/as/ws`，也不要读取、
-  拼接或改写原生 EL 文本。
-- `load_exclusion_files()` 先确认全部输入文件存在，再按给定顺序调用
-  `load_exclude_file`，由 pynpi 提供 union 语义。
-- `open_covdb(..., strict=True)` 只在 `cov.open` 时启用
-  `ExclusionInStrictMode`；不要启用或公开
-  `ExcludeByStmtLevel`。
-- `open_covdb()` 会先检查安装版本的真实签名：旧版 `cov.open(vdb)` 只支持默认模式，
-  新版 `cov.open(vdb, config_opt=0)` 才支持 strict。每次打开只调用一次，不用
-  `TypeError` 重试另一种签名。
-- exclusion handle 不跨 traversal 长期缓存。先用 metric/scope/type/traversal
-  identity 产生引用，写入前重新遍历并复核人类可读 identity 恰好匹配一次。
-- P0 只对 merged test 管理 exclusion。setter/load/save/unload 返回 `0` 时明确
-  失败，不解析 URG、不换 backend、不 fallback。
+- `open_covdb()` 先检查真实 `cov.open` 签名，每次只调用一次。旧版单参数只支持默认模式；
+  双参数版本才可传 `ExclusionInStrictMode`。不通过捕获 `TypeError` 换参数重试。
+- load 先验证全部 EL 是普通非 symlink 文件，再按给定顺序调用 `load_exclude_file`。
+- setter 固定调用 `set_status_excluded_at_report_time(test, 1|0)`，并核对 before/after。
+- save 固定使用 `save_exclude_file(path, "w")`；不得读取、拼接、格式化或追加 EL 文本。
+- unload 固定使用 `unload_exclusion()`。vendor 返回值不是成功值 `1` 时明确失败。
+- helper 不含 `_safe_call`，缺方法、签名错误、调用异常和非法返回全部直接报错；绝不改用无参
+  调用、吞异常或返回 `None`。
 
-## URG-Aligned Summary Semantics
+## CSV sidecar 与 CSV → EL
 
-- code coverage summary 要按 URG dashboard 的计分对象聚合，不能把中间层 object 和 leaf bin 同时相加。
-- Line 使用 `npiCovStmtBin`，Cond 使用 `npiCovConditionBin`，Toggle 使用 `npiCovToggleBin`，Branch 使用 `npiCovBranchBin`，FSM 使用 `npiCovTransBin`，Assert 使用 `npiCovAssert`、`npiCovCoverProperty`、`npiCovCoverSequence`。
-- 排除 `coverable < 0` 或 `covered < 0` 的统计辅助 bin，例如 assertion 的 Attempt/Success/Failure/Incomplete bins。
-- code coverage pct 必须用 `covered / coverable`；`count` 是 hit/sample count，不是覆盖率百分比。
-- functional Group 分数不是简单的 covergroup raw `covered / coverable`。URG group score 按 direct coverpoint/cross 的 coverage percentage 做平均；`x_npi.coverage.coverage_summary()` 的 `functional_groups[*].coverage_pct` 使用这个规则，raw ratio 保留在 `raw_covered/raw_coverable/raw_coverage_pct`。
-- hole 一般是 `covered < coverable` 或 `missing > 0`。
-- 保留 `excluded`、`unreachable`、`illegal`、`attempted` 等 status flags；这些状态会改变 hole 的解释。
-- bin 没有 file/line 时，继承最近父 coverage object 的 source evidence，并在输出中记录 `evidence_source.inherited=true`。
-- 真实 coverage 查询需要 Synopsys license；涉及真实 VDB 的验证按用户要求在沙箱外运行。
+三个 CSV 文件名和 schema 固定为：
+
+```text
+code_exclusions.csv       xcov-code-exclusions.v1
+functional_exclusions.csv xcov-functional-exclusions.v1
+assertion_exclusions.csv  xcov-assertion-exclusions.v1
+```
+
+CSV 使用 `# source_file=<portable-relative-path>` 的连续分组，`reason` 必填。parser 拒绝未知
+metadata、非精确 header、绝对/`..` source path、重复/非连续分组、重复 selector、非法 metric/
+assertion kind、超 64 MiB 文件、超 100,000 records、超 16 KiB field 和未闭合 multiline quote。
+formatter 稳定排序；write 模式使用同目录 staging 与失败回滚。
+
+```python
+from x_npi.exclusion_csv import validate_directory, format_directory
+
+validate_directory("coverage_exclusions")
+format_directory("coverage_exclusions", write=True)
+```
+
+`compile_csv_to_el()` 接受项目 resolver：
+
+```python
+from x_npi.coverage import compile_csv_to_el
+
+published = compile_csv_to_el(
+    test,
+    "coverage_exclusions",
+    "compiled_el",
+    resolve_target,
+)
+```
+
+`resolve_target(kind, source_file, row)` 必须返回 context manager，进入后只 yield 当前 traversal
+唯一匹配的一个 score handle，退出时 release。零匹配或多匹配必须抛错；compiler 不跨行缓存
+handle。转换先保存 baseline EL；任一 resolve/set/save/publish/load 失败都会恢复 native baseline
+和旧文件。成功输出 `code.el/functional.el/assertion.el` 并按该顺序 load。
+
+CSV 的 `reason` 只存在 sidecar，原生 EL 不保存 reason。因此：
+
+- CSV → EL 有定义；
+- EL load/save/unload 有定义；
+- **不支持无损 EL → CSV**，也不能为 EL 条目编造 reason；
+- dirty reason 必须先持久化 CSV，单独 save EL 不算 reason 已保存。
+
+可执行模板为 `scripts/examples/csv_to_el.py`。项目通过
+`--resolver MODULE:FACTORY` 提供 `(db,test)->resolver`，避免通用 helper 猜测 vendor/project-specific
+identity 或偷偷 fallback。

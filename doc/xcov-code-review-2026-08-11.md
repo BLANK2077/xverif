@@ -2009,3 +2009,63 @@ gate 只 resolve cache，缺失时拒绝，不在测试过程中自动 VCS 仿�
 提供独立 cache/log 根。连续运行 `xcov.unit -> testinfra.unit` 后仓库根不再生成带机器绝对
 路径的 cache manifest。此前产生的 runtime cache 均完整移动到 `xverif/tmp` 可恢复备份，
 没有删除用户数据。
+
+### 16.8 阶段 8：x-npi URG 读取与 exclusion-only NPI
+
+x-npi 的 coverage 能力已按与 xcov 相同的边界重构：所有 test list、hierarchy、code、assertion
+和 functional coverage 读取由新增的 `x_npi.urg` 完成；`x_npi.coverage` 不再导出
+`coverage_items`、`coverage_summary`、score-row 或 functional-tree read helper。原因不是接口偏好，
+而是 Python NPI coverage wrapper 没有 bulk summary：它必须逐层遍历
+`instance -> metric -> object -> bin`，functional 还要从 testbench metric 重新遍历，设计越大
+Python handle 调用和 release 成本越高，并且 aggregate 与 leaf 同时相加会重复计分。NPI 现在
+只承担 exclusion target 的必要唯一匹配遍历以及 EL load/set/save/unload。
+
+URG helper 只从规范化的 `$VCS_HOME/bin/urg` 启动，不查询 `PATH`，argv 固定为
+`-full64 -dir <absolute-vdb> -report <same-filesystem-staging> -xml_verbose -format text -show summary`；
+有原生 exclusion 时只追加 `-elfile <absolute-el>`。目标 report 必须尚不存在，helper 在同一
+父目录创建随机 staging，成功执行后先验证并解析 `session.xml/tests.txt/dashboard.txt/modlist.txt/
+groups.txt/asserts.txt` 六件套，再原子发布；失败不会切换 NPI、HTML 或其它数据源。
+
+真实 URG XML 复核再次证明三类结构不能共用 code ratio 模型：code 使用 `instance` 上的
+`Line/Cond/Toggle/FSM/Branch/Assert` subtree ratio；functional 使用 `Covergroup Variant`、
+`Coverage Instance`、`Coverage Point`、`Cross Coverage` 及各自 `Group/Point/Cross` metric；
+assertion 与 cover property 不含 ratio metric，而是 `attempt/success/failure/incomplete` 或
+`attempt/all match/mismatches/incomplete` 属性。parser 按 type 分支流式处理，父 scope 保留 URG
+subtree 数值；root functional Group 只选择 instance，缺 instance 时才选择 variant，避免两层
+重复计分。默认 root SCORE 是 code/assert/functional 各 metric 百分比的算术平均，真实
+`xcov.exclusion` VDB 得到 60.8961%，与 dashboard 的 60.90% 一致。
+
+固定 summary 的边界在 x-npi 与 xverif 两套 skill 中均已写明：它不伪造 per-test attribution、
+source evidence、functional bin 或 gap locator；需要 gap 时使用明确限定 scope/metric 的 URG
+text detail。`+` 不是通用 `-show` 信息连接符，`summary+availabletests/tests/testrecords` 均不支持；
+只有 URG help 声明的 metric list 才能使用，例如 `-show brief line+cond`。重复 `-show` 也不被
+当作可靠的信息合并机制。
+
+exclusion sidecar 新增严格的三文件 CSV parser/validator/formatter：文件和 schema 固定为
+`code_exclusions.csv/xcov-code-exclusions.v1`、
+`functional_exclusions.csv/xcov-functional-exclusions.v1`、
+`assertion_exclusions.csv/xcov-assertion-exclusions.v1`。parser 对 metadata、精确 header、portable
+source path、连续 group、selector 唯一性、metric/assertion kind、64 MiB、100,000 records、
+16 KiB field 和 multiline quote fail-closed；formatter 稳定排序并以同目录 staging、逆序回滚
+完成三文件事务。multiline quote 状态对每个 physical line 只扫描一次，不再发生反复拼接导致的
+O(N²)。
+
+`compile_csv_to_el()` 先保存 native baseline，然后对每个 CSV row 调用项目提供的
+`resolve_target(kind, source_file, row)`；resolver 必须返回只 yield 一个新鲜 traversal handle 的
+context manager，退出时释放，零匹配或多匹配必须失败，compiler 不跨行缓存 handle。任一
+resolve/set/save/publish/load 失败都会恢复 baseline 和旧 EL 文件；成功原子发布并按
+`code.el -> functional.el -> assertion.el` 顺序加载。CSV reason 只存在 sidecar，原生 EL 是 opaque
+native 状态，因此只支持 CSV→EL 与 EL load/save/unload，明确不支持无损 EL→CSV，也不编造 reason。
+原有 `_safe_call`、异常吞并、无参重试和替代签名 fallback 已全部移除。
+
+新增/更新示例为 `coverage_summary.py` 和 `csv_to_el.py`。前者 stdout 明确发布
+`data_source=urg_fixed_summary`、`npi_initialized=false` 和 typed row/count；后者要求显式
+`--resolver MODULE:FACTORY`，不由通用 helper 猜项目 identity。x-npi/xverif 的 SKILL、coverage
+reference 和 `agents/openai.yaml` 已同步。
+
+阶段门禁结果：`skills.x_npi` 17 passed、`skills.xverif` 16 passed、`skills.public_docs` 3 passed；
+host `skills.x_npi_real` 5 passed，覆盖真实 AXI/APB/stream FSDB、真实 NPI exclusion
+set/save/load/unload 和真实 URG code/assert/functional typed 读取。额外用正式 37.5 万行 fixture
+执行 x-npi URG 示例，得到 3,001 scope、30,000 个带 score 的 functional typed node、9,000 个
+assertion/cover-property node和 57,006 个公开 row，全程 `npi_initialized=false`。x-npi 与 xverif
+均已通过 Makefile 安装到 Codex/Claude，排除 manifest/cache 后四组 `diff -qr` 均为 0。
