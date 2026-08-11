@@ -127,7 +127,8 @@ def test_complex_modinfo_export_has_diverse_incomplete_branch_groups(xverif_fixt
                    for group in condition["condition_groups"])
         xor_group = next(
             group for group in condition["condition_groups"]
-            if group["condition"]["at"] == "lane_worker.sv:105"
+            if group["condition"]["expression"]
+            == "(request.data[(WIDTH - 1)] ^ request.data[(WIDTH - 2)])"
         )
         assert [term["expression"] for term in xor_group["terms"]] == [
             "request.data[(WIDTH - 1)]",
@@ -156,8 +157,8 @@ def test_complex_modinfo_export_has_diverse_incomplete_branch_groups(xverif_fixt
             for node in group["decision_path"]
             if node["kind"] == "ternary"
         ]
-        assert any(node["at"] == "lane_worker.sv:151" for node in ternary_nodes)
-        assert any(node["at"] == "lane_worker.sv:47" for node in ternary_nodes)
+        assert any("assign assign_features[3]" in node["source"] for node in ternary_nodes)
+        assert any("response_class <=" in node["source"] for node in ternary_nodes)
         branch_xout = (instance_dir / "branch.xout").read_text(encoding="utf-8")
         assert "\n  uncovered:\n" in branch_xout
         assert "\n\n  uncovered:\n" not in branch_xout
@@ -316,5 +317,71 @@ def test_export_gap_ids_are_excluded_without_database_traversal(xverif_fixture, 
         assert rejected["ok"] is False
         assert rejected["error"]["code"] == "EXCLUSION_APPLY_FAILED"
         assert "未生效任何条目" in rejected["error"]["message"]
+    finally:
+        session.close()
+
+
+def test_assert_and_functional_exports_are_structured_and_fully_excludable(xverif_fixture, tmp_path):
+    import json
+    from pathlib import Path
+
+    from xcov.actions import Dispatcher
+    from xcov.backend import NpiCoverageBackend
+    from xcov.session import SessionManager
+
+    resources = xverif_fixture("xcov.modinfo_complex")
+    vdb = resources / "complex.vdb"
+    sessions = SessionManager(
+        backend_factory=lambda path, **kwargs: NpiCoverageBackend(vdb=str(path))
+    )
+    session = sessions.open(str(vdb), name="structured_gaps", cache_dir=str(tmp_path))
+    dispatcher = Dispatcher(sessions=sessions)
+    exports = []
+    try:
+        payloads = {}
+        for action, metric, raw_name, prefix in (
+            ("export.assert", "assert", "asserts.txt", "A"),
+            ("export.functional_coverage", "functional", "grpinfo.txt", "FC"),
+        ):
+            output = tmp_path / metric
+            response = dispatcher.dispatch({
+                "api_version": "xcov.v1", "request_id": f"export-{metric}",
+                "action": action, "target": {"session_id": session.session_id},
+                "args": {"output": {"path": str(output)}},
+            })
+            assert response["ok"] is True, json.dumps(response, ensure_ascii=False, indent=2)
+            assert (output / raw_name).is_file()
+            payload = json.loads((output / f"{metric}.json").read_text(encoding="utf-8"))
+            xout = (output / f"{metric}.xout").read_text(encoding="utf-8")
+            assert xout.startswith("gap_id\tscope\tkind\tname")
+            assert payload["gap_count"] == len(payload["gaps"])
+            assert payload["gap_count"] > 10
+            assert [gap["gap_id"] for gap in payload["gaps"]] == [
+                f"{prefix}{index:04d}" for index in range(1, payload["gap_count"] + 1)
+            ]
+            assert len({gap["scope"] for gap in payload["gaps"]}) > 1
+            payloads[metric] = payload
+            exports.append({
+                "path": str(output / f"{metric}.json"),
+                "items": [
+                    {"gap_id": gap["gap_id"], "reason": f"验证 {metric} 结构化 gap"}
+                    for gap in payload["gaps"]
+                ],
+            })
+
+        functional_groups = {gap["covergroup"] for gap in payloads["functional"]["gaps"]}
+        assert any("lane_instance_cg" in group for group in functional_groups)
+        assert any("lane_aggregate_cg" in group for group in functional_groups)
+        assert any(group == "top::traffic_cg" for group in functional_groups)
+        excluded = dispatcher.dispatch({
+            "api_version": "xcov.v1", "request_id": "exclude-structured-gaps",
+            "action": "exclude.add", "target": {"session_id": session.session_id},
+            "args": {"exports": exports},
+        })
+        assert excluded["ok"] is True, json.dumps(excluded, ensure_ascii=False, indent=2)
+        assert excluded["summary"]["failed_gap_count"] == 0
+        assert excluded["summary"]["successful_gap_count"] == sum(
+            payload["gap_count"] for payload in payloads.values()
+        )
     finally:
         session.close()

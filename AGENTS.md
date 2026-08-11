@@ -316,6 +316,12 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 
 ### 2026-08-11 环境错误复盘
 
+- 错误现象：生成真实 URG 样例时，把删除旧临时目录与 URG 调用组合在同一命令，整条命令在启动 EDA 工具前被安全策略拒绝。
+- 误判原因：没有把可选清理与必需的只新增诊断动作隔离，导致无关的删除动作阻断正式工具调用。
+- 以后规则：诊断报告统一写入新的时间戳目录；不为复用目录先做删除，清理作为独立且明确授权的后续动作。
+
+### 2026-08-11 环境错误复盘
+
 - 错误现象：为验证 toggle coverage 能否按名直达，向 pynpi L0 `cov_l0.handle_by_name` 传入 signal 名后触发 vendor `libNPI.so` SIGSEGV；后续只读方法探测的清理代码又误调用了不存在的 `Handle.release()`。
 - 误判原因：只依据 C header 中通用的 `scope` 参数推断 coverage object 可按名查询，没有先遵守 Python wrapper 明确限定的“database 上按 instance fullname 查询”合同；同时未复用仓库已有的 `release_if_handle` 生命周期入口。
 - 以后规则：Python coverage 的 `handle_by_name` 只用于 database instance fullname；不得用 L0 绕过 wrapper 尝试 signal/bin 查询。临时 NPI probe 也统一通过 backend 的 handle release helper 清理，不猜测 wrapper 方法。
