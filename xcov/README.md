@@ -86,6 +86,17 @@ xverif_cov_get_schema
 - `XVERIF_XCOV_VERDI_HOME`：覆盖 `VERDI_HOME`。
 - `XVERIF_XCOV_LOG_DIR`：覆盖日志目录。
 - `XVERIF_XCOV_LOG=0`：关闭日志。
+- `XVERIF_XCOV_CACHE_DIR`：覆盖默认 `.xverif/xcov/cache` 根目录；summary entry
+  位于其 `urg-summary/` 子目录。
+- `XVERIF_XCOV_CACHE_MAX_BYTES`：cache 总字节上限，默认 20 GiB。
+- `XVERIF_XCOV_CACHE_MAX_ENTRIES`：cache entry 上限，默认 128。
+
+固定 URG summary 使用内容寻址 cache。key 包含 VDB 内容 hash、可选 run-manifest
+hash、URG 绝对路径/release/文件身份、固定 argv、parser/cache version、merged selection
+和当前 EL hash。每个 entry 校验六文件 hash/size 与 semantic counts；per-key `fcntl`
+锁保证并发 miss 只执行一次 URG，完成后经 fsync 和 atomic rename 发布。损坏 entry
+隔离后重建，超过 24 小时的 abandoned staging 才清理。`session.status` 的
+`cached_indexes.state/key/hit` 可观察当前 index 和 cold/warm 状态。
 
 ## 常用请求
 
@@ -292,8 +303,10 @@ Python NPI 层只把文档定义的 SDK “不适用”返回值映射为 `null`
   hierarchy 名称和快速查看当前覆盖率。
 - `code_coverage.summary`：只支持按 `metric` 或 `scope` 汇总代码覆盖率；不输出
   name/full_name/functional_pct，不支持 source file/type summary。
-- `export.code_coverage`：详细 code coverage 导出，每次调用触发一次 URG，尽量一次提交
-  多个要查看的 instance。按 scope 分目录，按 metric 输出 JSON/XOUT/raw URG text。
+- `export.code_coverage`：详细 code coverage 导出；首次读取同一内容身份时生成 URG
+  summary，后续命中缓存。尽量一次提交多个要查看的 instance。按 scope 分目录、按 metric
+  输出 JSON/XOUT；完整 URG 原文只在
+  bundle 根目录的 `raw/modinfo.urg.txt` 保存一份，各 metric 通过相对路径引用。
 - `functional_coverage.summary`：按 covergroup、coverpoint 或 cross 汇总功能覆盖率，
   不输出 metric/name/full_name/score_basis/score_item_count/raw_* 字段，包括
   raw_coverage_pct；summary 不提供 bin 级结构。
@@ -312,7 +325,8 @@ Python NPI 层只把文档定义的 SDK “不适用”返回值映射为 `null`
 
 `export.code_coverage` 不输出 Markdown。它要求 `scopes` 指定一个或多个具体 elaborated
 instance，在 `output.path` 下建立秒级时间戳目录，并为每个 instance、每个请求 metric
-分别输出 JSON、XOUT 和原始 URG text。`navigation.json/xout` 使用总体 `session.xml`
+分别输出 JSON 和 XOUT；`xcov_code_coverage_bundle.v2` 只在根目录保存一份
+`raw/modinfo.urg.txt`。`navigation.json/xout` 使用总体 `session.xml`
 提供直接子实例的 subtree 统计；metric detail 严格只表示所选 instance 自身。
 
 Line 与 condition detail 使用 v2 分组合同：line 只列出存在缺口的过程块，以 context 表

@@ -64,7 +64,8 @@ assert summary：
 {"api_version":"xcov.v1","action":"assert.summary","target":{"session_id":"cov0"}}
 ```
 
-code coverage export（**每次 export 触发一次 URG，尽量一次提交多个 instance**）：
+code coverage export（首次读取同一 VDB/selection/EL 时生成并缓存固定 URG summary；
+后续命中缓存，不再次调用 URG）：
 
 ```json
 {"api_version":"xcov.v1","action":"export.code_coverage","target":{"session_id":"cov0"},"args":{"scopes":["uart_tb.u_uart"],"metrics":["line","toggle"],"output":{"path":"coverage_artifacts"}}}
@@ -129,9 +130,10 @@ assert export（输出目录内保留 `asserts.txt`，并生成 `assert.json`、
   `grpinfo.txt`/`asserts.txt` 摘要。
 - functional/assert XOUT 第一行是字段表头，后续每行一个未覆盖 gap；用 scope、kind、name、
   covergroup、coverpoint、cross、bin 判断具体需要补哪种激励，不要只按 gap 数压缩。
-- `export.code_coverage` 不输出 Markdown。它为每个具体 instance 建立独立目录，按 metric
-  输出 JSON、XOUT 和原始 URG text；先读 `navigation.xout` 选择子层级，再读 metric XOUT
-  获取目标 instance 自身的具体缺口。
+- `export.code_coverage` 不输出 Markdown。bundle v2 为每个具体 instance 建立独立目录，
+  按 metric 输出 JSON/XOUT；所有 metric 共同引用 bundle 根目录唯一的
+  `raw/modinfo.urg.txt`，不再复制相同 URG 原文。先读 `navigation.xout` 选择子层级，再读
+  metric XOUT 获取目标 instance 自身的具体缺口。
 - branch 使用 `xcov.code_coverage.branch.v2`：相同 decision path 的缺口合并为一个 group，
   先用字段表描述 marker 对应的源码 decision，随后紧接真值表列出各 `gap_id` 的
   marker value；这些行均为未覆盖缺口，因此不重复输出固定的 status 列；`-` 表示该
@@ -170,6 +172,13 @@ assert export（输出目录内保留 `asserts.txt`，并生成 `assert.json`、
 ## 排障
 
 - 普通查询失败：检查 URG、VDB 和固定六件套错误，不要切换到 NPI fallback。
+- URG summary 默认缓存于 `.xverif/xcov/cache/urg-summary`；可用
+  `XVERIF_XCOV_CACHE_DIR` 指定共享可见的绝对缓存根。`session.status` 的
+  `cached_indexes.state/key/hit` 可区分尚未读取、cold miss 与 warm hit。
+- cache key 包含 VDB 内容、run manifest、URG provenance/固定参数、merged selection 和
+  EL 内容；EL 变更会生成新 key。损坏 entry 会被隔离并重新生成，不会降级为 NPI 读取。
+- 缓存默认最多 20 GiB/128 entries，可用 `XVERIF_XCOV_CACHE_MAX_BYTES` 和
+  `XVERIF_XCOV_CACHE_MAX_ENTRIES` 调整；生成中的 locked entry 不会被 LRU 驱逐。
 - exclusion 的 license/NPI 错误：在沙箱外确认 Verdi/NPI 和 license server。
 - action 参数不确定：先用原生 `actions` 和 `schema` action 查询。
 - 大结果：设置 limit，必要时 `overflow:"to_file"` 或 output path。

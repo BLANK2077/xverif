@@ -32,7 +32,7 @@ from .protocol import (
     ok_response,
     validate_action_token,
 )
-from .provenance import validate_run_manifest
+from .provenance import resource_sha256, validate_run_manifest
 from .query import (apply_output, coverage_pct, filter_items, filters_summary,
                     query_args, resolve_artifact_path, sort_items)
 from .schemas import (
@@ -213,6 +213,21 @@ if set(ACTION_REGISTRY) != set(schema_actions()):
 if any(name != contract.name for name, contract in ACTION_REGISTRY.items()):
     raise RuntimeError("xcov action registry keys and bound contracts are inconsistent")
 
+COVERAGE_READ_ACTIONS = {
+    "session.status",
+    "tests.list",
+    "metrics.list",
+    "scope.summary",
+    "scope.children",
+    "scope.search",
+    "code_coverage.summary",
+    "functional_coverage.summary",
+    "assert.summary",
+    "export.code_coverage",
+    "export.functional_coverage",
+    "export.assert",
+}
+
 
 def _safe_error_response(req: Json, exc: XcovError) -> Json:
     detail = dict(exc.detail)
@@ -255,7 +270,10 @@ class Dispatcher:
             action = normalized["action"]
             handler = getattr(self, contract.handler)
             if contract.needs_session:
-                rsp = handler(normalized, self._session(normalized))
+                session = self._session(normalized)
+                if action in COVERAGE_READ_ACTIONS:
+                    session.prepare_coverage_read()
+                rsp = handler(normalized, session)
             else:
                 rsp = handler(normalized)
             contract.validate_response(rsp)
@@ -335,12 +353,17 @@ class Dispatcher:
             raise XcovError("VDB_OPEN_FAILED", "target.vdb is required")
         self.sessions.require_available(args.get("name"))
         manifest_details = validate_run_manifest(target)
+        manifest_digest = (
+            resource_sha256(Path(target["run_manifest"]).resolve(strict=True))
+            if target.get("run_manifest") else None
+        )
         cache_dir = args.get("cache_dir") or target.get("cache_dir")
         sess = self.sessions.open(
             str(vdb),
             name=args.get("name"),
             exclusion_policy=str(args.get("exclusion_policy", "default")),
             cache_dir=str(cache_dir) if cache_dir else None,
+            run_manifest_digest=manifest_digest,
         )
         session_json = sess.public_json()
         update_session_manifest(sess.session_id, session_json)
@@ -361,13 +384,15 @@ class Dispatcher:
         return ok_response(
             req,
             completeness_summary(1, 1),
-            {"session": sess.public_json(), "cached_indexes": "lazy"},
+            {"session": sess.public_json(), "cached_indexes": sess.cache_status()},
         )
 
     def _session_close(self, req: Json) -> Json:
         sid = req.get("target", {}).get("session_id")
-        sess = self.sessions.close(str(sid))
+        sess = self.sessions.get(str(sid))
         session_json = sess.public_json()
+        self.sessions.close(str(sid))
+        session_json["state"] = "closed"
         update_session_manifest(sess.session_id, session_json)
         return ok_response(
             req,
@@ -604,12 +629,7 @@ class Dispatcher:
             raise XcovError("SCOPE_NOT_FOUND", "scope is not an elaborated coverage instance",
                             scopes=missing)
         top_scopes = [row["full_name"] for row in sess.backend.top_scopes()]
-        children = {
-            scope: sorted(
-                row["full_name"] for row in scope_rows if row.get("parent") == scope
-            )
-            for scope in scopes
-        }
+        children = _selected_scope_children(scope_rows, scopes)
 
         # Build combined hier file: all scopes in one, no per-scope URG loop
         combined_hier_lines: list = [f"-tree {top}" for top in top_scopes]
@@ -654,6 +674,11 @@ class Dispatcher:
 
         items: List[Json] = []
         try:
+            raw_dir = stage_dir / "raw"
+            raw_dir.mkdir()
+            shared_raw_name = "modinfo.urg.txt"
+            (raw_dir / shared_raw_name).write_text(combined_text, encoding="utf-8")
+            raw_reference = f"../raw/{shared_raw_name}"
             for scope_index, scope in enumerate(scopes, 1):
                 instance_dir = stage_dir / f"instance-{scope_index:04d}"
                 instance_dir.mkdir()
@@ -664,7 +689,6 @@ class Dispatcher:
                 )
                 metric_artifacts = []
                 for metric in metrics:
-                    raw_name = f"{metric}.urg.txt"
                     try:
                         payload = parse_metric_report(combined_text, scope, metric)
                         payload["exclusion_locator"] = {
@@ -676,18 +700,17 @@ class Dispatcher:
                             "URG_DETAIL_PARSE_INCOMPLETE", error.reason,
                             scope=scope, metric=metric,
                         ) from error
-                    (instance_dir / raw_name).write_text(combined_text, encoding="utf-8")
                     json_name = f"{metric}.json"
                     xout_name = f"{metric}.xout"
                     write_json(instance_dir / json_name, payload)
                     (instance_dir / xout_name).write_text(
-                        render_metric_xout(payload, raw_name), encoding="utf-8"
+                        render_metric_xout(payload, raw_reference), encoding="utf-8"
                     )
                     metric_artifacts.append({
                         "metric": metric,
                         "json": json_name,
                         "xout": xout_name,
-                        "raw": raw_name,
+                        "raw": raw_reference,
                     })
                 items.append({
                     "scope": scope,
@@ -708,7 +731,7 @@ class Dispatcher:
             "metrics": metrics,
             "output_mode": "file",
             "output_dir": str(final_dir),
-            "artifact_format": "xcov_code_coverage_bundle.v1",
+            "artifact_format": "xcov_code_coverage_bundle.v2",
             "total_count": len(items),
             "returned_count": len(items),
             "response_truncated": False,
@@ -1739,10 +1762,25 @@ def _scope_parent(full_name: str) -> Optional[str]:
     return full_name.rsplit(".", 1)[0]
 
 
-def _scope_ancestors(scope: str) -> Iterable[str]:
-    parts = str(scope).split(".")
-    for idx in range(1, len(parts) + 1):
-        yield ".".join(parts[:idx])
+def _selected_scope_children(
+    scope_rows: List[Json],
+    selected_scopes: List[str],
+    operation_counter: Optional[Json] = None,
+) -> Dict[str, List[str]]:
+    adjacency: Dict[str, List[str]] = defaultdict(list)
+    scans = 0
+    for row in scope_rows:
+        scans += 1
+        parent = row.get("parent")
+        if isinstance(parent, str):
+            adjacency[parent].append(row["full_name"])
+    result: Dict[str, List[str]] = {}
+    for scope in selected_scopes:
+        scans += 1
+        result[scope] = sorted(adjacency.get(scope, []))
+    if operation_counter is not None:
+        operation_counter["scope_index_operations"] = scans
+    return result
 
 
 def _indexed_scopes(scopes: List[Json]) -> Dict[str, Json]:
@@ -1791,40 +1829,6 @@ def _scope_children_rows(scopes: Dict[str, Json], coverage: Dict[str, Json], arg
             selected = row["depth"] == 0
         if selected:
             out.append(_merge_scope_coverage(row, coverage.get(full)))
-    return out
-
-
-def _scope_coverage(items: List[Json], metrics: List[str]) -> Dict[str, Json]:
-    grouped: Dict[str, Dict[str, List[Json]]] = defaultdict(lambda: defaultdict(list))
-    for item in items:
-        scope = item["scope"]
-        if scope is None:
-            continue
-        metric = item["metric"]
-        for ancestor in _scope_ancestors(scope):
-            grouped[ancestor][metric].append(item)
-    out: Dict[str, Json] = {}
-    for scope, by_metric in grouped.items():
-        metric_rows = []
-        total_covered = 0
-        total_coverable = 0
-        for metric in metrics:
-            subset = by_metric.get(metric, [])
-            if metric == "functional":
-                subset = _functional_summary_level_rows(subset, "covergroup")
-            if not subset:
-                continue
-            coverable = sum(i["coverable"] for i in subset)
-            covered = sum(i["covered"] for i in subset)
-            total_covered += covered
-            total_coverable += coverable
-            metric_rows.append({"metric": metric, "covered": covered, "coverable": coverable,
-                                "missing": coverable - covered,
-                                "coverage_pct": coverage_pct(covered, coverable)})
-        out[scope] = {"covered": total_covered, "coverable": total_coverable,
-                      "missing": total_coverable - total_covered,
-                      "coverage_pct": coverage_pct(total_covered, total_coverable),
-                      "metrics": metric_rows}
     return out
 
 

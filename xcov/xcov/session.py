@@ -61,8 +61,19 @@ class XcovSession:
             "exclusion_policy": self.exclusion_policy,
         }
 
+    def cache_status(self) -> Json:
+        info = self.backend.cache_info
+        if info is None:
+            return {"state": "lazy", "key": None, "hit": None}
+        return {
+            "state": "ready",
+            "key": info.get("key"),
+            "hit": info.get("hit"),
+        }
+
     def mark_exclusion_dirty(self) -> None:
         self._el_dirty = True
+        self.backend.invalidate_summary()
 
     def set_el_path(self, path: Optional[str]) -> None:
         self._el_path = path
@@ -92,7 +103,12 @@ class XcovSession:
             self.backend.save_exclusions(new_path, test="merged")
             self._el_path = new_path
             self._el_dirty = False
+            self.backend.set_summary_exclusion(new_path)
         return self._el_path
+
+    def prepare_coverage_read(self) -> None:
+        if self._el_dirty:
+            self.ensure_el_ready()
 
     @property
     def el_file_arg(self) -> list:
@@ -133,6 +149,7 @@ class SessionManager:
         name: Optional[str] = None,
         exclusion_policy: str = "default",
         cache_dir: Optional[str] = None,
+        run_manifest_digest: Optional[str] = None,
     ) -> XcovSession:
         sid = self.require_available(name)
         if cache_dir is not None:
@@ -149,10 +166,22 @@ class SessionManager:
                     "cache_dir is not writable",
                     cache_dir=cache_dir,
                 )
+        session_cache_dir = cache_dir
+        if session_cache_dir is None:
+            session_cache_path = (
+                Path.cwd().resolve() / ".xverif" / "xcov" / "cache" /
+                "sessions" / sid
+            )
+            session_cache_path.mkdir(parents=True, exist_ok=True)
+            session_cache_dir = str(session_cache_path)
         log_lifecycle_event(sid, "session.open.begin", True, {"vdb": vdb})
         backend = self._backend_factory(vdb, exclusion_policy=exclusion_policy)
         if hasattr(backend, "exclusion_policy"):
             backend.exclusion_policy = exclusion_policy
+        if cache_dir is not None and hasattr(backend, "urg_cache_dir"):
+            backend.urg_cache_dir = str(Path(cache_dir).resolve() / "urg-summary")
+        if hasattr(backend, "run_manifest_digest"):
+            backend.run_manifest_digest = run_manifest_digest
         if not isinstance(backend, CoverageBackend):
             raise XcovError(
                 "BACKEND_CONTRACT_VIOLATION",
@@ -179,7 +208,7 @@ class SessionManager:
             backend=canonical_backend,
             worker=worker,
             exclusion_policy=exclusion_policy,
-            cache_dir=cache_dir,
+            cache_dir=session_cache_dir,
         )
         self.sessions[sid] = sess
         log_lifecycle_event(sid, "session.open.ok", True, {"vdb": vdb, "worker": worker})

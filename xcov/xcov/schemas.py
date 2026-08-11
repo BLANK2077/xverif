@@ -894,7 +894,11 @@ SCHEMAS: Dict[str, Json] = {
         _completeness_summary(),
         _object({
             "session": SESSION,
-            "cached_indexes": {"const": "lazy"},
+            "cached_indexes": _object({
+                "state": _string(enum=["lazy", "ready"]),
+                "key": NULLABLE_STRING,
+                "hit": {"oneOf": [_bool(), {"type": "null"}]},
+            }, required=["state", "key", "hit"]),
         }, required=["session", "cached_indexes"]),
     ),
     "session.close": _schema_entry(
@@ -1071,7 +1075,7 @@ SCHEMAS: Dict[str, Json] = {
             "metrics": _string_array(),
             "output_mode": {"const": "file"},
             "output_dir": _string(min_length=1),
-            "artifact_format": {"const": "xcov_code_coverage_bundle.v1"},
+            "artifact_format": {"const": "xcov_code_coverage_bundle.v2"},
         }),
         _items_data(_object({
             "scope": _string(min_length=1),

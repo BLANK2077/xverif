@@ -1754,7 +1754,7 @@ pytest --xverif-prepare <fixture-id>
 验收结果：`xcov.unit` 127 passed，host `xcov.urg_backend` 7 passed，
 `skills.xverif` 16 passed。
 
-### 16.2 阶段 2：URG-only session 与 exclude-only lazy NPI（实施中）
+### 16.2 阶段 2：URG-only session 与 exclude-only lazy NPI
 
 本阶段实码审计确认，旧边界比“构造函数立即 import pynpi”更深：
 
@@ -1796,3 +1796,41 @@ pytest --xverif-prepare <fixture-id>
   `exclude.add` 后才变为 `true`；
 - 两次 vendor 139 已通过 core stack 定位并形成前置 scope gate 与禁止 status-probe 的
   产品约束，不作为可接受测试结果；最终阶段仍需重新运行全部关联门禁。
+
+提交 `703b0c6` 已完成本阶段闭环。
+
+### 16.3 阶段 3：内容寻址缓存与线性聚合
+
+本阶段实现默认位于 `.xverif/xcov/cache/urg-summary` 的内容寻址 URG summary cache。
+cache key 不依赖 VDB 路径或 mtime 的表象，而包含 VDB 资源内容摘要、可选 run manifest
+摘要、URG 绝对路径/版本/文件身份、固定 argv、merged selection、parser/cache 版本以及
+可选 EL 内容摘要。相同输入只生成一次；EL 或 run manifest 内容改变均产生不同 key。
+
+发布协议采用每 key `flock`、同文件系统 sibling staging、六件套严格解析、artifact
+SHA-256/size 与语义计数 manifest、文件和目录 `fsync`、原子 rename 以及最后写入的
+`COMPLETE` marker。读取时重新验证 manifest 和六件套哈希；损坏 entry 被隔离后重新生成，
+不会被当作命中，也不会回退到 NPI。并发 cold miss 的两个调用者只允许一个真正执行 URG。
+
+资源治理包括：默认 20 GiB/128 entries LRU、全局 eviction lock、正在生成或被读取的
+per-key lock 保护、24 小时 abandoned staging 清理以及可配置的 bytes/entries 上限。
+缓存返回前已把 immutable typed IR 全量解析到内存，session 后续不再读取 entry 文件，
+因此释放 key lock 后不需要额外 pin；LRU 删除磁盘 entry 不会影响 live session。
+
+同时完成三项热点修复：
+
+- scope 导出先一次建立 selected-parent adjacency，再生成 navigation，操作数从逐 scope
+  扫描全集的 O(N²) 降为严格 2N；1,000/10,000 scope 门禁分别验证 2,000/20,000 次操作；
+- 删除未被合同使用且会重复累加 ancestor 的 `_scope_coverage` 路径，父 scope 继续直接采用
+  URG subtree 数值；
+- code export bundle 升级为 v2，所有 scope/metric JSON 和 XOUT 共用唯一
+  `raw/modinfo.urg.txt`，不再为每个 metric 复制相同原文；session close 先读取已有状态快照，
+  不会为关闭动作触发一次 URG。
+
+真实复杂 fixture 实测：旧导出 10 份重复 raw、总计 1,257,575 bytes；新 bundle 仅一份
+110,780-byte raw、总计 264,735 bytes，体积减少约 79%。同一 VDB 的固定 summary cold
+耗时 0.894242 秒，warm hit 为 0.017770 秒，约 50 倍加速；两次状态使用相同 key，且
+`hit` 依次为 false/true。
+
+阶段门禁结果：`xcov.unit` 136 passed，host `xcov.urg_backend` 7 passed，host
+`xcov.modinfo_complex` 5 passed，`skills.xverif` 16 passed；全部使用正式 catalog focused
+入口并通过。

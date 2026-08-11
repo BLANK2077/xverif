@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from xcov.actions import ACTION_REGISTRY, Dispatcher
+from xcov.actions import ACTION_REGISTRY, Dispatcher, _selected_scope_children
 from xcov import cli as xcov_cli
 from xcov.backend import (
     CanonicalCoverageBackend,
@@ -80,6 +80,19 @@ from xcov.session import SessionManager, XcovSession
 
 ROOT = Path(__file__).resolve().parents[2]
 XCOV = ROOT / "tools" / "xcov"
+
+
+@pytest.mark.parametrize("size", [1_000, 10_000])
+def test_scope_child_index_operation_count_is_linear(size):
+    rows = [{
+        "full_name": "top" if index == 0 else f"top.u{index}",
+        "parent": None if index == 0 else "top",
+    } for index in range(size)]
+    selected = [row["full_name"] for row in rows]
+    counter = {}
+    children = _selected_scope_children(rows, selected, counter)
+    assert counter["scope_index_operations"] == 2 * size
+    assert len(children["top"]) == size - 1
 
 
 def _data_pointer(suffix: str = "") -> str:
@@ -527,7 +540,11 @@ def test_urg_backend_initializes_npi_only_for_exclusion(monkeypatch, tmp_path):
         functional_rows=(),
         assertion_rows=(),
     )
-    monkeypatch.setattr(backend_module, "_load_urg_summary", lambda _vdb: index)
+    monkeypatch.setattr(
+        backend_module,
+        "load_cached_urg_summary",
+        lambda _vdb, **_kwargs: (index, {"key": "unit", "hit": False}),
+    )
     created = []
 
     def npi_factory(vdb, **kwargs):
@@ -547,6 +564,35 @@ def test_urg_backend_initializes_npi_only_for_exclusion(monkeypatch, tmp_path):
     assert len(created) == 1
     assert backend.npi_initialized is True
     backend.close()
+
+
+def test_session_close_uses_pre_close_snapshot_without_backend_read():
+    class CloseSensitiveBackend(_TestBackend):
+        def __init__(self, vdb, exclusion_policy="default"):
+            super().__init__(vdb, exclusion_policy)
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+        def summary(self):
+            if self.closed:
+                raise AssertionError("closed backend must not be queried")
+            return super().summary()
+
+    dispatcher = Dispatcher(SessionManager(backend_factory=CloseSensitiveBackend))
+    opened = dispatcher.dispatch({
+        "api_version": "xcov.v1", "request_id": "open-close-sensitive",
+        "action": "session.open", "target": {"vdb": "close-sensitive.vdb"},
+        "args": {"name": "cov0"},
+    })
+    assert opened["ok"] is True
+    closed = dispatcher.dispatch({
+        "api_version": "xcov.v1", "request_id": "close-sensitive",
+        "action": "session.close", "target": {"session_id": "cov0"},
+    })
+    assert closed["ok"] is True
+    assert closed["data"]["session"]["state"] == "closed"
 
 
 def test_schema_registry_covers_all_p0_actions():
@@ -753,6 +799,9 @@ def test_response_completeness_is_bound_to_returned_items():
         "action": "session.status",
         "target": {"session_id": "cov0"},
     })
+    assert session_rsp["data"]["cached_indexes"] == {
+        "state": "lazy", "key": None, "hit": None,
+    }
     for action, singleton in (
         ("schema", schema_rsp),
         ("session.status", session_rsp),

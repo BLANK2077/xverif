@@ -27,8 +27,8 @@ from .coverage_contract import (
 from .eda import import_pynpi
 from .errors import XcovError
 from .logging import log_lifecycle_event
-from .urg_runner import UrgRunner
-from .urg_summary import UrgSummaryIndex, parse_urg_summary
+from .urg_summary import UrgSummaryIndex
+from .urg_cache import load_cached_urg_summary
 
 Json = Dict[str, Any]
 
@@ -100,32 +100,20 @@ def _semantic_gap_key(metric: str, row: Json) -> tuple[Any, ...]:
     )
 
 
-def _load_urg_summary(vdb: str) -> UrgSummaryIndex:
-    with tempfile.TemporaryDirectory(prefix=".xcov-urg-") as report_dir:
-        result = UrgRunner().run(
-            [
-                "urg",
-                "-full64",
-                "-dir",
-                vdb,
-                "-report",
-                report_dir,
-                "-xml_verbose",
-                "-format",
-                "text",
-                "-show",
-                "summary",
-            ],
-            timeout=300,
-        )
-        if result.returncode != 0:
-            raise XcovError(
-                "URG_SUMMARY_FAILED",
-                "URG summary generation failed",
-                returncode=result.returncode,
-                stderr_tail=result.stderr[-500:],
-            )
-        return parse_urg_summary(report_dir)
+def _load_urg_summary(
+    vdb: str,
+    *,
+    cache_root: str | None = None,
+    el_path: str | None = None,
+    run_manifest_digest: str | None = None,
+) -> UrgSummaryIndex:
+    index, _ = load_cached_urg_summary(
+        vdb,
+        cache_root=cache_root,
+        el_path=el_path,
+        run_manifest_digest=run_manifest_digest,
+    )
+    return index
 
 
 def _namespaced_coverage_ref(namespace: str, row: Json) -> str:
@@ -667,6 +655,11 @@ class CanonicalCoverageBackend(CoverageBackend):
     def close(self) -> None:
         self._delegate.close()
 
+    @property
+    def cache_info(self) -> Json | None:
+        value = getattr(self._delegate, "cache_info", None)
+        return dict(value) if isinstance(value, dict) else None
+
     def tests(self) -> List[Json]:
         return canonicalize_backend_tests(
             self._delegate.tests(),
@@ -782,6 +775,16 @@ class CanonicalCoverageBackend(CoverageBackend):
 
     def resolve_gap_payload(self, payload: Json, test: str = "merged") -> Json:
         return self._delegate.resolve_gap_payload(payload, test=test)
+
+    def set_summary_exclusion(self, el_path: str | None) -> None:
+        setter = getattr(self._delegate, "set_summary_exclusion", None)
+        if setter is not None:
+            setter(el_path)
+
+    def invalidate_summary(self) -> None:
+        invalidator = getattr(self._delegate, "invalidate_summary", None)
+        if invalidator is not None:
+            invalidator()
 
     def _npi_items(self, wanted_metrics=None):
         return self._delegate._npi_items(wanted_metrics=wanted_metrics)
@@ -2062,11 +2065,15 @@ class UrgCoverageBackend(CoverageBackend):
 
     vdb: str
     exclusion_policy: str = "default"
+    urg_cache_dir: str | None = None
+    run_manifest_digest: str | None = None
     npi_factory: Callable[..., CoverageBackend] = field(
         default=NpiCoverageBackend,
         repr=False,
     )
     _urg_index: UrgSummaryIndex | None = field(default=None, init=False, repr=False)
+    _summary_el_path: str | None = field(default=None, init=False, repr=False)
+    cache_info: Json | None = field(default=None, init=False)
     _npi: CoverageBackend | None = field(default=None, init=False, repr=False)
 
     @property
@@ -2075,8 +2082,22 @@ class UrgCoverageBackend(CoverageBackend):
 
     def _summary_index(self) -> UrgSummaryIndex:
         if self._urg_index is None:
-            self._urg_index = _load_urg_summary(self.vdb)
+            self._urg_index, self.cache_info = load_cached_urg_summary(
+                self.vdb,
+                cache_root=self.urg_cache_dir,
+                el_path=self._summary_el_path,
+                run_manifest_digest=self.run_manifest_digest,
+            )
         return self._urg_index
+
+    def set_summary_exclusion(self, el_path: str | None) -> None:
+        canonical = str(Path(el_path).resolve()) if el_path else None
+        if canonical != self._summary_el_path:
+            self._summary_el_path = canonical
+            self._urg_index = None
+
+    def invalidate_summary(self) -> None:
+        self._urg_index = None
 
     def _exclude_backend(self) -> CoverageBackend:
         if self._npi is None:

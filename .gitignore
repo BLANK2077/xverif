@@ -80,6 +80,7 @@ __pycache__/
 .conda-xverif/
 .xverif-test-cache/
 .xverif-test-results/
+.xverif/
 
 xdebug/build/
 xverif_mcp/build/

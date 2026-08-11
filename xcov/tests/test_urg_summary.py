@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -144,6 +145,208 @@ A B COUNT AT LEAST NUMBER
         (None, "cross_a", "[a] [b]"),
     ]
     assert all(row["type"] == "npiCovCoverBin" for row in rows)
+
+
+def test_content_addressed_urg_cache_cold_warm_corrupt_and_el_invalidation(
+    monkeypatch,
+    tmp_path,
+):
+    from xcov import urg_cache
+
+    vdb = tmp_path / "sample.vdb"
+    vdb.mkdir()
+    (vdb / "content.bin").write_bytes(b"coverage-v1")
+    cache = tmp_path / "cache"
+    monkeypatch.setattr(
+        urg_cache,
+        "_urg_identity",
+        lambda: {"path": "/eda/urg", "size_bytes": 1, "mtime_ns": 1},
+    )
+
+    class FakeRunner:
+        def __init__(self):
+            self.calls = []
+
+        def run(self, argv, timeout=None):
+            self.calls.append(list(argv))
+            report = Path(argv[argv.index("-report") + 1])
+            for name in REQUIRED_ARTIFACTS:
+                content = "placeholder\n"
+                if name == "session.xml":
+                    content = SESSION_XML
+                elif name == "tests.txt":
+                    content = (
+                        "Total tests in report: 1\n"
+                        "Data from the following tests was used to generate this report\n"
+                        "test0\n"
+                    )
+                (report / name).write_text(content, encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    runner = FakeRunner()
+    first, first_meta = urg_cache.load_cached_urg_summary(
+        str(vdb), cache_root=cache, runner=runner,
+    )
+    second, second_meta = urg_cache.load_cached_urg_summary(
+        str(vdb), cache_root=cache, runner=runner,
+    )
+    assert first.tests == second.tests == ("test0",)
+    assert first_meta["hit"] is False
+    assert second_meta["hit"] is True
+    assert first_meta["key"] == second_meta["key"]
+    assert len(runner.calls) == 1
+    manifest = __import__("json").loads(
+        (Path(first_meta["entry"]) / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["complete"] is True
+    assert set(manifest["artifacts"]) == set(REQUIRED_ARTIFACTS)
+    assert manifest["semantic_counts"] == {
+        "metric_count": 3,
+        "test_count": 1,
+        "scope_count": 2,
+        "functional_row_count": 3,
+        "assertion_row_count": 2,
+    }
+    assert (Path(first_meta["entry"]) / "COMPLETE").read_text().strip() == first_meta["key"]
+
+    entry = Path(second_meta["entry"])
+    (entry / "report" / "session.xml").write_text("", encoding="utf-8")
+    _, repaired_meta = urg_cache.load_cached_urg_summary(
+        str(vdb), cache_root=cache, runner=runner,
+    )
+    assert repaired_meta["hit"] is False
+    assert len(runner.calls) == 2
+    assert any((cache / "quarantine").iterdir())
+
+    el = tmp_path / "current.el"
+    el.write_bytes(b"exclude-v1")
+    _, excluded_meta = urg_cache.load_cached_urg_summary(
+        str(vdb), cache_root=cache, el_path=str(el), runner=runner,
+    )
+    assert excluded_meta["hit"] is False
+    assert excluded_meta["key"] != repaired_meta["key"]
+    assert len(runner.calls) == 3
+    assert "-elfile" in runner.calls[-1]
+    _, manifest_meta = urg_cache.load_cached_urg_summary(
+        str(vdb), cache_root=cache,
+        run_manifest_digest="a" * 64, runner=runner,
+    )
+    assert manifest_meta["key"] not in {
+        repaired_meta["key"], excluded_meta["key"],
+    }
+    assert len(runner.calls) == 4
+
+
+def test_content_addressed_urg_cache_serializes_concurrent_miss(monkeypatch, tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    from xcov import urg_cache
+
+    vdb = tmp_path / "parallel.vdb"
+    vdb.mkdir()
+    (vdb / "content.bin").write_bytes(b"parallel")
+    cache = tmp_path / "cache"
+    monkeypatch.setattr(
+        urg_cache,
+        "_urg_identity",
+        lambda: {"path": "/eda/urg", "size_bytes": 1, "mtime_ns": 1},
+    )
+    entered = threading.Event()
+    release = threading.Event()
+
+    class BlockingRunner:
+        def __init__(self):
+            self.call_count = 0
+            self.guard = threading.Lock()
+
+        def run(self, argv, timeout=None):
+            with self.guard:
+                self.call_count += 1
+            report = Path(argv[argv.index("-report") + 1])
+            for name in REQUIRED_ARTIFACTS:
+                content = "placeholder\n"
+                if name == "session.xml":
+                    content = SESSION_XML
+                elif name == "tests.txt":
+                    content = (
+                        "Total tests in report: 1\n"
+                        "Data from the following tests was used to generate this report\n"
+                        "test0\n"
+                    )
+                (report / name).write_text(content, encoding="utf-8")
+            entered.set()
+            assert release.wait(timeout=5)
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    runner = BlockingRunner()
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(
+            urg_cache.load_cached_urg_summary,
+            str(vdb), cache_root=cache, runner=runner,
+        )
+        assert entered.wait(timeout=5)
+        second = pool.submit(
+            urg_cache.load_cached_urg_summary,
+            str(vdb), cache_root=cache, runner=runner,
+        )
+        release.set()
+        first_meta = first.result(timeout=5)[1]
+        second_meta = second.result(timeout=5)[1]
+    assert runner.call_count == 1
+    assert sorted([first_meta["hit"], second_meta["hit"]]) == [False, True]
+    assert first_meta["key"] == second_meta["key"]
+
+
+def test_urg_cache_lru_and_abandoned_staging_are_bounded(monkeypatch, tmp_path):
+    from xcov import urg_cache
+
+    monkeypatch.setattr(
+        urg_cache,
+        "_urg_identity",
+        lambda: {"path": "/eda/urg", "release": "X-test", "size_bytes": 1, "mtime_ns": 1},
+    )
+    monkeypatch.setenv("XVERIF_XCOV_CACHE_MAX_ENTRIES", "1")
+    cache = tmp_path / "cache"
+
+    class Runner:
+        def run(self, argv, timeout=None):
+            report = Path(argv[argv.index("-report") + 1])
+            for name in REQUIRED_ARTIFACTS:
+                content = "placeholder\n"
+                if name == "session.xml":
+                    content = SESSION_XML
+                elif name == "tests.txt":
+                    content = (
+                        "Total tests in report: 1\n"
+                        "Data from the following tests was used to generate this report\n"
+                        "test0\n"
+                    )
+                (report / name).write_text(content, encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    first_vdb = tmp_path / "first.vdb"
+    second_vdb = tmp_path / "second.vdb"
+    for index, vdb in enumerate((first_vdb, second_vdb), 1):
+        vdb.mkdir()
+        (vdb / "content").write_text(str(index), encoding="ascii")
+    _, first_meta = urg_cache.load_cached_urg_summary(
+        str(first_vdb), cache_root=cache, runner=Runner(),
+    )
+    _, second_meta = urg_cache.load_cached_urg_summary(
+        str(second_vdb), cache_root=cache, runner=Runner(),
+    )
+    assert first_meta["key"] != second_meta["key"]
+    entries = [path for path in (cache / "entries").iterdir() if path.is_dir()]
+    assert [path.name for path in entries] == [second_meta["key"]]
+
+    stale = cache / "staging" / ("a" * 64 + ".stale")
+    stale.mkdir()
+    old = __import__("time").time() - urg_cache.ABANDONED_STAGING_SECONDS - 1
+    __import__("os").utime(stale, (old, old))
+    urg_cache.load_cached_urg_summary(
+        str(second_vdb), cache_root=cache, runner=Runner(),
+    )
+    assert not stale.exists()
 
 
 def test_streaming_parser_keeps_code_assert_and_functional_types(tmp_path):

@@ -291,11 +291,15 @@ def test_export_code_to_dir(xverif_fixture, tmp_path):
             assert (instance_dir / "navigation.xout").is_file()
             assert (instance_dir / "line.json").is_file()
             assert (instance_dir / "line.xout").is_file()
-            assert (instance_dir / "line.urg.txt").is_file()
+            line_entry = next(
+                entry for entry in item["metrics"] if entry["metric"] == "line"
+            )
+            assert (instance_dir / line_entry["raw"]).resolve().is_file()
             assert not (instance_dir / "toggle.json").exists()
             payload = json.loads((instance_dir / "line.json").read_text(encoding="utf-8"))
             assert payload["scope"] == item["scope"]
             assert payload["coverage_basis"] == "self"
             assert payload["analysis_complete"] is True
+        assert [path.name for path in (run_dir / "raw").iterdir()] == ["modinfo.urg.txt"]
     finally:
         sess.close()

@@ -103,7 +103,10 @@ def test_complex_modinfo_export_has_diverse_incomplete_branch_groups(xverif_fixt
             assert coverage["missing"] > 0
             assert 0.0 <= coverage["pct"] < 100.0
             assert payload["analysis_complete"] is True
-            assert (instance_dir / f"{metric}.urg.txt").is_file()
+            metric_entry = next(
+                entry for entry in item["metrics"] if entry["metric"] == metric
+            )
+            assert (instance_dir / metric_entry["raw"]).resolve().is_file()
             scores[scope][metric] = coverage["pct"]
 
         line = json.loads((instance_dir / "line.json").read_text(encoding="utf-8"))
@@ -176,7 +179,11 @@ def test_complex_modinfo_export_has_diverse_incomplete_branch_groups(xverif_fixt
         assert "gap_id  kind" in fsm_xout
         assert "required" not in fsm_xout
 
+    assert [path.name for path in (run_dir / "raw").iterdir()] == ["modinfo.urg.txt"]
+    assert not list(run_dir.glob("instance-*/*.urg.txt"))
     assert any(scores[ACTIVE_SCOPE][metric] != scores[SPARSE_SCOPE][metric] for metric in METRICS)
+
+
 def test_export_is_urg_only_and_exclusion_lazily_resolves_npi_targets(xverif_fixture, tmp_path):
     import json
     from pathlib import Path
@@ -245,6 +252,17 @@ def test_export_is_urg_only_and_exclusion_lazily_resolves_npi_targets(xverif_fix
         assert backend.npi_initialized is True
         assert [(item["metric"], item["gap_id"]) for item in excluded["data"]["items"]] == expected_ids
         assert all(item["status"] in {"changed", "already_in_state"} for item in excluded["data"]["items"])
+        assert session._el_dirty is True
+        refreshed = dispatcher.dispatch({
+            "api_version": "xcov.v1",
+            "request_id": "summary-after-exclusion",
+            "action": "metrics.list",
+            "target": {"session_id": session.session_id},
+            "args": {"scope": SPARSE_SCOPE},
+        })
+        assert refreshed["ok"] is True, json.dumps(refreshed, ensure_ascii=False, indent=2)
+        assert session._el_dirty is False
+        assert backend._summary_el_path == str((tmp_path / "current.el").resolve())
 
         fsm_path = instance_dir / "fsm.json"
         fsm_payload = json.loads(fsm_path.read_text(encoding="utf-8"))
