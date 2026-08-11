@@ -184,8 +184,8 @@ CSV 用 `# source_file=...` 划分连续源码分组；`reason` 必填，同一
 - `exclude.list`：列出 merged test 的 compile/report-time exclusion，并给出当前
   session 的 `coverage_ref`。
 - `exclude.load`：按输入顺序加载一个或多个 EL，使用 pynpi union 语义。
-- `exclude.add`：每个 `coverage_ref`、selector 或 export gap 都必须携带非空 `reason`；reason 仅保存在当前 session
-- `exclude.remove`：按精确 `coverage_ref` 或 selector 撤销 report-time exclusion
+- `exclude.add`：每个 `coverage_ref` 或 export gap 都必须携带非空 `reason`；reason 仅保存在当前 session
+- `exclude.remove`：按精确 `coverage_ref` 撤销 report-time exclusion
   before/after，返回 `changed`、`already_in_state`、
   `immutable_compile_time` 或 `failed`。
 - `export.exclude`：固定调用 `save_exclude_file(path, "w")`。

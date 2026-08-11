@@ -488,15 +488,6 @@ class CoverageBackend:
     def unload_exclusions(self, test: str = "merged") -> None:
         raise NotImplementedError
 
-    def resolve_selector(self, selector: dict) -> dict:
-        return {
-            "valid": False, "coverage_ref": None,
-            "errors": [{"field": None, "code": "NOT_SUPPORTED",
-                        "message": "resolve_selector requires NpiCoverageBackend"}],
-            "current_status": None,
-            "note": "selector-based exclusion is only supported with NPI backend",
-        }
-
 
 class CanonicalCoverageBackend(CoverageBackend):
     """Mandatory backend-to-action contract boundary.
@@ -603,9 +594,6 @@ class CanonicalCoverageBackend(CoverageBackend):
     def unload_exclusions(self, test: str = "merged") -> None:
         self._delegate.unload_exclusions(test=test)
 
-    def resolve_selector(self, selector: dict) -> dict:
-        return self._delegate.resolve_selector(selector)
-
     def _npi_items(self, wanted_metrics=None):
         return self._delegate._npi_items(wanted_metrics=wanted_metrics)
 
@@ -686,6 +674,41 @@ def _selector_note(metric: str) -> str:
     if hint:
         lines.append(f"提示: {hint}")
     return "\n".join(lines)
+
+
+def _portable_csv_row(row: Json) -> Optional[Json]:
+    metric = str(row.get("metric") or "")
+    evidence = row.get("evidence") or {}
+    source_file = str(evidence.get("file") or "")
+    if os.path.isabs(source_file):
+        relative = os.path.relpath(source_file, os.getcwd())
+        source_file = os.path.basename(source_file) if relative.startswith(".." + os.sep) else relative
+    line = evidence.get("line")
+    if not source_file or not isinstance(line, int) or line < 1:
+        return None
+    if metric in {"line", "toggle", "branch", "condition", "fsm"}:
+        object_value, bin_value = {
+            "line": ("", ""),
+            "toggle": (row.get("toggle_signal") or row.get("name") or "", row.get("value") or ""),
+            "branch": (row.get("branch") or "", row.get("branch_bin") or row.get("name") or ""),
+            "condition": (row.get("condition") or "", row.get("condition_bin") or row.get("name") or ""),
+            "fsm": (row.get("fsm") or "", row.get("name") or ""),
+        }[metric]
+        return {"coverage_kind": "code", "source_file": source_file,
+                "scope": row.get("scope") or "", "metric": metric,
+                "line": str(line), "object": str(object_value), "bin": str(bin_value)}
+    if metric == "functional":
+        return {"coverage_kind": "functional", "source_file": source_file,
+                "scope": row.get("scope") or "", "line": str(line),
+                "covergroup": row.get("covergroup") or "",
+                "coverpoint": row.get("coverpoint") or "", "cross": row.get("cross") or "",
+                "bin": row.get("bin") or ""}
+    if metric == "assert":
+        return {"coverage_kind": "assertion", "source_file": source_file,
+                "scope": row.get("scope") or "", "line": str(line),
+                "assertion": row.get("full_name") or row.get("name") or "",
+                "assertion_kind": row.get("type") or ""}
+    return None
 
 
 def _selector_matches(selector: dict, row: dict) -> bool:
@@ -1233,134 +1256,6 @@ class NpiCoverageBackend(CoverageBackend):
             results.append({"path": path, "status": "loaded"})
         return results
 
-    def resolve_selector(self, selector: dict) -> dict:
-        """校验 selector 并解析为 coverage_ref。"""
-        metric = selector.get("metric")
-        errors: list = []
-
-        if not isinstance(metric, str) or metric not in _VALID_METRICS:
-            return {
-                "valid": False, "coverage_ref": None,
-                "errors": [{
-                    "field": "metric", "code": "INVALID_METRIC",
-                    "message": f"不支持的 metric: {metric}。合法值: {', '.join(sorted(_VALID_METRICS))}",
-                }],
-                "current_status": None,
-                "note": _selector_note(metric or "line"),
-            }
-
-        required = _SELECTOR_FIELDS.get(metric, frozenset())
-        missing = required - set(selector.keys())
-        if missing:
-            errors.append({
-                "field": sorted(missing)[0], "code": "MISSING_FIELD",
-                "message": f"{metric} selector 缺少必填字段: {', '.join(sorted(missing))}",
-            })
-
-        scope = selector.get("scope", "")
-        if not isinstance(scope, str) or not scope:
-            errors.append({"field": "scope", "code": "MISSING_FIELD", "message": "scope 是必填字段"})
-
-        if errors:
-            return {
-                "valid": False, "coverage_ref": None, "errors": errors,
-                "current_status": None, "note": _selector_note(metric),
-            }
-
-        if metric == "functional":
-            return {
-                "valid": False, "coverage_ref": None,
-                "errors": [{"field": "metric", "code": "NOT_SUPPORTED",
-                            "message": "functional selector is not supported; use exports mode"}],
-                "current_status": None, "note": _selector_note(metric),
-            }
-
-        # Scope-local precise lookup: db.handle_by_name + metric handle
-        inst = self.db.handle_by_name(scope)
-        if not inst:
-            return {
-                "valid": False, "coverage_ref": None,
-                "errors": [{"field": "scope", "code": "SCOPE_NOT_FOUND",
-                            "message": f"NPI scope not found: {scope}"}],
-                "current_status": None, "note": _selector_note(metric),
-            }
-        metric_hdl = getattr(inst, METRIC_METHODS[metric])()
-        if not metric_hdl:
-            self.release_if_handle(inst)
-            return {
-                "valid": False, "coverage_ref": None,
-                "errors": [{"field": "metric", "code": "METRIC_UNAVAILABLE",
-                            "message": f"URG 未导出此 scope 的 {metric} 数据，请确认 RTL 是否真的不需要该覆盖率"}],
-                "current_status": None, "note": _selector_note(metric),
-            }
-        leaf_types = {
-            "line": {"npiCovStmtBin"},
-            "condition": {"npiCovConditionBin"},
-            "branch": {"npiCovBranchBin"},
-            "toggle": {"npiCovToggleBin"},
-            "fsm": {"npiCovStateBin", "npiCovTransBin", "npiCovSeqBin"},
-        }[metric]
-        test_hdl = self._merged_only("merged")
-        sel_file = selector.get("file", "")
-        sel_line = selector.get("line")
-
-        def _find_in_children(handle: Any, depth: int = 0, path: tuple = ()) -> Optional[Json]:
-            if depth > 4:
-                return None
-            for idx, child in enumerate(handle.child_handles()):
-                child_path = path + (idx,)
-                try:
-                    typ = child.type()
-                except Exception:
-                    self.release_if_handle(child)
-                    continue
-                if typ in leaf_types:
-                    try:
-                        child_file = str(child.file_name() or "")
-                    except Exception:
-                        child_file = ""
-                    try:
-                        child_line = int(child.line_no(test_hdl) or 0)
-                    except Exception:
-                        child_line = 0
-                    if (not sel_file or child_file.endswith("/" + sel_file) or child_file == sel_file) \
-                            and (sel_line is None or child_line == sel_line):
-                        try:
-                            self._api().call("coverage.covered", child, test_hdl)
-                            return {
-                                "valid": True, "coverage_ref": None, "errors": [],
-                                "current_status": ["not_covered"],
-                                "locator": {
-                                    "scope": scope, "metric": metric,
-                                    "path": list(child_path),
-                                    "type": typ, "name": str(child.name() or ""),
-                                },
-                            }
-                        finally:
-                            self.release_if_handle(child)
-                    self.release_if_handle(child)
-                else:
-                    result = _find_in_children(child, depth + 1, child_path)
-                    self.release_if_handle(child)
-                    if result:
-                        return result
-            return None
-
-        try:
-            match = _find_in_children(metric_hdl)
-        finally:
-            self.release_if_handle(metric_hdl)
-            self.release_if_handle(inst)
-
-        if match:
-            return match
-        return {
-            "valid": False, "coverage_ref": None,
-            "errors": [{"field": None, "code": "NO_MATCH",
-                        "message": f"selector 未匹配到任何 {metric} item。"}],
-            "current_status": None, "note": _selector_note(metric),
-        }
-
     def attach_gap_locators(self, payload: Json, test: str = "merged") -> Json:
         """Attach direct, scope-local NPI paths to URG gap IDs."""
         metric = payload["metric"]
@@ -1600,6 +1495,7 @@ class NpiCoverageBackend(CoverageBackend):
                 "match_count": len(readable_matches),
             }
         readable = readable_matches[0]
+        csv_row = _portable_csv_row(readable)
         before = "excluded_at_report_time" in readable["status"]
         compile_immutable = (
             not excluded
@@ -1611,6 +1507,7 @@ class NpiCoverageBackend(CoverageBackend):
                 "status": "immutable_compile_time",
                 "before": before,
                 "after": before,
+                "_csv_row": csv_row,
             }
         if before == excluded:
             return {
@@ -1618,6 +1515,7 @@ class NpiCoverageBackend(CoverageBackend):
                 "status": "already_in_state",
                 "before": before,
                 "after": before,
+                "_csv_row": csv_row,
             }
         results: List[Json] = []
 
@@ -1651,6 +1549,7 @@ class NpiCoverageBackend(CoverageBackend):
                 ),
                 "before": before,
                 "after": after,
+                "_csv_row": csv_row,
             })
 
         self._scan_score_handles(test_hdl, mutate)

@@ -164,7 +164,7 @@ ACTION_REGISTRY: Dict[str, ActionContract] = {
     "exclude.add": ActionContract(
         "exclude.add", "_exclude_set", True,
         "Set report-time exclusion state for exact coverage references.",
-        "Do not use semantic selectors; resolve them to coverage_ref first.",
+        "Use export gap IDs for portable exclusions; coverage_ref is session-local.",
     ),
     "exclude.remove": ActionContract(
         "exclude.remove", "_exclude_set", True,
@@ -745,6 +745,7 @@ class Dispatcher:
         sess.set_el_path(None)  # EL paths loaded via NPI — re-export on next URG call
         sess.mark_exclusion_dirty()
         sess.loaded_el_without_reasons = True
+        sess.loaded_el_file_count += len(paths)
         return ok_response(
             req,
             completeness_summary(len(rows), len(rows)),
@@ -761,48 +762,23 @@ class Dispatcher:
             entry["coverage_ref"]: _required_reason(entry["reason"])
             for entry in ref_entries
         } if adding else {}
-        selectors = args.get("selectors") or []
         exports = args.get("exports") or []
         if exports:
-            if req["action"] != "exclude.add" or refs or selectors:
+            if req["action"] != "exclude.add" or refs:
                 raise XcovError(
                     "SCHEMA_INVALID",
-                    "exports 只允许用于 exclude.add，且不能与 coverage_refs/selectors 同时使用",
+                    "exports 只允许用于 exclude.add，且不能与 coverage_refs 同时使用",
                     path="$.args",
                 )
             return self._exclude_export_gaps(req, sess, exports)
-        if not refs and not selectors:
+        if not refs:
             raise XcovError(
                 "SCHEMA_INVALID",
-                "至少需要 coverage_refs 或 selectors 之一",
+                "至少需要 coverage_refs 或 exports 之一",
                 path="$.args",
             )
         excluded = adding
         rows: list = []
-
-        resolved_selectors = []
-        selector_errors = []
-        for index, sel in enumerate(selectors):
-            reason = _required_reason(sel["reason"]) if adding else None
-            selector = {key: value for key, value in sel.items() if key != "reason"}
-            resolved = sess.backend.resolve_selector(selector)
-            if not resolved["valid"]:
-                selector_errors.append({
-                    "index": index,
-                    "selector": selector,
-                    "errors": resolved["errors"],
-                    "note": resolved.get("note", ""),
-                })
-            else:
-                resolved_selectors.append((selector, reason, resolved))
-        if selector_errors:
-            raise XcovError(
-                "EXCLUSION_PREFLIGHT_FAILED",
-                "本次 exclude 请求未生效任何条目",
-                atomic_result="none_applied", atomic=True, transaction_committed=False,
-                requested_count=len(refs) + len(selectors), successful_count=0,
-                rollback_performed=False, errors=selector_errors,
-            )
 
         with tempfile.TemporaryDirectory(prefix=".xcov-exclude-") as temporary:
             baseline = Path(temporary) / "baseline.el"
@@ -813,7 +789,7 @@ class Dispatcher:
                     "EXCLUSION_BASELINE_FAILED",
                     "无法建立排除事务基线，本次请求未生效任何条目",
                     atomic_result="none_applied", atomic=True, transaction_committed=False,
-                    requested_count=len(refs) + len(selectors), successful_count=0,
+                    requested_count=len(refs), successful_count=0,
                     rollback_performed=False, cause=str(exc),
                 ) from exc
             baseline_metadata = dict(sess.exclusion_records)
@@ -822,49 +798,30 @@ class Dispatcher:
             try:
                 for ref in refs:
                     result = sess.backend.set_exclusion(ref, excluded, test="merged")
+                    csv_row = result.pop("_csv_row", None)
                     rows.append(result)
-                    if result.get("status") not in {"changed", "already_in_state"}:
+                    if result.get("status") not in {
+                        "changed", "already_in_state", "immutable_compile_time"
+                    }:
                         failure = result
                         break
                     key = "coverage_ref:" + ref
                     if excluded:
                         reason = ref_reasons[ref]
                         result["reason"] = reason
-                        result["metadata_status"] = "recorded"
-                        staged_metadata[key] = {
-                            "reason": reason, "coverage_ref": ref, "csv_row": None,
+                        record = {
+                            "reason": reason, "coverage_ref": ref, "csv_row": csv_row,
                         }
+                        previous = staged_metadata.get(key)
+                        result["metadata_status"] = (
+                            "created" if previous is None
+                            else "unchanged" if previous == record
+                            else "updated"
+                        )
+                        staged_metadata[key] = record
                     else:
                         staged_metadata.pop(key, None)
 
-                if failure is None:
-                    for selector, reason, resolved in resolved_selectors:
-                        if resolved.get("locator"):
-                            result = sess.backend.set_exclusion_locator(
-                                resolved["locator"], excluded, test="merged"
-                            )
-                            result.setdefault("coverage_ref", None)
-                        else:
-                            result = sess.backend.set_exclusion(
-                                resolved["coverage_ref"], excluded, test="merged"
-                            )
-                        rows.append(result)
-                        if result.get("status") not in {"changed", "already_in_state"}:
-                            failure = result
-                            break
-                        key = "selector:" + json.dumps(
-                            selector, sort_keys=True, separators=(",", ":")
-                        )
-                        if excluded:
-                            result["reason"] = reason
-                            result["metadata_status"] = "recorded"
-                            staged_metadata[key] = {
-                                "reason": reason,
-                                "selector": selector,
-                                "csv_row": _selector_csv_row(selector),
-                            }
-                        else:
-                            staged_metadata.pop(key, None)
             except Exception as exc:
                 failure = {"status": "failed", "reason": "setter_exception", "message": str(exc)}
 
@@ -885,7 +842,7 @@ class Dispatcher:
                     "EXCLUSION_APPLY_FAILED",
                     "排除应用失败并已回滚，本次请求未生效任何条目",
                     atomic_result="none_applied", atomic=True, transaction_committed=False,
-                    requested_count=len(refs) + len(selectors), successful_count=0,
+                    requested_count=len(refs), successful_count=0,
                     rollback_performed=True, failure=failure,
                 )
             sess.exclusion_records = staged_metadata
@@ -1117,16 +1074,17 @@ class Dispatcher:
         _require_merged(args)
         path = _export_output_path(args)
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        exported_count = len(sess.exclusion_records)
         sess.backend.save_exclusions(path, test="merged")
-        summary = completeness_summary(exported_count, 0)
+        summary = completeness_summary(0, 0)
         summary.update({
             "session_id": sess.session_id,
             "test": "merged",
             "output_mode": "file",
             "output_path": path,
             "artifact_format": "el",
-            "exported_count": exported_count,
+            "native_entry_count_known": False,
+            "session_reason_record_count": len(sess.exclusion_records),
+            "loaded_el_file_count": sess.loaded_el_file_count,
         })
         return ok_response(req, summary, {})
 
@@ -1347,6 +1305,7 @@ class Dispatcher:
                     sess.exclusion_records.clear()
                     _record_csv_documents(sess, documents)
                     sess.loaded_el_without_reasons = False
+                    sess.loaded_el_file_count = 3
                 except Exception:
                     for kind in reversed(("code", "functional", "assertion")):
                         destination = output_dir / f"{kind}.el"
@@ -1578,6 +1537,7 @@ def _apply_csv_refs_transactionally(sess, resolutions: List[Json]) -> List[Json]
                     True,
                     test="merged",
                 )
+                result.pop("_csv_row", None)
                 rows.append(result)
                 if result["status"] == "failed":
                     raise XcovError(
@@ -1678,27 +1638,6 @@ def _gap_csv_rows(item: Json) -> List[Json]:
             "object": obj, "bin": bin_name,
         })
     return rows
-
-
-def _selector_csv_row(selector: Json) -> Optional[Json]:
-    source_file = selector.get("file")
-    line = selector.get("line")
-    metric = selector.get("metric")
-    if not source_file or not isinstance(line, int) or line < 1:
-        return None
-    if metric in {"line", "toggle", "branch", "condition", "fsm"}:
-        object_key, bin_key = {
-            "line": (None, None), "toggle": ("signal", "transition"),
-            "branch": ("branch", "arm"), "condition": ("condition", "term"),
-            "fsm": ("fsm", "name"),
-        }[metric]
-        return {
-            "coverage_kind": "code", "source_file": source_file,
-            "scope": selector["scope"], "metric": metric, "line": str(line),
-            "object": selector.get(object_key, "") if object_key else "",
-            "bin": selector.get(bin_key, "") if bin_key else "",
-        }
-    return None
 
 
 def _record_csv_documents(sess, documents: List[Any]) -> None:

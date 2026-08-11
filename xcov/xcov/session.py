@@ -33,6 +33,7 @@ class XcovSession:
     _el_dirty: bool = False
     exclusion_records: Dict[str, Json] = field(default_factory=dict)
     loaded_el_without_reasons: bool = False
+    loaded_el_file_count: int = 0
 
     def close(self) -> None:
         self.backend.close()
@@ -41,6 +42,7 @@ class XcovSession:
         self._el_dirty = False
         self.exclusion_records.clear()
         self.loaded_el_without_reasons = False
+        self.loaded_el_file_count = 0
 
     def public_json(self) -> Json:
         summary = self.backend.summary()
@@ -71,6 +73,7 @@ class XcovSession:
         self._el_dirty = False
         self.exclusion_records.clear()
         self.loaded_el_without_reasons = False
+        self.loaded_el_file_count = 0
 
     def record_exclusion(self, key: str, record: Json) -> str:
         previous = self.exclusion_records.get(key)

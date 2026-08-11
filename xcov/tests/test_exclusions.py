@@ -142,6 +142,12 @@ def _request(
     return dispatcher.dispatch(request)
 
 
+def _line_coverage_ref(dispatcher: Dispatcher) -> str:
+    rows = dispatcher.sessions.get("cov").backend.items(metrics=["line"])
+    row = next(item for item in rows if (item.get("evidence") or {}).get("line") == 72)
+    return row["coverage_ref"]
+
+
 def test_csv_parser_preserves_standard_csv_quoting_and_source_groups(tmp_path):
     root = tmp_path / "coverage_exclusions"
     _write_csvs(root, code_reason='不可达,"恢复"路径')
@@ -203,17 +209,14 @@ def test_csv_resolve_is_exact_and_reports_missing(tmp_path):
 
 def test_native_exclusion_add_remove_export_load_and_unload(tmp_path):
     dispatcher = _dispatcher()
-    # 用 selector 语义匹配，不依赖 coverage_ref traversal_path
-    selector = {
-        "metric": "line", "scope": "top", "file": "exclusion_fixture.sv", "line": 72,
-        "reason": "该行仅用于验证 exclusion 生命周期",
-    }
+    coverage_ref = _line_coverage_ref(dispatcher)
+    entry = {"coverage_ref": coverage_ref, "reason": "该行仅用于验证 exclusion 生命周期"}
 
-    added = _request(dispatcher, "exclude.add", {"selectors": [selector]})
+    added = _request(dispatcher, "exclude.add", {"coverage_refs": [entry]})
     assert added["data"]["items"][0]["status"] == "changed"
     ref = added["data"]["items"][0]["coverage_ref"]
 
-    again = _request(dispatcher, "exclude.add", {"selectors": [selector]})
+    again = _request(dispatcher, "exclude.add", {"coverage_refs": [entry]})
     assert again["data"]["items"][0]["status"] == "already_in_state"
 
     output = tmp_path / "saved.el"
@@ -223,10 +226,12 @@ def test_native_exclusion_add_remove_export_load_and_unload(tmp_path):
         {"output": {"path": str(output), "allow_absolute_path": True}},
     )
     assert exported["ok"] is True
+    assert exported["summary"]["native_entry_count_known"] is False
+    assert exported["summary"]["session_reason_record_count"] == 1
 
     removed = _request(
         dispatcher, "exclude.remove",
-        {"selectors": [{key: value for key, value in selector.items() if key != "reason"}]},
+        {"coverage_refs": [coverage_ref]},
     )
     assert removed["data"]["items"][0]["status"] == "changed"
 
@@ -240,13 +245,21 @@ def test_native_exclusion_add_remove_export_load_and_unload(tmp_path):
     assert unloaded["data"]["items"][0]["after_count"] == 0
 
 
+def test_exclusion_selector_input_is_rejected_by_public_schema():
+    response = _request(_dispatcher(), "exclude.add", {"selectors": [{
+        "metric": "line", "scope": "top", "file": "exclusion_fixture.sv",
+        "line": 72, "reason": "旧 selector 路线必须拒绝",
+    }]})
+    assert response["ok"] is False
+    assert response["error"]["code"] == "SCHEMA_INVALID"
+    assert response["error"]["detail.path"] == "$.args"
+
+
 def test_csv_export_persists_session_reasons_and_rejects_conflicting_merge(tmp_path):
     dispatcher = _dispatcher()
-    selector = {
-        "metric": "line", "scope": "top", "file": "exclusion_fixture.sv", "line": 72,
-        "reason": "第一版排除原因",
-    }
-    added = _request(dispatcher, "exclude.add", {"selectors": [selector]})
+    coverage_ref = _line_coverage_ref(dispatcher)
+    entry = {"coverage_ref": coverage_ref, "reason": "第一版排除原因"}
+    added = _request(dispatcher, "exclude.add", {"coverage_refs": [entry]})
     assert added["data"]["items"][0]["metadata_status"] == "created"
 
     directory = tmp_path / "exported_csv"
@@ -259,8 +272,8 @@ def test_csv_export_persists_session_reasons_and_rejects_conflicting_merge(tmp_p
     code = parse_directory(directory)[0]
     assert code.groups[0].rows[0]["reason"] == "第一版排除原因"
 
-    selector["reason"] = "更新后的排除原因"
-    updated = _request(dispatcher, "exclude.add", {"selectors": [selector]})
+    entry["reason"] = "更新后的排除原因"
+    updated = _request(dispatcher, "exclude.add", {"coverage_refs": [entry]})
     assert updated["data"]["items"][0]["metadata_status"] == "updated"
     before = {path.name: path.read_text(encoding="utf-8") for path in directory.iterdir()}
     conflict = _request(
@@ -274,11 +287,10 @@ def test_csv_export_persists_session_reasons_and_rejects_conflicting_merge(tmp_p
 
 def test_el_import_warns_that_reason_is_not_available_to_csv_export(tmp_path):
     dispatcher = _dispatcher()
-    selector = {
-        "metric": "line", "scope": "top", "file": "exclusion_fixture.sv", "line": 72,
-        "reason": "仅用于生成原生 EL",
-    }
-    _request(dispatcher, "exclude.add", {"selectors": [selector]})
+    coverage_ref = _line_coverage_ref(dispatcher)
+    _request(dispatcher, "exclude.add", {"coverage_refs": [{
+        "coverage_ref": coverage_ref, "reason": "仅用于生成原生 EL",
+    }]})
     el_path = tmp_path / "native.el"
     _request(
         dispatcher, "export.exclude",
@@ -294,6 +306,12 @@ def test_el_import_warns_that_reason_is_not_available_to_csv_export(tmp_path):
         {"directory": str(tmp_path / "csv"), "allow_absolute_path": True},
     )
     assert exported["summary"]["el_reason_unknown"] is True
+    native = _request(
+        dispatcher, "export.exclude",
+        {"output": {"path": str(tmp_path / "roundtrip.el"), "allow_absolute_path": True}},
+    )
+    assert native["summary"]["loaded_el_file_count"] == 1
+    assert native["summary"]["native_entry_count_known"] is False
     assert any("EL" in warning and "reason" in warning for warning in exported["warnings"])
 
 
@@ -357,7 +375,11 @@ print("XCOV_TEST_RESULT=" + json.dumps(response))
         if line.startswith("XCOV_TEST_RESULT=")
     )
     response = json.loads(result_line.removeprefix("XCOV_TEST_RESULT="))
-    assert response["data"]["items"][0]["status"] == "failed"
+    assert response["ok"] is False
+    assert response["error"]["code"] == "EXCLUSION_APPLY_FAILED"
+    assert response["error"]["detail.successful_count"] == 0
+    assert response["error"]["detail.rollback_performed"] is True
+    assert "未生效任何条目" in response["error"]["message"]
 
 
 def test_coverage_ref_is_session_local():
