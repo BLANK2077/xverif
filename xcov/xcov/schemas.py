@@ -1093,7 +1093,6 @@ SCHEMAS: Dict[str, Json] = {
             target=SESSION_TARGET,
             args=_args({
                 "scope": _string(min_length=1),
-                "covergroup": _string(min_length=1),
                 "output": _export_output(),
             }, required=["output"]),
             require_target=True,

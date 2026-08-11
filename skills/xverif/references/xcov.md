@@ -10,7 +10,7 @@ xcov 查询 VCS/Verdi coverage database（`simv.vdb`、`merged.vdb`）。它负�
 - 输出源码窗口和 coverage annotation。
 - 输出 assert/cover property/cover sequence 的结构化 report。
 - 通过 `export.code_coverage` 导出分 instance、分 metric 的 JSON/XOUT/raw URG bundle；
-  `export.functional_coverage`、`export.assert` 仍按各自合同导出报告。
+  `export.functional_coverage` 与 `export.assert` 同时保留 URG 原文并导出结构化 JSON/XOUT gap。
 
 ## CLI 入口
 
@@ -45,6 +45,8 @@ Coverage 分析和 exclusion 的标准顺序：
 EL 不保存 reason。从 EL 加载的既有 exclusion 无法补回原因；`exclude.csv.export` 会明确告警，
 并只导出当前 session 中已知 reason 且具有可移植 CSV 身份的条目。CSV 是 reason 的持久化来源，
 EL 是 Synopsys 原生 exclusion 状态的持久化来源，两者都应在关闭前导出。
+`export.exclude.summary.native_entry_count_known=false` 表示当前 NPI save 接口不能返回 EL 内
+原生条目数；不要把 `session_reason_record_count` 或 `loaded_el_file_count` 解释为排除条目数。
 
 ## 常用请求
 
@@ -82,16 +84,18 @@ code coverage export（**每次 export 触发一次 URG，尽量一次提交多�
 {"api_version":"xcov.v1","action":"export.exclude","target":{"session_id":"cov0"},"args":{"output":{"path":"coverage_exclusions/merged.el"}}}
 ```
 
-function coverage export：
+functional coverage export（输出目录内保留 `grpinfo.txt`，并生成 `functional.json`、
+`functional.xout`；gap ID 为 `FC0001` 起）：
 
 ```json
-{"api_version":"xcov.v1","action":"export.functional_coverage","target":{"session_id":"cov0"},"args":{"covergroup":"*uart*","output":{"path":"function_coverage.md"}}}
+{"api_version":"xcov.v1","action":"export.functional_coverage","target":{"session_id":"cov0"},"args":{"output":{"path":"functional_coverage"}}}
 ```
 
-assert export：
+assert export（输出目录内保留 `asserts.txt`，并生成 `assert.json`、`assert.xout`；gap ID 为
+`A0001` 起）：
 
 ```json
-{"api_version":"xcov.v1","action":"export.assert","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","output":{"path":"assert.md"}}}
+{"api_version":"xcov.v1","action":"export.assert","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","output":{"path":"assert_coverage"}}}
 ```
 
 ## 读取规则
@@ -115,7 +119,10 @@ assert export：
   也不输出 `raw_coverage_pct`。
 - xout 的 `items:` 是对齐纯文本表格，不是 Markdown 表格；JSON 响应结构不变。
 - 详细 code coverage 未覆盖项使用 `export.code_coverage` 的分 metric JSON/XOUT 查看；
-  functional/assertion 使用各自 export action 的当前 schema。
+  functional/assertion 使用各自 export action 的 `functional.xout`/`assert.xout`，不要只读
+  `grpinfo.txt`/`asserts.txt` 摘要。
+- functional/assert XOUT 第一行是字段表头，后续每行一个未覆盖 gap；用 scope、kind、name、
+  covergroup、coverpoint、cross、bin 判断具体需要补哪种激励，不要只按 gap 数压缩。
 - `export.code_coverage` 不输出 Markdown。它为每个具体 instance 建立独立目录，按 metric
   输出 JSON、XOUT 和原始 URG text；先读 `navigation.xout` 选择子层级，再读 metric XOUT
   获取目标 instance 自身的具体缺口。
@@ -138,6 +145,9 @@ assert export：
   `gap_id` 和非空 `reason`。xcov 使用 JSON 内
   的固定 NPI locator 直接排除，不扫描 VDB；非 FSM 失败整批回滚，只有 FSM 允许返回
   明确的 `partial_success` 和逐 gap 失败原因。
+- `exports` 支持 code、assert 与 functional 的结构化 JSON。同一 session 优先使用导出时
+  缓存的 NPI handle 直接命中；跨 session 使用文件中的 root/scope/path/type/name 重建。
+  不要构造或发送已删除的 `args.selectors`。`coverage_ref` 只在生成它的 session 内有效。
 - 同一 session 内重复 add 同一身份但提供新 reason 时，内存 reason 更新；若
   `exclude.csv.export` 发现目标 CSV 已有同一身份但 reason 不同，则三类文件均不写入，必须
   先由用户决定保留哪一个原因。

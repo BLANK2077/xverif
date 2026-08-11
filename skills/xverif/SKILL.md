@@ -14,6 +14,8 @@ description: >
 > **Coverage exclusion 必须先持久化再关闭 session。** `exclude.add` 的 reason 只存在于
 > 当前 xcov session；关闭 session 会永久丢失尚未导出的 reason。完成 coverage 分析后，
 > 必须先执行 `exclude.csv.export`，再执行 `export.exclude`，确认两类文件均成功后才能关闭。
+> assert/function exclusion 先读取结构化 XOUT/JSON 的 `Axxxx`/`FCxxxx` gap；禁止使用已删除的
+> exclusion selector 参数。关闭或丢失 session 后，尚未导出的 reason 无法恢复。
 
 ## 任务路由
 

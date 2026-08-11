@@ -155,13 +155,13 @@ assert 汇总：
 导出 functional coverage 未达标 bin：
 
 ```json
-{"api_version":"xcov.v1","action":"export.functional_coverage","target":{"session_id":"cov0"},"args":{"covergroup":"*","output":{"path":"functional_coverage.md"}}}
+{"api_version":"xcov.v1","action":"export.functional_coverage","target":{"session_id":"cov0"},"args":{"output":{"path":"functional_coverage"}}}
 ```
 
 导出 assertion coverage：
 
 ```json
-{"api_version":"xcov.v1","action":"export.assert","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","output":{"path":"assert.md"}}}
+{"api_version":"xcov.v1","action":"export.assert","target":{"session_id":"cov0"},"args":{"scope":"uart_tb","output":{"path":"assert_coverage"}}}
 ```
 
 ## Exclusion 管理
