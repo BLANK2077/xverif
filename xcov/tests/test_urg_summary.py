@@ -6,6 +6,7 @@ import pytest
 
 from xcov.actions import _code_coverage_from_urg, _coverage_from_urg, _metrics_from_urg
 from xcov.errors import XcovError
+from xcov.gap_export import build_gap_payload, parse_urg_gap_report
 from xcov.urg_summary import REQUIRED_ARTIFACTS, parse_urg_summary
 
 
@@ -86,6 +87,63 @@ def _report(tmp_path: Path, xml: str = SESSION_XML) -> Path:
             )
         (report / name).write_text(content, encoding="utf-8")
     return report
+
+
+def test_urg_assert_detail_parser_builds_semantic_gaps(tmp_path):
+    report = tmp_path / "asserts.txt"
+    report.write_text(
+        """Assertions Uncovered:
+ASSERTIONS CATEGORY SEVERITY ATTEMPTS REAL SUCCESSES FAILURES INCOMPLETE
+top.u0.a_missing 0 0 41 0 0 0
+-------------------------------------------------------------------------------
+Cover Properties Uncovered:
+COVER PROPERTIES CATEGORY SEVERITY ATTEMPTS MATCHES INCOMPLETE
+top.u0.c_missing 0 0 41 0 0
+-------------------------------------------------------------------------------
+""",
+        encoding="utf-8",
+    )
+    rows = parse_urg_gap_report("assert", report)
+    assert [(row["type"], row["scope"], row["name"]) for row in rows] == [
+        ("npiCovAssert", "top.u0", "a_missing"),
+        ("npiCovCoverProperty", "top.u0", "c_missing"),
+    ]
+    payload = build_gap_payload("assert", "sample.vdb", rows)
+    assert payload["exclusion_locator"]["version"] == "xcov.urg_semantic.v1"
+    assert "_exclude_targets" not in payload["gaps"][0]
+
+
+def test_urg_functional_detail_parser_builds_bin_semantics(tmp_path):
+    report = tmp_path / "grpinfo.txt"
+    report.write_text(
+        """Group : top::cg
+===============================================================================
+Group : top::cg
+===============================================================================
+Source File(s) :
+
+/design/top.sv
+Summary for Variable cp_data
+User Defined Bins for cp_data
+Uncovered bins
+NAME COUNT AT LEAST NUMBER
+other 0 1 1
+-------------------------------------------------------------------------------
+Summary for Cross cross_a
+Automatically Generated Cross Bins for cross_a
+Uncovered bins
+A B COUNT AT LEAST NUMBER
+[a] [b] 0 1 1
+-------------------------------------------------------------------------------
+""",
+        encoding="utf-8",
+    )
+    rows = parse_urg_gap_report("functional", report)
+    assert [(row["coverpoint"], row["cross"], row["bin"]) for row in rows] == [
+        ("cp_data", None, "other"),
+        (None, "cross_a", "[a] [b]"),
+    ]
+    assert all(row["type"] == "npiCovCoverBin" for row in rows)
 
 
 def test_streaming_parser_keeps_code_assert_and_functional_types(tmp_path):

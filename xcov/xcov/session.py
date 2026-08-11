@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, Optional
 from .backend import (
     CanonicalCoverageBackend,
     CoverageBackend,
-    NpiCoverageBackend,
+    UrgCoverageBackend,
 )
 from .errors import XcovError
 from .logging import log_lifecycle_event
@@ -103,7 +103,7 @@ class XcovSession:
 class SessionManager:
     def __init__(
         self,
-        backend_factory: BackendFactory = NpiCoverageBackend,
+        backend_factory: BackendFactory = UrgCoverageBackend,
     ) -> None:
         self.sessions: Dict[str, XcovSession] = {}
         self._backend_factory = backend_factory

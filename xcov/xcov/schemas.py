@@ -368,6 +368,7 @@ def _error_schema(action: str | None = None) -> Json:
             "code": _string(min_length=1),
             "path": _string(min_length=1),
             "gap_id": _string(min_length=1),
+            "scope": _string(min_length=1),
             "message": _string(min_length=1),
         })),
         "detail.failed_item": _object({

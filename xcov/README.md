@@ -40,12 +40,15 @@ JSON request，并返回包含 `xout` 和 `json` payload 的 JSONL envelope。st
 {"api_version":"xcov.v1","request_id":"quit","action":"stdio.quit"}
 ```
 
-NPI 诊断输出会导向 stderr，stdout 保持机器可解析。
+普通 session/read/export 路径不会加载 pynpi。只有 `exclude.*`、
+`exclude.csv.*` 和 `export.exclude` 首次需要修改或读取原生 exclusion 状态时，
+才在该 session 内惰性创建一次 NPI 上下文；NPI 诊断输出会导向 stderr，stdout
+保持机器可解析。
 
-## 真实 NPI 运行
+## 真实 exclusion NPI 运行
 
-真实 VDB 查询需要 Synopsys Verdi/Python NPI 和 license。按项目规则，NPI、
-VCS、VIP、真实 coverage probe 必须在沙箱外运行。
+URG coverage 查询需要 Synopsys URG；原生 exclusion 处理另需 Verdi/Python NPI
+和 license。按项目规则，NPI、VCS、VIP、真实 coverage probe 必须在沙箱外运行。
 
 已验证的本地形态：
 
@@ -93,23 +96,24 @@ xverif_cov_get_schema
 ```
 
 `session.open` 的公开 `args` 只有 `name` 和可选
-`exclusion_policy:"default|strict"`。`strict` 把
-支持双参数接口时把 `cov.ConfigOpt.ExclusionInStrictMode` 传给 `cov.open`，拒绝把已覆盖对象设为
-report-time exclusion；xcov 从不公开 `ExcludeByStmtLevel`。同名 alive session 一律返回
+`exclusion_policy:"default|strict"`。打开 session 只生成/读取固定 URG summary，
+不会 import pynpi 或调用 `cov.open`。首次 exclusion 操作才创建 NPI 上下文；此时
+`strict` 在双参数接口上把 `cov.ConfigOpt.ExclusionInStrictMode` 传给 `cov.open`，
+拒绝把已覆盖对象设为 report-time exclusion；xcov 从不公开 `ExcludeByStmtLevel`。同名 alive session 一律返回
 `SESSION_EXISTS`；xcov 不比较旧、新 VDB，不复用旧 backend，也不隐式关闭后重开。
 需要切换 VDB 时，调用方必须先显式执行 `session.close`，再发起新的
 `session.open`。`fake`、`reuse`、`reopen` 都不是公开参数，字符串
 `target.vdb:"fake"` 也没有特殊含义；`FakeCoverageBackend` 只允许测试通过
 `SessionManager` 的 backend factory 注入。
 
-xcov 在调用前检查当前 pynpi 的真实 `cov.open` 签名。单参数旧版在默认模式调用
+首次 exclusion 操作会检查当前 pynpi 的真实 `cov.open` 签名。单参数旧版在默认模式调用
 `cov.open(vdb)`；双参数版本调用 `cov.open(vdb, config_opt)`。单参数旧版不支持 strict，
 会返回明确错误；不会先调用失败再 fallback。
 
 ### 可复现输入：run manifest
 
-`target.run_manifest` 是可选的 provenance gate。提供时，xcov 在打开 VDB/Python
-NPI 前校验 `xcov.run-manifest.v1` 的 `state:"published"`，以及相对 manifest 文件的
+`target.run_manifest` 是可选的 provenance gate。提供时，xcov 在运行 URG 或打开
+Python NPI 前校验 `xcov.run-manifest.v1` 的 `state:"published"`，以及相对 manifest 文件的
 `resources.vdb.path`、`size_bytes` 和 SHA-256。不匹配返回
 `RESOURCE_PROVENANCE_MISMATCH`，不会启动后端；未提供则保持既有打开行为。
 
@@ -209,9 +213,12 @@ CSV 用 `# source_file=...` 划分连续源码分组；`reason` 必填，同一
 ```
 ```
 
-导出 JSON 内保存 scope-local NPI locator。排除时从 `handle_by_name(scope)` 沿固定 path
-访问 leaf，不遍历 VDB。line/condition/branch/toggle 保持原子提交；只有 FSM 允许因 NPI
-不可见对象返回 `partial_success`，响应逐 gap 标明成功或失败。
+导出 JSON 只保存 `xcov.urg_semantic.v1` 语义身份，不启动 NPI，也不泄露或持久化
+NPI traversal path/handle。`exclude.add` 首先用 URG hierarchy 拒绝未知 scope，随后才
+惰性启动 NPI，并在 exclusion 阶段做必要遍历，把所选 gap 唯一解析成临时 target。
+line/condition/branch/toggle 保持原子提交；只有 FSM 允许因 NPI 不可见对象返回
+`partial_success`，响应逐 gap 标明成功或失败。旧 artifact 在目标已被排除后可能因
+NPI score 视图隐藏而不再可解析，应重新导出当前 gap，不会调用不稳定的低层查询强行恢复。
 
 ```json
 {"api_version":"xcov.v1","action":"exclude.load","target":{"session_id":"cov0"},"args":{"paths":["code.el","functional.el","assertion.el"]}}
@@ -260,7 +267,7 @@ export `args.output` 的未知字段都会返回 `SCHEMA_INVALID`。handler 返�
 控制 inline 数量；三个 coverage report export 写 Markdown，`export.exclude` 写原生
 EL。
 
-Python NPI backend 在初始化时绑定唯一的已声明 method/signature 合同，并且每次
+惰性 Python NPI exclusion backend 在初始化时绑定唯一的已声明 method/signature 合同，并且每次
 调用只执行该签名一次。缺失方法、参数不匹配、调用异常、遍历返回非 iterable，
 以及必需事实类型错误都会返回 `NPI_CONTRACT_VIOLATION`，错误中包含 operation、
 method、expected_signature 和 cause；不会改用零参数签名，也不会把异常转换成

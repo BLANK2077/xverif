@@ -19,6 +19,7 @@ from xcov.backend import (
     NpiCallFailure,
     NpiContractViolation,
     NpiCoverageBackend,
+    UrgCoverageBackend,
     _validate_functional_identity,
 )
 from xcov.backend import CoverageBackend as _CoverageBackend
@@ -485,7 +486,7 @@ def test_duplicate_session_name_fails_before_manifest_or_backend_work(tmp_path):
 
 def test_fake_backend_is_not_a_production_vdb_selector():
     manager = SessionManager()
-    assert manager._backend_factory is NpiCoverageBackend
+    assert manager._backend_factory is UrgCoverageBackend
 
     opened_vdbs = []
 
@@ -503,6 +504,49 @@ def test_fake_backend_is_not_a_production_vdb_selector():
     )
     assert "_TestBackend" not in source
     assert 'vdb == "fake"' not in source
+
+
+def test_urg_backend_initializes_npi_only_for_exclusion(monkeypatch, tmp_path):
+    from xcov import backend as backend_module
+    from xcov.urg_summary import UrgSummaryIndex
+
+    index = UrgSummaryIndex(
+        metric_names=("Line",),
+        tests=("test0",),
+        scopes=({
+            "name": "top", "full_name": "top", "parent": None,
+            "depth": 0, "type": "instance",
+        },),
+        scope_metrics={
+            "top": {
+                "line": {
+                    "covered": 1, "coverable": 1, "missing": 0, "pct": 100.0,
+                },
+            },
+        },
+        functional_rows=(),
+        assertion_rows=(),
+    )
+    monkeypatch.setattr(backend_module, "_load_urg_summary", lambda _vdb: index)
+    created = []
+
+    def npi_factory(vdb, **kwargs):
+        created.append((vdb, kwargs))
+        return _TestBackend(vdb, **kwargs)
+
+    backend = UrgCoverageBackend("read-only.vdb", npi_factory=npi_factory)
+    assert backend.summary() == {"test_count": 1, "top_scope_count": 1}
+    assert backend.tests() == [{"name": "test0"}]
+    assert backend.scopes()[0]["full_name"] == "top"
+    assert backend.scope_metrics()["top"]["line"]["covered"] == 1
+    assert created == []
+    assert backend.npi_initialized is False
+
+    backend.save_exclusions(str(tmp_path / "baseline.el"))
+    backend.save_exclusions(str(tmp_path / "second.el"))
+    assert len(created) == 1
+    assert backend.npi_initialized is True
+    backend.close()
 
 
 def test_schema_registry_covers_all_p0_actions():

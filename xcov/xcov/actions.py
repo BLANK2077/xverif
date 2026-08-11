@@ -531,9 +531,26 @@ class Dispatcher:
 
         structured = None
         if action in {"export.assert", "export.functional_coverage"}:
-            from .gap_export import build_gap_payload, write_gap_artifacts
+            from .gap_export import (
+                build_gap_payload,
+                parse_urg_gap_report,
+                write_gap_artifacts,
+            )
             structured_metric = "assert" if action == "export.assert" else "functional"
-            rows = sess.backend.gap_items(structured_metric, scope=scope, test="merged")
+            report_name = "asserts.txt" if structured_metric == "assert" else "grpinfo.txt"
+            report_path = Path(output_dir) / report_name
+            if not report_path.is_file():
+                raise XcovError(
+                    "URG_ARTIFACT_MISSING",
+                    f"URG did not produce {report_name}",
+                )
+            rows = parse_urg_gap_report(structured_metric, report_path)
+            if scope:
+                rows = [
+                    row for row in rows
+                    if row.get("scope") == scope
+                    or str(row.get("scope") or "").startswith(scope + ".")
+                ]
             payload = build_gap_payload(structured_metric, sess.vdb, rows)
             structured = write_gap_artifacts(output_dir, structured_metric, payload)
 
@@ -650,7 +667,10 @@ class Dispatcher:
                     raw_name = f"{metric}.urg.txt"
                     try:
                         payload = parse_metric_report(combined_text, scope, metric)
-                        sess.backend.attach_gap_locators(payload, test="merged")
+                        payload["exclusion_locator"] = {
+                            "version": "xcov.urg_semantic.v1",
+                            "vdb": os.path.realpath(sess.vdb),
+                        }
                     except CoverageExportParseError as error:
                         raise XcovError(
                             "URG_DETAIL_PARSE_INCOMPLETE", error.reason,
@@ -827,6 +847,7 @@ class Dispatcher:
         requested: List[Json] = []
         seen = set()
         preflight_errors = []
+        known_scopes = {row["full_name"] for row in sess.backend.scopes()}
         for entry in exports:
             path = Path(entry["path"])
             if not path.is_absolute():
@@ -845,11 +866,20 @@ class Dispatcher:
             metric = payload.get("metric")
             locator_meta = payload.get("exclusion_locator") or {}
             if metric not in {"line", "condition", "branch", "toggle", "fsm", "assert", "functional"} \
-                    or locator_meta.get("version") != "xcov.npi_path.v1":
+                    or locator_meta.get("version") != "xcov.urg_semantic.v1":
                 preflight_errors.append({"code": "EXPORT_FILE_INVALID", "path": str(path)})
                 continue
             if os.path.realpath(str(locator_meta.get("vdb", ""))) != os.path.realpath(sess.backend.vdb):
                 preflight_errors.append({"code": "EXPORT_VDB_MISMATCH", "path": str(path)})
+                continue
+            payload_scope = payload.get("scope")
+            if metric in {"line", "condition", "branch", "toggle", "fsm"} \
+                    and payload_scope not in known_scopes:
+                preflight_errors.append({
+                    "code": "EXPORT_SCOPE_NOT_FOUND",
+                    "path": str(path),
+                    "scope": payload_scope,
+                })
                 continue
             gap_rows = {}
             if metric == "line":
@@ -881,26 +911,13 @@ class Dispatcher:
                     preflight_errors.append({"code": "EXPORT_GAP_ID_NOT_FOUND", "path": str(path), "gap_id": gap_id})
                     continue
                 gap, group = gap_record
-                targets = gap.get("_exclude_targets")
-                if not isinstance(targets, list) or (not targets and metric != "fsm"):
-                    preflight_errors.append({"code": "EXPORT_GAP_RESOLVE_MISSING", "path": str(path), "gap_id": gap_id})
-                    continue
                 candidate = {
-                    "path": str(path.resolve()), "gap_id": gap_id, "metric": metric, "targets": targets,
+                    "path": str(path.resolve()), "gap_id": gap_id, "metric": metric,
+                    "targets": [], "payload": payload,
                     "preflight_error": gap.get("_exclude_error"), "reason": reason,
                     "source_files": payload.get("source_files") or [], "gap": gap,
                     "group": group, "scope": payload.get("scope"),
                 }
-                if targets:
-                    try:
-                        candidate["csv_rows"] = _gap_csv_rows(candidate)
-                    except XcovError as exc:
-                        preflight_errors.append({
-                            "code": "EXCLUSION_CSV_IDENTITY_MISSING",
-                            "path": str(path), "gap_id": gap_id,
-                            "message": str(exc),
-                        })
-                        continue
                 requested.append(candidate)
         if preflight_errors:
             raise XcovError(
@@ -930,6 +947,51 @@ class Dispatcher:
             item_rows = {}
             applied_targets = 0
             non_fsm_failure = None
+            resolved_payloads: set[int] = set()
+            resolve_errors = []
+            for item in requested:
+                payload = item["payload"]
+                payload_key = id(payload)
+                if payload_key not in resolved_payloads:
+                    try:
+                        sess.backend.resolve_gap_payload(payload, test="merged")
+                    except Exception as exc:
+                        resolve_errors.append({
+                            "path": item["path"],
+                            "code": "EXPORT_GAP_RESOLVE_FAILED",
+                            "message": str(exc),
+                        })
+                    resolved_payloads.add(payload_key)
+                targets = item["gap"].get("_exclude_targets")
+                if not isinstance(targets, list) or not targets:
+                    if item["metric"] != "fsm":
+                        resolve_errors.append({
+                            "path": item["path"],
+                            "gap_id": item["gap_id"],
+                            "code": "EXPORT_GAP_RESOLVE_MISSING",
+                            "message": item["gap"].get("_exclude_error"),
+                        })
+                    continue
+                item["targets"] = targets
+                try:
+                    item["csv_rows"] = _gap_csv_rows(item)
+                except XcovError as exc:
+                    resolve_errors.append({
+                        "path": item["path"],
+                        "gap_id": item["gap_id"],
+                        "code": "EXCLUSION_CSV_IDENTITY_MISSING",
+                        "message": str(exc),
+                    })
+            if resolve_errors:
+                raise XcovError(
+                    "EXCLUSION_EXPORT_RESOLVE_FAILED",
+                    "URG 语义 gap 无法唯一解析为 NPI 排除目标，本次请求未修改数据库",
+                    atomic_result="none_applied", atomic=True,
+                    transaction_committed=False,
+                    requested_gap_count=len(requested), successful_gap_count=0,
+                    applied_gap_count=0, applied_target_count=0,
+                    rollback_performed=False, errors=resolve_errors,
+                )
             execution_order = sorted(
                 enumerate(requested),
                 key=lambda pair: (
@@ -1558,7 +1620,15 @@ def _source_and_line(item: Json) -> tuple[str, int]:
                     return source_file or file_name, int(line_text)
             line = candidate.get("line")
             if isinstance(line, int) and line > 0:
-                return source_file, line
+                candidate_file = str(candidate.get("file") or "")
+                if candidate_file and Path(candidate_file).is_absolute():
+                    try:
+                        candidate_file = str(
+                            Path(candidate_file).resolve().relative_to(Path.cwd().resolve())
+                        )
+                    except ValueError:
+                        candidate_file = Path(candidate_file).name
+                return source_file or candidate_file, line
             pending.extend(candidate.values())
         elif isinstance(candidate, list):
             pending.extend(candidate)

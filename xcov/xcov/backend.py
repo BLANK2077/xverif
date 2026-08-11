@@ -81,6 +81,53 @@ def _locator_key(locator: Json) -> str:
     return json.dumps(locator, sort_keys=True, separators=(",", ":"))
 
 
+def _semantic_gap_key(metric: str, row: Json) -> tuple[Any, ...]:
+    if metric == "assert":
+        full_name = str(row.get("full_name") or "")
+        full_name = __import__("re").sub(r"\.assert\.\d+\.", ".", full_name)
+        return (
+            str(row.get("kind") or row.get("type") or ""),
+            full_name,
+        )
+    bin_name = str(row.get("bin") or row.get("name") or "")
+    bin_name = bin_name.replace("] [", "|")
+    return (
+        str(row.get("scope") or ""),
+        str(row.get("covergroup") or ""),
+        str(row.get("coverpoint") or ""),
+        str(row.get("cross") or ""),
+        bin_name,
+    )
+
+
+def _load_urg_summary(vdb: str) -> UrgSummaryIndex:
+    with tempfile.TemporaryDirectory(prefix=".xcov-urg-") as report_dir:
+        result = UrgRunner().run(
+            [
+                "urg",
+                "-full64",
+                "-dir",
+                vdb,
+                "-report",
+                report_dir,
+                "-xml_verbose",
+                "-format",
+                "text",
+                "-show",
+                "summary",
+            ],
+            timeout=300,
+        )
+        if result.returncode != 0:
+            raise XcovError(
+                "URG_SUMMARY_FAILED",
+                "URG summary generation failed",
+                returncode=result.returncode,
+                stderr_tail=result.stderr[-500:],
+            )
+        return parse_urg_summary(report_dir)
+
+
 def _namespaced_coverage_ref(namespace: str, row: Json) -> str:
     payload = json.dumps(
         {
@@ -488,6 +535,10 @@ class CoverageBackend:
     def unload_exclusions(self, test: str = "merged") -> None:
         raise NotImplementedError
 
+    def resolve_gap_payload(self, payload: Json, test: str = "merged") -> Json:
+        """Resolve an URG semantic gap payload into transient exclusion targets."""
+        raise NotImplementedError
+
 
 def _canonical_scope_metric(scope: str, metric: Any, values: Any) -> Json:
     operation = "scope_metrics.canonicalize"
@@ -728,6 +779,9 @@ class CanonicalCoverageBackend(CoverageBackend):
 
     def unload_exclusions(self, test: str = "merged") -> None:
         self._delegate.unload_exclusions(test=test)
+
+    def resolve_gap_payload(self, payload: Json, test: str = "merged") -> Json:
+        return self._delegate.resolve_gap_payload(payload, test=test)
 
     def _npi_items(self, wanted_metrics=None):
         return self._delegate._npi_items(wanted_metrics=wanted_metrics)
@@ -1132,32 +1186,7 @@ class NpiCoverageBackend(CoverageBackend):
     def _ensure_urg(self) -> None:
         if self._urg_loaded:
             return
-
-        with tempfile.TemporaryDirectory(prefix=".xcov-urg-") as report_dir:
-            result = UrgRunner().run(
-                [
-                    "urg",
-                    "-full64",
-                    "-dir",
-                    self.vdb,
-                    "-report",
-                    report_dir,
-                    "-xml_verbose",
-                    "-format",
-                    "text",
-                    "-show",
-                    "summary",
-                ],
-                timeout=300,
-            )
-            if result.returncode != 0:
-                raise XcovError(
-                    "URG_SUMMARY_FAILED",
-                    "URG summary generation failed",
-                    returncode=result.returncode,
-                    stderr_tail=result.stderr[-500:],
-                )
-            index = parse_urg_summary(report_dir)
+        index = _load_urg_summary(self.vdb)
         self._urg_index = index
         self._urg_metrics = list(index.metric_names)
         self._urg_scopes = {
@@ -1463,6 +1492,47 @@ class NpiCoverageBackend(CoverageBackend):
         finally:
             if not pinned:
                 self.release_if_handle(current)
+
+    def resolve_gap_payload(self, payload: Json, test: str = "merged") -> Json:
+        """Resolve an URG-only artifact after the user requests exclusion.
+
+        Code coverage keeps the existing strict URG-to-NPI alignment logic.
+        Assertion and functional coverage are matched by their stable semantic
+        fields; NPI traversal is intentionally delayed until this method.
+        """
+        metric = payload.get("metric")
+        if metric in {"line", "condition", "branch", "toggle", "fsm"}:
+            return self.attach_gap_locators(payload, test=test)
+        if metric not in {"assert", "functional"}:
+            raise XcovError(
+                "EXPORT_FILE_INVALID",
+                "unsupported semantic gap metric",
+                metric=metric,
+            )
+        rows = self.gap_items(metric, test=test)
+        available: Dict[tuple[Any, ...], List[Json]] = {}
+        for row in rows:
+            key = _semantic_gap_key(metric, row)
+            available.setdefault(key, []).append(row)
+        for gap in payload.get("gaps") or []:
+            matches = available.get(_semantic_gap_key(metric, gap), [])
+            if len(matches) != 1:
+                gap["_exclude_targets"] = []
+                gap["_exclude_error"] = (
+                    "NPI semantic target is missing"
+                    if not matches else
+                    "NPI semantic target is ambiguous"
+                )
+                continue
+            matched = matches[0]
+            evidence = matched.get("evidence") or {}
+            gap["_resolved_evidence"] = dict(evidence)
+            gap["_exclude_targets"] = list(matched.get("_exclude_targets") or [])
+        payload["exclusion_locator"] = {
+            "version": "xcov.npi_path.v1",
+            "vdb": os.path.realpath(self.vdb),
+        }
+        return payload
 
     def set_exclusion(
         self,
@@ -1982,6 +2052,113 @@ class NpiCoverageBackend(CoverageBackend):
                 )
             finally:
                 self.release_if_handle(child)
+
+
+@dataclass
+class UrgCoverageBackend(CoverageBackend):
+    """URG read backend with an exclude-only, lazily-created NPI context."""
+
+    worker_kind = "urg"
+
+    vdb: str
+    exclusion_policy: str = "default"
+    npi_factory: Callable[..., CoverageBackend] = field(
+        default=NpiCoverageBackend,
+        repr=False,
+    )
+    _urg_index: UrgSummaryIndex | None = field(default=None, init=False, repr=False)
+    _npi: CoverageBackend | None = field(default=None, init=False, repr=False)
+
+    @property
+    def npi_initialized(self) -> bool:
+        return self._npi is not None
+
+    def _summary_index(self) -> UrgSummaryIndex:
+        if self._urg_index is None:
+            self._urg_index = _load_urg_summary(self.vdb)
+        return self._urg_index
+
+    def _exclude_backend(self) -> CoverageBackend:
+        if self._npi is None:
+            self._npi = self.npi_factory(
+                self.vdb,
+                exclusion_policy=self.exclusion_policy,
+            )
+        return self._npi
+
+    def close(self) -> None:
+        if self._npi is not None:
+            try:
+                self._npi.close()
+            finally:
+                self._npi = None
+        self._urg_index = None
+
+    def tests(self) -> List[Json]:
+        return [{"name": name} for name in self._summary_index().tests]
+
+    def summary(self) -> Json:
+        index = self._summary_index()
+        return {
+            "test_count": len(index.tests),
+            "top_scope_count": len(index.top_scopes),
+        }
+
+    def top_scopes(self) -> List[Json]:
+        return [dict(row) for row in self._summary_index().top_scopes]
+
+    def scopes(self) -> List[Json]:
+        return [dict(row) for row in self._summary_index().scopes]
+
+    def scope_metrics(self) -> Dict[str, Json]:
+        return {
+            scope: {metric: dict(values) for metric, values in metrics.items()}
+            for scope, metrics in self._summary_index().scope_metrics.items()
+        }
+
+    def scope_functional_from_urg(self) -> List[Json]:
+        return [dict(row) for row in self._summary_index().functional_rows]
+
+    def scope_assert_from_urg(self) -> List[Json]:
+        return [dict(row) for row in self._summary_index().assertion_rows]
+
+    # These methods belong exclusively to exclusion workflows. They are the
+    # only normal-session path allowed to create the NPI context.
+    def items(self, metrics: Optional[List[str]] = None,
+              scope: Optional[str] = None, test: str = "merged",
+              functional_only: bool = False) -> List[Json]:
+        return self._exclude_backend().items(
+            metrics=metrics, scope=scope, test=test,
+            functional_only=functional_only,
+        )
+
+    def gap_items(self, metric: str, scope: Optional[str] = None,
+                  test: str = "merged") -> List[Json]:
+        return self._exclude_backend().gap_items(metric, scope=scope, test=test)
+
+    def load_exclusions(self, paths: List[str], test: str = "merged") -> List[Json]:
+        return self._exclude_backend().load_exclusions(paths, test=test)
+
+    def set_exclusion(self, coverage_ref: str, excluded: bool,
+                      test: str = "merged") -> Json:
+        return self._exclude_backend().set_exclusion(
+            coverage_ref, excluded, test=test,
+        )
+
+    def save_exclusions(self, path: str, test: str = "merged") -> None:
+        self._exclude_backend().save_exclusions(path, test=test)
+
+    def unload_exclusions(self, test: str = "merged") -> None:
+        self._exclude_backend().unload_exclusions(test=test)
+
+    def resolve_gap_payload(self, payload: Json, test: str = "merged") -> Json:
+        return self._exclude_backend().resolve_gap_payload(payload, test=test)
+
+    def set_exclusion_locator(self, locator: Json, excluded: bool = True,
+                              test: str = "merged") -> Json:
+        return self._exclude_backend().set_exclusion_locator(
+            locator, excluded, test=test,
+        )
 
 
 def _code_coverage_path(api: NpiApiBinding, metric: str, typ: Any,

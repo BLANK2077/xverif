@@ -21,7 +21,9 @@ tools/xcov --stdio-loop
 
 本文件只讲原生 `xcov.v1` JSON envelope。MCP tool 参数、MCP session 和 SDK-free loop wrapper 请使用 `xverif-mcp`。
 
-真实 NPI coverage 查询需要 Synopsys license；受限沙箱内 license 可能不可达。
+普通 coverage 查询与三类 gap 导出固定使用 URG，不加载 NPI。只有 exclusion
+处理才惰性加载 pynpi、打开 VDB 并执行必要遍历；真实 exclusion 需要 Synopsys
+license，受限沙箱内 license 可能不可达。
 
 ## Exclusion 关键生命周期
 
@@ -146,11 +148,13 @@ assert export（输出目录内保留 `asserts.txt`，并生成 `assert.json`、
 - fsm 使用 `xcov.code_coverage.fsm.v2`：实例内不同 FSM 分段输出，每段先给出 transition
   coverage，再以 `gap_id/kind/object/at` 表格逐行列出 state、transition 或 sequence 缺口。
 - `exclude.add.args.exports` 接受 metric JSON 绝对路径及 `items` 数组；每项必须包含
-  `gap_id` 和非空 `reason`。xcov 使用 JSON 内
-  的固定 NPI locator 直接排除，不扫描 VDB；非 FSM 失败整批回滚，只有 FSM 允许返回
-  明确的 `partial_success` 和逐 gap 失败原因。
-- `exports` 支持 code、assert 与 functional 的结构化 JSON。同一 session 优先使用导出时
-  缓存的 NPI handle 直接命中；跨 session 使用文件中的 root/scope/path/type/name 重建。
+  `gap_id` 和非空 `reason`。JSON 只包含 `xcov.urg_semantic.v1` 语义身份，导出阶段
+  不启动 NPI。真正执行 `exclude.add` 时先用 URG hierarchy 拒绝未知 scope，再惰性
+  打开 NPI 并做必要遍历，将所选语义 gap 唯一解析为临时 target；非 FSM 失败整批回滚，
+  只有 FSM 允许返回明确的 `partial_success` 和逐 gap 失败原因。
+- `exports` 支持 code、assert 与 functional 的结构化 JSON；不持久化 NPI handle、
+  traversal path 或数据库内部唯一 ID。旧 artifact 对应的对象若已被排除并从 NPI score
+  视图隐藏，应重新导出当前 gap，不能绕过 wrapper 调低层 `handle_by_name` 猜测对象。
   不要构造或发送已删除的 `args.selectors`。`coverage_ref` 只在生成它的 session 内有效。
 - 同一 session 内重复 add 同一身份但提供新 reason 时，内存 reason 更新；若
   `exclude.csv.export` 发现目标 CSV 已有同一身份但 reason 不同，则三类文件均不写入，必须
@@ -165,7 +169,8 @@ assert export（输出目录内保留 `asserts.txt`，并生成 `assert.json`、
 
 ## 排障
 
-- license/NPI 错误：在沙箱外确认 Verdi/NPI 和 license server。
+- 普通查询失败：检查 URG、VDB 和固定六件套错误，不要切换到 NPI fallback。
+- exclusion 的 license/NPI 错误：在沙箱外确认 Verdi/NPI 和 license server。
 - action 参数不确定：先用原生 `actions` 和 `schema` action 查询。
 - 大结果：设置 limit，必要时 `overflow:"to_file"` 或 output path。
 - MCP/LSF/session 问题：改用 `xverif-mcp` 对应 troubleshooting。

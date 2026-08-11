@@ -177,28 +177,21 @@ def test_complex_modinfo_export_has_diverse_incomplete_branch_groups(xverif_fixt
         assert "required" not in fsm_xout
 
     assert any(scores[ACTIVE_SCOPE][metric] != scores[SPARSE_SCOPE][metric] for metric in METRICS)
-def test_export_gap_ids_are_excluded_without_database_traversal(xverif_fixture, tmp_path):
+def test_export_is_urg_only_and_exclusion_lazily_resolves_npi_targets(xverif_fixture, tmp_path):
     import json
     from pathlib import Path
 
     from xcov.actions import Dispatcher
-    from xcov.backend import NpiCoverageBackend
+    from xcov.backend import UrgCoverageBackend
     from xcov.session import SessionManager
 
     resources = xverif_fixture("xcov.modinfo_complex")
     vdb = resources / "complex.vdb"
-    backend_holder = {}
-
-    def factory(vdb_path, **kwargs):
-        backend = NpiCoverageBackend(vdb=str(vdb_path))
-        backend_holder["backend"] = backend
-        for name, value in kwargs.items():
-            if hasattr(backend, name):
-                setattr(backend, name, value)
-        return backend
-
-    sessions = SessionManager(backend_factory=factory)
+    sessions = SessionManager()
     session = sessions.open(str(vdb), name="gap_exclusion", cache_dir=str(tmp_path))
+    backend = session.backend._delegate
+    assert isinstance(backend, UrgCoverageBackend)
+    assert backend.npi_initialized is False
     dispatcher = Dispatcher(sessions=sessions)
     try:
         exported = dispatcher.dispatch({
@@ -234,12 +227,10 @@ def test_export_gap_ids_are_excluded_without_database_traversal(xverif_fixture, 
             export_entries.append({
                 "path": str(path),
                 "items": [{"gap_id": gap_id, "reason": f"验证 {metric} gap exclude"} for gap_id in ids],
-            })
+                })
 
-        def forbidden_traversal(*args, **kwargs):
-            raise AssertionError("exclude.add exports must not call _npi_items")
+        assert backend.npi_initialized is False
 
-        backend_holder["backend"]._npi_items = forbidden_traversal
         excluded = dispatcher.dispatch({
             "api_version": "xcov.v1",
             "request_id": "exclude-all-export-gaps",
@@ -251,6 +242,7 @@ def test_export_gap_ids_are_excluded_without_database_traversal(xverif_fixture, 
         assert excluded["summary"]["result"] == "success"
         assert excluded["summary"]["successful_gap_count"] == len(expected_ids)
         assert excluded["summary"]["failed_gap_count"] == 0
+        assert backend.npi_initialized is True
         assert [(item["metric"], item["gap_id"]) for item in excluded["data"]["items"]] == expected_ids
         assert all(item["status"] in {"changed", "already_in_state"} for item in excluded["data"]["items"])
 
@@ -277,7 +269,7 @@ def test_export_gap_ids_are_excluded_without_database_traversal(xverif_fixture, 
         assert missing_fsm["error"]["detail.transaction_committed"] is False
         assert "未生效任何条目" in missing_fsm["error"]["message"]
 
-        fsm_gaps[0]["_exclude_targets"][0]["path"] = [999999]
+        fsm_gaps[0]["object"] = "__missing_fsm_semantic_object__"
         broken_fsm_path = tmp_path / "fsm-broken.json"
         broken_fsm_path.write_text(json.dumps(fsm_payload), encoding="utf-8")
         partial = dispatcher.dispatch({
@@ -292,16 +284,16 @@ def test_export_gap_ids_are_excluded_without_database_traversal(xverif_fixture, 
                     {"gap_id": fsm_gaps[1]["gap_id"], "reason": "FSM 未计划路径"},
                 ],
             }]},
-        })
+            })
         assert partial["ok"] is True, json.dumps(partial, ensure_ascii=False, indent=2)
         assert partial["summary"]["result"] == "partial_success"
-        assert partial["summary"]["successful_gap_count"] == 1
-        assert partial["summary"]["failed_gap_count"] == 1
+        assert partial["summary"]["successful_gap_count"] == 0
+        assert partial["summary"]["failed_gap_count"] == 2
 
         branch_path = instance_dir / "branch.json"
         branch_payload = json.loads(branch_path.read_text(encoding="utf-8"))
         branch_gap = branch_payload["decision_groups"][0]["uncovered"][0]
-        branch_gap["_exclude_targets"][0]["path"] = [999999]
+        branch_payload["scope"] = "top.__missing_scope__"
         broken_branch_path = tmp_path / "branch-broken.json"
         broken_branch_path.write_text(json.dumps(branch_payload), encoding="utf-8")
         rejected = dispatcher.dispatch({
@@ -315,7 +307,7 @@ def test_export_gap_ids_are_excluded_without_database_traversal(xverif_fixture, 
             }]},
         })
         assert rejected["ok"] is False
-        assert rejected["error"]["code"] == "EXCLUSION_APPLY_FAILED"
+        assert rejected["error"]["code"] == "EXCLUSION_EXPORT_PREFLIGHT_FAILED"
         assert "未生效任何条目" in rejected["error"]["message"]
     finally:
         session.close()
@@ -326,15 +318,16 @@ def test_assert_and_functional_exports_are_structured_and_fully_excludable(xveri
     from pathlib import Path
 
     from xcov.actions import Dispatcher
-    from xcov.backend import NpiCoverageBackend
+    from xcov.backend import UrgCoverageBackend
     from xcov.session import SessionManager
 
     resources = xverif_fixture("xcov.modinfo_complex")
     vdb = resources / "complex.vdb"
-    sessions = SessionManager(
-        backend_factory=lambda path, **kwargs: NpiCoverageBackend(vdb=str(path))
-    )
+    sessions = SessionManager()
     session = sessions.open(str(vdb), name="structured_gaps", cache_dir=str(tmp_path))
+    backend = session.backend._delegate
+    assert isinstance(backend, UrgCoverageBackend)
+    assert backend.npi_initialized is False
     dispatcher = Dispatcher(sessions=sessions)
     exports = []
     try:
@@ -369,6 +362,8 @@ def test_assert_and_functional_exports_are_structured_and_fully_excludable(xveri
                 ],
             })
 
+        assert backend.npi_initialized is False
+
         functional_groups = {gap["covergroup"] for gap in payloads["functional"]["gaps"]}
         assert any("lane_instance_cg" in group for group in functional_groups)
         assert any("lane_aggregate_cg" in group for group in functional_groups)
@@ -380,6 +375,7 @@ def test_assert_and_functional_exports_are_structured_and_fully_excludable(xveri
         })
         assert excluded["ok"] is True, json.dumps(excluded, ensure_ascii=False, indent=2)
         assert excluded["summary"]["failed_gap_count"] == 0
+        assert backend.npi_initialized is True
         assert excluded["summary"]["successful_gap_count"] == sum(
             payload["gap_count"] for payload in payloads.values()
         )

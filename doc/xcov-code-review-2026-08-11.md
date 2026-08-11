@@ -1736,3 +1736,63 @@ pytest --xverif-prepare <fixture-id>
 - fast、fixture validation、regression、nightly 和真实 LSF suite 结果；
 - 任何未运行门禁的真实阻塞原因；
 - 不记录敏感 license、token、cookie 或完整唯一 job/session id。
+
+## 16. 分阶段实施记录
+
+### 16.1 阶段 1：固定 URG 合同和三类 typed IR
+
+提交 `20eadf4` 已完成以下闭环：
+
+- summary 固定执行 `urg -full64 -dir <vdb> -report <dir> -xml_verbose -format text -show summary`；
+- 六件套 `session.xml/tests.txt/dashboard.txt/modlist.txt/groups.txt/asserts.txt` 缺失或为空均 fail-closed；
+- `session.xml` 使用 streaming `iterparse`，code、assert 和 functional 按各自 XML `type`
+  进入独立 IR，不再把后三者套用 code coverage 结构；
+- test list 只从 `tests.txt` 读取；scope hierarchy、subtree metric、assert object 和
+  functional variant/instance 选择均建立明确合同；
+- summary 读取路径删除 NPI fallback，公开 schema 删除固定 URG 结构无法可靠支撑的字段。
+
+验收结果：`xcov.unit` 127 passed，host `xcov.urg_backend` 7 passed，
+`skills.xverif` 16 passed。
+
+### 16.2 阶段 2：URG-only session 与 exclude-only lazy NPI（实施中）
+
+本阶段实码审计确认，旧边界比“构造函数立即 import pynpi”更深：
+
+1. `SessionManager.open` 默认构造 `NpiCoverageBackend`，因此 read-only session 也执行
+   `npisys.init + cov.open + test handle merge`；
+2. code gap export 调用 `attach_gap_locators` 遍历 NPI，并把 scope/path/type/name 写入 JSON；
+3. assert/functional gap export 直接调用 `gap_items` 全量遍历 NPI；
+4. 所以只把 backend 构造改为 lazy 不能满足“summary/scope/gap/detail 零 NPI”。
+
+当前实现改为：
+
+- 默认 `UrgCoverageBackend` 只持有固定 URG index；`session.open`、`tests.list`、summary、
+  scope、assert/functional summary、三类 export 和 session close 均不创建 NPI；
+- `exclude.*`、`exclude.csv.*`、`export.exclude` 首次执行时，session 内只创建一个
+  `NpiCoverageBackend` exclusion context，后续复用，close 时仅在确实创建过时关闭；
+- code/assert/functional 导出统一发布 `xcov.urg_semantic.v1`，不再持久化 NPI handle、
+  traversal path 或数据库内部 ID；
+- assert detail 从 `asserts.txt` 的 assertion/cover property/cover sequence 表解析；
+  functional detail 从 `grpinfo.txt` 的 Group/Group Instance、Variable/Cross 和 uncovered
+  bin 表解析；export 阶段不 import pynpi；
+- `exclude.add` 才把选中的 URG 语义 gap 解析为临时 NPI target。assertion 名会规范化
+  NPI 内部 `.assert.<index>.` 路径；functional cross bin 会规范化 URG 的 `] [` 与 NPI
+  的 `|` 表达，真实复杂 fixture 的 12 个 assertion gap 和 115 个 functional gap 均可解析；
+- 在调用 `database.handle_by_name` 前，必须先用 URG hierarchy 验证 code payload scope。
+  实测把未知 scope 直接交给 vendor API 会在 `libNPI.so` 的
+  `chdl_database_hdl_t::get_handle_by_name` 内 SIGSEGV；现在未知 scope 返回
+  `EXCLUSION_EXPORT_PREFLIGHT_FAILED/EXPORT_SCOPE_NOT_FOUND`，不会进入 NPI；
+- 已排除对象可能从 NPI score 视图隐藏，旧 gap artifact 因而可能无法再次解析。曾尝试
+  对所有 leaf 探测 report-time status 以恢复目标，但 vendor NPI 以 139 退出，已删除该路径。
+  正式合同是重新导出当前 gap，禁止绕过 wrapper 或调用低层 handle lookup 猜测对象。
+
+当前验收证据：
+
+- `xcov.unit`：130 passed；
+- host `xcov.modinfo_complex`：5 passed；
+- 单元 instrumentation 证明 read path 的 NPI factory 调用次数为 0，首次 exclusion 为 1，
+  后续 exclusion 保存仍为 1；
+- 真实 fixture 在 code/assert/functional export 后均断言 `npi_initialized=false`，执行
+  `exclude.add` 后才变为 `true`；
+- 两次 vendor 139 已通过 core stack 定位并形成前置 scope gate 与禁止 status-probe 的
+  产品约束，不作为可接受测试结果；最终阶段仍需重新运行全部关联门禁。
