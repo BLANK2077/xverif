@@ -313,3 +313,15 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 - 错误现象：实现 branch XOUT v2 后直接以 regression gate 运行 `xcov.urg_backend`，被 suite membership 门禁拒绝。
 - 误判原因：只检查了 catalog 中的 suite 定义和既有经验，没有在执行 focused suite 前查询当前 gate plan。
 - 以后规则：每次运行 focused suite 都先查询目标 gate 的 `--xverif-plan`；若产品要求调整 membership，显式修改并测试 catalog gate 合同，不通过 cost 分类伪装。
+
+### 2026-08-11 环境错误复盘
+
+- 错误现象：为验证 toggle coverage 能否按名直达，向 pynpi L0 `cov_l0.handle_by_name` 传入 signal 名后触发 vendor `libNPI.so` SIGSEGV；后续只读方法探测的清理代码又误调用了不存在的 `Handle.release()`。
+- 误判原因：只依据 C header 中通用的 `scope` 参数推断 coverage object 可按名查询，没有先遵守 Python wrapper 明确限定的“database 上按 instance fullname 查询”合同；同时未复用仓库已有的 `release_if_handle` 生命周期入口。
+- 以后规则：Python coverage 的 `handle_by_name` 只用于 database instance fullname；不得用 L0 绕过 wrapper 尝试 signal/bin 查询。临时 NPI probe 也统一通过 backend 的 handle release helper 清理，不猜测 wrapper 方法。
+
+### 2026-08-11 环境错误复盘
+
+- 错误现象：复核 pynpi coverage instance lookup 时使用系统 Python 3.14，`cov.open` 在 `_cov_l0.so` 的 SWIG 字符串转换中触发 SIGSEGV，尚未进入 lookup。
+- 误判原因：执行临时 inline probe 时只设置了 Verdi `PYTHONPATH`，没有遵守仓库已确认的 `.conda-xverif` Python 兼容环境合同。
+- 以后规则：所有 pynpi coverage probe 都使用仓库 `.conda-xverif/bin/python`，启动前同时核对解释器版本和 Verdi Python 路径；系统 Python 的 SWIG 崩溃不作为 NPI coverage 产品结论。
