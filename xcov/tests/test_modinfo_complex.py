@@ -256,6 +256,26 @@ def test_export_gap_ids_are_excluded_without_database_traversal(xverif_fixture, 
         fsm_path = instance_dir / "fsm.json"
         fsm_payload = json.loads(fsm_path.read_text(encoding="utf-8"))
         fsm_gaps = [gap for group in fsm_payload["fsm_groups"] for gap in group["gaps"]]
+        missing_fsm = dispatcher.dispatch({
+            "api_version": "xcov.v1",
+            "request_id": "exclude-fsm-missing-gap-id",
+            "action": "exclude.add",
+            "target": {"session_id": session.session_id},
+            "args": {"exports": [{
+                "path": str(fsm_path),
+                "items": [
+                    {"gap_id": fsm_gaps[0]["gap_id"], "reason": "有效 FSM gap"},
+                    {"gap_id": "F999999", "reason": "不存在的 FSM gap"},
+                ],
+            }]},
+        })
+        assert missing_fsm["ok"] is False
+        assert missing_fsm["error"]["code"] == "EXCLUSION_EXPORT_PREFLIGHT_FAILED"
+        assert missing_fsm["error"]["detail.requested_gap_count"] == 2
+        assert missing_fsm["error"]["detail.successful_gap_count"] == 0
+        assert missing_fsm["error"]["detail.transaction_committed"] is False
+        assert "未生效任何条目" in missing_fsm["error"]["message"]
+
         fsm_gaps[0]["_exclude_targets"][0]["path"] = [999999]
         broken_fsm_path = tmp_path / "fsm-broken.json"
         broken_fsm_path.write_text(json.dumps(fsm_payload), encoding="utf-8")

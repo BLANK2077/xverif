@@ -772,62 +772,115 @@ class Dispatcher:
         excluded = adding
         rows: list = []
 
-        # 向后兼容: coverage_refs
-        for ref in refs:
-            result = sess.backend.set_exclusion(ref, excluded, test="merged")
-            if result.get("status") in {"changed", "already_in_state"}:
-                if excluded:
-                    reason = ref_reasons[ref]
-                    result["reason"] = reason
-                    result["metadata_status"] = sess.record_exclusion(
-                        "coverage_ref:" + ref,
-                        {"reason": reason, "coverage_ref": ref, "csv_row": None},
-                    )
-                else:
-                    sess.remove_exclusion_record("coverage_ref:" + ref)
-            rows.append(result)
-
-        # 新 selector 路径
-        for sel in selectors:
+        resolved_selectors = []
+        selector_errors = []
+        for index, sel in enumerate(selectors):
             reason = _required_reason(sel["reason"]) if adding else None
             selector = {key: value for key, value in sel.items() if key != "reason"}
             resolved = sess.backend.resolve_selector(selector)
             if not resolved["valid"]:
-                rows.append({
-                    "coverage_ref": None,
-                    "status": "invalid",
+                selector_errors.append({
+                    "index": index,
+                    "selector": selector,
                     "errors": resolved["errors"],
                     "note": resolved.get("note", ""),
                 })
-            elif resolved.get("locator"):
-                result = sess.backend.set_exclusion_locator(
-                    resolved["locator"], excluded, test="merged"
-                )
-                if result.get("status") in {"changed", "already_in_state"}:
-                    key = "selector:" + json.dumps(selector, sort_keys=True, separators=(",", ":"))
-                    if excluded:
-                        result["reason"] = reason
-                        result["metadata_status"] = sess.record_exclusion(
-                            key, {"reason": reason, "selector": selector, "csv_row": _selector_csv_row(selector)},
-                        )
-                    else:
-                        sess.remove_exclusion_record(key)
-                result.setdefault("coverage_ref", None)
-                rows.append(result)
             else:
-                result = sess.backend.set_exclusion(
-                    resolved["coverage_ref"], excluded, test="merged"
-                )
-                if result.get("status") in {"changed", "already_in_state"}:
-                    key = "selector:" + json.dumps(selector, sort_keys=True, separators=(",", ":"))
+                resolved_selectors.append((selector, reason, resolved))
+        if selector_errors:
+            raise XcovError(
+                "EXCLUSION_PREFLIGHT_FAILED",
+                "本次 exclude 请求未生效任何条目",
+                atomic_result="none_applied", atomic=True, transaction_committed=False,
+                requested_count=len(refs) + len(selectors), successful_count=0,
+                rollback_performed=False, errors=selector_errors,
+            )
+
+        with tempfile.TemporaryDirectory(prefix=".xcov-exclude-") as temporary:
+            baseline = Path(temporary) / "baseline.el"
+            try:
+                sess.backend.save_exclusions(str(baseline), test="merged")
+            except Exception as exc:
+                raise XcovError(
+                    "EXCLUSION_BASELINE_FAILED",
+                    "无法建立排除事务基线，本次请求未生效任何条目",
+                    atomic_result="none_applied", atomic=True, transaction_committed=False,
+                    requested_count=len(refs) + len(selectors), successful_count=0,
+                    rollback_performed=False, cause=str(exc),
+                ) from exc
+            baseline_metadata = dict(sess.exclusion_records)
+            staged_metadata = dict(baseline_metadata)
+            failure = None
+            try:
+                for ref in refs:
+                    result = sess.backend.set_exclusion(ref, excluded, test="merged")
+                    rows.append(result)
+                    if result.get("status") not in {"changed", "already_in_state"}:
+                        failure = result
+                        break
+                    key = "coverage_ref:" + ref
                     if excluded:
+                        reason = ref_reasons[ref]
                         result["reason"] = reason
-                        result["metadata_status"] = sess.record_exclusion(
-                            key, {"reason": reason, "selector": selector, "csv_row": _selector_csv_row(selector)},
-                        )
+                        result["metadata_status"] = "recorded"
+                        staged_metadata[key] = {
+                            "reason": reason, "coverage_ref": ref, "csv_row": None,
+                        }
                     else:
-                        sess.remove_exclusion_record(key)
-                rows.append(result)
+                        staged_metadata.pop(key, None)
+
+                if failure is None:
+                    for selector, reason, resolved in resolved_selectors:
+                        if resolved.get("locator"):
+                            result = sess.backend.set_exclusion_locator(
+                                resolved["locator"], excluded, test="merged"
+                            )
+                            result.setdefault("coverage_ref", None)
+                        else:
+                            result = sess.backend.set_exclusion(
+                                resolved["coverage_ref"], excluded, test="merged"
+                            )
+                        rows.append(result)
+                        if result.get("status") not in {"changed", "already_in_state"}:
+                            failure = result
+                            break
+                        key = "selector:" + json.dumps(
+                            selector, sort_keys=True, separators=(",", ":")
+                        )
+                        if excluded:
+                            result["reason"] = reason
+                            result["metadata_status"] = "recorded"
+                            staged_metadata[key] = {
+                                "reason": reason,
+                                "selector": selector,
+                                "csv_row": _selector_csv_row(selector),
+                            }
+                        else:
+                            staged_metadata.pop(key, None)
+            except Exception as exc:
+                failure = {"status": "failed", "reason": "setter_exception", "message": str(exc)}
+
+            if failure is not None:
+                try:
+                    sess.backend.unload_exclusions(test="merged")
+                    sess.backend.load_exclusions([str(baseline)], test="merged")
+                    sess.exclusion_records = baseline_metadata
+                except Exception as rollback_exc:
+                    raise XcovError(
+                        "EXCLUSION_ROLLBACK_FAILED",
+                        "排除应用失败且基线恢复失败，session 状态不再可信",
+                        atomic_result="rollback_failed", atomic=True,
+                        transaction_committed=False, failure=failure,
+                        rollback_error=str(rollback_exc),
+                    ) from rollback_exc
+                raise XcovError(
+                    "EXCLUSION_APPLY_FAILED",
+                    "排除应用失败并已回滚，本次请求未生效任何条目",
+                    atomic_result="none_applied", atomic=True, transaction_committed=False,
+                    requested_count=len(refs) + len(selectors), successful_count=0,
+                    rollback_performed=True, failure=failure,
+                )
+            sess.exclusion_records = staged_metadata
 
         sess.mark_exclusion_dirty()
         return ok_response(
@@ -913,8 +966,7 @@ class Dispatcher:
                         })
                         continue
                 requested.append(candidate)
-        non_fsm_errors = [error for error in preflight_errors if not str(error.get("gap_id", "")).startswith("F")]
-        if non_fsm_errors or (preflight_errors and not requested):
+        if preflight_errors:
             raise XcovError(
                 "EXCLUSION_EXPORT_PREFLIGHT_FAILED",
                 "本次 exclude.add 请求未生效任何条目",
@@ -925,37 +977,74 @@ class Dispatcher:
             )
         with tempfile.TemporaryDirectory(prefix=".xcov-gap-exclude-") as temporary:
             baseline = Path(temporary) / "baseline.el"
-            sess.backend.save_exclusions(str(baseline), test="merged")
+            try:
+                sess.backend.save_exclusions(str(baseline), test="merged")
+            except Exception as exc:
+                raise XcovError(
+                    "EXCLUSION_BASELINE_FAILED",
+                    "本次 exclude.add 请求未生效任何条目；无法建立回滚基线",
+                    atomic_result="none_applied", atomic=True,
+                    transaction_committed=False, requested_gap_count=len(requested),
+                    successful_gap_count=0, applied_gap_count=0,
+                    applied_target_count=0, rollback_performed=False,
+                    cause_message=str(exc),
+                ) from exc
             metadata_baseline = dict(sess.exclusion_records)
+            staged_metadata = dict(metadata_baseline)
             items = []
             applied_targets = 0
             non_fsm_failure = None
             for item in requested:
                 target_results = []
                 for target in item["targets"]:
-                    result = sess.backend.set_exclusion_locator(target, True, test="merged")
+                    try:
+                        result = sess.backend.set_exclusion_locator(
+                            target, True, test="merged"
+                        )
+                    except Exception as exc:
+                        result = {
+                            "status": "failed",
+                            "reason": "setter_exception",
+                            "message": str(exc),
+                        }
                     target_results.append(result)
-                    if result["status"] in {"changed", "already_in_state"}:
+                    if result.get("status") in {"changed", "already_in_state"}:
                         applied_targets += 1
                     else:
                         break
                 success = bool(item["targets"]) and all(
-                    result["status"] in {"changed", "already_in_state"} for result in target_results
+                    result.get("status") in {"changed", "already_in_state"}
+                    for result in target_results
                 )
                 row = {
                     "coverage_ref": f"{item['path']}#{item['gap_id']}",
                     "gap_id": item["gap_id"], "metric": item["metric"],
                     "status": "changed" if success else "failed",
                     "target_count": len(item["targets"]),
-                    "error": item["preflight_error"] if not success else None,
+                    "error": (
+                        item["preflight_error"]
+                        or next(
+                            (
+                                result.get("message") or result.get("reason")
+                                for result in target_results
+                                if result.get("status") not in {"changed", "already_in_state"}
+                            ),
+                            "NPI exclusion target failed",
+                        )
+                    ) if not success else None,
                 }
                 if success:
                     statuses = []
                     for csv_row in item["csv_rows"]:
                         key = "csv:" + json.dumps(csv_row, sort_keys=True, separators=(",", ":"))
-                        statuses.append(sess.record_exclusion(
-                            key, {"reason": item["reason"], "csv_row": csv_row},
-                        ))
+                        record = {"reason": item["reason"], "csv_row": csv_row}
+                        previous = staged_metadata.get(key)
+                        statuses.append(
+                            "created" if previous is None
+                            else "unchanged" if previous == record
+                            else "updated"
+                        )
+                        staged_metadata[key] = record
                     row["reason"] = item["reason"]
                     row["metadata_status"] = (
                         "updated" if "updated" in statuses else "created" if "created" in statuses else "unchanged"
@@ -983,6 +1072,7 @@ class Dispatcher:
                     applied_gap_count=0, applied_target_count=0, rollback_performed=True,
                     failed_item=non_fsm_failure,
                 )
+            sess.exclusion_records = staged_metadata
         failed = [item for item in items if item["status"] == "failed"]
         successful = len(items) - len(failed)
         sess.mark_exclusion_dirty()
