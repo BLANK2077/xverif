@@ -560,6 +560,14 @@ class Dispatcher:
             raise XcovError("URG_FAILED", f"URG export failed (exit {result.returncode})",
                             detail={"stderr": result.stderr[:500]})
 
+        structured = None
+        if action in {"export.assert", "export.functional_coverage"}:
+            from .gap_export import build_gap_payload, write_gap_artifacts
+            structured_metric = "assert" if action == "export.assert" else "functional"
+            rows = sess.backend.gap_items(structured_metric, scope=scope, test="merged")
+            payload = build_gap_payload(structured_metric, sess.vdb, rows)
+            structured = write_gap_artifacts(output_dir, structured_metric, payload)
+
         summary: Json = {
             "session_id": sess.session_id,
             "scope": args.get("scope"),
@@ -574,7 +582,7 @@ class Dispatcher:
             "truncation_scopes": [],
             "note": "URG text report written to output_dir. See modinfo.txt for details.",
         }
-        return ok_response(req, summary, {})
+        return ok_response(req, summary, {"structured": structured} if structured else {})
 
     def _export_code_coverage(self, req: Json, sess, args: Json) -> Json:
         import json
@@ -910,7 +918,7 @@ class Dispatcher:
                 continue
             metric = payload.get("metric")
             locator_meta = payload.get("exclusion_locator") or {}
-            if metric not in {"line", "condition", "branch", "toggle", "fsm"} \
+            if metric not in {"line", "condition", "branch", "toggle", "fsm", "assert", "functional"} \
                     or locator_meta.get("version") != "xcov.npi_path.v1":
                 preflight_errors.append({"code": "EXPORT_FILE_INVALID", "path": str(path)})
                 continue
@@ -925,6 +933,8 @@ class Dispatcher:
             elif metric == "branch":
                 groups = payload.get("decision_groups", [])
             elif metric == "toggle":
+                groups = [{"gaps": payload.get("gaps", [])}]
+            elif metric in {"assert", "functional"}:
                 groups = [{"gaps": payload.get("gaps", [])}]
             else:
                 groups = payload.get("fsm_groups", [])
@@ -991,12 +1001,24 @@ class Dispatcher:
                 ) from exc
             metadata_baseline = dict(sess.exclusion_records)
             staged_metadata = dict(metadata_baseline)
-            items = []
+            item_rows = {}
             applied_targets = 0
             non_fsm_failure = None
-            for item in requested:
+            execution_order = sorted(
+                enumerate(requested),
+                key=lambda pair: (
+                    str((pair[1]["targets"][0] if pair[1]["targets"] else {}).get("root") or "instance"),
+                    str((pair[1]["targets"][0] if pair[1]["targets"] else {}).get("scope") or ""),
+                    pair[1]["metric"],
+                    tuple((pair[1]["targets"][0] if pair[1]["targets"] else {}).get("path") or []),
+                ),
+                reverse=True,
+            )
+            for request_index, item in execution_order:
                 target_results = []
-                for target in item["targets"]:
+                for target in sorted(
+                    item["targets"], key=lambda value: tuple(value.get("path") or []), reverse=True
+                ):
                     try:
                         result = sess.backend.set_exclusion_locator(
                             target, True, test="merged"
@@ -1049,7 +1071,7 @@ class Dispatcher:
                     row["metadata_status"] = (
                         "updated" if "updated" in statuses else "created" if "created" in statuses else "unchanged"
                     )
-                items.append(row)
+                item_rows[request_index] = row
                 if not success and item["metric"] != "fsm":
                     non_fsm_failure = row
                     break
@@ -1073,6 +1095,7 @@ class Dispatcher:
                     failed_item=non_fsm_failure,
                 )
             sess.exclusion_records = staged_metadata
+            items = [item_rows[index] for index in range(len(requested))]
         failed = [item for item in items if item["status"] == "failed"]
         successful = len(items) - len(failed)
         sess.mark_exclusion_dirty()
@@ -1622,6 +1645,22 @@ def _source_and_line(item: Json) -> tuple[str, int]:
 def _gap_csv_rows(item: Json) -> List[Json]:
     source_file, line = _source_and_line(item)
     metric = item["metric"]
+    gap = item["gap"]
+    if metric == "functional":
+        return [{
+            "coverage_kind": "functional", "source_file": source_file,
+            "scope": str(gap.get("scope") or ""), "line": str(line),
+            "covergroup": str(gap.get("covergroup") or ""),
+            "coverpoint": str(gap.get("coverpoint") or ""),
+            "cross": str(gap.get("cross") or ""), "bin": str(gap.get("bin") or ""),
+        }]
+    if metric == "assert":
+        return [{
+            "coverage_kind": "assertion", "source_file": source_file,
+            "scope": str(gap.get("scope") or ""), "line": str(line),
+            "assertion": str(gap.get("full_name") or gap.get("name") or ""),
+            "assertion_kind": str(gap.get("kind") or ""),
+        }]
     rows = []
     for target in item["targets"]:
         obj = target.get("csv_object", "")

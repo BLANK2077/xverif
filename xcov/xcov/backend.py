@@ -77,6 +77,10 @@ def _coverage_ref_from_path(
     return "xcovref.v1:" + hashlib.sha256(payload).hexdigest()
 
 
+def _locator_key(locator: Json) -> str:
+    return json.dumps(locator, sort_keys=True, separators=(",", ":"))
+
+
 def _namespaced_coverage_ref(namespace: str, row: Json) -> str:
     payload = json.dumps(
         {
@@ -462,6 +466,11 @@ class CoverageBackend:
               functional_only: bool = False) -> List[Json]:
         raise NotImplementedError
 
+    def gap_items(self, metric: str, scope: Optional[str] = None,
+                  test: str = "merged") -> List[Json]:
+        """Internal export rows including direct exclusion locators."""
+        raise NotImplementedError
+
     def load_exclusions(self, paths: List[str], test: str = "merged") -> List[Json]:
         raise NotImplementedError
 
@@ -557,6 +566,10 @@ class CanonicalCoverageBackend(CoverageBackend):
             backend_type=self._backend_type,
             worker_kind=self.worker_kind,
         )
+
+    def gap_items(self, metric: str, scope: Optional[str] = None,
+                  test: str = "merged") -> List[Json]:
+        return self._delegate.gap_items(metric, scope=scope, test=test)
 
     def load_exclusions(self, paths: List[str], test: str = "merged") -> List[Json]:
         return self._delegate.load_exclusions(paths, test=test)
@@ -773,6 +786,8 @@ class NpiCoverageBackend(CoverageBackend):
     merged_test: Any = None
     test_map: Dict[str, Any] = field(default_factory=dict)
     coverage_identities: Dict[str, Json] = field(default_factory=dict)
+    locator_handles: Dict[str, Any] = field(default_factory=dict, init=False)
+    _pinned_handle_ids: set[int] = field(default_factory=set, init=False)
     coverage_ref_namespace: str = field(
         default_factory=lambda: secrets.token_hex(16)
     )
@@ -875,6 +890,10 @@ class NpiCoverageBackend(CoverageBackend):
 
     def close(self) -> None:
         try:
+            for handle in self.locator_handles.values():
+                self._api().module_call("cov.release_handle", handle)
+            self.locator_handles.clear()
+            self._pinned_handle_ids.clear()
             if self.db:
                 log_lifecycle_event("adhoc", "vdb.close.begin", True, {"vdb": self.vdb})
                 with _redirect_stdout_to_stderr():
@@ -1165,6 +1184,31 @@ class NpiCoverageBackend(CoverageBackend):
             ref = row.get("coverage_ref")
             if isinstance(ref, str):
                 self.coverage_identities[ref] = coverage_identity_for_row(row)
+            row.pop("_exclude_targets", None)
+        return rows
+
+    def gap_items(self, metric: str, scope: Optional[str] = None,
+                  test: str = "merged") -> List[Json]:
+        if metric not in {"assert", "functional"}:
+            raise XcovError("INVALID_METRIC", "structured gap export only supports assert/functional",
+                            metric=metric)
+        test_hdl = self._test_handle(test)
+        rows: List[Json] = []
+
+        def pin(handle: Any, row: Json) -> None:
+            key = _locator_key(row["_exclude_targets"][0])
+            if key not in self.locator_handles:
+                self.locator_handles[key] = handle
+                self._pinned_handle_ids.add(id(handle))
+
+        if metric == "functional":
+            self._walk_functional_items(test_hdl, scope, rows, pin)
+        else:
+            for inst in self._api().call("database.instance_handles", self.db):
+                try:
+                    self._walk_items(inst, test_hdl, [metric], scope, rows, pin)
+                finally:
+                    self.release_if_handle(inst)
         return rows
 
     def _npi_items(self, wanted_metrics: Optional[List[str]] = None) -> List[Json]:
@@ -1484,26 +1528,33 @@ class NpiCoverageBackend(CoverageBackend):
     def set_exclusion_locator(self, locator: Json, excluded: bool = True,
                               test: str = "merged") -> Json:
         test_hdl = self._merged_only(test)
-        inst = self.db.handle_by_name(locator["scope"])
-        if not inst:
-            return {"status": "failed", "reason": "scope_missing"}
-        current = getattr(inst, METRIC_METHODS[locator["metric"]])()
-        self.release_if_handle(inst)
+        pinned = self.locator_handles.get(_locator_key(locator))
+        if pinned:
+            current = pinned
+        elif locator.get("root") == "functional":
+            current = self._api().call("test.testbench_metric_handle", test_hdl)
+        else:
+            inst = self.db.handle_by_name(locator["scope"])
+            if not inst:
+                return {"status": "failed", "reason": "scope_missing"}
+            current = getattr(inst, METRIC_METHODS[locator["metric"]])()
+            self.release_if_handle(inst)
         if not current:
             return {"status": "failed", "reason": "metric_missing"}
-        for index in locator["path"]:
-            children = current.child_handles()
-            if not isinstance(index, int) or index < 0 or index >= len(children):
-                for child in children:
-                    self.release_if_handle(child)
+        if not pinned:
+            for index in locator["path"]:
+                children = current.child_handles()
+                if not isinstance(index, int) or index < 0 or index >= len(children):
+                    for child in children:
+                        self.release_if_handle(child)
+                    self.release_if_handle(current)
+                    return {"status": "failed", "reason": "path_missing"}
+                selected = children[index]
+                for child_index, child in enumerate(children):
+                    if child_index != index:
+                        self.release_if_handle(child)
                 self.release_if_handle(current)
-                return {"status": "failed", "reason": "path_missing"}
-            selected = children[index]
-            for child_index, child in enumerate(children):
-                if child_index != index:
-                    self.release_if_handle(child)
-            self.release_if_handle(current)
-            current = selected
+                current = selected
         try:
             if current.type() != locator["type"] or str(current.name() or "") != locator["name"]:
                 return {"status": "failed", "reason": "identity_mismatch"}
@@ -1518,7 +1569,8 @@ class NpiCoverageBackend(CoverageBackend):
                 "after": after,
             }
         finally:
-            self.release_if_handle(current)
+            if not pinned:
+                self.release_if_handle(current)
 
     def set_exclusion(
         self,
@@ -1709,7 +1761,7 @@ class NpiCoverageBackend(CoverageBackend):
                 self.release_if_handle(child)
 
     def release_if_handle(self, hdl: Any) -> None:
-        if hdl:
+        if hdl and id(hdl) not in self._pinned_handle_ids:
             self._api().module_call("cov.release_handle", hdl)
 
     def _walk_metric(
@@ -1871,6 +1923,10 @@ class NpiCoverageBackend(CoverageBackend):
                     typ,
                     traversal_path,
                 ),
+                "_exclude_targets": [{
+                    "root": "functional", "metric": "functional",
+                    "path": list(traversal_path), "type": typ, "name": name,
+                }],
                 **path,
             })
             if row_source and row_source is not own_source:
@@ -1982,6 +2038,10 @@ class NpiCoverageBackend(CoverageBackend):
                 typ,
                 traversal_path,
             ),
+            "_exclude_targets": [{
+                "root": "instance", "scope": scope, "metric": metric,
+                "path": list(traversal_path), "type": typ, "name": name,
+            }],
             **path,
         }
         value = _coverage_value(api, hdl, test_hdl)

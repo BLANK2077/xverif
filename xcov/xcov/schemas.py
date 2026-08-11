@@ -710,7 +710,7 @@ EXCLUSION_SET_ITEM = _object({
     "note": _string(min_length=1),
     "selector": _object(),
     "gap_id": _string(min_length=1),
-    "metric": _string(enum=["line", "condition", "branch", "toggle", "fsm"]),
+    "metric": _string(enum=["line", "condition", "branch", "toggle", "fsm", "assert", "functional"]),
     "target_count": _integer(0),
     "error": NULLABLE_STRING,
     "reason": _string(min_length=1),
@@ -1095,7 +1095,14 @@ SCHEMAS: Dict[str, Json] = {
             "artifact_format": {"const": "urg_text"},
             "note": _string(min_length=1),
         }),
-        _object(),
+        _object({
+            "structured": _object({
+                "metric": {"const": "functional"},
+                "json": _string(min_length=1),
+                "xout": _string(min_length=1),
+                "gap_count": _integer(minimum=0),
+            }, required=["metric", "json", "xout", "gap_count"]),
+        }, required=["structured"]),
     ),
     "export.assert": _schema_entry(
         "export.assert",
@@ -1117,7 +1124,14 @@ SCHEMAS: Dict[str, Json] = {
             "artifact_format": {"const": "urg_text"},
             "note": _string(min_length=1),
         }),
-        _object(),
+        _object({
+            "structured": _object({
+                "metric": {"const": "assert"},
+                "json": _string(min_length=1),
+                "xout": _string(min_length=1),
+                "gap_count": _integer(minimum=0),
+            }, required=["metric", "json", "xout", "gap_count"]),
+        }, required=["structured"]),
     ),
     "exclude.load": _schema_entry(
         "exclude.load",
