@@ -43,6 +43,7 @@ def test_real_mcp_wire_reaches_xdebug_and_xcov(
         "XVERIF_MCP_LOG_DIR": str(tmp_path / "mcp-logs"),
         "XVERIF_LOOP_LOG_DIR": str(tmp_path / "loop-logs"),
         "XVERIF_TEST_TMPDIR": str(tmp_path / "state"),
+        "XVERIF_XCOV_EXPORT_ROOTS": str(tmp_path),
     })
     params = StdioServerParameters(
         command=sys.executable,
@@ -117,7 +118,10 @@ def test_real_mcp_wire_reaches_xdebug_and_xcov(
                         "action": "export.code_coverage",
                         "args": {
                             "scopes": ["top.u_core1"], "metrics": ["toggle"],
-                            "output": {"path": str(tmp_path / "wire-coverage")},
+                            "output": {
+                                "path": str(tmp_path / "wire-coverage"),
+                                "allow_absolute_path": True,
+                            },
                         },
                         "output_format": "json",
                     },
@@ -137,6 +141,32 @@ def test_real_mcp_wire_reaches_xdebug_and_xcov(
                 ))
                 assert added["ok"] is True, added
                 assert added["data"]["items"][0]["status"] == "changed"
+                csv_exported = _payload(await session.call_tool(
+                    "xverif_cov_query",
+                    {
+                        "session_id": "wire_cov",
+                        "action": "exclude.csv.export",
+                        "args": {
+                            "directory": str(tmp_path / "wire-exclusions"),
+                            "allow_absolute_path": True,
+                        },
+                        "output_format": "json",
+                    },
+                ))
+                assert csv_exported["ok"] is True, csv_exported
+                el_exported = _payload(await session.call_tool(
+                    "xverif_cov_query",
+                    {
+                        "session_id": "wire_cov",
+                        "action": "export.exclude",
+                        "args": {"output": {
+                            "path": str(tmp_path / "wire-exclusions" / "merged.el"),
+                            "allow_absolute_path": True,
+                        }},
+                        "output_format": "json",
+                    },
+                ))
+                assert el_exported["ok"] is True, el_exported
                 assert _payload(await session.call_tool(
                     "xverif_cov_session_close", {"session_id": "wire_cov"}
                 ))["ok"] is True
