@@ -110,45 +110,35 @@ def test_real_mcp_wire_reaches_xdebug_and_xcov(
                 assert {row["metric"] for row in summary["data"]["items"]} >= {
                     "line", "toggle", "branch", "condition", "fsm"
                 }
-                assert _payload(await session.call_tool(
-                    "xverif_cov_session_close", {"session_id": "wire_cov"}
-                ))["ok"] is True
-
-                opened = _payload(await session.call_tool(
-                    "xverif_cov_session_open",
-                    {"name": "wire_exclusion", "vdb": str(exclusion_vdb)},
+                exported = _payload(await session.call_tool(
+                    "xverif_cov_query",
+                    {
+                        "session_id": "wire_cov",
+                        "action": "export.code_coverage",
+                        "args": {
+                            "scopes": ["top.u_core1"], "metrics": ["toggle"],
+                            "output": {"path": str(tmp_path / "wire-coverage")},
+                        },
+                        "output_format": "json",
+                    },
                 ))
-                assert opened["ok"] is True, opened
-                selector = {
-                    "metric": "line",
-                    "scope": "top",
-                    "file": "exclusion_fixture.sv",
-                    "line": 72,
-                }
+                assert exported["ok"] is True, exported
+                gap_path = Path(exported["data"]["items"][0]["directory"]) / "toggle.json"
+                gap_payload = json.loads(gap_path.read_text(encoding="utf-8"))
+                gap_id = gap_payload["gaps"][0]["gap_id"]
                 added = _payload(await session.call_tool(
                     "xverif_cov_query",
                     {
-                        "session_id": "wire_exclusion",
-                        "action": "exclude.add",
-                        "args": {"selectors": [selector]},
-                        "output_format": "json",
+                        "session_id": "wire_cov", "action": "exclude.add",
+                        "args": {"exports": [{"path": str(gap_path), "items": [{
+                            "gap_id": gap_id, "reason": "真实 MCP stdio gap 排除验证",
+                        }]}]}, "output_format": "json",
                     },
                 ))
                 assert added["ok"] is True, added
                 assert added["data"]["items"][0]["status"] == "changed"
-                removed = _payload(await session.call_tool(
-                    "xverif_cov_query",
-                    {
-                        "session_id": "wire_exclusion",
-                        "action": "exclude.remove",
-                        "args": {"selectors": [selector]},
-                        "output_format": "json",
-                    },
-                ))
-                assert removed["ok"] is True, removed
-                assert removed["data"]["items"][0]["status"] == "changed"
                 assert _payload(await session.call_tool(
-                    "xverif_cov_session_close", {"session_id": "wire_exclusion"}
+                    "xverif_cov_session_close", {"session_id": "wire_cov"}
                 ))["ok"] is True
 
                 debug_sessions = _payload(

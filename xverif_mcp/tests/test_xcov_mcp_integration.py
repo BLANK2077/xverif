@@ -481,31 +481,41 @@ def test_cov_xout_output_format(monkeypatch, test_vdb, xverif_home):
     })
 
 
-# ── exclude.add / exclude.remove with selectors ──
+# ── export gap exclusion and removed selector contract ──
 
 
-def test_cov_exclude_add_with_selector(monkeypatch, exclusion_vdb, xverif_home):
-    """xverif_cov_query(exclude.add) 用 selector 排除一个 line item."""
+def test_cov_exclude_add_with_export_gap(monkeypatch, test_vdb, xverif_home, tmp_path):
+    """MCP 先导出 line gap，再按结构化 gap ID 排除。"""
     overrides = {"XVERIF_HOME": xverif_home, "XVERIF_MCP_BACKEND": "direct"}
     server = _server(monkeypatch, overrides)
 
-    _call_tool(server, "xverif_cov_session_open", {"name": "mcp_excl_add", "vdb": exclusion_vdb})
+    _call_tool(server, "xverif_cov_session_open", {"name": "mcp_excl_add", "vdb": test_vdb})
     content, _ = _call_tool(server, "xverif_cov_query", {
-        "session_id": "mcp_excl_add", "action": "exclude.add",
-        "args": {"selectors": [{"metric": "line", "scope": "top",
-                                "file": "exclusion_fixture.sv", "line": 72,
-                                "reason": "test"}]},
+        "session_id": "mcp_excl_add", "action": "export.code_coverage",
+            "args": {"scopes": ["top.u_core1"], "metrics": ["toggle"],
+                 "output": {"path": str(tmp_path / "export")}},
         "output_format": "json",
     })
-    payload = json.loads(content[0].text)
-    assert payload["ok"] is True
-    assert payload["data"]["items"][0]["status"] == "changed"
+    exported = json.loads(content[0].text)
+    assert exported["ok"] is True, exported
+    gap_path = Path(exported["data"]["items"][0]["directory"]) / "toggle.json"
+    gap_payload = json.loads(gap_path.read_text(encoding="utf-8"))
+    gap_id = gap_payload["gaps"][0]["gap_id"]
+    content, _ = _call_tool(server, "xverif_cov_query", {
+        "session_id": "mcp_excl_add", "action": "exclude.add",
+        "args": {"exports": [{"path": str(gap_path), "items": [{
+            "gap_id": gap_id, "reason": "MCP export gap 全链路验证",
+        }]}]}, "output_format": "json",
+    })
+    excluded = json.loads(content[0].text)
+    assert excluded["ok"] is True, excluded
+    assert excluded["data"]["items"][0]["status"] == "changed"
 
     _call_tool(server, "xverif_cov_session_close", {"session_id": "mcp_excl_add"})
 
 
-def test_cov_exclude_add_invalid_selector(monkeypatch, exclusion_vdb, xverif_home):
-    """xverif_cov_query(exclude.add) 无效 selector 返回 errors + note."""
+def test_cov_exclude_add_rejects_removed_selector(monkeypatch, exclusion_vdb, xverif_home):
+    """MCP 透传的旧 add selector 被 xcov schema 明确拒绝。"""
     overrides = {"XVERIF_HOME": xverif_home, "XVERIF_MCP_BACKEND": "direct"}
     server = _server(monkeypatch, overrides)
 
@@ -517,40 +527,27 @@ def test_cov_exclude_add_invalid_selector(monkeypatch, exclusion_vdb, xverif_hom
         "output_format": "json",
     })
     payload = json.loads(content[0].text)
-    assert payload["ok"] is True  # action succeeds; item has status=invalid
-    item = payload["data"]["items"][0]
-    assert item["status"] == "invalid"
-    assert len(item.get("errors", [])) > 0
-    assert item.get("errors", [{}])[0]["code"] == "INVALID_METRIC"
-    assert "note" in item
+    assert payload["ok"] is False
+    assert "SCHEMA_INVALID" in json.dumps(payload)
 
     _call_tool(server, "xverif_cov_session_close", {"session_id": "mcp_excl_inv"})
 
 
-def test_cov_exclude_remove_with_selector(monkeypatch, exclusion_vdb, xverif_home):
-    """xverif_cov_query(exclude.add + exclude.remove) 完整排除/恢复流程."""
+def test_cov_exclude_remove_rejects_removed_selector(monkeypatch, exclusion_vdb, xverif_home):
+    """MCP 透传的旧 remove selector 被 xcov schema 明确拒绝。"""
     overrides = {"XVERIF_HOME": xverif_home, "XVERIF_MCP_BACKEND": "direct"}
     server = _server(monkeypatch, overrides)
 
     _call_tool(server, "xverif_cov_session_open", {"name": "mcp_excl_rm", "vdb": exclusion_vdb})
 
-    # add
-    content, _ = _call_tool(server, "xverif_cov_query", {
-        "session_id": "mcp_excl_rm", "action": "exclude.add",
-        "args": {"selectors": [{"metric": "line", "scope": "top",
-                                "file": "exclusion_fixture.sv", "line": 72,
-                                "reason": "test"}]},
-        "output_format": "json",
-    })
-    assert json.loads(content[0].text)["data"]["items"][0]["status"] == "changed"
-
-    # remove
     content, _ = _call_tool(server, "xverif_cov_query", {
         "session_id": "mcp_excl_rm", "action": "exclude.remove",
         "args": {"selectors": [{"metric": "line", "scope": "top",
                                 "file": "exclusion_fixture.sv", "line": 72}]},
         "output_format": "json",
     })
-    assert json.loads(content[0].text)["data"]["items"][0]["status"] == "changed"
+    payload = json.loads(content[0].text)
+    assert payload["ok"] is False
+    assert "SCHEMA_INVALID" in json.dumps(payload)
 
     _call_tool(server, "xverif_cov_session_close", {"session_id": "mcp_excl_rm"})
