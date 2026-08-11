@@ -527,6 +527,7 @@ def test_run_manifest_v2_rejects_directory_mutation_during_hash(
         def __exit__(self, exc_type, exc, tb):
             result = self._iterator.__exit__(exc_type, exc, tb)
             (self._path / "appeared-after-scan").write_bytes(b"new")
+            os.utime(self._path, ns=(1_000_000_000, 1_000_000_000))
             return result
 
     monkeypatch.setattr(provenance.os, "scandir", MutatingScandir)
@@ -541,7 +542,7 @@ def test_urg_provenance_never_falls_back_to_path(monkeypatch, tmp_path):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     fake_urg = fake_bin / "urg"
-    fake_urg.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_urg.write_text("exit 0\n", encoding="utf-8")
     fake_urg.chmod(0o755)
     monkeypatch.delenv("VCS_HOME", raising=False)
     monkeypatch.setenv("PATH", str(fake_bin))
@@ -1498,7 +1499,7 @@ def test_failed_session_open_cleans_owned_working_directory(tmp_path, monkeypatc
     manager = SessionManager(backend_factory=fail_factory)
     with pytest.raises(XcovError):
         manager.open("failed.vdb", name="failed")
-    root = tmp_path / ".xverif" / "xcov" / "cache" / "sessions"
+    root = Path(os.environ["XVERIF_XCOV_CACHE_DIR"]) / "sessions"
     assert root.is_dir()
     assert list(root.iterdir()) == []
 

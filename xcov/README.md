@@ -97,7 +97,8 @@ xverif_cov_get_schema
 - `XVERIF_XCOV_EXPORT_ROOTS`：用 `os.pathsep` 分隔的绝对既存目录；只有同时设置
   `output.allow_absolute_path=true` 且目标位于这些根目录之一时，才允许绝对导出路径。
 - `XVERIF_XCOV_CACHE_DIR`：覆盖默认 `.xverif/xcov/cache` 根目录；summary entry
-  位于其 `urg-summary/` 子目录。
+  位于其 `urg-summary/` 子目录，session-owned exclusion working dir 位于其 `sessions/`
+  子目录。两者不会再分别落到不同根。
 - `XVERIF_XCOV_CACHE_MAX_BYTES`：cache 总字节上限，默认 20 GiB。
 - `XVERIF_XCOV_CACHE_MAX_ENTRIES`：cache entry 上限，默认 128。
 - `XVERIF_XCOV_URG_BACKEND`：每次 URG 的执行 backend，只接受 `direct|lsf`，默认
@@ -440,6 +441,34 @@ stderr 只输出 operation/error type，不泄露路径或 payload。
 
 - API 能力审计：[docs/coverage-api-capability.md](docs/coverage-api-capability.md)
 - 全量 action 与 `xout` 合同样例：[docs/action-xout-examples.md](docs/action-xout-examples.md)
+
+## 大型 summary 回归 fixture
+
+`xcov.large_summary` 只在仓库中保存 generator、Makefile recipe 和 semantic probe，不保存
+生成 RTL、simv、VDB 或 URG report。正式准备入口为：
+
+```bash
+XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest --xverif-prepare xcov.large_summary
+```
+
+generator 固定产生 3,000 个不同 leaf module 和 3,000 个实例，加 top 共 3,001 个 instance
+scope；每 leaf 有 25 个端口，其中 10 个为 128-bit data port，仿真 256 cycles，RTL 恰好
+375,053 行。VCS recipe 使用 `-full64`，probe 再使用
+`urg -full64 -xml_verbose -format text -show summary` 验证六件套、root 六类 metric、functional
+和 assertion typed node。FixtureStore fingerprint 覆盖三个 source、builder/probe argv、timeout、
+`VCS_HOME` 和 `VERDI_HOME` 工具兼容身份；只有 `--xverif-prepare` 构建，regression/nightly
+只消费已发布 cache，cache miss 是 usage error，不会自动仿真或降级。
+
+正式消费门禁：
+
+```bash
+XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
+  --xverif-gate regression --xverif-suite xcov.large_summary
+```
+
+该 suite 验证 3,001 scopes、code/assertion/functional 三类 typed IR、root SCORE、read-only
+零 pynpi、cold 恰好一次 URG 和 warm 零 URG；1,000/10,000 scope 的严格 2N adjacency 操作数
+门禁保留在 `xcov.unit`。
 
 ## 当前限制
 

@@ -246,10 +246,13 @@ class SessionManager:
         session_cache_dir = cache_dir
         cache_owned_by_session = False
         if session_cache_dir is None:
-            session_cache_root = (
-                Path.cwd().resolve() / ".xverif" / "xcov" / "cache" /
-                "sessions"
+            configured_cache_root = os.environ.get("XVERIF_XCOV_CACHE_DIR")
+            cache_root = (
+                Path(configured_cache_root).expanduser().resolve()
+                if configured_cache_root
+                else Path.cwd().resolve() / ".xverif" / "xcov" / "cache"
             )
+            session_cache_root = cache_root / "sessions"
             session_cache_root.mkdir(parents=True, exist_ok=True)
             safe_sid = "".join(
                 ch if ch.isalnum() or ch in "_.-" else "_" for ch in sid

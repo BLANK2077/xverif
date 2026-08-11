@@ -136,6 +136,20 @@ suites:
     cost: {class: slow, estimate_sec: 45}
     timeouts: {execute_sec: 300, cleanup_sec: 20}
 
+  - id: xcov.large_summary
+    owner: xcov
+    level: system
+    intent: [contract, semantics, performance, lifecycle]
+    domains: [coverage]
+    runner: {kind: pytest, path: xcov/tests/test_large_summary.py}
+    fixtures: [xcov.large_summary]
+    capabilities: [child_process, npi]
+    hermetic: false
+    deterministic: true
+    gates: [regression, nightly]
+    cost: {class: slow, estimate_sec: 300}
+    timeouts: {execute_sec: 1200, cleanup_sec: 30}
+
   - id: xcov.mcp_integration
     owner: xcov
     level: system

@@ -42,6 +42,22 @@ fixtures:
       - argv: [python3, "{repo}/testinfra/leaf/probe_fixture.py", --resources, "{resources}", --text-glob, complex.vdb/.vdb_version]
     tool_env: [VERDI_HOME]
 
+  - id: xcov.large_summary
+    build_capabilities: [make, vcs, npi]
+    source_dir: xcov/fixtures/large_summary
+    inputs: [Makefile, generate_large_fixture.py, probe_large_fixture.py]
+    builder:
+      argv: [make, fixture, "RUN_DIR={resources}"]
+      cwd: "{source}"
+      timeout_sec: 3600
+    outputs:
+      - {name: vdb, path: large_summary.vdb, kind: dir}
+      - {name: metadata, path: fixture_metadata.json, kind: file, min_bytes: 128}
+    probes:
+      - argv: [python3, "{source}/probe_large_fixture.py", --resources, "{resources}"]
+        timeout_sec: 1200
+    tool_env: [VCS_HOME, VERDI_HOME]
+
   - id: xdebug.active_driver
     build_capabilities: [make, vcs, npi]
     source_dir: xdebug/testdata/combined/active_driver

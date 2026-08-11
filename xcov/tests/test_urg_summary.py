@@ -162,7 +162,7 @@ def test_content_addressed_urg_cache_cold_warm_corrupt_and_el_invalidation(
     monkeypatch.setattr(
         urg_cache,
         "_urg_identity",
-        lambda: {"path": "/eda/urg", "size_bytes": 1, "mtime_ns": 1},
+        lambda: {"path": "vcs-bin/urg", "size_bytes": 1, "mtime_ns": 1},
     )
 
     class FakeRunner:
@@ -595,7 +595,7 @@ def test_content_addressed_urg_cache_serializes_concurrent_miss(monkeypatch, tmp
     monkeypatch.setattr(
         urg_cache,
         "_urg_identity",
-        lambda: {"path": "/eda/urg", "size_bytes": 1, "mtime_ns": 1},
+        lambda: {"path": "vcs-bin/urg", "size_bytes": 1, "mtime_ns": 1},
     )
     entered = threading.Event()
     release = threading.Event()
@@ -649,7 +649,7 @@ def test_urg_cache_lru_and_abandoned_staging_are_bounded(monkeypatch, tmp_path):
     monkeypatch.setattr(
         urg_cache,
         "_urg_identity",
-        lambda: {"path": "/eda/urg", "release": "X-test", "size_bytes": 1, "mtime_ns": 1},
+        lambda: {"path": "vcs-bin/urg", "release": "X-test", "size_bytes": 1, "mtime_ns": 1},
     )
     monkeypatch.setenv("XVERIF_XCOV_CACHE_MAX_ENTRIES", "1")
     cache = tmp_path / "cache"

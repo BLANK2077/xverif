@@ -10,6 +10,9 @@ from testinfra.xverif_test.fixtures import (
 )
 
 
+ROOT = Path(__file__).resolve().parents[2]
+
+
 def make_store(root: Path) -> tuple[FixtureStore, FixtureSpec]:
     source = root / "fixture"
     source.mkdir()
@@ -82,3 +85,32 @@ def test_fingerprint_uses_effective_default_environment(tmp_path: Path, monkeypa
     monkeypatch.setenv("VIP_ROOT", "other-vip")
     second, _ = store.fingerprint(spec)
     assert second != first
+
+
+def test_large_summary_fixture_fingerprints_generator_recipe_probe_and_tools() -> None:
+    registry = FixtureRegistry.load(
+        ROOT / "testinfra/fixtures.v1.yaml",
+        ROOT / "testinfra/schemas/fixtures.v1.schema.json",
+    )
+    spec = registry.by_id("xcov.large_summary")
+    store = FixtureStore(ROOT, registry)
+
+    assert spec.inputs == (
+        "Makefile", "generate_large_fixture.py", "probe_large_fixture.py",
+    )
+    assert spec.tool_env == ("VCS_HOME", "VERDI_HOME")
+    assert spec.builder["argv"] == ["make", "fixture", "RUN_DIR={resources}"]
+    assert spec.builder["timeout_sec"] == 3600
+    assert spec.probes[0]["argv"] == [
+        "python3", "{source}/probe_large_fixture.py",
+        "--resources", "{resources}",
+    ]
+    source_names = {
+        path.name for path in store._source_files(spec)  # private contract audit
+    }
+    assert source_names == {
+        "Makefile", "generate_large_fixture.py", "probe_large_fixture.py",
+    }
+    fingerprint, tool_identity = store.fingerprint(spec)
+    assert len(fingerprint) == 64
+    assert set(tool_identity) == {"VCS_HOME", "VERDI_HOME"}

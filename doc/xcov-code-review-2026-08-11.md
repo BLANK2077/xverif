@@ -102,7 +102,7 @@ tree-two/b = b"Y"
 `actions.py` 虽然 import 了 `resolve_artifact_path`，全包搜索只有定义和 import，没有调用，
 进一步证明当前安全函数是未接线的死路径。
 
-真实 `xcov.modinfo_complex` 导出验证中，未提供 `allow_absolute_path` 的绝对 `/tmp/...` 路径
+真实 `xcov.modinfo_complex` 导出验证中，未提供 `allow_absolute_path` 的绝对 `xverif/tmp/...` 路径
 仍成功生成了 34 个文件。现有 `test_modinfo_complex.py` 和 `test_urg_backend.py` 也把这种行为
 当作成功路径，说明这是被测试固化的合同漂移。
 
@@ -1969,3 +1969,43 @@ host `xcov.modinfo_complex` 5 passed、host `xcov.mcp_integration` 17 passed、h
 `xverif_mcp.process` 141 passed、`skills.xverif` 16 passed、`skills.xverif_admin` 1 passed。
 两个变更 Skill 已安装到 Codex/Claude，排除安装 manifest 与 source `__pycache__` 后四组
 `diff -qr` 均为 0。最终全仓 gate 仍由第 10 阶段统一执行并记录。
+
+### 16.7 阶段 7：大型 summary fixture 与缓存/复杂度回归
+
+此前 `xverif/tmp` 的超大设计实验已转为正式 `xcov.large_summary` fixture。仓库只提交
+`generate_large_fixture.py`、Makefile recipe 和 `probe_large_fixture.py`；375,053 行生成 RTL、
+simv、VDB、KDB 和 URG probe report 全部只存在于 `.xverif-test-cache` 的 immutable version，
+不会进入 Git。
+
+设计不是靠单纯 padding 或扩大一个总线制造表面规模：generator 产生 3,000 个不同的 leaf
+module 和 3,000 个独立实例，加 top 共 3,001 个 instance scope。每个 leaf 有 25 个端口，
+其中 10 个独立 data port 均为 128 bit；内部包含 21 条数据混合路径、FSM、条件/分支、三个
+coverpoint/cross、assert property 和两个 cover property。top 驱动 256 cycles，生成文件实测
+375,053 行、12,900,228 bytes；仅在语义设计低于固定行数时追加 9,011 行 deterministic 注释，
+主体复杂度与端口/实例约束均由 metadata 和静态 test 锁定。
+
+builder 固定 VCS `-full64`，semantic probe 固定 URG
+`-full64 -xml_verbose -format text -show summary`。首次正式 prepare 编译 3,001/3,001 modules
+并成功仿真；probe 实测 `session.xml` 为 17,402,428 bytes，包含 3,001 个 instance scope、
+33,000 个 functional node、9,000 个 assertion/cover-property node，root 同时具备
+Line/Cond/Toggle/FSM/Branch/Assert，六件套均非空。probe 输出只保存稳定 option，不持久化
+发布后失效的 staging 绝对 argv。
+
+FixtureStore fingerprint 明确覆盖 generator、recipe、probe、builder/probe argv 与 timeout、
+`VCS_HOME/VERDI_HOME` 工具兼容身份。修改 probe 后正式 prepare 得到不同 fingerprint 并重新
+构建，实证旧版本没有被错误命中。`xcov.large_summary` 显式属于 regression 和 nightly；普通
+gate 只 resolve cache，缺失时拒绝，不在测试过程中自动 VCS 仿真。
+
+产品回归在隔离的用户 cache 上验证：cold session 的 `UrgRunner.run` 计数恰好 1、状态
+`completed`；同 VDB/identity 的 warm session key 相同、`hit=true/status=cache_hit`，执行计数
+仍为 1。两次 read-only session 均有 3,001 scopes 和三类 typed IR，且将 `import_pynpi`
+替换为抛错 sentinel 后仍通过，证明 summary 路径零 NPI。专属 suite 为 2 passed；
+`testinfra.unit` 为 39 passed，`xcov.unit` 为 164 passed，host `xcov.urg_backend` 为 7 passed；
+既有 1,000/10,000 scope adjacency 门禁继续以严格 2N 操作数证明聚合不会退回 O(N²)。
+
+本阶段还通过跨 suite 顺序运行发现并修复了测试污染：`XVERIF_XCOV_CACHE_DIR` 过去只控制
+`urg-summary/`，session-owned exclusion working dir 仍硬编码到仓库根。现在两者分别使用同一
+显式 cache root 下的 `urg-summary/` 与 `sessions/`；xcov pytest autouse fixture 为每个 item
+提供独立 cache/log 根。连续运行 `xcov.unit -> testinfra.unit` 后仓库根不再生成带机器绝对
+路径的 cache manifest。此前产生的 runtime cache 均完整移动到 `xverif/tmp` 可恢复备份，
+没有删除用户数据。

@@ -46,6 +46,8 @@ def test_gate_selection_is_monotonic() -> None:
     assert "skills.x_npi_perf" in nightly
     assert "xcov.urg_backend" in regression
     assert "xcov.urg_backend" in nightly
+    assert "xcov.large_summary" in regression
+    assert "xcov.large_summary" in nightly
 
 
 def test_optional_real_lsf_identity_is_preserved_in_nightly() -> None:

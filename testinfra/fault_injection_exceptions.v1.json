@@ -7,6 +7,11 @@
     "xverif_mcp/tests/test_xdebug_session_action_guard.py": "非法 session/action 组合的拒绝路径故障注入"
   },
   "test_exceptions": {
+    "xcov/tests/test_urg_summary.py::test_content_addressed_urg_cache_cold_warm_corrupt_and_el_invalidation": "URG cache 损坏隔离、重建与 EL identity 失效故障注入",
+    "xcov/tests/test_xcov.py::test_dispatcher_rejects_oversized_inline_response": "inline response 资源预算超限故障注入",
+    "xcov/tests/test_xcov.py::test_pynpi_provenance_rejects_preloaded_module_outside_vendor_root": "恶意预加载同名 pynpi 模块来源故障注入",
+    "xcov/tests/test_xcov.py::test_run_manifest_v2_rejects_v1_and_hashes_symlink_target": "旧 manifest 和 symlink target 变化拒绝路径",
+    "xcov/tests/test_xcov.py::test_urg_provenance_never_falls_back_to_path": "缺失 VCS_HOME 时禁止 PATH 中替代 URG 的来源故障注入",
     "xcov/tests/test_xcov.py::test_session_open_rejects_changed_vdb_run_manifest_without_opening_backend": "VDB manifest 被篡改时禁止 backend open",
     "xcov/tests/test_xcov.py::test_session_open_rejects_retired_backend_and_lifecycle_args": "废弃参数拒绝路径",
     "xcov/tests/test_xcov.py::test_npi_binding_rejects_missing_required_module_method_at_init": "NPI binding 缺失方法故障注入",
