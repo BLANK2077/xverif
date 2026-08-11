@@ -5,10 +5,11 @@
 `xout`；需要机器 JSON 时使用 `tools/xcov --json -`。响应格式属于 CLI transport
 选项，不是 request 字段；top-level `output` 会被严格 schema 拒绝。
 
-xcov 只以 VDB/Python NPI coverage API 为数据源，不解析 URG HTML、
-`asserts.html`、`mod*.html` 或 `session.xml`。只有 Verdi/pynpi 文档、headers
-和真实 VDB probe 证实可获取的字段才会进入公开 schema；拿不到的 URG 字段不
-提供接口，也不会用 note 占位。
+xcov 的 summary 读取固定使用 URG
+`-full64 -xml_verbose -format text -show summary` 生成的 typed `session.xml`
+和五个 summary 文本文件，不生成完整 HTML、`modinfo.txt` 或 `grpinfo.txt`。
+code、assertion 和 functional coverage 按各自 XML `type` 建模；详细 gap 导出
+使用受限 URG text report。公开 summary 只发布该固定产物能够稳定支持的字段。
 
 action、session、transport、backend 或 VDB 查询失败时不会静默切换 surface、
 backend、data source 或测试层级。失败返回结构化错误；任何不同路径必须由调用方
@@ -232,9 +233,8 @@ CSV action：
 
 ## URG 对齐语义
 
-`code_coverage.summary`、`metrics.list`、`scope.summary` 和
-Markdown exports 使用与 URG HTML 报告一致的 score-bearing
-object 层级：
+`code_coverage.summary`、`metrics.list` 和 `scope.summary` 直接使用 URG
+`session.xml` 的 subtree score：
 
 - Line：`npiCovStmtBin`
 - Condition：`npiCovConditionBin`
@@ -243,9 +243,9 @@ object 层级：
 - FSM：`npiCovTransBin`
 - Assert：`npiCovAssert`、`npiCovCoverProperty`、`npiCovCoverSequence`
 
-中间对象，例如 line block、toggle signal、branch/condition object、FSM state
-container、assert Attempt/Success/Failure bin，会被遍历用于上下文和证据，但不
-计入公开 summary 分母。
+父 scope 的 metric 已经包含 subtree，不能再累加 descendants。多 metric scope 的
+`coverage_pct` 按 URG SCORE 语义取所选 metric percentages 的算术平均；因为不同
+metric 的计数单位不可相加，多 metric scope 不返回 aggregate covered/coverable/missing。
 
 `functional_coverage.summary` 的 covergroup score 按 URG group 页语义计算：优先取直接
 coverpoint/cross coverage 百分比的平均值；交互输出不暴露 score_basis/raw count
@@ -279,17 +279,17 @@ Python NPI 层只把文档定义的 SDK “不适用”返回值映射为 `null`
 
 - `scope.summary`：返回当前层次的扁平覆盖率字段，例如
   `coverage_pct`、`line_pct`、`toggle_pct`、`branch_pct`、`condition_pct`、
-  `fsm_pct`、`assert_pct`、`functional_pct`，并带 module 对应的 `file/line`
-  evidence（若 NPI 暴露）；不输出 parent/depth/type/def_name。
+  `fsm_pct`、`assert_pct`、`functional_pct`；不输出 summary XML 无法稳定提供的
+  file/line evidence，也不输出 parent/depth/type/def_name。
 - `scope.children` / `scope.search`：只返回 `name/full_name/coverage_pct`，用于定位
   hierarchy 名称和快速查看当前覆盖率。
-- `code_coverage.summary`：按 metric、scope 或 source file 汇总代码覆盖率；不输出
-  name/full_name/functional_pct。
+- `code_coverage.summary`：只支持按 `metric` 或 `scope` 汇总代码覆盖率；不输出
+  name/full_name/functional_pct，不支持 source file/type summary。
 - `export.code_coverage`：详细 code coverage 导出，每次调用触发一次 URG，尽量一次提交
   多个要查看的 instance。按 scope 分目录，按 metric 输出 JSON/XOUT/raw URG text。
-- `functional_coverage.summary`：按 covergroup、coverpoint、cross 或 bin 汇总功能覆盖率，
+- `functional_coverage.summary`：按 covergroup、coverpoint 或 cross 汇总功能覆盖率，
   不输出 metric/name/full_name/score_basis/score_item_count/raw_* 字段，包括
-  raw_coverage_pct。
+  raw_coverage_pct；summary 不提供 bin 级结构。
 - `query.match_field` 与 `sort.by` 都是 action-specific enum；拼错或选择该 action
   不支持的字段会在执行前返回 `SCHEMA_INVALID`。显式 `metrics`/`levels` 必须是
   非空数组，空数组不会回退成默认全集。
@@ -370,4 +370,5 @@ xcov 日志默认写入：
 
 ## 当前限制
 
-- `test="each"` 尚未实现；使用 `test="merged"` 或具体 test name。
+- summary 查询固定使用 merged selection；请求 schema 不接受 per-test `test` selector。
+- source file/type 和 functional bin 不属于 summary 合同；需要具体 gap 时使用对应 export。

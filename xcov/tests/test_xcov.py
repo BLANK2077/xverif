@@ -36,6 +36,13 @@ class _TestBackend(_CoverageBackend):
     def summary(self): return {"test_count":1,"top_scope_count":1}
     def top_scopes(self): return [{"name":"top","full_name":"top","parent":None,"depth":0,"type":"instance"}]
     def scopes(self): return self.top_scopes()
+    def scope_metrics(self):
+        return {
+            "top": {
+                "line": {"covered": 1, "coverable": 1, "missing": 0, "pct": 100.0},
+                "toggle": {"covered": 0, "coverable": 1, "missing": 1, "pct": 0.0},
+            }
+        }
     def items(self, **kw):
         rows = list(self._items)
         metrics = kw.get("metrics")
@@ -818,6 +825,37 @@ def test_functional_summary_rejects_redundant_levels_selector():
 @pytest.mark.parametrize(
     "action,args,path",
     [
+        ("metrics.list", {"test": "t0"}, "$.args"),
+        ("scope.summary", {"test": "t0"}, "$.args"),
+        ("code_coverage.summary", {"test": "t0"}, "$.args"),
+        ("functional_coverage.summary", {"test": "t0"}, "$.args"),
+        ("assert.summary", {"test": "t0"}, "$.args"),
+        ("code_coverage.summary", {"group_by": "source_file"}, "$.args.group_by"),
+        ("code_coverage.summary", {"group_by": "type"}, "$.args.group_by"),
+        ("functional_coverage.summary", {"group_by": "bin"}, "$.args.group_by"),
+    ],
+)
+def test_summary_contract_rejects_dimensions_absent_from_fixed_urg_summary(
+    action,
+    args,
+    path,
+):
+    rsp = _dispatch_opened().dispatch({
+        "api_version": "xcov.v1",
+        "request_id": "unsupported-summary-dimension",
+        "action": action,
+        "target": {"session_id": "cov0"},
+        "args": args,
+    })
+
+    assert rsp["ok"] is False
+    assert rsp["error"]["code"] == "SCHEMA_INVALID"
+    assert rsp["error"]["detail.path"] == path
+
+
+@pytest.mark.parametrize(
+    "action,args,path",
+    [
         (
             "scope.children",
             {"query": {"match_field": "definitely_not_a_field"}},
@@ -1073,7 +1111,7 @@ def test_top_level_limits_are_rejected_before_dispatch():
 
 @pytest.mark.parametrize(
     "group_by",
-    ["covergroup", "coverpoint", "cross", "bin"],
+    ["covergroup", "coverpoint", "cross"],
 )
 def test_functional_summary_every_public_group_by_is_executable(group_by):
     rsp = _dispatch_opened().dispatch({
@@ -1415,6 +1453,18 @@ class ContractFailingBackend(CoverageBackend):
     def metrics_for_scope(self, scope, test):
         return []
 
+    def scope_metrics(self):
+        return {
+            "top": {
+                "line": {
+                    "covered": 1,
+                    "coverable": 1,
+                    "missing": 0,
+                    "pct": 100.0,
+                }
+            }
+        }
+
     def items(self, metrics=None, scope=None, test="merged", functional_only=False):
         raise NpiContractViolation(
             NpiCallFailure(
@@ -1428,7 +1478,7 @@ class ContractFailingBackend(CoverageBackend):
         )
 
 
-def test_npi_contract_failure_propagates_to_incomplete_action_error():
+def test_summary_query_does_not_call_npi_items():
     dispatcher = Dispatcher(
         SessionManager(
             backend_factory=lambda _vdb, **_kwargs: ContractFailingBackend(),
@@ -1450,16 +1500,14 @@ def test_npi_contract_failure_propagates_to_incomplete_action_error():
         "target": {"session_id": "cov0"},
     })
 
-    assert rsp["ok"] is False
-    assert rsp["error"]["code"] == "NPI_CONTRACT_VIOLATION"
-    assert rsp["error"]["detail.error_layer"] == "backend"
-    assert rsp["error"]["detail.operation"] == "coverage.covered"
-    assert rsp["error"]["detail.expected_signature"] == "covered(test)"
-    assert rsp["summary"]["scan_complete"] is False
-    assert rsp["summary"]["analysis_complete"] is False
-    assert rsp["summary"]["total_count"] == 0
-    assert rsp["summary"]["returned_count"] == 0
-    assert rsp["data"] == {}
+    assert rsp["ok"] is True
+    assert rsp["data"]["items"] == [{
+        "metric": "line",
+        "covered": 1,
+        "coverable": 1,
+        "missing": 0,
+        "coverage_pct": 100.0,
+    }]
 
 
 def test_npi_backend_source_has_no_safe_call_or_arity_fallback():
@@ -1472,10 +1520,11 @@ def test_npi_backend_source_has_no_safe_call_or_arity_fallback():
 
 
 class MutatingCoverageBackend(_TestBackend):
-    def __init__(self, vdb, mutate, *, worker_kind="custom") -> None:
+    def __init__(self, vdb, mutate, *, worker_kind="custom", scope_mutate=False) -> None:
         super().__init__(vdb)
         self._mutate = mutate
         self.worker_kind = worker_kind
+        self._scope_mutate = scope_mutate
 
     def items(self, metrics=None, scope=None, test="merged", functional_only=False):
         rows = super().items(
@@ -1487,14 +1536,26 @@ class MutatingCoverageBackend(_TestBackend):
         self._mutate(rows)
         return rows
 
+    def scope_metrics(self):
+        rows = super().scope_metrics()
+        if self._scope_mutate:
+            self._mutate(rows)
+        return rows
 
-def _dispatch_with_mutating_backend(mutate, *, worker_kind="custom") -> Dispatcher:
+
+def _dispatch_with_mutating_backend(
+    mutate,
+    *,
+    worker_kind="custom",
+    scope_mutate=False,
+) -> Dispatcher:
     dispatcher = Dispatcher(
         SessionManager(
             backend_factory=lambda vdb, **_kwargs: MutatingCoverageBackend(
                 vdb,
                 mutate,
                 worker_kind=worker_kind,
+                scope_mutate=scope_mutate,
             ),
         )
     )
@@ -1521,32 +1582,22 @@ def _query_mutating_backend(dispatcher: Dispatcher) -> dict:
 @pytest.mark.parametrize(
     "mutate,field",
     [
-        (lambda rows: rows[0].__setitem__("covered", "1"), "covered"),
-        (lambda rows: rows[0].__setitem__("covered", 2), "covered"),
+        (lambda rows: rows["top"]["line"].__setitem__("covered", "1"), "covered"),
+        (lambda rows: rows["top"]["line"].__setitem__("covered", 2), "covered/coverable/missing"),
         (
-            lambda rows: rows[0].update({
+            lambda rows: rows["top"]["line"].update({
                 "covered": -1,
                 "coverable": -1,
-                "missing": None,
-                "coverage_pct": None,
+                "missing": 0,
+                "pct": 0.0,
             }),
-            "covered/coverable",
+            "covered",
         ),
-        (lambda rows: rows[0].__setitem__("missing", 1), "missing"),
-        (lambda rows: rows[0].__setitem__("coverage_pct", 99.0), "coverage_pct"),
+        (lambda rows: rows["top"]["line"].__setitem__("missing", 1), "covered/coverable/missing"),
+        (lambda rows: rows["top"]["line"].__setitem__("pct", 99.0), "pct"),
         (
-            lambda rows: rows[0].__setitem__(
-                "evidence",
-                {"file": "rtl/ctrl.sv", "line": "12"},
-            ),
-            "evidence.line",
-        ),
-        (
-            lambda rows: rows[0].__setitem__(
-                "evidence",
-                {"file": "rtl/ctrl.sv", "line": 12, "column": 3},
-            ),
-            "evidence",
+            lambda rows: rows["top"]["line"].__setitem__("unexpected", True),
+            "metric_values",
         ),
     ],
 )
@@ -1554,29 +1605,35 @@ def test_injected_backend_semantic_corruption_is_typed_and_incomplete(
     mutate,
     field,
 ):
-    rsp = _query_mutating_backend(_dispatch_with_mutating_backend(mutate))
+    rsp = _query_mutating_backend(
+        _dispatch_with_mutating_backend(mutate, scope_mutate=True)
+    )
 
     assert rsp["ok"] is False
     assert rsp["error"]["code"] == "BACKEND_CONTRACT_VIOLATION"
-    assert rsp["error"]["detail.operation"] == "items.canonicalize"
+    assert rsp["error"]["detail.operation"] == "scope_metrics.canonicalize"
     assert rsp["error"]["detail.field"] == field
     assert rsp["summary"]["scan_complete"] is False
     assert rsp["summary"]["analysis_complete"] is False
     assert rsp["data"] == {}
 
 
-def test_npi_success_with_semantically_invalid_percentage_is_typed_npi_failure():
+def test_urg_scope_metric_with_invalid_percentage_is_typed_backend_failure():
     def mutate(rows):
-        rows[0]["coverage_pct"] = 42.0
+        rows["top"]["line"]["pct"] = 42.0
 
     rsp = _query_mutating_backend(
-        _dispatch_with_mutating_backend(mutate, worker_kind="npi_python_test")
+        _dispatch_with_mutating_backend(
+            mutate,
+            worker_kind="npi_python_test",
+            scope_mutate=True,
+        )
     )
 
     assert rsp["ok"] is False
-    assert rsp["error"]["code"] == "NPI_CONTRACT_VIOLATION"
-    assert rsp["error"]["detail.operation"] == "items.canonicalize"
-    assert rsp["error"]["detail.field"] == "coverage_pct"
+    assert rsp["error"]["code"] == "BACKEND_CONTRACT_VIOLATION"
+    assert rsp["error"]["detail.operation"] == "scope_metrics.canonicalize"
+    assert rsp["error"]["detail.field"] == "pct"
     assert rsp["summary"]["scan_complete"] is False
     assert rsp["summary"]["analysis_complete"] is False
 

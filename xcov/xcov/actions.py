@@ -108,7 +108,7 @@ ACTION_REGISTRY: Dict[str, ActionContract] = {
     ),
     "metrics.list": ActionContract(
         "metrics.list", "_metrics_list", True,
-        "Summarize available coverage metrics for a scope and test.",
+        "Summarize merged coverage metrics for a scope from the URG summary index.",
         "Do not use when hierarchy holes or individual source evidence are required.",
     ),
     "scope.summary": ActionContract(
@@ -385,26 +385,19 @@ class Dispatcher:
 
     def _metrics_list(self, req: Json, sess) -> Json:
         args = action_args(req)
-        try:
-            scope_metrics = sess.backend.scope_metrics()
-        except NotImplementedError:
-            # Fallback: NPI items path for backends without URG cache
-            items = sess.backend.items(scope=args.get("scope"),
-                                       test=str(args.get("test", "merged")))
-            rows = _summary_from_items(_coverage_score_rows(items), "metric")
-        else:
-            scope_filter = args.get("scope")
-            if scope_filter:
-                sf = str(scope_filter)
-                scope_metrics = {
-                    s: m for s, m in scope_metrics.items()
-                    if s == sf or s.startswith(sf + ".")
-                }
-            rows = _metrics_from_urg(scope_metrics)
+        scope_metrics = sess.backend.scope_metrics()
+        scope_filter = args.get("scope")
+        if scope_filter:
+            sf = str(scope_filter)
+            scope_metrics = {
+                s: m for s, m in scope_metrics.items()
+                if s == sf or s.startswith(sf + ".")
+            }
+        rows = _metrics_from_urg(scope_metrics)
         rows = _project_code_coverage_summary_rows(rows)
         summary, inline, warnings = apply_output("metrics.list", args, rows)
         summary.update({"session_id": sess.session_id, "scope": args.get("scope"),
-                        "test": args.get("test", "merged")})
+                        "test": "merged"})
         return ok_response(req, summary, {"items": inline}, warnings)
 
     def _scope(self, req: Json, sess) -> Json:
@@ -414,43 +407,8 @@ class Dispatcher:
         scopes = _indexed_scopes(sess.backend.scopes())
         metrics = _selector_or_default(args, "metrics", METRICS)
 
-        urgen = [m for m in metrics if m in _URG_METRICS]
-        npi_only = [m for m in metrics if m not in _URG_METRICS]
-
-        # Try URG cache first; fall back to NPI traversal if unavailable
-        try:
-            urg_metrics = sess.backend.scope_metrics()
-        except NotImplementedError:
-            urg_metrics = None
-
-        if urg_metrics is not None and urgen:
-            if npi_only:
-                # Mixed: code metrics from URG cache, functional/assert from NPI
-                coverage = _coverage_from_urg(urg_metrics, scopes, urgen)
-                npi_items = sess.backend.items(metrics=npi_only, scope=args.get("scope"),
-                                               test=str(args.get("test", "merged")))
-                npi_items = _coverage_score_rows(npi_items)
-                npi_cov = _scope_coverage(npi_items, npi_only)
-                for scope_name, cov_data in npi_cov.items():
-                    if scope_name in coverage:
-                        existing = coverage[scope_name]
-                        existing["covered"] += cov_data["covered"]
-                        existing["coverable"] += cov_data["coverable"]
-                        existing["missing"] += cov_data["missing"]
-                        existing["coverage_pct"] = coverage_pct(
-                            existing["covered"], existing["coverable"])
-                        existing["metrics"].extend(cov_data.get("metrics", []))
-                    else:
-                        coverage[scope_name] = cov_data
-            else:
-                # All metrics available from URG cache
-                coverage = _coverage_from_urg(urg_metrics, scopes, urgen)
-        else:
-            # Fallback: NPI traversal for all metrics
-            items = sess.backend.items(metrics=metrics, scope=args.get("scope"),
-                                       test=str(args.get("test", "merged")))
-            items = _coverage_score_rows(items)
-            coverage = _scope_coverage(items, metrics)
+        urg_metrics = sess.backend.scope_metrics()
+        coverage = _coverage_from_urg(urg_metrics, scopes, metrics)
         if action == "scope.summary":
             rows = _scope_summary_rows(scopes, coverage, args)
             rows = _project_scope_summary_rows(rows)
@@ -464,65 +422,76 @@ class Dispatcher:
         rows = sort_items(action, rows, args.get("sort"))
         summary, inline, warnings = apply_output(action, args, rows)
         summary.update({"session_id": sess.session_id, "scope": args.get("scope"),
-                        "test": args.get("test", "merged")})
+                        "test": "merged"})
         return ok_response(req, summary, {"filters": filters_summary(query), "items": inline}, warnings)
 
     def _code_coverage(self, req: Json, sess) -> Json:
         action = req["action"]
         args = action_args(req)
-        query = query_args(action, args)
         metrics = _selector_or_default(args, "metrics", _code_metrics())
         group_by = str(args.get("group_by", "metric"))
-        try:
-            scope_metrics = sess.backend.scope_metrics()
-        except NotImplementedError:
-            scope_metrics = None
-        if scope_metrics is not None and group_by in ("metric", "scope"):
-            scope_filter = args.get("scope")
-            if scope_filter:
-                sf = str(scope_filter)
-                scope_metrics = {
-                    s: m for s, m in scope_metrics.items()
-                    if s == sf or s.startswith(sf + ".")
-                }
-            rows = _code_coverage_from_urg(scope_metrics, group_by)
-        else:
-            rows = sess.backend.items(metrics=metrics, scope=args.get("scope"),
-                                      test=str(args.get("test", "merged")))
-            rows = _coverage_score_rows(rows)
-            rows = _summary_from_items(rows, group_by)
+        query_source = dict(args)
+        query_source["query"] = dict(args.get("query") or {})
+        query_source["query"].setdefault("match_field", group_by)
+        query = query_args(action, query_source)
+        scope_metrics = sess.backend.scope_metrics()
+        scope_filter = args.get("scope")
+        if scope_filter:
+            sf = str(scope_filter)
+            scope_metrics = {
+                s: m for s, m in scope_metrics.items()
+                if s == sf or s.startswith(sf + ".")
+            }
+        rows = _code_coverage_from_urg(scope_metrics, group_by, metrics)
         rows = filter_items(rows, query)
         rows = _project_code_coverage_summary_rows(rows)
         rows = sort_items(action, rows, args.get("sort"))
         summary, inline, warnings = apply_output(action, args, rows)
         summary.update({"session_id": sess.session_id, "scope": args.get("scope"),
-                        "test": args.get("test", "merged"), "metrics": metrics})
+                        "test": "merged", "metrics": metrics})
         return ok_response(req, summary, {"filters": filters_summary(query), "items": inline}, warnings)
 
     def _functional(self, req: Json, sess) -> Json:
         action = req["action"]
         args = action_args(req)
-        query = query_args(action, args)
-        rows = sess.backend.scope_functional_from_urg()
         group_by = str(args.get("group_by", "covergroup"))
+        query_source = dict(args)
+        query_source["query"] = dict(args.get("query") or {})
+        query_source["query"].setdefault("match_field", group_by)
+        query = query_args(action, query_source)
+        rows = sess.backend.scope_functional_from_urg()
+        if args.get("scope"):
+            selected_scope = str(args["scope"])
+            rows = [
+                row for row in rows
+                if row.get("scope") == selected_scope
+                or str(row.get("scope") or "").startswith(selected_scope + ".")
+            ]
         rows = _functional_summary_rows(rows, group_by)
         rows = filter_items(rows, query)
         rows = _project_functional_coverage_summary_rows(rows, group_by)
         rows = sort_items(action, rows, args.get("sort"))
         summary, inline, warnings = apply_output(action, args, rows)
-        summary.update({"session_id": sess.session_id, "test": args.get("test", "merged")})
+        summary.update({"session_id": sess.session_id, "test": "merged"})
         return ok_response(req, summary, {"filters": filters_summary(query), "items": inline}, warnings)
 
     def _assert_report(self, req: Json, sess) -> Json:
         args = action_args(req)
         query = query_args("assert.summary", args)
         rows = sess.backend.scope_assert_from_urg()
+        if args.get("scope"):
+            selected_scope = str(args["scope"])
+            rows = [
+                row for row in rows
+                if row.get("scope") == selected_scope
+                or str(row.get("scope") or "").startswith(selected_scope + ".")
+            ]
         rows = _project_assert_summary_rows(rows)
         rows = filter_items(rows, query)
         rows = sort_items("assert.summary", rows, args.get("sort"))
         summary, inline, warnings = apply_output("assert.summary", args, rows)
         summary.update({"session_id": sess.session_id, "scope": args.get("scope"),
-                        "test": args.get("test", "merged")})
+                        "test": "merged"})
         return ok_response(req, summary, {"filters": filters_summary(query), "items": inline}, warnings)
 
     def _export(self, req: Json, sess) -> Json:
@@ -1789,8 +1758,8 @@ def _scope_coverage(items: List[Json], metrics: List[str]) -> Dict[str, Json]:
     return out
 
 
-# Metrics available in URG session.xml cache
-_URG_METRICS = frozenset({"line", "toggle", "branch", "condition", "fsm"})
+# Metrics available in the fixed URG summary contract.
+_URG_METRICS = frozenset(METRICS)
 
 
 def _coverage_from_urg(
@@ -1798,110 +1767,128 @@ def _coverage_from_urg(
     scopes: Dict[str, Json],
     metrics: List[str],
 ) -> Dict[str, Json]:
-    """Build per-scope coverage dict from URG cache with ancestor rollup.
+    """Build per-scope coverage directly from URG subtree metrics.
 
-    Converts backend.scope_metrics() output to the same {scope: {covered,
-    coverable, missing, coverage_pct, metrics: [...]}} format that
-    _scope_coverage() produces from NPI items.  Only code metrics (line,
-    toggle, branch, condition, fsm) are available in the URG cache.
+    Every instance row in ``session.xml`` already describes that instance's
+    subtree.  Summing descendants here would double count and become O(N^2).
     """
     if not scope_metrics:
         return {}
-    # Gather all scope names (leaf instances + ancestors)
-    leaf_scopes = set(scope_metrics.keys())
-    all_names = set(leaf_scopes)
-    for sname in leaf_scopes:
-        parts = sname.split(".")
-        for i in range(1, len(parts)):
-            all_names.add(".".join(parts[:i]))
-
     result: Dict[str, Json] = {}
-    for scope_name in all_names:
-        # Sum metrics from all descendant leaf scopes
-        metric_totals: Dict[str, Dict[str, int]] = {}
-        for leaf, mets in scope_metrics.items():
-            if leaf != scope_name and not leaf.startswith(scope_name + "."):
-                continue
-            for mname, vals in mets.items():
-                if mname not in metrics:
-                    continue
-                if mname not in metric_totals:
-                    metric_totals[mname] = {"covered": 0, "coverable": 0}
-                metric_totals[mname]["covered"] += vals["covered"]
-                metric_totals[mname]["coverable"] += vals["coverable"]
-
-        total_covered = 0
-        total_coverable = 0
+    for scope_name, available in scope_metrics.items():
         metric_rows: List[Json] = []
         for mname in metrics:
-            mt = metric_totals.get(mname, {"covered": 0, "coverable": 0})
-            total_covered += mt["covered"]
-            total_coverable += mt["coverable"]
+            mt = available.get(mname)
+            if mt is None:
+                continue
             metric_rows.append({
                 "metric": mname,
                 "covered": mt["covered"],
                 "coverable": mt["coverable"],
                 "missing": mt["coverable"] - mt["covered"],
-                "coverage_pct": coverage_pct(mt["covered"], mt["coverable"]),
+                "coverage_pct": mt.get(
+                    "pct",
+                    coverage_pct(mt["covered"], mt["coverable"]),
+                ),
             })
-        if total_coverable > 0 or scope_name in scopes:
-            result[scope_name] = {
-                "covered": total_covered,
-                "coverable": total_coverable,
-                "missing": total_coverable - total_covered,
-                "coverage_pct": coverage_pct(total_covered, total_coverable),
-                "metrics": metric_rows,
-            }
+        percentages = [row["coverage_pct"] for row in metric_rows]
+        row: Json = {
+            "coverage_pct": (
+                round(sum(percentages) / len(percentages), 4)
+                if percentages else None
+            ),
+            "metrics": metric_rows,
+        }
+        if len(metric_rows) == 1:
+            only = metric_rows[0]
+            row.update({
+                "covered": only["covered"],
+                "coverable": only["coverable"],
+                "missing": only["missing"],
+            })
+        if metric_rows or scope_name in scopes:
+            result[scope_name] = row
     return result
 
 
 def _code_coverage_from_urg(
     scope_metrics: Dict[str, Json],
     group_by: str,
+    metrics: List[str],
 ) -> List[Json]:
     """Aggregate code coverage from URG scope_metrics by metric or scope."""
     if group_by == "metric":
-        return _metrics_from_urg(scope_metrics)
+        return _metrics_from_urg(scope_metrics, metrics)
     # group_by == "scope"
     rows: List[Json] = []
     for sname in sorted(scope_metrics):
         mets = scope_metrics[sname]
-        total_covered = 0
-        total_coverable = 0
-        for _mname, vals in mets.items():
-            total_covered += vals["covered"]
-            total_coverable += vals["coverable"]
-        rows.append({
+        selected = [mets[name] for name in metrics if name in mets]
+        percentages = [
+            value.get(
+                "pct",
+                coverage_pct(value["covered"], value["coverable"]),
+            )
+            for value in selected
+        ]
+        row: Json = {
             "scope": sname,
-            "name": sname.rsplit(".", 1)[-1] if "." in sname else sname,
-            "full_name": sname,
-            "covered": total_covered,
-            "coverable": total_coverable,
-            "missing": total_coverable - total_covered,
-            "coverage_pct": coverage_pct(total_covered, total_coverable),
-        })
+            "metric": "summary",
+            "coverage_pct": (
+                round(sum(percentages) / len(percentages), 4)
+                if percentages else None
+            ),
+        }
+        if len(selected) == 1:
+            row.update({
+                "covered": selected[0]["covered"],
+                "coverable": selected[0]["coverable"],
+                "missing": selected[0]["missing"],
+            })
+        rows.append(row)
     return rows
 
 
-def _metrics_from_urg(scope_metrics: Dict[str, Json]) -> List[Json]:
-    """Aggregate per-metric totals from URG scope_metrics data."""
-    from collections import defaultdict
-    totals: Dict[str, Dict[str, int]] = defaultdict(lambda: {"covered": 0, "coverable": 0})
-    for _sname, mets in scope_metrics.items():
+def _metrics_from_urg(
+    scope_metrics: Dict[str, Json],
+    metrics: Optional[List[str]] = None,
+) -> List[Json]:
+    """Aggregate only independent top-scope subtree metrics."""
+    names = set(scope_metrics)
+    roots = [
+        name for name in names
+        if "." not in name or name.rsplit(".", 1)[0] not in names
+    ]
+    wanted = metrics or sorted({metric for row in scope_metrics.values() for metric in row})
+    totals: Dict[str, Dict[str, Any]] = {
+        metric: {"covered": 0, "coverable": 0, "percentages": []}
+        for metric in wanted
+    }
+    for scope_name in roots:
+        mets = scope_metrics[scope_name]
         for mname, vals in mets.items():
+            if mname not in totals:
+                continue
             totals[mname]["covered"] += vals["covered"]
             totals[mname]["coverable"] += vals["coverable"]
+            totals[mname]["percentages"].append(
+                vals.get("pct", coverage_pct(vals["covered"], vals["coverable"]))
+            )
     rows: List[Json] = []
-    for mname in sorted(totals):
+    for mname in wanted:
         vals = totals[mname]
+        if not vals["percentages"]:
+            continue
         rows.append({
             "metric": mname,
-            "name": mname,
-            "full_name": mname,
             "covered": vals["covered"],
             "coverable": vals["coverable"],
             "missing": vals["coverable"] - vals["covered"],
-            "coverage_pct": coverage_pct(vals["covered"], vals["coverable"]),
+            "coverage_pct": (
+                vals["percentages"][0]
+                if len(vals["percentages"]) == 1
+                else coverage_pct(vals["covered"], vals["coverable"])
+            ),
         })
     return rows
 
@@ -1913,14 +1900,11 @@ def _coverage_score_rows(items: List[Json]) -> List[Json]:
 
 def _merge_scope_coverage(scope: Json, cov: Optional[Json]) -> Json:
     out = dict(scope)
-    cov = cov or {"covered": 0, "coverable": 0, "missing": 0,
-                  "coverage_pct": None, "metrics": []}
-    for key in ("covered", "coverable", "missing", "coverage_pct"):
-        out[key] = cov.get(key)
-    ev = out.pop("evidence", None)
-    if isinstance(ev, dict):
-        out["file"] = ev.get("file")
-        out["line"] = ev.get("line")
+    cov = cov or {"coverage_pct": None, "metrics": []}
+    out["coverage_pct"] = cov.get("coverage_pct")
+    for key in ("covered", "coverable", "missing"):
+        if key in cov:
+            out[key] = cov[key]
     metrics = cov.get("metrics") if isinstance(cov.get("metrics"), list) else []
     for metric in METRICS:
         row = next((m for m in metrics if m.get("metric") == metric), None)
@@ -1938,11 +1922,16 @@ def _project_scope_brief_rows(rows: List[Json]) -> List[Json]:
 
 def _project_scope_summary_rows(rows: List[Json]) -> List[Json]:
     columns = [
-        "name", "full_name", "covered", "coverable", "missing", "coverage_pct",
+        "name", "full_name", "coverage_pct",
         "line_pct", "toggle_pct", "branch_pct", "condition_pct",
-        "fsm_pct", "assert_pct", "functional_pct", "file", "line",
+        "fsm_pct", "assert_pct", "functional_pct",
     ]
-    return [_project_columns(row, columns) for row in rows]
+    projected = [_project_columns(row, columns) for row in rows]
+    for source, target in zip(rows, projected):
+        for key in ("covered", "coverable", "missing"):
+            if key in source:
+                target[key] = source[key]
+    return projected
 
 
 def _project_code_coverage_summary_rows(rows: List[Json]) -> List[Json]:

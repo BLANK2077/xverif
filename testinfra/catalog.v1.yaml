@@ -88,6 +88,7 @@ suites:
       kind: pytest
       paths:
         - xcov/tests/test_exclusions.py
+        - xcov/tests/test_urg_summary.py
         - xcov/tests/test_xcov.py
     capabilities: [child_process]
     hermetic: false

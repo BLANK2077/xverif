@@ -109,14 +109,18 @@ assert export（输出目录内保留 `asserts.txt`，并生成 `assert.json`、
 - 交互查询优先用 `scope.summary`、`scope.children`、`scope.search`、
   `code_coverage.summary` 看层次覆盖率。
 - `scope.summary` 返回扁平覆盖率字段；不要期待 `metrics={...}`，也不要期待
-  parent/depth/type/def_name。
+  parent/depth/type/def_name 或 summary source file/line evidence。
 - `scope.children` 和 `scope.search` 每项只返回 `name/full_name/coverage_pct`。
 - `code_coverage.summary` 不输出 `name/full_name/functional_pct`。
+- `code_coverage.summary` 只支持 `group_by=metric|scope`；summary query 固定使用 merged
+  selection，不接受 `test` selector，也不支持 source file/type 聚合。
 - `code_coverage.summary` 和 `scope.*` 支持 `query.include_patterns` /
   `query.exclude_patterns` 通配过滤；只支持 glob `*`、`?`，不要使用 regex。
 - `functional_coverage.summary` 不输出
   `metric/name/full_name/score_basis/score_item_count/raw_covered/raw_coverable/raw_missing`，
-  也不输出 `raw_coverage_pct`。
+  也不输出 `raw_coverage_pct`；只支持 `covergroup|coverpoint|cross`，不支持 bin summary。
+- scope 父节点直接使用 URG 已提供的 subtree metrics；多 metric `coverage_pct` 是所选 metric
+  percentages 的算术平均，不要把不同 metric 的 covered/coverable 相加。
 - xout 的 `items:` 是对齐纯文本表格，不是 Markdown 表格；JSON 响应结构不变。
 - 详细 code coverage 未覆盖项使用 `export.code_coverage` 的分 metric JSON/XOUT 查看；
   functional/assertion 使用各自 export action 的 `functional.xout`/`assert.xout`，不要只读

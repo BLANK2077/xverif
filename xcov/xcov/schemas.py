@@ -15,7 +15,7 @@ Json = Dict[str, Any]
 
 METRICS = list(CONTRACT_METRICS)
 CODE_METRICS = ["line", "toggle", "branch", "condition", "fsm", "assert"]
-FUNCTIONAL_LEVELS = ["covergroup", "coverpoint", "cross", "bin"]
+FUNCTIONAL_LEVELS = ["covergroup", "coverpoint", "cross"]
 OVERFLOW = ["truncate", "error", "summary_only"]
 
 _COVERAGE_FACT_QUERY_FIELDS = (
@@ -54,7 +54,7 @@ QUERY_FIELD_CONTRACTS: Dict[str, Dict[str, Any]] = {
     },
     "scope.summary": {
         "default": "full_name",
-        "allowed": ("name", "full_name", "file"),
+        "allowed": ("name", "full_name"),
     },
     "scope.children": {
         "default": "full_name",
@@ -65,25 +65,20 @@ QUERY_FIELD_CONTRACTS: Dict[str, Dict[str, Any]] = {
         "allowed": ("name", "full_name"),
     },
     "code_coverage.summary": {
-        "default": "full_name",
+        "default": "metric",
         "allowed": (
             "metric",
             "scope",
-            "source_file",
-            "type",
-            "name",
-            "full_name",
         ),
     },
     "functional_coverage.summary": {
-        "default": "full_name",
+        "default": "covergroup",
         "allowed": (
             "name",
             "full_name",
             "covergroup",
             "coverpoint",
             "cross",
-            "bin",
         ),
     },
     "assert.summary": {
@@ -107,16 +102,12 @@ SORT_FIELD_CONTRACTS: Dict[str, tuple[str, ...]] = {
         "fsm_pct",
         "assert_pct",
         "functional_pct",
-        "file",
-        "line",
     ),
     "scope.children": ("name", "full_name", "coverage_pct"),
     "scope.search": ("name", "full_name", "coverage_pct"),
     "code_coverage.summary": (
         "metric",
         "scope",
-        "source_file",
-        "type",
         "covered",
         "coverable",
         "missing",
@@ -126,7 +117,6 @@ SORT_FIELD_CONTRACTS: Dict[str, tuple[str, ...]] = {
         "covergroup",
         "coverpoint",
         "cross",
-        "bin",
         "covered",
         "coverable",
         "missing",
@@ -295,7 +285,6 @@ def _coverage_query_props(
         **_query_props(action),
         "metrics": _string_array(metrics, min_items=1),
         "scope": _string(min_length=1),
-        "test": _string(min_length=1),
     }
 
 
@@ -418,16 +407,29 @@ def _error_schema(action: str | None = None) -> Json:
         "detail.path": _string(min_length=1),
         "detail.pattern": _string(),
         "detail.pattern_mode": _string(min_length=1),
+        "detail.parse_error": _string(min_length=1),
+        "detail.report_dir": _string(min_length=1),
+        "detail.returncode": _integer(0),
         "detail.registry_action": _string(min_length=1),
         "detail.requested_action": _string(),
         "detail.row_index": _integer(0),
         "detail.scope": _string(min_length=1),
+        "detail.scope_name": _string(min_length=1),
+        "detail.scope_type": _string(min_length=1),
         "detail.scopes": _string_array(min_items=1),
         "detail.session_id": _string(min_length=1),
         "detail.supported": _string(min_length=1),
         "detail.stderr": _string(),
+        "detail.stderr_tail": _string(),
         "detail.test": _string(min_length=1),
         "detail.total_count": _integer(0),
+        "detail.declared": _integer(0),
+        "detail.parsed": _integer(0),
+        "detail.attribute": _string(min_length=1),
+        "detail.value": _string(),
+        "detail.full_name": _string(min_length=1),
+        "detail.missing": _string_array(),
+        "detail.empty": _string_array(),
         "detail.unknown_fields": _string_array(),
         "detail.unknown_status": _string_array(),
         "detail.vdb": _string(min_length=1),
@@ -578,34 +580,36 @@ SCOPE_SUMMARY_ITEM = _object({
     "fsm_pct": NULLABLE_NUMBER,
     "assert_pct": NULLABLE_NUMBER,
     "functional_pct": NULLABLE_NUMBER,
-    "file": NULLABLE_NONEMPTY_STRING,
-    "line": NULLABLE_POSITIVE_INTEGER,
 }, required=[
-    "name", "full_name", *COVERAGE_SCORE_PROPS,
+    "name", "full_name", "coverage_pct",
     "line_pct", "toggle_pct", "branch_pct", "condition_pct", "fsm_pct",
-    "assert_pct", "functional_pct", "file", "line",
+    "assert_pct", "functional_pct",
 ])
 
 def _code_summary_item_variant(group_by: str) -> Json:
     if group_by == "metric":
         identity = {"metric": _string(enum=CODE_METRICS)}
         required = ["metric"]
+        score_props = COVERAGE_SCORE_PROPS
+        score_required = list(COVERAGE_SCORE_PROPS)
     else:
         identity = {
             "metric": {"const": "summary"},
             group_by: _string(min_length=1),
         }
         required = ["metric", group_by]
+        score_props = COVERAGE_SCORE_PROPS
+        score_required = ["coverage_pct"]
     return _object(
-        {**identity, **COVERAGE_SCORE_PROPS},
-        required=[*required, *COVERAGE_SCORE_PROPS],
+        {**identity, **score_props},
+        required=[*required, *score_required],
     )
 
 
 CODE_SUMMARY_ITEM = {
     "oneOf": [
         _code_summary_item_variant(group_by)
-        for group_by in ("metric", "scope", "source_file", "type")
+        for group_by in ("metric", "scope")
     ],
 }
 
@@ -919,7 +923,6 @@ SCHEMAS: Dict[str, Json] = {
             target=SESSION_TARGET,
             args=_args({
                 "scope": _string(min_length=1),
-                "test": _string(min_length=1),
                 "limits": _limits(),
             }),
             require_target=True,
@@ -989,7 +992,7 @@ SCHEMAS: Dict[str, Json] = {
                     "code_coverage.summary",
                     metrics=CODE_METRICS,
                 ),
-                "group_by": _string(enum=["metric", "scope", "source_file", "type"]),
+                "group_by": _string(enum=["metric", "scope"]),
             }),
             require_target=True,
         ),
@@ -1012,7 +1015,6 @@ SCHEMAS: Dict[str, Json] = {
             args=_args({
                 **_query_props("functional_coverage.summary"),
                 "scope": _string(min_length=1),
-                "test": _string(min_length=1),
                 "group_by": _string(enum=FUNCTIONAL_LEVELS),
             }),
             require_target=True,
@@ -1036,7 +1038,6 @@ SCHEMAS: Dict[str, Json] = {
                 "limits": _limits(),
                 "sort": _sort("assert.summary"),
                 "scope": _string(min_length=1),
-                "test": _string(min_length=1),
             }),
             require_target=True,
         ),
