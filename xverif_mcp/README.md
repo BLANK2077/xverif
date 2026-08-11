@@ -455,9 +455,17 @@ xdebug detached backend 可能比 stdio-loop 活得更久，dead loop 只由固�
 
 `xverif_debug_session_open` 与 `xverif_cov_session_open` 都接受可选 `run_manifest`。
 它们会在启动后端前严格校验已发布的资源清单：xdebug 使用
-`xdebug.run-manifest.v1`（FSDB/daidir），xcov 使用 `xcov.run-manifest.v1`（VDB）。
+`xdebug.run-manifest.v1`（FSDB/daidir），xcov 使用 `xcov.run-manifest.v2`（VDB）。xcov v2
+要求 `sha256-entry-tree-v2` 无歧义目录摘要、资源类型、regular-file 总字节数以及
+file/directory/symlink 计数；不接受旧 v1 清单。
 清单内资源路径相对 manifest 文件，且必须匹配路径、`size_bytes` 与 SHA-256；失败返回
 `RESOURCE_PROVENANCE_MISMATCH`，不会自动重试、重开或切换后端。
+
+xcov exclusion reason 只由 CSV sidecar 持久化。reason revision 尚未经
+`exclude.csv.export/compile/apply` 成功持久化时，普通 cov session close 返回
+`UNPERSISTED_EXCLUSION_REASON`，manager 保留原 stdio-loop 和 session；调用方应先导出 CSV，
+或明确使用 `confirm_discard_reasons=true` 强制关闭。该确认值会原样传入 native
+`session.close`，响应同时报告是否丢弃及丢弃计数。
 
 ## 工具暴露开关
 

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import fnmatch
+import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
 from .coverage_contract import strict_coverage_pct
 from .errors import XcovError
+from .limits import MAX_RESPONSE_ROWS
 from .schemas import query_contract_for_action, sort_fields_for_action
 
 Json = Dict[str, Any]
@@ -149,32 +151,123 @@ def limit_args(action: str, args: Json) -> Json:
         limits["max_items"] = default
     limits.setdefault("overflow", "truncate")
     max_items = limits.get("max_items")
-    if max_items is not None and (not isinstance(max_items, int) or max_items < 0):
-        raise XcovError("INVALID_LIMIT", "limits.max_items must be a non-negative integer")
+    if max_items is not None and (
+        not isinstance(max_items, int)
+        or max_items < 0
+        or max_items > MAX_RESPONSE_ROWS
+    ):
+        raise XcovError(
+            "INVALID_LIMIT",
+            f"limits.max_items must be between 0 and {MAX_RESPONSE_ROWS}",
+        )
     if limits["overflow"] not in ("truncate", "error", "summary_only"):
         raise XcovError("INVALID_LIMIT", "unsupported limits.overflow",
                         overflow=limits["overflow"])
     return limits
 
 
+def _export_roots() -> tuple[Path, tuple[Path, ...]]:
+    workspace = Path.cwd().resolve()
+    default_lexical = workspace / ".xverif" / "xcov_exports"
+    probe = workspace
+    for part in (".xverif", "xcov_exports"):
+        probe = probe / part
+        if os.path.lexists(probe) and probe.is_symlink():
+            raise XcovError(
+                "OUTPUT_PATH_CONFIG_INVALID",
+                "default xcov export root must not traverse a symlink",
+            )
+    default_root = default_lexical.resolve()
+    configured: list[Path] = [default_root]
+    raw_roots = os.environ.get("XVERIF_XCOV_EXPORT_ROOTS")
+    if raw_roots:
+        for raw in raw_roots.split(os.pathsep):
+            if not raw or raw != raw.strip() or not Path(raw).is_absolute():
+                raise XcovError(
+                    "OUTPUT_PATH_CONFIG_INVALID",
+                    "XVERIF_XCOV_EXPORT_ROOTS must contain absolute non-empty paths",
+                )
+            try:
+                root = Path(raw).resolve(strict=True)
+            except (OSError, RuntimeError) as exc:
+                raise XcovError(
+                    "OUTPUT_PATH_CONFIG_INVALID",
+                    "configured xcov export root cannot be resolved",
+                ) from exc
+            if not root.is_dir():
+                raise XcovError(
+                    "OUTPUT_PATH_CONFIG_INVALID",
+                    "configured xcov export root is not a directory",
+                )
+            if root not in configured:
+                configured.append(root)
+    return default_root, tuple(configured)
+
+
+def _lexically_within(candidate: Path, root: Path) -> tuple[str, ...] | None:
+    try:
+        return candidate.relative_to(root).parts
+    except ValueError:
+        return None
+
+
 def resolve_artifact_path(path: str, allow_absolute_path: bool = False) -> str:
+    """Resolve one write target under the closed xcov export-root policy."""
+
+    if not isinstance(path, str) or not path or path != path.strip():
+        raise XcovError("OUTPUT_PATH_UNSAFE", "output path must be a non-empty string")
     raw = Path(path)
+    if any(part == ".." for part in raw.parts):
+        raise XcovError("OUTPUT_PATH_UNSAFE", "output path must not contain '..'", path=path)
+    default_root, roots = _export_roots()
     if raw.is_absolute():
         if not allow_absolute_path:
-            raise XcovError("OUTPUT_PATH_UNSAFE",
-                            "absolute output.path requires output.allow_absolute_path=true",
-                            path=path)
-        return str(raw)
-    if any(part == ".." for part in raw.parts):
-        raise XcovError("OUTPUT_PATH_UNSAFE", "output.path must not contain '..'",
-                        path=path)
-    return str(Path(".xverif") / "xcov_exports" / raw)
+            raise XcovError(
+                "OUTPUT_PATH_UNSAFE",
+                "absolute output path requires allow_absolute_path=true",
+                path=path,
+            )
+        lexical = Path(os.path.abspath(path))
+        allowed_roots = roots
+    else:
+        lexical = default_root / raw
+        allowed_roots = (default_root,)
+
+    for root in allowed_roots:
+        relative_parts = _lexically_within(lexical, root)
+        if relative_parts is None:
+            continue
+        probe = root
+        for part in relative_parts:
+            probe = probe / part
+            if os.path.lexists(probe) and probe.is_symlink():
+                raise XcovError(
+                    "OUTPUT_PATH_UNSAFE",
+                    "output path must not traverse a symlink",
+                    path=path,
+                )
+        try:
+            resolved = lexical.resolve(strict=False)
+        except (OSError, RuntimeError) as exc:
+            raise XcovError("OUTPUT_PATH_UNSAFE", "output path cannot be resolved") from exc
+        if _lexically_within(resolved, root) is not None:
+            return str(resolved)
+    raise XcovError(
+        "OUTPUT_PATH_UNSAFE",
+        "absolute output path is outside configured xcov export roots",
+        path=path,
+    )
 
 
 def apply_output(action: str, args: Json, items: List[Json]) -> Tuple[Json, List[Json], List[str]]:
     limits = limit_args(action, args)
     total_count = len(items)
-    max_items = limits.get("max_items")
+    requested_max_items = limits.get("max_items")
+    max_items = (
+        MAX_RESPONSE_ROWS
+        if requested_max_items is None
+        else requested_max_items
+    )
     overflow = limits.get("overflow")
     warnings: List[str] = []
     exceeds_limit = bool(max_items is not None and total_count > max_items)

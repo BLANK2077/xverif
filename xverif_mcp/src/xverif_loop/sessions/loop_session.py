@@ -627,7 +627,12 @@ class XdebugLoopSession:
             )
 
     @_serialized_lifecycle
-    def close(self, force: bool = False) -> Json:
+    def close(
+        self,
+        force: bool = False,
+        *,
+        confirm_discard_reasons: bool = False,
+    ) -> Json:
         observability_cursor = self.logger.failure_cursor()
         self.logger.try_session(
             self.alias,
@@ -637,6 +642,7 @@ class XdebugLoopSession:
             launcher=self.launcher.mode,
             session_id=self.session_id,
             force=force,
+            confirm_discard_reasons=confirm_discard_reasons,
             state=self.state,
         )
         cleanup: Json = {
@@ -653,6 +659,8 @@ class XdebugLoopSession:
                     "action": lifecycle_capability(self.backend).native_close_action,
                     "target": {"session_id": self.session_id},
                 }
+                if self.backend == "xcov" and confirm_discard_reasons:
+                    req["args"] = {"confirm_discard_reasons": True}
                 _attach_trace_id(req, self.backend, self.alias)
                 _request_native_json(req, self.backend)
                 backend_rsp = self._call_raw(
@@ -668,6 +676,32 @@ class XdebugLoopSession:
             except Exception as exc:
                 cleanup["backend_close"] = "failed"
                 errors["backend_close"] = str(exc)
+            backend_error = (
+                errors.get("backend_close", {}).get("error", {})
+                if isinstance(errors.get("backend_close"), dict)
+                else {}
+            )
+            if backend_error.get("code") == "UNPERSISTED_EXCLUSION_REASON":
+                self.last_cleanup = cleanup
+                self.logger.try_session(
+                    self.alias,
+                    "session.close.preserved",
+                    False,
+                    backend=self.backend,
+                    launcher=self.launcher.mode,
+                    session_id=self.session_id,
+                    reason="unpersisted_exclusion_reason",
+                )
+                return self._attach_observability({
+                    "ok": False,
+                    "error": {
+                        **backend_error,
+                        "error_layer": "backend",
+                    },
+                    "session_preserved": True,
+                    "cleanup": cleanup,
+                    "session": self.public_json(),
+                }, observability_cursor)
             try:
                 req = {
                     "request_id": f"quit-{_safe_name(self.alias)}",

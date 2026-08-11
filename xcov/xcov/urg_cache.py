@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import fcntl
+import functools
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import shutil
+import subprocess
 import tempfile
 import time
 from typing import Any, Dict, Optional
@@ -52,15 +54,54 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+@functools.lru_cache(maxsize=8)
+def _probe_urg(path_text: str, size_bytes: int, mtime_ns: int) -> Json:
+    path = Path(path_text)
+    try:
+        completed = subprocess.run(
+            [path_text, "-version"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=20.0,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise XcovError(
+            "EDA_PROVENANCE_INVALID",
+            "failed to query the configured URG version",
+        ) from exc
+    combined = completed.stdout + completed.stderr
+    version_line = next(
+        (line.strip() for line in combined.splitlines() if "URG Version " in line),
+        None,
+    )
+    covdb_line = next(
+        (line.strip() for line in combined.splitlines() if line.startswith("CovDB version:")),
+        None,
+    )
+    if completed.returncode != 0 or not version_line or not covdb_line:
+        raise XcovError(
+            "EDA_PROVENANCE_INVALID",
+            "configured URG did not return a canonical version response",
+        )
+    release = version_line.split("URG Version ", 1)[1].split("Copyright", 1)[0].strip()
+    return {
+        "path": path_text,
+        "release": release,
+        "covdb_version": covdb_line.split(":", 1)[1].strip(),
+        "binary_sha256": _file_sha256(path),
+        "version_output_sha256": hashlib.sha256(combined.encode("utf-8")).hexdigest(),
+        "size_bytes": size_bytes,
+        "mtime_ns": mtime_ns,
+    }
+
+
 def _urg_identity() -> Json:
     path = Path(get_urg_path()).resolve(strict=True)
     stat = path.stat()
-    return {
-        "path": str(path),
-        "release": path.parent.parent.name,
-        "size_bytes": stat.st_size,
-        "mtime_ns": stat.st_mtime_ns,
-    }
+    return _probe_urg(str(path), stat.st_size, stat.st_mtime_ns)
 
 
 def _cache_identity(

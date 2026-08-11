@@ -10,6 +10,13 @@ from .coverage_contract import (
     STATUS_VALUES,
 )
 from .errors import XcovError
+from .limits import (
+    MAX_EXPORT_SCOPES,
+    MAX_QUERY_PATTERNS,
+    MAX_RESPONSE_ROWS,
+    MAX_SCHEMA_ARRAY_ITEMS,
+    MAX_SCHEMA_STRING_CHARS,
+)
 
 Json = Dict[str, Any]
 
@@ -137,12 +144,19 @@ SORT_FIELD_CONTRACTS: Dict[str, tuple[str, ...]] = {
 }
 
 
-def _string(*, enum: Iterable[str] | None = None, min_length: int | None = None) -> Json:
+def _string(
+    *,
+    enum: Iterable[str] | None = None,
+    min_length: int | None = None,
+    max_length: int | None = MAX_SCHEMA_STRING_CHARS,
+) -> Json:
     out: Json = {"type": "string"}
     if enum is not None:
         out["enum"] = list(enum)
     if min_length is not None:
         out["minLength"] = min_length
+    if max_length is not None:
+        out["maxLength"] = max_length
     return out
 
 
@@ -150,10 +164,15 @@ def _bool() -> Json:
     return {"type": "boolean"}
 
 
-def _integer(minimum: int | None = None) -> Json:
+def _integer(
+    minimum: int | None = None,
+    maximum: int | None = None,
+) -> Json:
     out: Json = {"type": "integer"}
     if minimum is not None:
         out["minimum"] = minimum
+    if maximum is not None:
+        out["maximum"] = maximum
     return out
 
 
@@ -170,10 +189,17 @@ def _nullable(schema: Json) -> Json:
     return {"anyOf": [schema, {"type": "null"}]}
 
 
-def _array(items: Json, *, min_items: int | None = None) -> Json:
+def _array(
+    items: Json,
+    *,
+    min_items: int | None = None,
+    max_items: int | None = MAX_SCHEMA_ARRAY_ITEMS,
+) -> Json:
     out: Json = {"type": "array", "items": items}
     if min_items is not None:
         out["minItems"] = min_items
+    if max_items is not None:
+        out["maxItems"] = max_items
     return out
 
 
@@ -193,8 +219,11 @@ def _string_array(
     values: Iterable[str] | None = None,
     *,
     min_items: int | None = None,
+    max_items: int | None = MAX_SCHEMA_ARRAY_ITEMS,
 ) -> Json:
-    return _array(_string(enum=values), min_items=min_items)
+    return _array(
+        _string(enum=values), min_items=min_items, max_items=max_items,
+    )
 
 
 SCHEMA_NODE: Json = {
@@ -224,8 +253,8 @@ def sort_fields_for_action(action: str) -> tuple[str, ...]:
 def _query(action: str) -> Json:
     contract = query_contract_for_action(action)
     return _object({
-        "include_patterns": _string_array(),
-        "exclude_patterns": _string_array(),
+        "include_patterns": _string_array(max_items=MAX_QUERY_PATTERNS),
+        "exclude_patterns": _string_array(max_items=MAX_QUERY_PATTERNS),
         "match_field": _string(enum=contract["allowed"]),
         "pattern_mode": {"const": "glob"},
         "case_sensitive": _bool(),
@@ -241,7 +270,7 @@ def _sort(action: str) -> Json:
 
 def _limits() -> Json:
     return _object({
-        "max_items": _nullable(_integer(0)),
+        "max_items": _nullable(_integer(0, MAX_RESPONSE_ROWS)),
         "overflow": _string(enum=OVERFLOW),
     })
 
@@ -400,6 +429,15 @@ def _error_schema(action: str | None = None) -> Json:
         "detail.line": _integer(0),
         "detail.match_field": _string(min_length=1),
         "detail.max_items": _integer(0),
+        "detail.request_bytes": _integer(0),
+        "detail.max_request_bytes": _integer(0),
+        "detail.response_bytes": _integer(0),
+        "detail.max_response_bytes": _integer(0),
+        "detail.resource_kind": _string(min_length=1),
+        "detail.resource_count": _integer(0),
+        "detail.max_resource_count": _integer(0),
+        "detail.unpersisted_reason_count": _integer(0),
+        "detail.cleanup_state": _string(min_length=1),
         "detail.metric": _string(min_length=1),
         "detail.method": _string(min_length=1),
         "detail.object_type": _string(min_length=1),
@@ -527,9 +565,18 @@ SESSION = _object({
     "worker": _string(min_length=1),
     "exclusion_policy": _string(enum=["default", "strict"]),
     "npi_initialized": _bool(),
+    "observability": _object({
+        "ok": _bool(),
+        "failure_count": _integer(0),
+        "last_failure_operation": NULLABLE_STRING,
+        "last_failure_type": NULLABLE_STRING,
+    }, required=[
+        "ok", "failure_count", "last_failure_operation", "last_failure_type",
+    ]),
 }, required=[
     "session_id", "state", "vdb", "test_count", "top_scope_count",
     "top_scopes", "worker", "exclusion_policy", "npi_initialized",
+    "observability",
 ])
 
 RUN_MANIFEST_RESOURCE = _object({
@@ -538,17 +585,25 @@ RUN_MANIFEST_RESOURCE = _object({
         "minLength": 1,
         "pattern": r"^(?!/)(?!\.\.(?:/|$))(?!.*\/\.\.(?:\/|$)).+$",
     },
+    "kind": _string(enum=["file", "directory"]),
+    "hash_version": {"const": "sha256-entry-tree-v2"},
     "size_bytes": _integer(0),
+    "file_count": _integer(0),
+    "directory_count": _integer(0),
+    "symlink_count": _integer(0),
     "sha256": {
         "type": "string",
         "minLength": 64,
         "maxLength": 64,
         "pattern": "^[0-9a-f]{64}$",
     },
-}, required=["path", "size_bytes", "sha256"])
+}, required=[
+    "path", "kind", "hash_version", "size_bytes", "file_count",
+    "directory_count", "symlink_count", "sha256",
+])
 
 RUN_MANIFEST_INPUT = _object({
-    "schema_version": {"const": "xcov.run-manifest.v1"},
+    "schema_version": {"const": "xcov.run-manifest.v2"},
     "state": {"const": "published"},
     "resources": _object({"vdb": RUN_MANIFEST_RESOURCE}, required=["vdb"]),
 }, required=["schema_version", "state", "resources"])
@@ -867,6 +922,7 @@ def _csv_workflow_args(action: str) -> Json:
         props["allow_absolute_path"] = _bool()
     if action == "exclude.csv.format":
         props["write"] = _bool()
+        props["allow_absolute_path"] = _bool()
     return _args(props)
 
 
@@ -945,8 +1001,16 @@ SCHEMAS: Dict[str, Json] = {
     ),
     "session.close": _schema_entry(
         "session.close",
-        _request("session.close", target=SESSION_TARGET, require_target=True),
-        _completeness_summary(),
+        _request(
+            "session.close",
+            target=SESSION_TARGET,
+            args=_args({"confirm_discard_reasons": _bool()}),
+            require_target=True,
+        ),
+        _completeness_summary({
+            "reasons_discarded": _bool(),
+            "discarded_reason_count": _integer(0),
+        }),
         _object({"session": SESSION}, required=["session"]),
     ),
     "tests.list": _schema_entry(
@@ -1101,10 +1165,14 @@ SCHEMAS: Dict[str, Json] = {
             "export.code_coverage",
             target=SESSION_TARGET,
             args=_args({
-                "scopes": _array(_string(min_length=1), min_items=1),
+                "scopes": _array(
+                    _string(min_length=1), min_items=1,
+                    max_items=MAX_EXPORT_SCOPES,
+                ),
                 "metrics": _array(
                     _string(enum=["line", "condition", "branch", "toggle", "fsm"]),
                     min_items=1,
+                    max_items=5,
                 ),
                 "output": _export_output(),
             }, required=["scopes", "output"]),
@@ -1198,7 +1266,7 @@ SCHEMAS: Dict[str, Json] = {
             "exclude.load",
             target=SESSION_TARGET,
             args=_args({
-                "paths": _array(_string(min_length=1), min_items=1),
+                "paths": _array(_string(min_length=1), min_items=1, max_items=256),
                 "allow_absolute_path": _bool(),
                 "test": {"const": "merged"},
             }, required=["paths"]),
@@ -1217,14 +1285,14 @@ SCHEMAS: Dict[str, Json] = {
                 "coverage_refs": _array(_object({
                     "coverage_ref": _string(min_length=1),
                     "reason": _string(min_length=1),
-                }, required=["coverage_ref", "reason"]), min_items=1),
+                }, required=["coverage_ref", "reason"]), min_items=1, max_items=10_000),
                 "exports": _array(_object({
                     "path": _string(min_length=1),
                     "items": _array(_object({
                         "gap_id": _string(min_length=1),
                         "reason": _string(min_length=1),
-                    }, required=["gap_id", "reason"]), min_items=1),
-                }, required=["path", "items"]), min_items=1),
+                    }, required=["gap_id", "reason"]), min_items=1, max_items=10_000),
+                }, required=["path", "items"]), min_items=1, max_items=256),
                 "test": {"const": "merged"},
             }),
             require_target=True,
@@ -1248,7 +1316,7 @@ SCHEMAS: Dict[str, Json] = {
             "exclude.remove",
             target=SESSION_TARGET,
             args=_args({
-                "coverage_refs": _array(_string(min_length=1)),
+                "coverage_refs": _array(_string(min_length=1), max_items=10_000),
                 "test": {"const": "merged"},
             }),
             require_target=True,
@@ -1372,6 +1440,7 @@ _SCHEMA_NODE_KEYWORDS = {
     "minLength",
     "maxLength",
     "minItems",
+    "maxItems",
     "pattern",
     "properties",
     "additionalProperties",
@@ -1499,7 +1568,7 @@ def _validate_schema_node(value: Any, path: str) -> None:
     ):
         raise SchemaValidationError(path, "minimum must not exceed maximum")
 
-    for keyword in ("minLength", "maxLength", "minItems"):
+    for keyword in ("minLength", "maxLength", "minItems", "maxItems"):
         if keyword in value and (
             not isinstance(value[keyword], int)
             or isinstance(value[keyword], bool)
@@ -1515,6 +1584,12 @@ def _validate_schema_node(value: Any, path: str) -> None:
         and value["minLength"] > value["maxLength"]
     ):
         raise SchemaValidationError(path, "minLength must not exceed maxLength")
+    if (
+        "minItems" in value
+        and "maxItems" in value
+        and value["minItems"] > value["maxItems"]
+    ):
+        raise SchemaValidationError(path, "minItems must not exceed maxItems")
     if "pattern" in value:
         pattern = value["pattern"]
         if not isinstance(pattern, str):
@@ -1602,6 +1677,8 @@ def _validate(value: Any, schema: Json, path: str = "$") -> None:
             _validate(item, schema["items"], f"{path}[{index}]")
         if "minItems" in schema and len(value) < schema["minItems"]:
             raise SchemaValidationError(path, f"requires at least {schema['minItems']} items")
+        if "maxItems" in schema and len(value) > schema["maxItems"]:
+            raise SchemaValidationError(path, f"requires at most {schema['maxItems']} items")
     if isinstance(value, str) and "minLength" in schema and len(value) < schema["minLength"]:
         raise SchemaValidationError(path, f"requires length >= {schema['minLength']}")
     if isinstance(value, str) and "maxLength" in schema and len(value) > schema["maxLength"]:

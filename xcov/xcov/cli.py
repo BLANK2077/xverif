@@ -10,6 +10,7 @@ from .actions import Dispatcher
 from .errors import XcovError, error_response
 from .logging import (log_action_event, log_transport_event,
                       request_summary_for_log, response_summary_for_log)
+from .limits import MAX_REQUEST_BYTES, enforce_request_budget
 from .protocol import json_dumps, parse_request, render_transport_xout, render_xout
 from .schemas import validate_response, validate_stdio_request
 
@@ -42,6 +43,7 @@ def _emit(rsp: Json, *, json_output: bool) -> None:
 
 def run_once(text: str, dispatcher: Dispatcher, *, json_output: bool = False) -> int:
     try:
+        enforce_request_budget(text)
         req = parse_request(text)
     except XcovError as exc:
         req = {"request_id": "req-unknown", "action": ""}
@@ -56,18 +58,53 @@ def run_once(text: str, dispatcher: Dispatcher, *, json_output: bool = False) ->
     return 0 if rsp.get("ok") else 1
 
 
+def _bounded_input_lines():
+    while True:
+        line = sys.stdin.readline(MAX_REQUEST_BYTES + 1)
+        if not line:
+            return
+        oversized = len(line.encode("utf-8")) > MAX_REQUEST_BYTES
+        if len(line) > MAX_REQUEST_BYTES and not line.endswith("\n"):
+            oversized = True
+            while line and not line.endswith("\n"):
+                line = sys.stdin.readline(MAX_REQUEST_BYTES + 1)
+        yield None if oversized else line
+
+
 def stdio_loop(dispatcher: Dispatcher) -> int:
     ready = {"type": "ready", "protocol": "xcov-stdio-loop", "version": 1,
              "pid": os.getpid()}
     _protocol_write(json.dumps(ready, separators=(",", ":")) + "\n")
     log_transport_event("adhoc", "ready", True, ready)
-    for line in sys.stdin:
+    for line in _bounded_input_lines():
+        if line is None:
+            rsp = error_response(
+                "", "req-unknown", "REQUEST_BUDGET_EXCEEDED",
+                "request exceeds the xcov transport byte budget",
+                max_request_bytes=MAX_REQUEST_BYTES,
+            )
+            validate_response("", rsp)
+            envelope = {
+                "request_id": "req-unknown", "ok": False,
+                "api_version": "xcov.v1", "action": "",
+                "payload_format": "xout", "json": rsp,
+                "xout": render_transport_xout(rsp),
+            }
+            _protocol_write(json.dumps(
+                envelope, ensure_ascii=False, separators=(",", ":"),
+            ) + "\n")
+            log_transport_event(
+                "adhoc", "request_budget_exceeded", False,
+                {"max_request_bytes": MAX_REQUEST_BYTES},
+            )
+            continue
         line = line.strip()
         if not line:
             continue
         req: Json = {}
         try:
             req = parse_request(line)
+            enforce_request_budget(line)
             validate_stdio_request(req)
             rid = req["request_id"]
             sid = _log_session_id(req)
@@ -130,12 +167,12 @@ def main(argv: list[str] | None = None) -> int:
         return stdio_loop(dispatcher)
     if ns.request:
         with open(ns.request, "r", encoding="utf-8") as fh:
-            text = fh.read()
+            text = fh.read(MAX_REQUEST_BYTES + 1)
     elif ns.file and ns.file != "-":
         with open(ns.file, "r", encoding="utf-8") as fh:
-            text = fh.read()
+            text = fh.read(MAX_REQUEST_BYTES + 1)
     else:
-        text = sys.stdin.read()
+        text = sys.stdin.read(MAX_REQUEST_BYTES + 1)
     return run_once(text, dispatcher, json_output=bool(ns.json))
 
 

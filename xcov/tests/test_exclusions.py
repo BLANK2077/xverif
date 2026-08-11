@@ -157,6 +157,46 @@ def test_csv_parser_preserves_standard_csv_quoting_and_source_groups(tmp_path):
     assert parse_document(root / "functional_exclusions.csv", "functional").row_count == 1
 
 
+def test_csv_multiline_quote_scan_is_linear(monkeypatch):
+    from xcov import exclusions_csv
+
+    physical_lines = 10_000
+    text = 'scope,metric,line,object,bin,reason\n"' + (
+        "reason line\n" * physical_lines
+    ) + 'end"\n'
+    scanned = 0
+    original = exclusions_csv._advance_quote_state
+
+    def counted(chunk, quoted):
+        nonlocal scanned
+        scanned += len(chunk)
+        return original(chunk, quoted)
+
+    monkeypatch.setattr(exclusions_csv, "_advance_quote_state", counted)
+    entries = exclusions_csv._logical_entries(text)
+    assert len(entries) == 2
+    assert scanned <= len(text)
+
+
+def test_csv_field_budget_fails_before_resolution(tmp_path, monkeypatch):
+    from xcov import exclusions_csv
+
+    monkeypatch.setattr(exclusions_csv, "MAX_CSV_FIELD_CHARS", 8)
+    root = tmp_path / "coverage_exclusions"
+    _write_csvs(root)
+    code = root / "code_exclusions.csv"
+    code.write_text(
+        code.read_text(encoding="utf-8").replace(
+            "不可达,恢复路径", "reason-is-too-long",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(XcovError) as caught:
+        parse_document(code, "code")
+    assert caught.value.code == "RESOURCE_BUDGET_EXCEEDED"
+    assert caught.value.detail["resource_kind"] == "csv_field_chars"
+
+
 def test_csv_parser_rejects_noncontiguous_group_and_unknown_column(tmp_path):
     path = tmp_path / "code_exclusions.csv"
     path.write_text(
@@ -207,7 +247,8 @@ def test_csv_resolve_is_exact_and_reports_missing(tmp_path):
     assert code_row["status"] == "missing"
 
 
-def test_native_exclusion_add_remove_export_load_and_unload(tmp_path):
+def test_native_exclusion_add_remove_export_load_and_unload(tmp_path, monkeypatch):
+    monkeypatch.setenv("XVERIF_XCOV_EXPORT_ROOTS", str(tmp_path))
     dispatcher = _dispatcher()
     coverage_ref = _line_coverage_ref(dispatcher)
     entry = {"coverage_ref": coverage_ref, "reason": "该行仅用于验证 exclusion 生命周期"}
@@ -255,7 +296,10 @@ def test_exclusion_selector_input_is_rejected_by_public_schema():
     assert response["error"]["detail.path"] == "$.args"
 
 
-def test_csv_export_persists_session_reasons_and_rejects_conflicting_merge(tmp_path):
+def test_csv_export_persists_session_reasons_and_rejects_conflicting_merge(
+    tmp_path, monkeypatch,
+):
+    monkeypatch.setenv("XVERIF_XCOV_EXPORT_ROOTS", str(tmp_path))
     dispatcher = _dispatcher()
     coverage_ref = _line_coverage_ref(dispatcher)
     entry = {"coverage_ref": coverage_ref, "reason": "第一版排除原因"}
@@ -285,7 +329,10 @@ def test_csv_export_persists_session_reasons_and_rejects_conflicting_merge(tmp_p
     assert {path.name: path.read_text(encoding="utf-8") for path in directory.iterdir()} == before
 
 
-def test_el_import_warns_that_reason_is_not_available_to_csv_export(tmp_path):
+def test_el_import_warns_that_reason_is_not_available_to_csv_export(
+    tmp_path, monkeypatch,
+):
+    monkeypatch.setenv("XVERIF_XCOV_EXPORT_ROOTS", str(tmp_path))
     dispatcher = _dispatcher()
     coverage_ref = _line_coverage_ref(dispatcher)
     _request(dispatcher, "exclude.add", {"coverage_refs": [{
@@ -315,7 +362,7 @@ def test_el_import_warns_that_reason_is_not_available_to_csv_export(tmp_path):
     assert any("EL" in warning and "reason" in warning for warning in exported["warnings"])
 
 
-def test_session_close_discards_unsaved_exclusion_reasons():
+def test_session_close_rejects_unsaved_reasons_and_requires_explicit_discard():
     from xcov.session import XcovSession
 
     class Backend:
@@ -325,7 +372,13 @@ def test_session_close_discards_unsaved_exclusion_reasons():
     session = XcovSession("isolated", "/unused.vdb", Backend(), None)
     session.record_exclusion("row", {"reason": "未持久化原因", "csv_row": {}})
     assert session.exclusion_records
-    session.close()
+    with pytest.raises(XcovError) as caught:
+        session.close()
+    assert caught.value.code == "UNPERSISTED_EXCLUSION_REASON"
+    assert session.exclusion_records
+
+    discarded = session.close(confirm_discard_reasons=True)
+    assert discarded == 1
     assert session.exclusion_records == {}
 
 
@@ -412,7 +465,8 @@ def test_compile_time_exclusion_is_immutable_on_remove():
     assert response["data"]["items"][0]["after"] is False
 
 
-def test_csv_compile_publishes_three_files_and_loads_union(tmp_path):
+def test_csv_compile_publishes_three_files_and_loads_union(tmp_path, monkeypatch):
+    monkeypatch.setenv("XVERIF_XCOV_EXPORT_ROOTS", str(tmp_path))
     root = tmp_path / "coverage_exclusions"
     output = tmp_path / "native"
     _write_csvs(root)
@@ -451,7 +505,8 @@ def test_csv_apply_resolves_and_returns_setter_outcomes(tmp_path):
     ]
 
 
-def test_csv_compile_failure_does_not_publish_partial_artifacts(tmp_path):
+def test_csv_compile_failure_does_not_publish_partial_artifacts(tmp_path, monkeypatch):
+    monkeypatch.setenv("XVERIF_XCOV_EXPORT_ROOTS", str(tmp_path))
     root = tmp_path / "coverage_exclusions"
     output = tmp_path / "native"
     _write_csvs(root)

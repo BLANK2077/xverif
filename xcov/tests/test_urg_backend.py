@@ -249,7 +249,7 @@ def test_el_lazy_export(xverif_fixture, tmp_path):
         sess.close()
 
 
-def test_export_code_to_dir(xverif_fixture, tmp_path):
+def test_export_code_to_dir(xverif_fixture, tmp_path, monkeypatch):
     """export.code_coverage writes strict per-instance structured artifacts."""
     resources = xverif_fixture("xcov.comprehensive")
     vdb = resources / "comprehensive.vdb"
@@ -265,6 +265,7 @@ def test_export_code_to_dir(xverif_fixture, tmp_path):
         return b
 
     export_dir = str(tmp_path / "export_out")
+    monkeypatch.setenv("XVERIF_XCOV_EXPORT_ROOTS", str(tmp_path))
     sm = SessionManager(backend_factory=factory)
     sess = sm.open(str(vdb), name="export_test", cache_dir=str(tmp_path))
     d = Dispatcher(sessions=sm)
@@ -276,7 +277,7 @@ def test_export_code_to_dir(xverif_fixture, tmp_path):
             "args": {
                 "scopes": ["top.u_core0", "top.u_core1"],
                 "metrics": ["line"],
-                "output": {"path": export_dir},
+                "output": {"path": export_dir, "allow_absolute_path": True},
             },
         })
         assert rsp["ok"], f"export failed: {rsp.get('error', {}).get('message', '?')}"

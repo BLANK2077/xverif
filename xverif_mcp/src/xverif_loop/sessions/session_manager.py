@@ -444,7 +444,12 @@ class McpSessionManager:
             return result
         return rsp
 
-    def close_session(self, session_id: str) -> Json:
+    def close_session(
+        self,
+        session_id: str,
+        *,
+        confirm_discard_reasons: bool = False,
+    ) -> Json:
         observability_cursor = self.logger.failure_cursor()
         with self._manager_lock:
             s = self.sessions.get(session_id) or self.tombstones.get(
@@ -466,7 +471,11 @@ class McpSessionManager:
         old_state = s.state
         capability = lifecycle_capability(s.backend)
         if s.state == "alive":
-            rsp = s.close()
+            rsp = (
+                s.close(confirm_discard_reasons=confirm_discard_reasons)
+                if self.backend == "xcov"
+                else s.close()
+            )
         elif capability.backend_survives_loop:
             self._evict_session(s)
             return self._attach_observability(_error(
@@ -478,6 +487,18 @@ class McpSessionManager:
         else:
             rsp = s.kill()
         if not rsp.get("ok", True):
+            if rsp.get("session_preserved") is True:
+                self.logger.try_session(
+                    s.alias,
+                    "manager.close.preserved",
+                    False,
+                    backend=self.backend,
+                    launcher=self.mode,
+                    session_id=s.session_id,
+                    previous_state=old_state,
+                    response=rsp,
+                )
+                return self._attach_observability(rsp, observability_cursor)
             s.state = "cleanup_partial"
             self._evict_session(s, tombstone_state=s.state)
             self.logger.try_session(
@@ -683,8 +704,16 @@ class McpSessionManager:
     def session_list(self, **kwargs: Any) -> Json:
         return self.list_sessions(**kwargs)
 
-    def session_close(self, session_id: str) -> Json:
-        return self.close_session(session_id)
+    def session_close(
+        self,
+        session_id: str,
+        *,
+        confirm_discard_reasons: bool = False,
+    ) -> Json:
+        return self.close_session(
+            session_id,
+            confirm_discard_reasons=confirm_discard_reasons,
+        )
 
     def session_doctor(self, session_id: str, verbose: bool = False) -> Json:
         return self.doctor_session(session_id, verbose=verbose)

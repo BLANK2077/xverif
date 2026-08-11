@@ -2,7 +2,7 @@
 
 - xdebug resource action：`xverif_debug_session_open(name, fsdb=None, daidir=None, run_manifest=None)` → `xverif_debug_query(action, session_id, args, limits, output_format)` → `xverif_debug_session_close`。
 - xdebug `requires:none` variant：直接调用 `xverif_debug_query(action, args, limits, output_format)`，禁止传 `session_id`。
-- xcov：`xverif_cov_session_open(name, vdb, run_manifest=None)` → `xverif_cov_query(session_id, action, args, output_format)` → `xverif_cov_session_close(session_id)`。coverage limits 与 export output 只放 action 内层 `args`。
+- xcov：`xverif_cov_session_open(name, vdb, run_manifest=None)` → `xverif_cov_query(session_id, action, args, output_format)` → `xverif_cov_session_close(session_id, confirm_discard_reasons=False)`。coverage limits 与 export output 只放 action 内层 `args`。dirty exclusion reason 会拒绝普通 close 并保留 session；先持久化 CSV，或明确确认丢弃。
 - action 参数只放内层 `args`；不传原生 `api_version/target/output` envelope。
 - 任何 xdebug 任务先调用一次无参数 `xverif_tools`，完整读取它返回的全部 action
   名称、stable/experimental 状态、purpose 和 use cases。不要按 category/keyword
@@ -37,8 +37,10 @@ expr-only 成功响应的 `summary.source` 固定为
 - `view="mcp"`：默认；用于构造 query tool 的内层 args/limits。
 - `kind="response", view="response"`：查看 response schema。
 - session/transport/LSF/timeout 排障转 `xverif-admin`，不自动 reopen 或 fallback。
-- `run_manifest` 可选；提供时必须是已发布的对应 `*.run-manifest.v1`，资源路径相对
-  manifest 文件，校验不匹配会返回 `RESOURCE_PROVENANCE_MISMATCH`，不会启动后端。
+- `run_manifest` 可选；xdebug 提供时使用已发布的 `xdebug.run-manifest.v1`；xcov 使用
+  `xcov.run-manifest.v2`，要求 `sha256-entry-tree-v2`、资源 kind、regular-file 总字节数和
+  file/directory/symlink 计数。资源路径相对 manifest 文件，校验不匹配会返回
+  `RESOURCE_PROVENANCE_MISMATCH`，不会启动后端；xcov 不接受旧 v1。
 - xdebug 完成仿真后可用 `xdebug/tools/publish_run_manifest.py --fsdb waves.fsdb
   --output run-manifest.json` 原子发布 manifest；MCP session 元数据中的
   `resource_identity` 同时报告路径摘要、stat 快照和声明的 manifest 摘要，不能把路径摘要当作内容摘要。

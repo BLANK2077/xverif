@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import shutil
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,7 +14,7 @@ from .backend import (
     UrgCoverageBackend,
 )
 from .errors import XcovError
-from .logging import log_lifecycle_event
+from .logging import log_lifecycle_event, observability_status
 
 Json = Dict[str, Any]
 BackendFactory = Callable[[str], CoverageBackend]
@@ -28,21 +29,50 @@ class XcovSession:
     exclusion_policy: str = "default"
     state: str = "alive"
     cache_dir: Optional[str] = None
+    cache_owned_by_session: bool = False
 
     _el_path: Optional[str] = None
     _el_dirty: bool = False
     exclusion_records: Dict[str, Json] = field(default_factory=dict)
     loaded_el_without_reasons: bool = False
     loaded_el_file_count: int = 0
+    reason_revision: int = 0
+    persisted_reason_revision: int = 0
+    last_discarded_reason_count: int = 0
 
-    def close(self) -> None:
+    @property
+    def reason_dirty(self) -> bool:
+        return self.reason_revision != self.persisted_reason_revision
+
+    def close(self, *, confirm_discard_reasons: bool = False) -> int:
+        if self.reason_dirty and not confirm_discard_reasons:
+            raise XcovError(
+                "UNPERSISTED_EXCLUSION_REASON",
+                "session has exclusion reasons not persisted to CSV; export them or "
+                "close with confirm_discard_reasons=true",
+                unpersisted_reason_count=len(self.exclusion_records),
+            )
+        discarded = len(self.exclusion_records) if self.reason_dirty else 0
         self.backend.close()
+        if self.cache_owned_by_session and self.cache_dir:
+            try:
+                shutil.rmtree(self.cache_dir)
+            except OSError as exc:
+                self.state = "cleanup_partial"
+                raise XcovError(
+                    "SESSION_WORKING_CLEANUP_FAILED",
+                    "owned exclusion working directory could not be removed",
+                    cleanup_state="partial",
+                ) from exc
         self.state = "closed"
         self._el_path = None
         self._el_dirty = False
         self.exclusion_records.clear()
         self.loaded_el_without_reasons = False
         self.loaded_el_file_count = 0
+        self.last_discarded_reason_count = discarded
+        self.persisted_reason_revision = self.reason_revision
+        return discarded
 
     def public_json(self) -> Json:
         summary = self.backend.summary()
@@ -62,6 +92,7 @@ class XcovSession:
             "npi_initialized": bool(
                 getattr(self.backend, "npi_initialized", False)
             ),
+            "observability": observability_status(self.session_id),
         }
 
     def cache_status(self) -> Json:
@@ -95,6 +126,12 @@ class XcovSession:
         self._el_dirty = True
         self.backend.invalidate_summary()
 
+    def mark_reason_mutation(self) -> None:
+        self.reason_revision += 1
+
+    def mark_reasons_persisted(self) -> None:
+        self.persisted_reason_revision = self.reason_revision
+
     def set_el_path(self, path: Optional[str]) -> None:
         self._el_path = path
         self._el_dirty = False
@@ -105,15 +142,21 @@ class XcovSession:
         self.exclusion_records.clear()
         self.loaded_el_without_reasons = False
         self.loaded_el_file_count = 0
+        self.reason_revision += 1
+        self.persisted_reason_revision = self.reason_revision
 
     def record_exclusion(self, key: str, record: Json) -> str:
         previous = self.exclusion_records.get(key)
         status = "created" if previous is None else "unchanged" if previous == record else "updated"
         self.exclusion_records[key] = record
+        if previous != record:
+            self.mark_reason_mutation()
         return status
 
     def remove_exclusion_record(self, key: str) -> None:
-        self.exclusion_records.pop(key, None)
+        if key in self.exclusion_records:
+            self.exclusion_records.pop(key)
+            self.mark_reason_mutation()
 
     def ensure_el_ready(self) -> Optional[str]:
         if self._el_dirty:
@@ -201,42 +244,65 @@ class SessionManager:
                     cache_dir=cache_dir,
                 )
         session_cache_dir = cache_dir
+        cache_owned_by_session = False
         if session_cache_dir is None:
-            session_cache_path = (
+            session_cache_root = (
                 Path.cwd().resolve() / ".xverif" / "xcov" / "cache" /
-                "sessions" / sid
+                "sessions"
             )
-            session_cache_path.mkdir(parents=True, exist_ok=True)
-            session_cache_dir = str(session_cache_path)
+            session_cache_root.mkdir(parents=True, exist_ok=True)
+            safe_sid = "".join(
+                ch if ch.isalnum() or ch in "_.-" else "_" for ch in sid
+            ) or "cov"
+            session_cache_dir = tempfile.mkdtemp(
+                prefix=f"{safe_sid}.", dir=str(session_cache_root),
+            )
+            cache_owned_by_session = True
         log_lifecycle_event(sid, "session.open.begin", True, {"vdb": vdb})
-        backend = self._backend_factory(vdb, exclusion_policy=exclusion_policy)
-        if hasattr(backend, "exclusion_policy"):
-            backend.exclusion_policy = exclusion_policy
-        if hasattr(backend, "session_id"):
-            backend.session_id = sid
-        if cache_dir is not None and hasattr(backend, "urg_cache_dir"):
-            backend.urg_cache_dir = str(Path(cache_dir).resolve() / "urg-summary")
-        if hasattr(backend, "run_manifest_digest"):
-            backend.run_manifest_digest = run_manifest_digest
-        if not isinstance(backend, CoverageBackend):
-            raise XcovError(
-                "BACKEND_CONTRACT_VIOLATION",
-                "backend factory must return a CoverageBackend",
-                backend_type=type(backend).__name__,
-            )
-        worker = backend.worker_kind
-        if not isinstance(worker, str) or not worker:
-            backend.close()
-            raise XcovError(
-                "BACKEND_CONTRACT_VIOLATION",
-                "coverage backend must declare a non-empty worker_kind",
-                backend_type=type(backend).__name__,
-            )
-        canonical_backend = CanonicalCoverageBackend(backend)
+        backend: Any = None
         try:
+            backend = self._backend_factory(vdb, exclusion_policy=exclusion_policy)
+            if hasattr(backend, "exclusion_policy"):
+                backend.exclusion_policy = exclusion_policy
+            if hasattr(backend, "session_id"):
+                backend.session_id = sid
+            if cache_dir is not None and hasattr(backend, "urg_cache_dir"):
+                backend.urg_cache_dir = str(Path(cache_dir).resolve() / "urg-summary")
+            if hasattr(backend, "run_manifest_digest"):
+                backend.run_manifest_digest = run_manifest_digest
+            if not isinstance(backend, CoverageBackend):
+                raise XcovError(
+                    "BACKEND_CONTRACT_VIOLATION",
+                    "backend factory must return a CoverageBackend",
+                    backend_type=type(backend).__name__,
+                )
+            worker = backend.worker_kind
+            if not isinstance(worker, str) or not worker:
+                raise XcovError(
+                    "BACKEND_CONTRACT_VIOLATION",
+                    "coverage backend must declare a non-empty worker_kind",
+                    backend_type=type(backend).__name__,
+                )
+            canonical_backend = CanonicalCoverageBackend(backend)
             canonical_backend.summary()
         except Exception:
-            backend.close()
+            close_method = getattr(backend, "close", None)
+            if callable(close_method):
+                try:
+                    close_method()
+                except Exception as cleanup_exc:
+                    log_lifecycle_event(
+                        sid, "session.open.backend_cleanup", False,
+                        {"error_type": type(cleanup_exc).__name__},
+                    )
+            if cache_owned_by_session and session_cache_dir:
+                try:
+                    shutil.rmtree(session_cache_dir)
+                except OSError as cleanup_exc:
+                    log_lifecycle_event(
+                        sid, "session.open.working_cleanup", False,
+                        {"error_type": type(cleanup_exc).__name__},
+                    )
             raise
         sess = XcovSession(
             session_id=sid,
@@ -245,6 +311,7 @@ class SessionManager:
             worker=worker,
             exclusion_policy=exclusion_policy,
             cache_dir=session_cache_dir,
+            cache_owned_by_session=cache_owned_by_session,
         )
         self.sessions[sid] = sess
         log_lifecycle_event(sid, "session.open.ok", True, {"vdb": vdb, "worker": worker})
@@ -257,10 +324,15 @@ class SessionManager:
                             session_id=session_id)
         return sess
 
-    def close(self, session_id: str) -> XcovSession:
+    def close(
+        self,
+        session_id: str,
+        *,
+        confirm_discard_reasons: bool = False,
+    ) -> XcovSession:
         sess = self.get(session_id)
         log_lifecycle_event(session_id, "session.close.begin", True, {"vdb": sess.vdb})
-        sess.close()
+        sess.close(confirm_discard_reasons=confirm_discard_reasons)
         self.sessions.pop(session_id, None)
         log_lifecycle_event(session_id, "session.close.ok", True, {"vdb": sess.vdb})
         return sess

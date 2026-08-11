@@ -18,7 +18,7 @@ MCP 的 xdebug/xcov stateful session 通过同一套 stdio-loop session manager 
 - `xverif_cov_query(session_id, action, args=None, output_format="xout")`
 - `xverif_cov_session_list(include_tombstones=False, verbose=False)`
 - `xverif_cov_session_doctor(session_id=..., verbose=False)`
-- `xverif_cov_session_close(session_id=...)`
+- `xverif_cov_session_close(session_id=..., confirm_discard_reasons=False)`
 - `xverif_cov_session_kill(session_id=...)`
 - `xverif_cov_session_gc(verbose=False)`
 
@@ -43,10 +43,15 @@ MCP 的 xdebug/xcov stateful session 通过同一套 stdio-loop session manager 
 - xdebug detached engine 可能在 loop 死后存活，只使用固定 native admin path doctor/kill；无法确认清理时保留 `orphan_suspected` tombstone。
 - xcov backend 随 loop 进程退出；xcov kill 终止 loop/process/LSF job，并明确标记 native kill 不支持。
 - close/kill 分层返回 native backend、stdio loop、process、LSF job、manager record、tombstone 状态；部分失败为 `SESSION_CLEANUP_PARTIAL_FAILURE`，不得同名隐式 reopen。
+- xcov reason revision 尚未通过 CSV export/compile/apply 持久化时，普通 close 返回
+  `UNPERSISTED_EXCLUSION_REASON` 并保留 live loop；先导出 CSV，或仅在明确接受丢失时传
+  `confirm_discard_reasons=true`。manager 不得把这种可恢复拒绝误判成 backend death。
 - debug/cov query 都禁止 native lifecycle action；使用专用 tool，不做 transport/backend fallback。
 - 两类 session-open 的 `run_manifest` 均为可选路径。提供时会在启动后端前校验
   `state:"published"`、相对资源路径、`size_bytes` 与 SHA-256；xdebug 使用
-  `xdebug.run-manifest.v1`（`fsdb`/`daidir`），xcov 使用 `xcov.run-manifest.v1`（`vdb`）。
+  `xdebug.run-manifest.v1`（`fsdb`/`daidir`），xcov 使用 `xcov.run-manifest.v2`（`vdb`）。
+  xcov v2 使用 `sha256-entry-tree-v2`，要求 kind、regular-file 总字节数、
+  file/directory/symlink 计数及无歧义 SHA-256；旧 v1 会 fail-closed。
 - xdebug 的 JSON 响应 `tool` 元数据包含 `build_id`、`git_revision` 和
   `schema_revision`；会话列表中的 `resource_identity.manifest_sha256` 只是 wrapper
   对已提供 manifest 的摘要，实际 provenance 校验仍由 native session.open 完成。

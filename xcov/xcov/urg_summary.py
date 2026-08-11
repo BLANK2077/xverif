@@ -9,6 +9,13 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import xml.etree.ElementTree as ET
 
 from .errors import XcovError
+from .limits import (
+    MAX_ARTIFACT_BYTES,
+    MAX_ARTIFACT_TOTAL_BYTES,
+    MAX_IR_SCOPES,
+    MAX_TYPED_ROWS,
+    enforce_count,
+)
 
 Json = Dict[str, Any]
 
@@ -69,7 +76,10 @@ def validate_summary_artifacts(report_dir: str | Path) -> Dict[str, Path]:
             report_dir=str(root),
         )
     paths = {name: root / name for name in REQUIRED_ARTIFACTS}
-    missing = [name for name, path in paths.items() if not path.is_file()]
+    missing = [
+        name for name, path in paths.items()
+        if not path.is_file() or path.is_symlink()
+    ]
     empty = [
         name for name, path in paths.items()
         if path.is_file() and path.stat().st_size == 0
@@ -81,6 +91,17 @@ def validate_summary_artifacts(report_dir: str | Path) -> Dict[str, Path]:
             report_dir=str(root),
             missing=missing,
             empty=empty,
+        )
+    sizes = {name: path.stat().st_size for name, path in paths.items()}
+    oversized = [name for name, size in sizes.items() if size > MAX_ARTIFACT_BYTES]
+    total_size = sum(sizes.values())
+    if oversized or total_size > MAX_ARTIFACT_TOTAL_BYTES:
+        raise XcovError(
+            "RESOURCE_BUDGET_EXCEEDED",
+            "URG summary artifacts exceed the xcov byte budget",
+            resource_kind="urg_summary_artifacts",
+            resource_count=total_size,
+            max_resource_count=MAX_ARTIFACT_TOTAL_BYTES,
         )
     return paths
 
@@ -171,6 +192,12 @@ def _parse_xml(xml_path: Path, tests: Tuple[str, ...]) -> UrgSummaryIndex:
                     functional_rows,
                     assertion_rows,
                     xml_path,
+                )
+                enforce_count("urg_ir_scopes", len(scope_rows), MAX_IR_SCOPES)
+                enforce_count(
+                    "urg_typed_rows",
+                    len(functional_rows) + len(assertion_rows),
+                    MAX_TYPED_ROWS,
                 )
                 elem.clear()
     except ET.ParseError as exc:

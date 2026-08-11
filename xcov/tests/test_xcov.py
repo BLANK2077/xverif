@@ -62,13 +62,23 @@ class _TestBackend(_CoverageBackend):
     def scope_functional_from_urg(self): return []
     def scope_assert_from_urg(self): return []
 from xcov.errors import XcovError, error_response
-from xcov.logging import log_root, sanitize_for_log
-from xcov.provenance import resource_sha256
+from xcov.logging import (
+    log_action_event,
+    log_root,
+    observability_status,
+    sanitize_for_log,
+)
+from xcov.limits import (
+    MAX_EXPORT_SCOPES,
+    MAX_REQUEST_BYTES,
+    MAX_RESPONSE_ROWS,
+)
+from xcov.provenance import resource_identity, resource_sha256
 from xcov.protocol import (
     parse_request,
     render_xout,
 )
-from xcov.query import query_args, sort_items
+from xcov.query import apply_output, query_args, resolve_artifact_path, sort_items
 from xcov.schemas import (
     STDIO_QUIT_REQUEST,
     schema_actions,
@@ -295,13 +305,12 @@ def test_header_unsafe_action_returns_canonical_error_xout_without_traceback(
 
 def _write_run_manifest(vdb: Path, manifest: Path) -> None:
     manifest.write_text(json.dumps({
-        "schema_version": "xcov.run-manifest.v1",
+        "schema_version": "xcov.run-manifest.v2",
         "state": "published",
         "resources": {
             "vdb": {
                 "path": vdb.name,
-                "size_bytes": vdb.stat().st_size,
-                "sha256": resource_sha256(vdb),
+                **resource_identity(vdb),
             },
         },
     }), encoding="utf-8")
@@ -361,13 +370,12 @@ def test_run_manifest_contract_fails_before_backend_and_session_side_effects(
     vdb.write_bytes(b"x")
     manifest_path = tmp_path / "run-manifest.json"
     manifest = {
-        "schema_version": "xcov.run-manifest.v1",
+        "schema_version": "xcov.run-manifest.v2",
         "state": "published",
         "resources": {
             "vdb": {
                 "path": vdb.name,
-                "size_bytes": vdb.stat().st_size,
-                "sha256": resource_sha256(vdb),
+                **resource_identity(vdb),
             },
         },
     }
@@ -401,12 +409,12 @@ def test_run_manifest_contract_fails_before_backend_and_session_side_effects(
     "manifest_text",
     [
         (
-            '{"schema_version":"xcov.run-manifest.v1",'
-            '"schema_version":"xcov.run-manifest.v1",'
+            '{"schema_version":"xcov.run-manifest.v2",'
+            '"schema_version":"xcov.run-manifest.v2",'
             '"state":"published","resources":{}}'
         ),
         (
-            '{"schema_version":"xcov.run-manifest.v1",'
+            '{"schema_version":"xcov.run-manifest.v2",'
             '"state":"published","resources":{"vdb":{'
             '"path":"merged.vdb","size_bytes":NaN,"sha256":"'
             + ("0" * 64)
@@ -445,6 +453,232 @@ def test_run_manifest_rejects_noncanonical_json_before_backend_open(
     assert rsp["error"]["code"] == "RESOURCE_PROVENANCE_MISMATCH"
     assert opened_vdbs == []
     assert dispatcher.sessions.sessions == {}
+
+
+def test_run_manifest_v2_tree_hash_has_no_record_boundary_collision(tmp_path):
+    tree_one = tmp_path / "tree-one"
+    tree_two = tmp_path / "tree-two"
+    tree_one.mkdir()
+    tree_two.mkdir()
+    (tree_one / "a").write_bytes(b"XF\0b\0Y")
+    (tree_two / "a").write_bytes(b"X")
+    (tree_two / "b").write_bytes(b"Y")
+
+    one = resource_identity(tree_one)
+    two = resource_identity(tree_two)
+
+    assert one["sha256"] != two["sha256"]
+    assert one["size_bytes"] == 6
+    assert two["size_bytes"] == 2
+    assert one["file_count"] == 1
+    assert two["file_count"] == 2
+    assert one["directory_count"] == two["directory_count"] == 1
+    assert one["symlink_count"] == two["symlink_count"] == 0
+
+
+def test_run_manifest_v2_rejects_v1_and_hashes_symlink_target(tmp_path):
+    vdb = tmp_path / "merged.vdb"
+    vdb.mkdir()
+    (vdb / "coverage.bin").write_bytes(b"coverage")
+    manifest_path = tmp_path / "run-manifest.json"
+    _write_run_manifest(vdb, manifest_path)
+    legacy = json.loads(manifest_path.read_text(encoding="utf-8"))
+    legacy["schema_version"] = "xcov.run-manifest.v1"
+    manifest_path.write_text(json.dumps(legacy), encoding="utf-8")
+
+    dispatcher = _fake_dispatcher()
+    rejected = dispatcher.dispatch({
+        "api_version": "xcov.v1", "request_id": "legacy-manifest",
+        "action": "session.open",
+        "target": {"vdb": str(vdb), "run_manifest": str(manifest_path)},
+        "args": {"name": "legacy"},
+    })
+    assert rejected["ok"] is False
+    assert rejected["error"]["code"] == "RESOURCE_PROVENANCE_MISMATCH"
+
+    link = vdb / "link"
+    link.symlink_to("coverage.bin")
+    first = resource_identity(vdb)
+    link.unlink()
+    link.symlink_to("other.bin")
+    second = resource_identity(vdb)
+    assert first["symlink_count"] == second["symlink_count"] == 1
+    assert first["sha256"] != second["sha256"]
+
+
+def test_run_manifest_v2_rejects_directory_mutation_during_hash(
+    monkeypatch, tmp_path,
+):
+    from xcov import provenance
+
+    vdb = tmp_path / "mutating.vdb"
+    vdb.mkdir()
+    (vdb / "coverage.bin").write_bytes(b"coverage")
+    original_scandir = provenance.os.scandir
+
+    class MutatingScandir:
+        def __init__(self, path):
+            self._path = Path(path)
+            self._iterator = original_scandir(path)
+
+        def __enter__(self):
+            return self._iterator.__enter__()
+
+        def __exit__(self, exc_type, exc, tb):
+            result = self._iterator.__exit__(exc_type, exc, tb)
+            (self._path / "appeared-after-scan").write_bytes(b"new")
+            return result
+
+    monkeypatch.setattr(provenance.os, "scandir", MutatingScandir)
+
+    with pytest.raises(OSError, match="directory changed"):
+        resource_identity(vdb)
+
+
+def test_urg_provenance_never_falls_back_to_path(monkeypatch, tmp_path):
+    from xcov.eda import get_urg_path
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_urg = fake_bin / "urg"
+    fake_urg.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_urg.chmod(0o755)
+    monkeypatch.delenv("VCS_HOME", raising=False)
+    monkeypatch.setenv("PATH", str(fake_bin))
+
+    with pytest.raises(XcovError) as caught:
+        get_urg_path()
+    assert caught.value.code == "EDA_PROVENANCE_INVALID"
+
+
+def test_pynpi_provenance_rejects_preloaded_module_outside_vendor_root(
+    monkeypatch, tmp_path,
+):
+    from types import ModuleType
+    from xcov import eda
+
+    vendor_root = tmp_path / "vendor"
+    vendor_root.mkdir()
+    attacker = tmp_path / "attacker.py"
+    attacker.write_text("# not vendor pynpi\n", encoding="utf-8")
+    fake = ModuleType("pynpi")
+    fake.__file__ = str(attacker)
+    monkeypatch.setattr(eda, "get_npi_python_path", lambda: str(vendor_root))
+    monkeypatch.setitem(sys.modules, "pynpi", fake)
+
+    with pytest.raises(XcovError) as caught:
+        eda.import_pynpi()
+    assert caught.value.code == "EDA_PROVENANCE_INVALID"
+
+
+def test_export_path_policy_rejects_absolute_escape_parent_and_symlink(
+    monkeypatch, tmp_path,
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    allowed = tmp_path / "allowed"
+    outside = tmp_path / "outside"
+    allowed.mkdir()
+    outside.mkdir()
+    monkeypatch.chdir(workspace)
+    monkeypatch.delenv("XVERIF_XCOV_EXPORT_ROOTS", raising=False)
+
+    relative = Path(resolve_artifact_path("reports/run"))
+    assert relative == workspace / ".xverif" / "xcov_exports" / "reports" / "run"
+    with pytest.raises(XcovError, match="absolute"):
+        resolve_artifact_path(str(allowed / "run"), False)
+    with pytest.raises(XcovError):
+        resolve_artifact_path("../escape", False)
+
+    monkeypatch.setenv("XVERIF_XCOV_EXPORT_ROOTS", str(allowed))
+    assert Path(resolve_artifact_path(str(allowed / "run"), True)) == allowed / "run"
+    with pytest.raises(XcovError, match="outside configured"):
+        resolve_artifact_path(str(outside / "run"), True)
+    (allowed / "link").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(XcovError, match="symlink"):
+        resolve_artifact_path(str(allowed / "link" / "run"), True)
+
+
+def test_response_hard_row_budget_preserves_analysis_count():
+    rows = [{"name": str(index)} for index in range(MAX_RESPONSE_ROWS + 1)]
+    summary, inline, _ = apply_output("tests.list", {"limits": {"max_items": None}}, rows)
+    assert summary["total_count"] == MAX_RESPONSE_ROWS + 1
+    assert summary["returned_count"] == MAX_RESPONSE_ROWS
+    assert summary["response_truncated"] is True
+    assert summary["truncation_scopes"] == ["data.items"]
+    assert summary["scan_complete"] is True
+    assert summary["analysis_complete"] is True
+    assert len(inline) == MAX_RESPONSE_ROWS
+
+
+def test_stdio_loop_rejects_oversized_request_and_remains_usable():
+    oversized = {
+        "api_version": "xcov.v1",
+        "request_id": "oversized",
+        "action": "actions",
+        "args": {"padding": "x" * MAX_REQUEST_BYTES},
+    }
+    valid = {
+        "api_version": "xcov.v1",
+        "request_id": "after-budget-error",
+        "action": "actions",
+    }
+
+    rc, lines = _stdio_exchange([oversized, valid])
+
+    assert rc == 0
+    assert lines[0]["type"] == "ready"
+    assert lines[1]["ok"] is False
+    assert lines[1]["json"]["error"]["code"] == "REQUEST_BUDGET_EXCEEDED"
+    assert (
+        lines[1]["json"]["error"]["detail.max_request_bytes"]
+        == MAX_REQUEST_BYTES
+    )
+    assert lines[2]["request_id"] == "after-budget-error"
+    assert lines[2]["ok"] is True
+
+
+def test_dispatcher_rejects_oversized_inline_response(monkeypatch):
+    from xcov import limits
+
+    monkeypatch.setattr(limits, "MAX_RESPONSE_BYTES", 1)
+    response = _fake_dispatcher().dispatch({
+        "api_version": "xcov.v1",
+        "request_id": "response-budget",
+        "action": "actions",
+    })
+
+    assert response["ok"] is False
+    assert response["error"]["code"] == "RESPONSE_BUDGET_EXCEEDED"
+    assert response["error"]["detail.max_response_bytes"] == 1
+
+
+def test_urg_summary_rejects_artifact_byte_budget(monkeypatch, tmp_path):
+    from xcov import urg_summary
+
+    for name in urg_summary.REQUIRED_ARTIFACTS:
+        (tmp_path / name).write_bytes(b"xx")
+    monkeypatch.setattr(urg_summary, "MAX_ARTIFACT_BYTES", 1)
+
+    with pytest.raises(XcovError) as caught:
+        urg_summary.validate_summary_artifacts(tmp_path)
+
+    assert caught.value.code == "RESOURCE_BUDGET_EXCEEDED"
+    assert caught.value.detail["resource_kind"] == "urg_summary_artifacts"
+
+
+def test_export_scope_budget_is_enforced_by_public_schema():
+    response = _dispatch_opened().dispatch({
+        "api_version": "xcov.v1", "request_id": "too-many-scopes",
+        "action": "export.code_coverage", "target": {"session_id": "cov0"},
+        "args": {
+            "scopes": [f"top.u{index}" for index in range(MAX_EXPORT_SCOPES + 1)],
+            "output": {"path": "budget"},
+        },
+    })
+    assert response["ok"] is False
+    assert response["error"]["code"] == "SCHEMA_INVALID"
+    assert response["error"]["detail.path"] == "$.args.scopes"
 
 
 @pytest.mark.parametrize("retired_arg", ["fake", "reuse", "reopen"])
@@ -1198,16 +1432,75 @@ def test_logging_writes_action_manifest_lifecycle_and_transport(
     ]
     rc, _ = _stdio_exchange(reqs)
     assert rc == 0
-    action_log = log_dir / "sessions" / "cov0" / "logs" / "actions.ndjson"
-    manifest = log_dir / "sessions" / "cov0" / "session.json"
-    lifecycle = log_dir / "backend" / "sessions" / "cov0" / "logs" / "lifecycle.ndjson"
-    transport = log_dir / "backend" / "sessions" / "cov0" / "logs" / "transport.ndjson"
+    action_log = next((log_dir / "sessions" / "cov0" / "owners").glob(
+        "*/logs/actions.ndjson"
+    ))
+    manifest = action_log.parents[1] / "session.json"
+    lifecycle = next((log_dir / "backend" / "sessions" / "cov0" / "owners").glob(
+        "*/logs/lifecycle.ndjson"
+    ))
+    transport = next((log_dir / "backend" / "sessions" / "cov0" / "owners").glob(
+        "*/logs/transport.ndjson"
+    ))
     assert action_log.exists()
     assert manifest.exists()
     assert lifecycle.exists()
     assert transport.exists()
     assert _read_last_json_line(action_log)["component"] == "xcov"
     assert json.loads(manifest.read_text(encoding="utf-8"))["session_id"] == "cov0"
+
+
+def test_logging_failure_is_stderr_visible_and_in_session_status(
+    monkeypatch, tmp_path, capsys,
+):
+    blocked_root = tmp_path / "not-a-directory"
+    blocked_root.write_text("blocked", encoding="utf-8")
+    monkeypatch.setenv("XVERIF_XCOV_LOG_DIR", str(blocked_root))
+
+    log_action_event("public", "observable-failure", "actions", "begin", True)
+
+    status = observability_status("observable-failure")
+    assert status["ok"] is False
+    assert status["failure_count"] == 1
+    assert status["last_failure_operation"] == "ndjson_append"
+    assert status["last_failure_type"]
+    stderr = capsys.readouterr().err
+    assert "xcov observability failure" in stderr
+    assert str(tmp_path) not in stderr
+
+
+def test_owned_session_working_directory_is_cleaned_but_user_cache_is_preserved(
+    tmp_path, monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    manager = SessionManager(backend_factory=_TestBackend)
+    owned = manager.open("owned.vdb", name="owned")
+    owned_path = Path(str(owned.cache_dir))
+    assert owned.cache_owned_by_session is True
+    assert owned_path.is_dir()
+    manager.close("owned")
+    assert not owned_path.exists()
+
+    user_cache = tmp_path / "user-cache"
+    user_cache.mkdir()
+    user = manager.open("user.vdb", name="user", cache_dir=str(user_cache))
+    assert user.cache_owned_by_session is False
+    manager.close("user")
+    assert user_cache.is_dir()
+
+
+def test_failed_session_open_cleans_owned_working_directory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    def fail_factory(_vdb, **_kwargs):
+        raise XcovError("VDB_OPEN_FAILED", "intentional open failure")
+
+    manager = SessionManager(backend_factory=fail_factory)
+    with pytest.raises(XcovError):
+        manager.open("failed.vdb", name="failed")
+    root = tmp_path / ".xverif" / "xcov" / "cache" / "sessions"
+    assert root.is_dir()
+    assert list(root.iterdir()) == []
 
 
 def test_regex_rejected():

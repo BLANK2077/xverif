@@ -52,13 +52,16 @@ def test_lane_worker_has_diverse_observable_continuous_and_procedural_ternaries(
     )
 
 
-def test_complex_modinfo_export_has_diverse_incomplete_branch_groups(xverif_fixture, tmp_path):
+def test_complex_modinfo_export_has_diverse_incomplete_branch_groups(
+    xverif_fixture, tmp_path, monkeypatch,
+):
     from xcov.actions import Dispatcher
     from xcov.backend import NpiCoverageBackend
     from xcov.session import SessionManager
 
     resources = xverif_fixture("xcov.modinfo_complex")
     vdb = resources / "complex.vdb"
+    monkeypatch.setenv("XVERIF_XCOV_EXPORT_ROOTS", str(tmp_path))
 
     def factory(vdb_path, **kwargs):
         backend = NpiCoverageBackend(vdb=str(vdb_path))
@@ -78,11 +81,14 @@ def test_complex_modinfo_export_has_diverse_incomplete_branch_groups(xverif_fixt
             "args": {
                 "scopes": [ACTIVE_SCOPE, SPARSE_SCOPE],
                 "metrics": list(METRICS),
-                "output": {"path": str(tmp_path / "export")},
+                "output": {
+                    "path": str(tmp_path / "export"),
+                    "allow_absolute_path": True,
+                },
             },
         })
     finally:
-        session.close()
+        session.close(confirm_discard_reasons=True)
 
     assert response["ok"] is True, json.dumps(response, ensure_ascii=False, indent=2)
     assert response["summary"]["analysis_complete"] is True
@@ -184,7 +190,9 @@ def test_complex_modinfo_export_has_diverse_incomplete_branch_groups(xverif_fixt
     assert any(scores[ACTIVE_SCOPE][metric] != scores[SPARSE_SCOPE][metric] for metric in METRICS)
 
 
-def test_export_is_urg_only_and_exclusion_lazily_resolves_npi_targets(xverif_fixture, tmp_path):
+def test_export_is_urg_only_and_exclusion_lazily_resolves_npi_targets(
+    xverif_fixture, tmp_path, monkeypatch,
+):
     import json
     from pathlib import Path
 
@@ -194,6 +202,7 @@ def test_export_is_urg_only_and_exclusion_lazily_resolves_npi_targets(xverif_fix
 
     resources = xverif_fixture("xcov.modinfo_complex")
     vdb = resources / "complex.vdb"
+    monkeypatch.setenv("XVERIF_XCOV_EXPORT_ROOTS", str(tmp_path))
     sessions = SessionManager()
     session = sessions.open(str(vdb), name="gap_exclusion", cache_dir=str(tmp_path))
     backend = session.backend._delegate
@@ -209,7 +218,10 @@ def test_export_is_urg_only_and_exclusion_lazily_resolves_npi_targets(xverif_fix
             "args": {
                 "scopes": [SPARSE_SCOPE],
                 "metrics": list(METRICS),
-                "output": {"path": str(tmp_path / "export")},
+                "output": {
+                    "path": str(tmp_path / "export"),
+                    "allow_absolute_path": True,
+                },
             },
         })
         assert exported["ok"] is True, json.dumps(exported, ensure_ascii=False, indent=2)
@@ -328,10 +340,12 @@ def test_export_is_urg_only_and_exclusion_lazily_resolves_npi_targets(xverif_fix
         assert rejected["error"]["code"] == "EXCLUSION_EXPORT_PREFLIGHT_FAILED"
         assert "未生效任何条目" in rejected["error"]["message"]
     finally:
-        session.close()
+        session.close(confirm_discard_reasons=True)
 
 
-def test_assert_and_functional_exports_are_structured_and_fully_excludable(xverif_fixture, tmp_path):
+def test_assert_and_functional_exports_are_structured_and_fully_excludable(
+    xverif_fixture, tmp_path, monkeypatch,
+):
     import json
     from pathlib import Path
 
@@ -341,6 +355,7 @@ def test_assert_and_functional_exports_are_structured_and_fully_excludable(xveri
 
     resources = xverif_fixture("xcov.modinfo_complex")
     vdb = resources / "complex.vdb"
+    monkeypatch.setenv("XVERIF_XCOV_EXPORT_ROOTS", str(tmp_path))
     sessions = SessionManager()
     session = sessions.open(str(vdb), name="structured_gaps", cache_dir=str(tmp_path))
     backend = session.backend._delegate
@@ -358,7 +373,9 @@ def test_assert_and_functional_exports_are_structured_and_fully_excludable(xveri
             response = dispatcher.dispatch({
                 "api_version": "xcov.v1", "request_id": f"export-{metric}",
                 "action": action, "target": {"session_id": session.session_id},
-                "args": {"output": {"path": str(output)}},
+                "args": {"output": {
+                    "path": str(output), "allow_absolute_path": True,
+                }},
             })
             assert response["ok"] is True, json.dumps(response, ensure_ascii=False, indent=2)
             assert (output / raw_name).is_file()
@@ -398,4 +415,4 @@ def test_assert_and_functional_exports_are_structured_and_fully_excludable(xveri
             payload["gap_count"] for payload in payloads.values()
         )
     finally:
-        session.close()
+        session.close(confirm_discard_reasons=True)

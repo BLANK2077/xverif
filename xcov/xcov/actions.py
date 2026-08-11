@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+import shutil
 import tempfile
 import time
 from typing import Any, Dict, Iterable, List, Optional
@@ -26,6 +27,13 @@ from .exclusions_csv import (
 )
 from .logging import (log_action_event, request_summary_for_log,
                       response_summary_for_log, update_session_manifest)
+from .limits import (
+    MAX_ARTIFACT_BYTES,
+    MAX_EXPORT_SCOPES,
+    MAX_GAP_ROWS,
+    enforce_count,
+    enforce_response_budget,
+)
 from .protocol import (
     completeness_summary,
     normalize_request,
@@ -276,6 +284,7 @@ class Dispatcher:
                 rsp = handler(normalized, session)
             else:
                 rsp = handler(normalized)
+            enforce_response_budget(rsp)
             contract.validate_response(rsp)
             elapsed = int((time.monotonic() - start) * 1000)
             log_action_event("public", _response_log_session_id(normalized, rsp), action, "end",
@@ -388,15 +397,23 @@ class Dispatcher:
         )
 
     def _session_close(self, req: Json) -> Json:
+        args = action_args(req)
         sid = req.get("target", {}).get("session_id")
         sess = self.sessions.get(str(sid))
         session_json = sess.public_json()
-        self.sessions.close(str(sid))
+        self.sessions.close(
+            str(sid),
+            confirm_discard_reasons=bool(args.get("confirm_discard_reasons", False)),
+        )
         session_json["state"] = "closed"
         update_session_manifest(sess.session_id, session_json)
         return ok_response(
             req,
-            completeness_summary(1, 1),
+            {
+                **completeness_summary(1, 1),
+                "reasons_discarded": sess.last_discarded_reason_count > 0,
+                "discarded_reason_count": sess.last_discarded_reason_count,
+            },
             {"session": session_json},
         )
 
@@ -524,10 +541,14 @@ class Dispatcher:
         args = action_args(req)
         if action == "export.code_coverage":
             return self._export_code_coverage(req, sess, args)
-        output_dir = (args.get("output") or {}).get("path") or args.get("output_dir")
-        if not output_dir:
-            raise XcovError("SCHEMA_INVALID", "export requires output.path or output_dir")
-        os.makedirs(output_dir, exist_ok=True)
+        output_dir = Path(_export_output_path(args))
+        _prepare_publish_parent(output_dir, args["output"])
+        if os.path.lexists(output_dir):
+            raise XcovError(
+                "OUTPUT_ALREADY_EXISTS",
+                "export output directory already exists",
+                path=str(output_dir),
+            )
 
         urgentric = {
             "export.code_coverage": "line+tgl+cond+branch+fsm",
@@ -538,53 +559,76 @@ class Dispatcher:
         if metric is None:
             raise XcovError("UNKNOWN_ACTION", "unknown export action", action=action)
 
-        urg_args = ["urg", "-full64", "-dir", sess.vdb, "-report", output_dir,
-                    "-format", "text", "-show", "brief", "-metric", metric]
-        urg_args.extend(sess.el_file_arg)
-        scope = args.get("scope")
-        if scope:
-            hier_file = os.path.join(output_dir, ".xcov_hier.txt")
-            with open(hier_file, "w") as f:
-                f.write(scope + "\n")
-            urg_args.extend(["-hier", hier_file])
-
-        from .urg_runner import UrgRunner
-        result = UrgRunner(session_id=sess.session_id).run(urg_args, timeout=300)
-        if result.returncode != 0:
-            raise XcovError("URG_FAILED", f"URG export failed (exit {result.returncode})",
-                            stderr=result.stderr[:500],
-                            urg_execution=result.scheduler)
-
+        stage_dir = Path(tempfile.mkdtemp(
+            prefix=f".{output_dir.name}.xcov-stage-",
+            dir=str(output_dir.parent),
+        ))
         structured = None
-        if action in {"export.assert", "export.functional_coverage"}:
-            from .gap_export import (
-                build_gap_payload,
-                parse_urg_gap_report,
-                write_gap_artifacts,
-            )
-            structured_metric = "assert" if action == "export.assert" else "functional"
-            report_name = "asserts.txt" if structured_metric == "assert" else "grpinfo.txt"
-            report_path = Path(output_dir) / report_name
-            if not report_path.is_file():
-                raise XcovError(
-                    "URG_ARTIFACT_MISSING",
-                    f"URG did not produce {report_name}",
-                )
-            rows = parse_urg_gap_report(structured_metric, report_path)
+        try:
+            urg_args = [
+                "urg", "-full64", "-dir", sess.vdb, "-report", str(stage_dir),
+                "-format", "text", "-show", "brief", "-metric", metric,
+            ]
+            urg_args.extend(sess.el_file_arg)
+            scope = args.get("scope")
             if scope:
-                rows = [
-                    row for row in rows
-                    if row.get("scope") == scope
-                    or str(row.get("scope") or "").startswith(scope + ".")
-                ]
-            payload = build_gap_payload(structured_metric, sess.vdb, rows)
-            structured = write_gap_artifacts(output_dir, structured_metric, payload)
+                hier_file = stage_dir / ".xcov_hier.txt"
+                hier_file.write_text(scope + "\n", encoding="utf-8")
+                urg_args.extend(["-hier", str(hier_file)])
+
+            from .urg_runner import UrgRunner
+            result = UrgRunner(session_id=sess.session_id).run(urg_args, timeout=300)
+            if result.returncode != 0:
+                raise XcovError(
+                    "URG_FAILED", f"URG export failed (exit {result.returncode})",
+                    stderr=result.stderr[:500],
+                    urg_execution=result.scheduler,
+                )
+
+            if action in {"export.assert", "export.functional_coverage"}:
+                from .gap_export import (
+                    build_gap_payload,
+                    parse_urg_gap_report,
+                    write_gap_artifacts,
+                )
+                structured_metric = "assert" if action == "export.assert" else "functional"
+                report_name = "asserts.txt" if structured_metric == "assert" else "grpinfo.txt"
+                report_path = stage_dir / report_name
+                if not report_path.is_file():
+                    raise XcovError(
+                        "URG_ARTIFACT_MISSING",
+                        f"URG did not produce {report_name}",
+                    )
+                _ensure_artifact_budget(report_path, f"urg_{structured_metric}_text")
+                rows = parse_urg_gap_report(structured_metric, report_path)
+                if scope:
+                    rows = [
+                        row for row in rows
+                        if row.get("scope") == scope
+                        or str(row.get("scope") or "").startswith(scope + ".")
+                    ]
+                enforce_count(
+                    f"{structured_metric}_gap_rows", len(rows), MAX_GAP_ROWS,
+                )
+                payload = build_gap_payload(structured_metric, sess.vdb, rows)
+                staged = write_gap_artifacts(str(stage_dir), structured_metric, payload)
+                structured = {
+                    **staged,
+                    "json": str(output_dir / f"{structured_metric}.json"),
+                    "xout": str(output_dir / f"{structured_metric}.xout"),
+                }
+            _fsync_tree(stage_dir)
+            os.replace(stage_dir, output_dir)
+            _fsync_directory(output_dir.parent)
+        except Exception:
+            shutil.rmtree(stage_dir, ignore_errors=True)
+            raise
 
         summary: Json = {
             "session_id": sess.session_id,
             "scope": args.get("scope"),
             "output_mode": "file",
-            "output_dir": output_dir,
+            "output_dir": str(output_dir),
             "artifact_format": "urg_text",
             "total_count": 0,
             "returned_count": 0,
@@ -613,12 +657,15 @@ class Dispatcher:
 
         scopes = list(args["scopes"])
         metrics = list(args.get("metrics") or PUBLIC_METRICS)
+        enforce_count("export_scopes", len(scopes), MAX_EXPORT_SCOPES)
         if len(set(scopes)) != len(scopes):
             raise XcovError("DUPLICATE_SCOPE", "scopes must not contain duplicates")
         if len(set(metrics)) != len(metrics):
             raise XcovError("DUPLICATE_METRIC", "metrics must not contain duplicates")
-        output_root = Path(args["output"]["path"])
+        output_root = Path(_export_output_path(args))
+        _prepare_publish_parent(output_root, args["output"])
         output_root.mkdir(parents=True, exist_ok=True)
+        output_root = Path(_export_output_path(args))
         if not output_root.is_dir():
             raise XcovError("OUTPUT_INVALID", "output.path is not a directory", path=str(output_root))
 
@@ -646,11 +693,9 @@ class Dispatcher:
         if final_dir.exists():
             raise XcovError("OUTPUT_RUN_DIR_EXISTS", "timestamped output directory already exists",
                             path=str(final_dir))
-        stage_dir = output_root / f".{run_name}.tmp-{os.getpid()}"
-        if stage_dir.exists():
-            raise XcovError("OUTPUT_STAGING_EXISTS", "staging directory already exists",
-                            path=str(stage_dir))
-        stage_dir.mkdir()
+        stage_dir = Path(tempfile.mkdtemp(
+            prefix=f".{run_name}.tmp-", dir=str(output_root),
+        ))
 
         # ── Single URG call for all scopes × all metrics ──
         with tempfile.TemporaryDirectory(
@@ -674,6 +719,7 @@ class Dispatcher:
             modinfo_path = Path(urg_dir) / "modinfo.txt"
             if not modinfo_path.is_file():
                 raise XcovError("URG_ARTIFACT_MISSING", "URG did not produce modinfo.txt")
+            _ensure_artifact_budget(modinfo_path, "urg_modinfo_text")
             combined_text = modinfo_path.read_text(encoding="utf-8", errors="replace")
 
         items: List[Json] = []
@@ -704,6 +750,11 @@ class Dispatcher:
                             "URG_DETAIL_PARSE_INCOMPLETE", error.reason,
                             scope=scope, metric=metric,
                         ) from error
+                    enforce_count(
+                        f"{metric}_gap_rows",
+                        _nested_gap_count(payload),
+                        MAX_GAP_ROWS,
+                    )
                     json_name = f"{metric}.json"
                     xout_name = f"{metric}.xout"
                     write_json(instance_dir / json_name, payload)
@@ -722,7 +773,9 @@ class Dispatcher:
                     "navigation": {"json": "navigation.json", "xout": "navigation.xout"},
                     "metrics": metric_artifacts,
                 })
+            _fsync_tree(stage_dir)
             os.replace(stage_dir, final_dir)
+            _fsync_directory(output_root)
         except Exception:
             shutil.rmtree(stage_dir, ignore_errors=True)
             raise
@@ -864,6 +917,8 @@ class Dispatcher:
             sess.exclusion_records = staged_metadata
 
         sess.mark_exclusion_dirty()
+        if staged_metadata != baseline_metadata:
+            sess.mark_reason_mutation()
         return ok_response(
             req,
             completeness_summary(len(rows), len(rows)),
@@ -1096,7 +1151,11 @@ class Dispatcher:
                     sess.backend.load_exclusions([str(baseline)], test="merged")
                     sess.exclusion_records = metadata_baseline
                 except Exception as rollback_error:
-                    sess.close()
+                    # Rollback failure invalidates the session. This is an
+                    # internal fail-closed teardown, not a user-requested
+                    # graceful close, so retaining dirty reason metadata is no
+                    # longer a recoverable option.
+                    sess.close(confirm_discard_reasons=True)
                     raise XcovError(
                         "EXCLUSION_ROLLBACK_FAILED", "本次 exclude.add 请求未生效任何条目；session 已作废",
                         atomic_result="none_applied", transaction_committed=False,
@@ -1114,6 +1173,8 @@ class Dispatcher:
         failed = [item for item in items if item["status"] == "failed"]
         successful = len(items) - len(failed)
         sess.mark_exclusion_dirty()
+        if staged_metadata != metadata_baseline:
+            sess.mark_reason_mutation()
         summary = completeness_summary(len(items), len(items))
         summary.update({
             "result": "partial_success" if failed else "success",
@@ -1131,8 +1192,23 @@ class Dispatcher:
         args = action_args(req)
         _require_merged(args)
         path = _export_output_path(args)
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        sess.backend.save_exclusions(path, test="merged")
+        output = args["output"]
+        destination = Path(path)
+        _prepare_publish_parent(destination, output)
+        with tempfile.TemporaryDirectory(
+            prefix=f".{destination.name}.xcov-stage-",
+            dir=str(destination.parent),
+        ) as temporary:
+            staged = Path(temporary) / destination.name
+            sess.backend.save_exclusions(str(staged), test="merged")
+            if not staged.is_file() or staged.is_symlink():
+                raise XcovError(
+                    "EXCLUSION_EXPORT_INCOMPLETE",
+                    "vendor exclusion export did not produce a regular staged EL file",
+                )
+            _fsync_file(staged)
+            os.replace(staged, destination)
+            _fsync_directory(destination.parent)
         summary = completeness_summary(0, 0)
         summary.update({
             "session_id": sess.session_id,
@@ -1291,20 +1367,10 @@ class Dispatcher:
                 "compile publishes nothing unless every CSV record resolves exactly once",
                 failed_count=len(failures),
             )
-        output_dir = Path(args.get("output_directory", _csv_directory(req)))
-        if output_dir.is_absolute() and not args.get("allow_absolute_path", False):
-            raise XcovError(
-                "OUTPUT_PATH_UNSAFE",
-                "absolute output_directory requires allow_absolute_path=true",
-                path=str(output_dir),
-            )
-        if any(part == ".." for part in output_dir.parts):
-            raise XcovError(
-                "OUTPUT_PATH_UNSAFE",
-                "output_directory must not contain '..'",
-                path=str(output_dir),
-            )
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = _prepare_output_directory(
+            str(args.get("output_directory", _csv_directory(req))),
+            bool(args.get("allow_absolute_path", False)),
+        )
         published: List[Json] = []
         with tempfile.TemporaryDirectory(
             prefix=".xcov-exclusions-",
@@ -1347,6 +1413,7 @@ class Dispatcher:
                             os.replace(destination, backup)
                             backups[kind] = backup
                         os.replace(temp_paths[kind], destination)
+                        _fsync_file(destination)
                         replaced.append(kind)
                         published.append({
                             "coverage_kind": kind,
@@ -1362,8 +1429,10 @@ class Dispatcher:
                     )
                     sess.exclusion_records.clear()
                     _record_csv_documents(sess, documents)
+                    sess.mark_reasons_persisted()
                     sess.loaded_el_without_reasons = False
                     sess.loaded_el_file_count = 3
+                    _fsync_directory(output_dir)
                 except Exception:
                     for kind in reversed(("code", "functional", "assertion")):
                         destination = output_dir / f"{kind}.el"
@@ -1380,17 +1449,9 @@ class Dispatcher:
 
     def _exclude_csv_export(self, req: Json, sess) -> Json:
         args = action_args(req)
-        directory = Path(_csv_directory(req))
-        if directory.is_absolute() and not args.get("allow_absolute_path", False):
-            raise XcovError(
-                "OUTPUT_PATH_UNSAFE",
-                "absolute directory requires allow_absolute_path=true",
-                path=str(directory),
-            )
-        if any(part == ".." for part in directory.parts):
-            raise XcovError(
-                "OUTPUT_PATH_UNSAFE", "directory must not contain '..'", path=str(directory),
-            )
+        directory = _prepare_output_directory(
+            _csv_directory(req), bool(args.get("allow_absolute_path", False)),
+        )
 
         documents = []
         paths = exclusion_paths(directory)
@@ -1452,6 +1513,7 @@ class Dispatcher:
                 for document in documents:
                     staged_path = temp_root / FILE_NAMES[document.kind]
                     staged_path.write_text(formatted[document.kind], encoding="utf-8")
+                    _fsync_file(staged_path)
                     staged[document.kind] = staged_path
                 for document in documents:
                     destination = document.path
@@ -1461,6 +1523,7 @@ class Dispatcher:
                         backups[document.kind] = backup
                     os.replace(staged[document.kind], destination)
                     replaced.append(document.kind)
+                _fsync_directory(directory)
             except Exception:
                 for kind in reversed(KINDS):
                     destination = paths[kind]
@@ -1469,6 +1532,8 @@ class Dispatcher:
                     if kind in backups:
                         os.replace(backups[kind], destination)
                 raise
+
+        sess.mark_reasons_persisted()
 
         items = [{
             "coverage_kind": document.kind,
@@ -1493,8 +1558,13 @@ class Dispatcher:
 
     def _exclude_csv_format(self, req: Json) -> Json:
         args = action_args(req)
+        directory = _csv_directory(req)
+        if bool(args.get("write", False)):
+            directory = str(_prepare_output_directory(
+                directory, bool(args.get("allow_absolute_path", False)),
+            ))
         rows = format_directory(
-            _csv_directory(req),
+            directory,
             write=bool(args.get("write", False)),
         )
         return _items_ok(req, rows)
@@ -1714,6 +1784,7 @@ def _record_csv_documents(sess, documents: List[Any]) -> None:
                 row.update({"coverage_kind": document.kind, "source_file": group.source_file})
                 key = "csv:" + json.dumps(row, sort_keys=True, separators=(",", ":"))
                 sess.record_exclusion(key, {"reason": source_row["reason"], "csv_row": row})
+    sess.mark_reasons_persisted()
 
 
 def _csv_row_identity(kind: str, source_file: str, row: Json) -> tuple:
@@ -2170,12 +2241,102 @@ def _first_evidence(rows: List[Json]) -> Json:
     return {}
 
 
+def _fsync_file(path: Path) -> None:
+    with path.open("rb") as stream:
+        os.fsync(stream.fileno())
+
+
+def _ensure_artifact_budget(path: Path, resource_kind: str) -> None:
+    size = path.stat().st_size
+    if size > MAX_ARTIFACT_BYTES:
+        raise XcovError(
+            "RESOURCE_BUDGET_EXCEEDED",
+            "URG artifact exceeds the xcov byte budget",
+            resource_kind=resource_kind,
+            resource_count=size,
+            max_resource_count=MAX_ARTIFACT_BYTES,
+        )
+
+
+def _nested_gap_count(value: Any) -> int:
+    if isinstance(value, dict):
+        total = 0
+        for key, item in value.items():
+            if key in {"gaps", "uncovered"} and isinstance(item, list):
+                total += len(item)
+            else:
+                total += _nested_gap_count(item)
+        return total
+    if isinstance(value, list):
+        return sum(_nested_gap_count(item) for item in value)
+    return 0
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _fsync_tree(root: Path) -> None:
+    directories = [root]
+    for current, names, files in os.walk(root):
+        current_path = Path(current)
+        for name in names:
+            child = current_path / name
+            if child.is_symlink():
+                raise XcovError(
+                    "OUTPUT_ARTIFACT_UNSAFE",
+                    "staged export must not contain symlinks",
+                )
+            directories.append(child)
+        for name in files:
+            child = current_path / name
+            if child.is_symlink() or not child.is_file():
+                raise XcovError(
+                    "OUTPUT_ARTIFACT_UNSAFE",
+                    "staged export must contain only regular files",
+                )
+            _fsync_file(child)
+    for directory in reversed(directories):
+        _fsync_directory(directory)
+
+
+def _prepare_publish_parent(target: Path, output: Json) -> None:
+    original = str(output.get("path") or target)
+    allow_absolute = bool(output.get("allow_absolute_path", False))
+    expected = Path(resolve_artifact_path(original, allow_absolute))
+    if expected != target:
+        raise XcovError("OUTPUT_PATH_UNSAFE", "output path changed during resolution")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    confirmed = Path(resolve_artifact_path(original, allow_absolute))
+    if confirmed != target:
+        raise XcovError("OUTPUT_PATH_UNSAFE", "output path changed while creating its parent")
+
+
+def _prepare_output_directory(path: str, allow_absolute_path: bool) -> Path:
+    target = Path(resolve_artifact_path(path, allow_absolute_path))
+    _prepare_publish_parent(target, {
+        "path": path,
+        "allow_absolute_path": allow_absolute_path,
+    })
+    target.mkdir(parents=True, exist_ok=True)
+    confirmed = Path(resolve_artifact_path(path, allow_absolute_path))
+    if confirmed != target or target.is_symlink() or not target.is_dir():
+        raise XcovError("OUTPUT_PATH_UNSAFE", "output directory is not a safe directory")
+    return target
+
+
 def _export_output_path(args: Json) -> str:
     output = args.get("output") if isinstance(args.get("output"), dict) else {}
     path = output.get("path")
     if not path:
         raise XcovError("OUTPUT_PATH_REQUIRED", "output.path is required")
-    return str(path)
+    return resolve_artifact_path(
+        str(path), bool(output.get("allow_absolute_path", False)),
+    )
     if file_name and line is not None:
         return f"{file_name}:{line}"
     if file_name:

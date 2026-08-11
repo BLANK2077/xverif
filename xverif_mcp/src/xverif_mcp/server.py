@@ -743,9 +743,13 @@ def xverif_cov_session_doctor(
 @xverif_tool("cov")
 def xverif_cov_session_close(
     session_id: str,
+    confirm_discard_reasons: bool = False,
 ) -> dict:
-    """Close and cleanup an xcov session."""
-    return cov.session_close(session_id)
+    """Close xcov; dirty reasons require explicit discard confirmation."""
+    return cov.session_close(
+        session_id,
+        confirm_discard_reasons=confirm_discard_reasons,
+    )
 
 
 @xverif_tool("cov")

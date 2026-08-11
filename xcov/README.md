@@ -84,12 +84,18 @@ xverif_cov_get_schema
 
 环境变量：
 
+- `VCS_HOME`：必填；URG 只允许使用规范化后的 `$VCS_HOME/bin/urg`，不会从 `PATH`
+  查找或改用其它安装。
+- `VERDI_HOME`：首次 exclusion 操作时必填；pynpi/cov/npisys 必须全部来自该安装的
+  `share/NPI/python`，不会接受预加载的外部同名模块。
 - `XVERIF_MCP_ENABLE_COV=0`：隐藏 coverage 工具。
 - `XVERIF_XCOV_BIN`：覆盖 xcov 可执行文件。
 - `XVERIF_XCOV_PYTHON`：覆盖 xcov Python runtime。
 - `XVERIF_XCOV_VERDI_HOME`：覆盖 `VERDI_HOME`。
 - `XVERIF_XCOV_LOG_DIR`：覆盖日志目录。
 - `XVERIF_XCOV_LOG=0`：关闭日志。
+- `XVERIF_XCOV_EXPORT_ROOTS`：用 `os.pathsep` 分隔的绝对既存目录；只有同时设置
+  `output.allow_absolute_path=true` 且目标位于这些根目录之一时，才允许绝对导出路径。
 - `XVERIF_XCOV_CACHE_DIR`：覆盖默认 `.xverif/xcov/cache` 根目录；summary entry
   位于其 `urg-summary/` 子目录。
 - `XVERIF_XCOV_CACHE_MAX_BYTES`：cache 总字节上限，默认 20 GiB。
@@ -150,8 +156,10 @@ alive session 返回 `SESSION_EXISTS`；同一 native 进程的其它 alive name
 ### 可复现输入：run manifest
 
 `target.run_manifest` 是可选的 provenance gate。提供时，xcov 在运行 URG 或打开
-Python NPI 前校验 `xcov.run-manifest.v1` 的 `state:"published"`，以及相对 manifest 文件的
-`resources.vdb.path`、`size_bytes` 和 SHA-256。不匹配返回
+Python NPI 前校验 `xcov.run-manifest.v2` 的 `state:"published"`，以及相对 manifest 文件的
+`resources.vdb.path`、资源类型、`sha256-entry-tree-v2`、真实 regular-file 总字节数、
+file/directory/symlink 计数和 SHA-256。目录摘要对 entry type、路径长度、路径、文件大小与
+独立内容摘要做无歧义编码；symlink 只编码 link target 且从不跟随。不匹配返回
 `RESOURCE_PROVENANCE_MISMATCH`，不会启动后端；未提供则保持既有打开行为。
 
 ```json
@@ -159,7 +167,7 @@ Python NPI 前校验 `xcov.run-manifest.v1` 的 `state:"published"`，以及相�
 ```
 
 ```json
-{"schema_version":"xcov.run-manifest.v1","state":"published","resources":{"vdb":{"path":"merged.vdb","size_bytes":4096,"sha256":"<64-hex-sha256>"}}}
+{"schema_version":"xcov.run-manifest.v2","state":"published","resources":{"vdb":{"path":"merged.vdb","kind":"directory","hash_version":"sha256-entry-tree-v2","size_bytes":4096,"file_count":8,"directory_count":3,"symlink_count":1,"sha256":"<64-hex-sha256>"}}}
 ```
 
 查询 code coverage summary：
@@ -243,7 +251,13 @@ CSV 用 `# source_file=...` 划分连续源码分组；`reason` 必填，同一
 ```json
 {"api_version":"xcov.v1","action":"exclude.add","target":{"session_id":"cov0"},"args":{"exports":[{"path":"/abs/path/branch.json","items":[{"gap_id":"B0001","reason":"非法输入组合"},{"gap_id":"B0002","reason":"规格禁止路径"}]}]}}
 
-关闭 session 会丢失尚未持久化的 reason。完成排除后应先调用 `exclude.csv.export`，将当前 session 中具备可移植身份的 exclusion 原子合并到三类 CSV；再调用 `export.exclude` 导出原生 EL。仅从 EL 导入的条目没有 reason，CSV 导出会明确告警并省略这些条目。
+关闭 session 不允许静默丢失尚未持久化的 reason。存在 dirty reason 时，普通
+`session.close` 返回 `UNPERSISTED_EXCLUSION_REASON` 并保留可继续查询/导出的 live session；
+只有显式传入 `{"confirm_discard_reasons":true}` 才关闭并报告丢弃计数。完成排除后应先调用
+`exclude.csv.export`，将当前 session 中具备可移植身份的 exclusion 原子合并到三类 CSV；
+再调用 `export.exclude` 导出原生 EL。EL 不保存 reason，只有 CSV export/compile/apply
+成功才把 reason revision 标记为已持久化；仅从 EL 导入的条目没有 reason，CSV 导出会明确
+告警并省略这些条目。
 
 ```json
 {"api_version":"xcov.v1","action":"exclude.csv.export","target":{"session_id":"cov0"},"args":{"directory":"coverage_exclusions"}}
@@ -394,21 +408,33 @@ framing 字段，header 仍保留 action 合同标识。
 
 - 相对路径写到 `.xverif/xcov_exports/`。
 - 包含 `..` 的路径会被拒绝。
-- 绝对路径必须显式设置 `output.allow_absolute_path=true`。
+- 绝对路径必须显式设置 `output.allow_absolute_path=true`，并位于
+  `XVERIF_XCOV_EXPORT_ROOTS` 声明的根目录内。
+- 任一中间路径为 symlink、规范化后逃逸允许根或发布预算超限都会 fail-closed；要求新建的
+  report bundle 还会拒绝既有目标。文件/目录在同一文件系统 staging 中完整生成、校验并
+  fsync 后才发布；CSV 多文件更新会先保留逐文件 backup，任一步失败即按逆序恢复。
+
+请求 transport 上限为 1 MiB；inline response 上限为 16 MiB，并硬限制最多 10,000 行。
+固定 summary 的单 artifact 上限为 1 GiB、六件套合计 2 GiB；scope、typed row、gap、CSV
+文件/record/field 也有前置 hard budget。超限返回 `REQUEST_BUDGET_EXCEEDED`、
+`RESPONSE_BUDGET_EXCEEDED` 或 `RESOURCE_BUDGET_EXCEEDED`，不会先构造无限内存对象再截断。
 
 ## 日志
 
 xcov 日志默认写入：
 
 ```text
-~/.xverif/xcov/sessions/<session_id>/session.json
-~/.xverif/xcov/sessions/<session_id>/logs/actions.ndjson
-~/.xverif/xcov/backend/sessions/<session_id>/logs/lifecycle.ndjson
-~/.xverif/xcov/backend/sessions/<session_id>/logs/transport.ndjson
+~/.xverif/xcov/sessions/<session_id>/owners/<pid>/session.json
+~/.xverif/xcov/sessions/<session_id>/owners/<pid>/logs/actions.ndjson
+~/.xverif/xcov/backend/sessions/<session_id>/owners/<pid>/logs/lifecycle.ndjson
+~/.xverif/xcov/backend/sessions/<session_id>/owners/<pid>/logs/transport.ndjson
 ```
 
 日志事件包含 `ts/event_id/pid/layer/component/session_id/action/phase/ok/context`，
-不会记录完整大型 `items` payload。
+不会记录完整大型 `items` payload。manifest 使用锁、同目录临时文件、fsync 和原子替换；
+NDJSON 使用 `O_APPEND + flock` 单记录写入。日志或 manifest 写入失败不会伪装成功，
+`session.status/session.list/session.doctor` 的 `observability` 会报告 failure count 和最近错误，
+stderr 只输出 operation/error type，不泄露路径或 payload。
 
 ## 审阅材料
 

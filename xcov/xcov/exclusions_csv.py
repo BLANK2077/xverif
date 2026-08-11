@@ -7,10 +7,16 @@ import io
 import os
 from pathlib import Path
 import re
+import tempfile
 from typing import Any, Dict, Iterable, List, Sequence
 
 from .coverage_contract import coverage_ref_for_row, is_score_bearing_row
 from .errors import XcovError
+from .limits import (
+    MAX_CSV_BYTES,
+    MAX_CSV_FIELD_CHARS,
+    MAX_CSV_RECORDS,
+)
 
 Json = Dict[str, Any]
 
@@ -78,11 +84,20 @@ def parse_directory(directory: str | os.PathLike[str]) -> List[ExclusionDocument
 
 
 def parse_document(path: Path, expected_kind: str) -> ExclusionDocument:
-    if not path.is_file():
+    if not path.is_file() or path.is_symlink():
         raise XcovError(
             "EXCLUSION_CSV_NOT_FOUND",
             "exclusion CSV does not exist",
             path=str(path),
+        )
+    size = path.stat().st_size
+    if size > MAX_CSV_BYTES:
+        raise XcovError(
+            "RESOURCE_BUDGET_EXCEEDED",
+            "exclusion CSV exceeds the byte budget",
+            resource_kind="csv_bytes",
+            resource_count=size,
+            max_resource_count=MAX_CSV_BYTES,
         )
     entries = _logical_entries(path.read_text(encoding="utf-8"))
     metadata: Json = {}
@@ -165,6 +180,7 @@ def _logical_entries(text: str) -> List[tuple[str, Any, int]]:
     buffer: List[str] = []
     start_line = 0
     in_quotes = False
+    record_count = 0
     for line_no, physical in enumerate(text.splitlines(keepends=True), 1):
         if not buffer and not physical.strip():
             continue
@@ -180,9 +196,18 @@ def _logical_entries(text: str) -> List[tuple[str, Any, int]]:
         if not buffer:
             start_line = line_no
         buffer.append(physical)
-        in_quotes = _quotes_open("".join(buffer))
+        in_quotes = _advance_quote_state(physical, in_quotes)
         if not in_quotes:
             entries.append(("csv", "".join(buffer), start_line))
+            record_count += 1
+            if record_count > MAX_CSV_RECORDS:
+                raise XcovError(
+                    "RESOURCE_BUDGET_EXCEEDED",
+                    "exclusion CSV exceeds the record budget",
+                    resource_kind="csv_records",
+                    resource_count=record_count,
+                    max_resource_count=MAX_CSV_RECORDS,
+                )
             buffer = []
     if buffer or in_quotes:
         raise XcovError(
@@ -193,8 +218,9 @@ def _logical_entries(text: str) -> List[tuple[str, Any, int]]:
     return entries
 
 
-def _quotes_open(text: str) -> bool:
-    quoted = False
+def _advance_quote_state(text: str, quoted: bool) -> bool:
+    """Scan only newly received characters; never rescan the full buffer."""
+
     index = 0
     while index < len(text):
         if text[index] == '"':
@@ -213,6 +239,15 @@ def _parse_csv_record(text: str, path: Path, line_no: int) -> List[str]:
         _csv_error(path, line_no, str(exc))
     if len(rows) != 1:
         _csv_error(path, line_no, "expected one logical CSV record")
+    oversized = [index for index, field in enumerate(rows[0]) if len(field) > MAX_CSV_FIELD_CHARS]
+    if oversized:
+        raise XcovError(
+            "RESOURCE_BUDGET_EXCEEDED",
+            "exclusion CSV field exceeds the character budget",
+            resource_kind="csv_field_chars",
+            resource_count=len(rows[0][oversized[0]]),
+            max_resource_count=MAX_CSV_FIELD_CHARS,
+        )
     return rows[0]
 
 
@@ -423,13 +458,62 @@ def format_document(document: ExclusionDocument) -> str:
 
 
 def format_directory(directory: str, write: bool = False) -> List[Json]:
-    results: List[Json] = []
-    for document in parse_directory(directory):
+    documents = parse_directory(directory)
+    formatted_by_kind: Dict[str, str] = {}
+    changed_by_kind: Dict[str, bool] = {}
+    for document in documents:
         formatted = format_document(document)
-        current = document.path.read_text(encoding="utf-8")
-        changed = current != formatted
-        if write and changed:
-            document.path.write_text(formatted, encoding="utf-8")
+        formatted_by_kind[document.kind] = formatted
+        changed_by_kind[document.kind] = (
+            document.path.read_text(encoding="utf-8") != formatted
+        )
+
+    if write and any(changed_by_kind.values()):
+        root = Path(directory).resolve(strict=True)
+        with tempfile.TemporaryDirectory(
+            prefix=".xcov-csv-format-", dir=str(root),
+        ) as temporary:
+            stage = Path(temporary)
+            staged: Dict[str, Path] = {}
+            backups: Dict[str, Path] = {}
+            replaced: list[str] = []
+            try:
+                for document in documents:
+                    if not changed_by_kind[document.kind]:
+                        continue
+                    staged_path = stage / FILE_NAMES[document.kind]
+                    staged_path.write_text(
+                        formatted_by_kind[document.kind], encoding="utf-8",
+                    )
+                    with staged_path.open("rb") as stream:
+                        os.fsync(stream.fileno())
+                    staged[document.kind] = staged_path
+                for document in documents:
+                    kind = document.kind
+                    if kind not in staged:
+                        continue
+                    backup = stage / f"{FILE_NAMES[kind]}.previous"
+                    os.replace(document.path, backup)
+                    backups[kind] = backup
+                    os.replace(staged[kind], document.path)
+                    replaced.append(kind)
+                descriptor = os.open(root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+                try:
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+            except Exception:
+                for document in reversed(documents):
+                    kind = document.kind
+                    if kind in replaced and document.path.exists():
+                        document.path.unlink()
+                    if kind in backups:
+                        os.replace(backups[kind], document.path)
+                raise
+
+    results: List[Json] = []
+    for document in documents:
+        changed = changed_by_kind[document.kind]
         results.append({
             "path": str(document.path),
             "status": "formatted" if write and changed else "needs_format" if changed else "current",

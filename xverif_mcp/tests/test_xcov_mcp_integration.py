@@ -362,6 +362,7 @@ def test_cov_export_code_coverage(monkeypatch, test_vdb, xverif_home, tmp_path):
     overrides = {
         "XVERIF_HOME": xverif_home,
         "XVERIF_MCP_BACKEND": "direct",
+        "XVERIF_XCOV_EXPORT_ROOTS": str(tmp_path),
     }
     server = _server(monkeypatch, overrides)
 
@@ -376,7 +377,7 @@ def test_cov_export_code_coverage(monkeypatch, test_vdb, xverif_home, tmp_path):
         "args": {
             "scopes": ["top.u_core0", "top.u_core1"],
             "metrics": ["line"],
-            "output": {"path": output_dir},
+            "output": {"path": output_dir, "allow_absolute_path": True},
         },
         "output_format": "json",
     })
@@ -407,6 +408,7 @@ def test_cov_export_functional(monkeypatch, test_vdb, xverif_home, tmp_path):
     overrides = {
         "XVERIF_HOME": xverif_home,
         "XVERIF_MCP_BACKEND": "direct",
+        "XVERIF_XCOV_EXPORT_ROOTS": str(tmp_path),
     }
     server = _server(monkeypatch, overrides)
 
@@ -419,7 +421,7 @@ def test_cov_export_functional(monkeypatch, test_vdb, xverif_home, tmp_path):
         "session_id": "mcp_int_export_func",
         "action": "export.functional_coverage",
         "args": {
-            "output": {"path": output_dir},
+            "output": {"path": output_dir, "allow_absolute_path": True},
         },
         "output_format": "json",
     })
@@ -439,6 +441,7 @@ def test_cov_export_assert(monkeypatch, test_vdb, xverif_home, tmp_path):
     overrides = {
         "XVERIF_HOME": xverif_home,
         "XVERIF_MCP_BACKEND": "direct",
+        "XVERIF_XCOV_EXPORT_ROOTS": str(tmp_path),
     }
     server = _server(monkeypatch, overrides)
 
@@ -451,7 +454,7 @@ def test_cov_export_assert(monkeypatch, test_vdb, xverif_home, tmp_path):
         "session_id": "mcp_int_export_assert",
         "action": "export.assert",
         "args": {
-            "output": {"path": output_dir},
+            "output": {"path": output_dir, "allow_absolute_path": True},
         },
         "output_format": "json",
     })
@@ -602,14 +605,21 @@ def test_cov_xout_output_format(monkeypatch, test_vdb, xverif_home):
 
 def test_cov_exclude_add_with_export_gap(monkeypatch, test_vdb, xverif_home, tmp_path):
     """MCP 先导出 line gap，再按结构化 gap ID 排除。"""
-    overrides = {"XVERIF_HOME": xverif_home, "XVERIF_MCP_BACKEND": "direct"}
+    overrides = {
+        "XVERIF_HOME": xverif_home,
+        "XVERIF_MCP_BACKEND": "direct",
+        "XVERIF_XCOV_EXPORT_ROOTS": str(tmp_path),
+    }
     server = _server(monkeypatch, overrides)
 
     _call_tool(server, "xverif_cov_session_open", {"name": "mcp_excl_add", "vdb": test_vdb})
     content, _ = _call_tool(server, "xverif_cov_query", {
         "session_id": "mcp_excl_add", "action": "export.code_coverage",
             "args": {"scopes": ["top.u_core1"], "metrics": ["toggle"],
-                 "output": {"path": str(tmp_path / "export")}},
+                 "output": {
+                     "path": str(tmp_path / "export"),
+                     "allow_absolute_path": True,
+                 }},
         "output_format": "json",
     })
     exported = json.loads(content[0].text)
@@ -627,7 +637,26 @@ def test_cov_exclude_add_with_export_gap(monkeypatch, test_vdb, xverif_home, tmp
     assert excluded["ok"] is True, excluded
     assert excluded["data"]["items"][0]["status"] == "changed"
 
-    _call_tool(server, "xverif_cov_session_close", {"session_id": "mcp_excl_add"})
+    content, _ = _call_tool(server, "xverif_cov_session_close", {
+        "session_id": "mcp_excl_add",
+    })
+    rejected_close = json.loads(content[0].text)
+    assert rejected_close["ok"] is False
+    assert rejected_close["error"]["code"] == "UNPERSISTED_EXCLUSION_REASON"
+    assert rejected_close["session_preserved"] is True
+
+    content, _ = _call_tool(server, "xverif_cov_session_doctor", {
+        "session_id": "mcp_excl_add", "verbose": True,
+    })
+    preserved = json.loads(content[0].text)
+    assert preserved["summary"]["state"] == "alive"
+
+    content, _ = _call_tool(server, "xverif_cov_session_close", {
+        "session_id": "mcp_excl_add",
+        "confirm_discard_reasons": True,
+    })
+    confirmed_close = json.loads(content[0].text)
+    assert confirmed_close["ok"] is True
 
 
 def test_cov_exclude_add_rejects_removed_selector(monkeypatch, exclusion_vdb, xverif_home):
@@ -666,4 +695,7 @@ def test_cov_exclude_remove_rejects_removed_selector(monkeypatch, exclusion_vdb,
     assert payload["ok"] is False
     assert "SCHEMA_INVALID" in json.dumps(payload)
 
-    _call_tool(server, "xverif_cov_session_close", {"session_id": "mcp_excl_rm"})
+    _call_tool(server, "xverif_cov_session_close", {
+        "session_id": "mcp_excl_rm",
+        "confirm_discard_reasons": True,
+    })

@@ -1916,3 +1916,56 @@ read-only coverage 没有加载 NPI，cache hit 也没有提交 URG job。
 
 以上 focused suite 均由正式 catalog gate 入口执行；不存在失败后切换 direct、继承外层 queue
 或用窄化测试替代 full-chain 的情况。
+
+### 16.6 阶段 6：P1/P2/P3 安全、资源与可恢复性闭环
+
+本阶段按第 4、6、7、13、15 章逐项关闭剩余安全与可靠性问题，没有用 URG 性能改造替代
+原评审范围。
+
+资源 provenance 已升级为 `xcov.run-manifest.v2`。目录 identity 使用
+`sha256-entry-tree-v2`：每条记录显式编码 entry type、定长 path length、path、regular-file
+size 和独立 content/link-target digest；symlink 从不跟随，special file 拒绝，hash 前后 stat
+变化也拒绝。manifest 同时声明资源 kind、真实 regular-file 总字节数、file/directory/symlink
+计数，旧 v1 直接 fail-closed。碰撞构造、symlink target 变化、非 canonical JSON 和资源修改
+均有负向测试。
+
+EDA 来源不再存在隐式 fallback：URG 只接受规范化且可执行的 `$VCS_HOME/bin/urg`，不查询
+`PATH`；首次 exclusion 才解析显式 `XVERIF_XCOV_VERDI_HOME` 或 `VERDI_HOME`，并验证
+`pynpi/cov/npisys` 的实际 module file 全部位于该安装的 `share/NPI/python`。缓存 provenance
+记录 URG release、CovDB version、binary SHA-256、version-output SHA-256、size 和 mtime；缺失、
+越界或预加载的外部同名模块均返回 `EDA_PROVENANCE_INVALID`。
+
+所有 export 与 CSV 输出共用一个 path resolver：相对路径固定落到
+`.xverif/xcov_exports`；绝对路径必须同时声明 `allow_absolute_path=true` 并位于
+`XVERIF_XCOV_EXPORT_ROOTS` 的既存绝对根内；`..`、中间 symlink、canonical escape 和非规则
+文件均拒绝，要求新建的 report bundle 额外拒绝既有目标。单文件和目录先在同文件系统随机
+staging 完整生成、解析校验并 fsync 后原子发布；CSV 三文件事务先逐项备份，任一步异常均
+逆序恢复而不是静默留下本轮部分结果。
+
+资源预算在 transport、schema、stream parser 和 publication 前分层执行：request 1 MiB、
+inline response 16 MiB/10,000 rows、summary 单 artifact 1 GiB/合计 2 GiB、IR scope 100,000、
+typed rows 500,000、gap 100,000、CSV 64 MiB/100,000 records/16 KiB field，并限制 query pattern
+和 export scope。超限分别返回 typed `REQUEST_BUDGET_EXCEEDED`、
+`RESPONSE_BUDGET_EXCEEDED` 或 `RESOURCE_BUDGET_EXCEEDED`。CSV multiline parser 改为只对新增
+physical line 推进 quote state，每个 logical record 只 join 一次；扫描字符 instrumentation
+证明工作量随输入线性增长。response row hard cap 仍保留完整 analysis count、
+`response_truncated` 和 `truncation_scopes`，不把截断伪装成完整分析。
+
+exclusion reason 增加独立 revision/persisted revision。只有 CSV export/compile/apply 成功才
+清除 dirty；原生 EL 不承载 reason，不能冒充持久化。dirty 时 native/MCP 普通 close 返回
+`UNPERSISTED_EXCLUSION_REASON`，manager 保留 live stdio-loop；仅显式
+`confirm_discard_reasons=true` 才丢弃并报告计数。默认 working exclusion cache 使用随机、
+session-owned 目录，安全 close 和 open 失败都会清理；调用者提供的 cache 永不越权删除。
+
+日志目录加入 `owners/<pid>`，避免同名 session/进程互相追加；session manifest 通过 lock、
+同目录临时文件、fsync 与 `os.replace` 原子更新，NDJSON 使用 `O_APPEND + flock` 完成单记录
+写入。日志失败不改变业务结果但会进入进程内 failure registry；session 的
+`observability.ok/failure_count/last_failure_operation/last_failure_type` 可查询，stderr 只发布
+operation 与 exception type，不泄露路径、payload 或凭据。
+
+阶段 focused 门禁覆盖 unit、真实 URG/VDB、复杂 code/assert/functional export、MCP dirty-close
+保活和 shared process 生命周期：`xcov.unit` 164 passed、host `xcov.urg_backend` 7 passed、
+host `xcov.modinfo_complex` 5 passed、host `xcov.mcp_integration` 17 passed、host
+`xverif_mcp.process` 141 passed、`skills.xverif` 16 passed、`skills.xverif_admin` 1 passed。
+两个变更 Skill 已安装到 Codex/Claude，排除安装 manifest 与 source `__pycache__` 后四组
+`diff -qr` 均为 0。最终全仓 gate 仍由第 10 阶段统一执行并记录。
