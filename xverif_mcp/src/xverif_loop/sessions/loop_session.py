@@ -123,9 +123,16 @@ class XdebugLoopSession:
     target_key: str = "fsdb"
     recovery_tool: str = "xverif_debug_session_open"
     run_manifest: Optional[str] = None
+    requested_queue: Optional[str] = None
+    requested_resource: Optional[str] = None
     queue: Optional[str] = None
     resource: Optional[str] = None
     job_name: Optional[str] = None
+    scheduler_status: str = "not_started"
+    submitted_queue: Optional[str] = None
+    submitted_resource: Optional[str] = None
+    submitted_job_name: Optional[str] = None
+    submitted_job_id: Optional[str] = None
     session_id: Optional[str] = None
     state: str = "new"
     handle: Optional[JsonlProcess] = None
@@ -203,6 +210,7 @@ class XdebugLoopSession:
         handle = self.handle
         self.handle = None
         if handle is not None:
+            self._capture_scheduler_handle(handle)
             try:
                 termination = self.launcher.terminate(handle)
                 cleanup["subprocess"] = "terminated"
@@ -362,6 +370,7 @@ class XdebugLoopSession:
             ),
             cleanup=cleanup,
             backend_response=backend_response,
+            scheduler=self.scheduler_json(),
         )
 
     @_serialized_lifecycle
@@ -409,11 +418,21 @@ class XdebugLoopSession:
                            logger=self.logger)
         native_open_started = False
         try:
+            self.scheduler_status = (
+                "submitting" if self.launcher.mode == "lsf"
+                else "not_applicable"
+            )
             self.handle = self.launcher.start(cfg)
+            if self.launcher.mode == "lsf":
+                self.scheduler_status = "submitted"
+                self._capture_scheduler_handle(self.handle)
             ready = self.handle.wait_ready(
                 self.ready_protocol,
                 self.runtime.startup_timeout_sec,
             )
+            if self.launcher.mode == "lsf":
+                self.scheduler_status = "ready"
+                self._capture_scheduler_handle(self.handle)
             self.pid = int(ready.get("pid") or 0)
             open_req: Json = {
                 "request_id": f"open-{_safe_name(self.alias)}",
@@ -442,6 +461,7 @@ class XdebugLoopSession:
                 timeout=self.runtime.startup_timeout_sec,
             )
             if not rsp.get("ok"):
+                self.scheduler_status = "open_rejected"
                 result = self._finish_dispatched_open(
                     code="SESSION_OPEN_REJECTED",
                     message=(
@@ -544,6 +564,12 @@ class XdebugLoopSession:
                 observability_cursor,
             )
         except Exception as exc:
+            if self.launcher.mode == "lsf":
+                message = str(exc).lower()
+                self.scheduler_status = (
+                    "startup_timeout" if "timeout" in message
+                    else "startup_rejected"
+                )
             if native_open_started:
                 result = self._finish_dispatched_open(
                     code="SESSION_OPEN_TRANSPORT_FAILED",
@@ -582,6 +608,7 @@ class XdebugLoopSession:
                 elapsed_ms=int((time.monotonic() - t0) * 1000),
                 error_type=type(exc).__name__,
                 cleanup=cleanup,
+                scheduler=self.scheduler_json(),
             )
             result = _error(
                 "SESSION_OPEN_FAILED",
@@ -592,6 +619,7 @@ class XdebugLoopSession:
                     in {"not_started", "terminated"}
                 ),
                 cleanup=cleanup,
+                scheduler=self.scheduler_json(),
             )
             return self._attach_observability(
                 result,
@@ -675,6 +703,8 @@ class XdebugLoopSession:
                 )
         self.last_cleanup = cleanup
         if errors:
+            if self.launcher.mode == "lsf":
+                self.scheduler_status = "cleanup_partial"
             cleanup["errors"] = errors
             self.logger.try_session(
                 self.alias,
@@ -698,6 +728,8 @@ class XdebugLoopSession:
                 observability_cursor,
             )
         self.state = "closed"
+        if self.launcher.mode == "lsf":
+            self.scheduler_status = "closed"
         self.logger.try_session(
             self.alias,
             "session.close.end",
@@ -844,6 +876,7 @@ class XdebugLoopSession:
         handle = self.handle
         self.handle = None
         if handle is not None:
+            self._capture_scheduler_handle(handle)
             try:
                 termination = self.launcher.terminate(handle)
                 stages["loop_terminate"] = "ok"
@@ -913,6 +946,8 @@ class XdebugLoopSession:
                 if capability.backend_survives_loop
                 else "cleanup_partial"
             )
+            if self.launcher.mode == "lsf":
+                self.scheduler_status = "cleanup_partial"
             result = _error(
                 "SESSION_CLEANUP_PARTIAL_FAILURE",
                 "session kill cleanup was only partially confirmed",
@@ -934,6 +969,8 @@ class XdebugLoopSession:
                 observability_cursor,
             )
         self.state = "closed"
+        if self.launcher.mode == "lsf":
+            self.scheduler_status = "closed"
         self.logger.try_session(
             self.alias,
             "session.kill.end",
@@ -1306,6 +1343,7 @@ class XdebugLoopSession:
             "state": self.state,
             "launcher": self.launcher.mode,
             "backend": self.backend,
+            "scheduler": self.scheduler_json(),
         }
         resource_path = self.fsdb or self.daidir
         if resource_path:
@@ -1341,3 +1379,35 @@ class XdebugLoopSession:
             if self.last_cleanup: out["last_cleanup"] = self.last_cleanup
             if self.last_error: out["last_error"] = self.last_error
         return out
+
+    def scheduler_json(self) -> Json:
+        """Publish requested, resolved and actually submitted LSF settings."""
+        handle = self.handle
+        if handle is not None:
+            self._capture_scheduler_handle(handle)
+        return {
+            "mode": self.launcher.mode,
+            "status": self.scheduler_status,
+            "requested": {
+                "queue": self.requested_queue,
+                "resource": self.requested_resource,
+            },
+            "effective": {
+                "queue": self.queue,
+                "resource": self.resource,
+            },
+            "submitted": {
+                "queue": self.submitted_queue,
+                "resource": self.submitted_resource,
+                "job_name": self.submitted_job_name,
+                "job_id": self.submitted_job_id,
+            },
+        }
+
+    def _capture_scheduler_handle(self, handle: JsonlProcess) -> None:
+        self.submitted_queue = getattr(handle, "submitted_queue", None)
+        self.submitted_resource = getattr(handle, "submitted_resource", None)
+        self.submitted_job_name = getattr(handle, "job_name", None)
+        job_id = getattr(handle, "job_id", None)
+        if job_id:
+            self.submitted_job_id = job_id

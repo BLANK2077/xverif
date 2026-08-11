@@ -32,6 +32,10 @@ tools/xcov --stdio-loop
 
 stdio-loop 启动后输出 `protocol:"xcov-stdio-loop"` ready 行，后续每行接收一个
 JSON request，并返回包含 `xout` 和 `json` payload 的 JSONL envelope。stdio 请求
+一个 native stdio-loop 进程最多拥有一个 live xcov session；第二个不同 name 的
+`session.open` 返回 `SESSION_CAPACITY_EXCEEDED`。MCP 多 session 由 manager 为每个 session
+分别启动独立 `tools/xcov --stdio-loop`，不在同一 native loop 内复用多个 VDB。
+stdio 请求
 必须显式提供非空 `request_id`；历史 `id` 字段不是别名，会被严格拒绝。退出控制
 帧只有以下三个字段，缺字段或增加 `target/args` 等未知字段都会返回
 `SCHEMA_INVALID`：

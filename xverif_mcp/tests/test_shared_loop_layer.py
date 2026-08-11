@@ -417,6 +417,61 @@ def test_lsf_command_config_rejects_empty_or_invalid_command(
     )
 
 
+@pytest.mark.parametrize(
+    "env_name",
+    ["XVERIF_LSF_SESSION_QUEUE", "XVERIF_LSF_SESSION_RESOURCE"],
+)
+@pytest.mark.parametrize("value", ["", " ", " queue", "queue "])
+def test_lsf_queue_and_resource_config_are_strict(
+    tmp_path: Path,
+    env_name: str,
+    value: str,
+) -> None:
+    from xverif_loop.config import ConfigError, resolve_mcp_runtime_config
+
+    with pytest.raises(ConfigError) as caught:
+        resolve_mcp_runtime_config({
+            "HOME": str(tmp_path),
+            env_name: value,
+        })
+    assert caught.value.env_name == env_name
+    assert caught.value.value == value
+    assert caught.value.expected == (
+        "a non-empty string without surrounding whitespace"
+    )
+
+
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [("queue", ""), ("queue", " queue"), ("resource", " ")],
+)
+def test_session_open_rejects_invalid_explicit_lsf_options(
+    tmp_path: Path,
+    option: str,
+    value: str,
+) -> None:
+    from xverif_loop.sessions.session_manager import McpSessionManager
+
+    runtime, logger = _runtime_and_logger(tmp_path)
+    manager = McpSessionManager(
+        runtime=runtime,
+        xdebug_bin="must-not-start",
+        backend="xcov",
+        logger=logger,
+    )
+
+    response = manager.open_session(
+        "invalid_lsf_option",
+        fsdb="merged.vdb",
+        **{option: value},
+    )
+
+    assert response["ok"] is False
+    assert response["error"]["code"] == "INVALID_LSF_OPTION"
+    assert response["error"]["option"] == option
+    assert manager.sessions == {}
+
+
 def _runtime_and_logger(tmp_path: Path):
     from xverif_loop.config import resolve_mcp_runtime_config
     from xverif_loop.logging import resolve_logger

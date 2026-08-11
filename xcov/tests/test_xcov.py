@@ -497,6 +497,37 @@ def test_duplicate_session_name_fails_before_manifest_or_backend_work(tmp_path):
     assert dispatcher.sessions.get("cov0").vdb == "first.vdb"
 
 
+def test_native_session_manager_allows_only_one_live_session_per_process():
+    opened_vdbs = []
+
+    def factory(vdb, **_kwargs):
+        opened_vdbs.append(vdb)
+        return _TestBackend(vdb)
+
+    dispatcher = Dispatcher(SessionManager(backend_factory=factory))
+    first = dispatcher.dispatch({
+        "api_version": "xcov.v1",
+        "request_id": "open-first-native",
+        "action": "session.open",
+        "target": {"vdb": "first.vdb"},
+        "args": {"name": "cov_first"},
+    })
+    second = dispatcher.dispatch({
+        "api_version": "xcov.v1",
+        "request_id": "open-second-native",
+        "action": "session.open",
+        "target": {"vdb": "second.vdb"},
+        "args": {"name": "cov_second"},
+    })
+
+    assert first["ok"] is True
+    assert second["ok"] is False
+    assert second["error"]["code"] == "SESSION_CAPACITY_EXCEEDED"
+    assert second["error"]["detail.live_session_id"] == "cov_first"
+    assert second["error"]["detail.capacity"] == 1
+    assert opened_vdbs == ["first.vdb"]
+
+
 def test_fake_backend_is_not_a_production_vdb_selector():
     manager = SessionManager()
     assert manager._backend_factory is UrgCoverageBackend

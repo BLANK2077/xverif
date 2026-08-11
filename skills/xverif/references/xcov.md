@@ -19,6 +19,9 @@ tools/xcov --json -
 tools/xcov --stdio-loop
 ```
 
+一个 native stdio-loop 最多一个 live xcov session；需要多个 VDB session 时，由 MCP/loop
+manager 为每个 session 启动独立 `tools/xcov --stdio-loop`（LSF 下即独立 `bsub -I` job）。
+
 本文件只讲原生 `xcov.v1` JSON envelope。MCP tool 参数、MCP session 和 SDK-free loop wrapper 请使用 `xverif-mcp`。
 
 普通 coverage 查询与三类 gap 导出固定使用 URG，不加载 NPI。只有 exclusion

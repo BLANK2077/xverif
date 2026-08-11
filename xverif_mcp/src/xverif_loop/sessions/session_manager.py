@@ -32,6 +32,14 @@ def _valid_session_name(s: str) -> bool:
     return bool(re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", s or ""))
 
 
+def _valid_scheduler_value(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and bool(value)
+        and value == value.strip()
+    )
+
+
 def _error(code: str, message: str, **extra: Any) -> Json:
     error: Json = {"code": code, "message": message}
     error.update(extra)
@@ -144,6 +152,13 @@ class McpSessionManager:
                      run_manifest: Optional[str] = None,
                      **kwargs: Any) -> Json:
         observability_cursor = self.logger.failure_cursor()
+        for option_name, option_value in (("queue", queue), ("resource", resource)):
+            if option_value is not None and not _valid_scheduler_value(option_value):
+                return self._attach_observability(_error(
+                    "INVALID_LSF_OPTION",
+                    f"{option_name} must be a non-empty string without surrounding whitespace",
+                    option=option_name,
+                ), observability_cursor)
         if not _valid_session_name(name):
             self.logger.try_session(
                 name,
@@ -189,8 +204,12 @@ class McpSessionManager:
                               f"session tombstone exists: {name}; inspect doctor and run gc or kill explicitly")
             self._opening.add(name)
         job_name = None
-        actual_queue = queue or (self._session_queue if self.mode == "lsf" else None)
-        actual_resource = resource or (self._session_resource if self.mode == "lsf" else None)
+        actual_queue = (
+            queue if queue is not None else self._session_queue
+        ) if self.mode == "lsf" else None
+        actual_resource = (
+            resource if resource is not None else self._session_resource
+        ) if self.mode == "lsf" else None
         if self.mode == "lsf":
             job_name = f"{self._job_prefix}_{_safe_name(self.backend)}_{_safe_name(name)}"
         try:
@@ -222,6 +241,7 @@ class McpSessionManager:
             session = XdebugLoopSession(
                 alias=name, fsdb=fsdb, daidir=daidir,
                 launcher=self.launcher, xdebug_bin=self.xdebug_bin,
+                requested_queue=queue, requested_resource=resource,
                 queue=actual_queue, resource=actual_resource,
                 job_name=job_name, runtime=self.runtime,
                 backend=self.backend, api_version=self.api_version,

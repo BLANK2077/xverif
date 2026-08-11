@@ -184,6 +184,20 @@ session 空闲最长存活时间看 `XDEBUG_SESSION_IDLE_TIMEOUT_SEC`（默认 8
 - `direct`：本机启动 `tools/xdebug --stdio-loop` 或 `tools/xcov --stdio-loop`
 - `lsf`：通过 `bsub -I tools/<backend> --stdio-loop` 提交到 LSF
 
+每个 managed xdebug/xcov session 对应一个独立 stdio-loop 进程；LSF 模式下也对应一个
+独立 interactive job。xcov native loop 本身只允许一个 live VDB session，多 VDB 并发由
+manager 启动多个 loop/job 实现。
+
+LSF queue/resource 的解析优先级固定为 session open 显式参数、
+`XVERIF_LSF_SESSION_QUEUE`/`XVERIF_LSF_SESSION_RESOURCE`、最后 queue 默认
+`interactive`（resource 默认省略）。session record 始终包含 `scheduler`，分别发布
+`requested/effective/submitted` queue/resource、job name/id 和
+`submitted|ready|startup_timeout|startup_rejected|closed|cleanup_partial` 状态；这些核心调度
+事实不要求 `verbose=true`。已识别的 bsub job submission 与 interactive scheduler framing
+不会进入 backend JSONL 队列，未知非 JSON stdout 仍 fail-closed。queue/resource 的环境值
+和 open 显式值都必须是无首尾空白的非空字符串，禁止记录了 effective 值却在 argv 中静默
+省略 `-q/-R`。
+
 ### 通用参数
 
 所有 MCP tool 自动支持以下可选参数，无需每个 tool 单独声明：
@@ -362,6 +376,7 @@ tools/xverif-loop-client --socket <repo>/tmp/xverif-loop.sock --json \
 | `XVERIF_MCP_ENABLE_SVA` | 暴露 xsva 工具，严格布尔 `0|1`，默认 `1` |
 | `XVERIF_LSF_BSUB` | 覆盖 `bsub` 命令（默认 `bsub`） |
 | `XVERIF_LSF_SESSION_QUEUE` | session job 的 LSF 队列（默认 `interactive`） |
+| `XVERIF_LSF_SESSION_RESOURCE` | session job 的 LSF resource string（默认省略） |
 | `XVERIF_LSF_BKILL` | 覆盖 `bkill` 命令 |
 | `XVERIF_XCOV_BIN` | 覆盖 xcov 可执行文件路径，默认 `tools/xcov` |
 | `XVERIF_XCOV_PYTHON` | 覆盖 xcov 使用的 Python runtime |
@@ -424,7 +439,7 @@ xverif_cov_session_gc
 xverif_cov_query
 ```
 
-两组生命周期工具遵循相同 managed contract：open 使用 `name` 请求 canonical `session_id`，且 backend 返回值必须与 `name` 完全一致；query/doctor/close/kill 只接受精确 `session_id`，不接受 `session` 或 `name`，kill 不接受 `all`。list 支持 `include_tombstones`/`verbose`，doctor 只读且不会 reopen。compact record 返回 session_id/ownership/backend/launcher/state 与资源 basename/hash；verbose 才展开 PID、job、完整路径和 cleanup 诊断。
+两组生命周期工具遵循相同 managed contract：open 使用 `name` 请求 canonical `session_id`，且 backend 返回值必须与 `name` 完全一致；query/doctor/close/kill 只接受精确 `session_id`，不接受 `session` 或 `name`，kill 不接受 `all`。list 支持 `include_tombstones`/`verbose`，doctor 只读且不会 reopen。compact record 返回 session_id/ownership/backend/launcher/state、资源 basename/hash 和结构化 scheduler truth；verbose 再展开 PID、兼容 job 字段、完整路径和 cleanup 诊断。
 
 xdebug detached backend 可能比 stdio-loop 活得更久，dead loop 只由固定 native admin path 精确 doctor/kill；xcov backend 由 loop 进程拥有，kill 只终止 loop/process/LSF job，并明确返回 native kill `not_supported`。任一 cleanup 阶段失败时返回 `SESSION_CLEANUP_PARTIAL_FAILURE`、`error_layer=session_manager` 并保留 unresolved tombstone。debug/cov query 均拒绝 native lifecycle action，不会 fallback 到其它 transport 或 backend。
 

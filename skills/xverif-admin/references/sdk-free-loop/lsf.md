@@ -39,5 +39,7 @@ LSF job 从 wrapper server 继承环境。脚本启动 server 时必须显式设
 ## 使用建议
 
 - 每个 wrapper session 对应一个 backend process；LSF 模式下是一个 LSF interactive job。
+- queue/resource 按 open 显式值、`XVERIF_LSF_SESSION_*`、queue 默认 `interactive` 的顺序
+  解析；compact session record 直接发布 requested/effective/submitted 和 scheduler 状态。
 - 同一 session 请求串行；不同 session 可并行。
 - 关闭 session 或 server shutdown 时 wrapper 会尝试清理 subprocess 和 LSF job。

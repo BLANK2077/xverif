@@ -44,6 +44,9 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if os.environ.get("FAKE_BSUB_STDOUT_NOISE_BEFORE_READY"):
         print("Job <123> is submitted to fake queue.", flush=True)
+    if os.environ.get("FAKE_BSUB_SCHEDULER_FRAMING"):
+        print("<<Waiting for dispatch ...>>", flush=True)
+        print("<<Starting on fake-host>>", flush=True)
 
     stderr_lines = _env_int("FAKE_BSUB_STDERR_LINES")
     for i in range(stderr_lines):

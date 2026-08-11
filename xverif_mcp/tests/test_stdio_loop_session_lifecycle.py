@@ -734,6 +734,7 @@ class TestLsfStructuredLog:
     def test_fake_lsf_logs_bsub_job_and_cleanup(self, tmp_path, monkeypatch):
         fake = _fake_loop_script(tmp_path)
         monkeypatch.setenv("FAKE_BSUB_STDOUT_NOISE_BEFORE_READY", "1")
+        monkeypatch.setenv("FAKE_BSUB_SCHEDULER_FRAMING", "1")
         monkeypatch.setenv(
             "XVERIF_LSF_BKILL",
             shlex.join([sys.executable, "-c", "raise SystemExit(0)"]),
@@ -758,3 +759,160 @@ class TestLsfStructuredLog:
         assert "job_id.detected" in phases
         assert any(e.get("job_id") == "123" for e in lsf_events)
         assert any(e.get("queue") == "interactive" for e in lsf_events)
+
+    def test_xcov_fake_lsf_uses_one_process_per_session_and_reports_queue_truth(
+        self, tmp_path, monkeypatch,
+    ):
+        fake = _fake_loop_script(tmp_path)
+        monkeypatch.setenv("FAKE_BSUB_STDOUT_NOISE_BEFORE_READY", "1")
+        monkeypatch.setenv(
+            "XVERIF_LSF_BKILL",
+            shlex.join([sys.executable, "-c", "raise SystemExit(0)"]),
+        )
+        runtime = _runtime(backend="lsf")
+        manager = McpSessionManager(
+            runtime=runtime,
+            xdebug_bin=fake,
+            backend="xcov",
+            api_version="xcov.v1",
+            ready_protocol="xdebug-stdio-loop",
+            target_key="vdb",
+            recovery_tool="xverif_cov_session_open",
+            logger=resolve_logger(runtime),
+        )
+        manager.launcher = LsfLauncher(
+            BsubRunner(f"{sys.executable} -m xverif_loop.lsf.fake_bsub")
+        )
+
+        first = manager.open_session(
+            "cov_lsf_a",
+            fsdb="a.vdb",
+            queue="cov_queue",
+            resource="select[mem>1024]",
+        )
+        second = manager.open_session("cov_lsf_b", fsdb="b.vdb")
+        try:
+            assert first["ok"] is True, first
+            assert second["ok"] is True, second
+            first_session = manager.sessions["cov_lsf_a"]
+            second_session = manager.sessions["cov_lsf_b"]
+            assert first_session.handle.proc.pid != second_session.handle.proc.pid
+            assert first_session.handle.argv[-2:] == [fake, "--stdio-loop"]
+            first_argv = first_session.handle.argv
+            assert first_argv[first_argv.index("-q") + 1] == "cov_queue"
+            assert first_argv[first_argv.index("-R") + 1] == "select[mem>1024]"
+            assert first_argv[first_argv.index("-J") + 1] == first_session.job_name
+            scheduler = first["session"]["scheduler"]
+            assert scheduler == {
+                "mode": "lsf",
+                "status": "ready",
+                "requested": {
+                    "queue": "cov_queue",
+                    "resource": "select[mem>1024]",
+                },
+                "effective": {
+                    "queue": "cov_queue",
+                    "resource": "select[mem>1024]",
+                },
+                "submitted": {
+                    "queue": "cov_queue",
+                    "resource": "select[mem>1024]",
+                    "job_name": first_session.job_name,
+                    "job_id": "123",
+                },
+            }
+            default_scheduler = second["session"]["scheduler"]
+            assert default_scheduler["requested"] == {
+                "queue": None, "resource": None,
+            }
+            assert default_scheduler["effective"] == {
+                "queue": "interactive", "resource": None,
+            }
+            assert default_scheduler["submitted"]["queue"] == "interactive"
+        finally:
+            closed = manager.close_all()
+            assert closed["ok"] is True, closed
+
+    def test_xcov_fake_lsf_pending_timeout_reports_status_and_cleans_job(
+        self, tmp_path, monkeypatch,
+    ):
+        fake = _fake_loop_script(tmp_path)
+        monkeypatch.setenv("FAKE_BSUB_STDOUT_NOISE_BEFORE_READY", "1")
+        monkeypatch.setenv("FAKE_BSUB_PENDING_DELAY_MS", "250")
+        monkeypatch.setenv(
+            "XVERIF_LSF_BKILL",
+            shlex.join([sys.executable, "-c", "raise SystemExit(0)"]),
+        )
+        runtime = _runtime(backend="lsf").with_overrides(
+            startup_timeout_sec=0.05,
+        )
+        session = XdebugLoopSession(
+            alias="cov_lsf_pending",
+            fsdb="pending.vdb",
+            daidir=None,
+            launcher=LsfLauncher(
+                BsubRunner(f"{sys.executable} -m xverif_loop.lsf.fake_bsub")
+            ),
+            runtime=runtime,
+            logger=resolve_logger(runtime),
+            xdebug_bin=fake,
+            backend="xcov",
+            api_version="xcov.v1",
+            ready_protocol="xdebug-stdio-loop",
+            target_key="vdb",
+            requested_queue=None,
+            queue="interactive",
+            job_name="xverif_cov_pending_test",
+        )
+
+        response = session.open()
+
+        assert response["ok"] is False
+        assert response["error"]["code"] == "SESSION_OPEN_FAILED"
+        assert response["error"]["scheduler"]["status"] == "startup_timeout"
+        assert response["error"]["scheduler"]["submitted"]["queue"] == "interactive"
+        assert response["error"]["cleanup"]["subprocess"] == "terminated"
+        assert response["error"]["cleanup"]["lsf_job"] == "confirmed"
+
+    def test_xcov_fake_lsf_rejection_is_typed_and_never_runs_direct(
+        self, tmp_path, monkeypatch,
+    ):
+        fake = _fake_loop_script(tmp_path)
+        monkeypatch.setenv("FAKE_BSUB_STDOUT_NOISE_BEFORE_READY", "1")
+        monkeypatch.setenv("FAKE_BSUB_EXIT_BEFORE_READY", "1")
+        monkeypatch.setenv(
+            "XVERIF_LSF_BKILL",
+            shlex.join([sys.executable, "-c", "raise SystemExit(0)"]),
+        )
+        runtime = _runtime(backend="lsf")
+        session = XdebugLoopSession(
+            alias="cov_lsf_rejected",
+            fsdb="rejected.vdb",
+            daidir=None,
+            launcher=LsfLauncher(
+                BsubRunner(f"{sys.executable} -m xverif_loop.lsf.fake_bsub")
+            ),
+            runtime=runtime,
+            logger=resolve_logger(runtime),
+            xdebug_bin=fake,
+            backend="xcov",
+            api_version="xcov.v1",
+            ready_protocol="xdebug-stdio-loop",
+            target_key="vdb",
+            requested_queue="reject_queue",
+            queue="reject_queue",
+            job_name="xverif_cov_rejection_test",
+        )
+
+        response = session.open()
+
+        assert response["ok"] is False
+        assert response["error"]["code"] == "SESSION_OPEN_FAILED"
+        scheduler = response["error"]["scheduler"]
+        assert scheduler["mode"] == "lsf"
+        assert scheduler["status"] == "startup_rejected"
+        assert scheduler["submitted"]["queue"] == "reject_queue"
+        assert scheduler["submitted"]["job_id"] == "123"
+        assert response["error"]["cleanup"]["subprocess"] == "terminated"
+        assert response["error"]["cleanup"]["lsf_job"] == "confirmed"
+        assert session.launcher.mode == "lsf"

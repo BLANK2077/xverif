@@ -1834,3 +1834,33 @@ per-key lock 保护、24 小时 abandoned staging 清理以及可配置的 bytes
 阶段门禁结果：`xcov.unit` 136 passed，host `xcov.urg_backend` 7 passed，host
 `xcov.modinfo_complex` 5 passed，`skills.xverif` 16 passed；全部使用正式 catalog focused
 入口并通过。
+
+### 16.4 阶段 4：MCP 外层独立 stdio-loop 与 fake LSF
+
+代码复核确认，共享 MCP 层原本已经使用 `McpSessionManager -> LsfLauncher -> BsubRunner`
+链路；xcov 的每个 managed session 会直接提交
+`bsub -I -J <job> -q <queue> [-R <resource>] tools/xcov --stdio-loop`。因此不存在“同一个
+native stdio-loop 同时承载多个 MCP xcov session”的架构缺陷，本阶段没有重造 manager，
+而是补齐原实现缺失的 native capacity 和调度事实合同。
+
+具体修复包括：
+
+- native `SessionManager` 最多保留一个 live VDB session；同进程第二次用不同 name open
+  在读取 manifest 或创建 backend 前返回 `SESSION_CAPACITY_EXCEEDED`；
+- MCP 多 session 继续一 session 一进程/一 LSF job，fake LSF 以两个并行 xcov session 的
+  不同 subprocess PID 证明隔离；
+- queue/resource 优先级固定为 open 显式值、`XVERIF_LSF_SESSION_QUEUE/RESOURCE`、queue
+  默认 `interactive` 与 resource 省略；direct 模式只保留 requested 事实，不伪造 effective
+  或 submitted LSF 参数；环境值和显式值均严格拒绝空值或首尾空白，避免记录与 argv 漂移；
+- compact session record 始终发布 `scheduler.requested/effective/submitted/status`，包含
+  queue、resource、job name/id，能够区分 submitting、submitted、ready、PEND 导致的
+  startup timeout、ready 前 rejection、closed 和 cleanup partial；
+- bsub job submission 行以及 job-id 已识别后继续出现的 `<<Waiting for dispatch>>`、
+  `<<Starting on ...>>` framing 均不会污染 xcov JSONL；其它未知非 JSON stdout 仍立即失败；
+- startup timeout/rejection 均保留 submitted 参数和 job identity，执行 process terminate
+  与精确 bkill；任一路径不切换 direct，也不启动另一个 backend。
+
+本机没有真实 LSF，按用户要求复用 xdebug 的 repository fake LSF。阶段门禁当前为
+`xcov.unit` 137 passed、`xverif_mcp.unit` 163 passed、host `xverif_mcp.process` 141 passed、
+`skills.xverif` 16 passed 和 `skills.xverif_admin` 1 passed；全部通过正式 catalog focused
+入口执行。

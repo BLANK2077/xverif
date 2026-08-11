@@ -141,6 +141,20 @@ class SessionManager:
                 "session already exists; close it before opening a new VDB",
                 session_id=sid,
             )
+        live_sessions = [
+            session_id
+            for session_id, session in self.sessions.items()
+            if session.state == "alive"
+        ]
+        if live_sessions:
+            raise XcovError(
+                "SESSION_CAPACITY_EXCEEDED",
+                "one xcov stdio-loop process owns at most one live native session; "
+                "open another managed MCP session to launch an independent process",
+                requested_session_id=sid,
+                live_session_id=live_sessions[0],
+                capacity=1,
+            )
         return sid
 
     def open(

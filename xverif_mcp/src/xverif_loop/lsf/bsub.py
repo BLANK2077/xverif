@@ -15,12 +15,21 @@ from xverif_loop.logging import StructuredLogger, argv_hash
 
 # LSF typical output: "Job <123456> is submitted to queue <interactive>."
 _JOB_RE = re.compile(r"Job\s+<(?P<job_id>\d+)>\s+is\s+submitted")
+_SCHEDULER_FRAMING = (
+    re.compile(r"^Job\s+<\d+>\s+is\s+submitted(?:\s+to\s+queue\s+<[^>]+>)?\.?$"),
+    re.compile(r"^<<(?:Waiting for dispatch|Starting on|Job is finished).*>>$"),
+)
 
 
 def parse_lsf_job_id(text: str) -> Optional[str]:
     """Parse job ID from bsub stderr/stdout output."""
     m = _JOB_RE.search(text)
     return m.group("job_id") if m else None
+
+
+def is_lsf_scheduler_framing(text: str) -> bool:
+    """Return true only for known bsub interactive scheduler framing."""
+    return any(pattern.fullmatch(text.strip()) for pattern in _SCHEDULER_FRAMING)
 
 
 @dataclass
@@ -75,4 +84,6 @@ class BsubRunner:
             log_context=log_context,
         )
         proc.job_name = opts.job_name
+        proc.submitted_queue = opts.queue
+        proc.submitted_resource = opts.resource
         return proc

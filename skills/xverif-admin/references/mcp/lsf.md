@@ -14,6 +14,10 @@ MCP client -> xverif-mcp -> LsfLauncher -> bsub -I tools/xdebug --stdio-loop
 
 xcov 同理启动 `tools/xcov --stdio-loop`。
 
+每个 managed session 都启动一个独立 stdio-loop；LSF 模式下一一对应独立 interactive
+job。xcov native loop 只允许一个 live VDB session，多 session 由 manager 启动多个 loop，
+不是在同一进程里创建多个 VDB session。
+
 ## 环境变量
 
 - `XVERIF_MCP_BACKEND=lsf`（只接受 `direct|lsf`）
@@ -34,5 +38,13 @@ xcov 同理启动 `tools/xcov --stdio-loop`。
 启动、ready、请求或 cleanup 失败也不会切换到 fake/direct 等其它 backend。
 
 MCP server 子进程不会自动继承 IDE/shell 外的环境。必须在 MCP 配置里显式列出计算节点需要的 Verdi、NPI、license、PATH、LSF 变量。
+
+queue/resource 优先级为 session open 显式参数、`XVERIF_LSF_SESSION_QUEUE` /
+`XVERIF_LSF_SESSION_RESOURCE`，随后 queue 默认 `interactive`、resource 省略。session record
+的 `scheduler` 始终发布 requested/effective/submitted queue/resource、job name/id 与状态；
+不需要开启 verbose。`startup_timeout` 常见于 PEND 超时，`startup_rejected` 表示 bsub/job
+在 ready 前退出；两者都会执行原有 process+bkill 清理，不会转 direct。
+环境和 open 参数中的 queue/resource 都必须是无首尾空白的非空字符串；空值不会被接受后
+静默省略 `-q/-R`，避免 effective/submitted 与真实 argv 漂移。
 
 如果必须 LSF 但不能使用 MCP SDK，或要脚本化驱动 session，改用 [../sdk-free-loop/overview.md](../sdk-free-loop/overview.md)。

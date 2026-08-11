@@ -201,6 +201,19 @@ def _env_command(
     return raw
 
 
+def _env_text(
+    environ: Mapping[str, str],
+    env_name: str,
+    default: str | None,
+) -> str | None:
+    raw = environ.get(env_name)
+    if raw is None:
+        return default
+    if not raw or raw != raw.strip():
+        raise ConfigError(env_name, raw, "a non-empty string without surrounding whitespace")
+    return raw
+
+
 def _resolved_lsf_commands(
     environ: Mapping[str, str],
     *,
@@ -258,11 +271,16 @@ def _resolve_runtime_config(
         fake_lsf=fake_lsf,
         lsf_bsub_command=lsf_bsub_command,
         lsf_bkill_command=lsf_bkill_command,
-        session_queue=snapshot.get(
+        session_queue=_env_text(
+            snapshot,
             "XVERIF_LSF_SESSION_QUEUE",
             "interactive",
+        ) or "interactive",
+        session_resource=_env_text(
+            snapshot,
+            "XVERIF_LSF_SESSION_RESOURCE",
+            None,
         ),
-        session_resource=snapshot.get("XVERIF_LSF_SESSION_RESOURCE"),
         log_root=_resolved_log_root(
             snapshot,
             names=names,

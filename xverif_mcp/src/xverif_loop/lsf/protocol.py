@@ -40,6 +40,8 @@ class JsonlProcess:
     read_lock: threading.Lock = field(default_factory=threading.Lock)
     job_name: Optional[str] = None
     job_id: Optional[str] = None
+    submitted_queue: Optional[str] = None
+    submitted_resource: Optional[str] = None
     log_alias: Optional[str] = None
     log_backend: Optional[str] = None
     log_launcher: Optional[str] = None
@@ -141,20 +143,25 @@ class JsonlProcess:
 
     def _read_stdout(self) -> None:
         assert self.proc.stdout is not None
-        from xverif_loop.lsf.bsub import parse_lsf_job_id as _parse
+        from xverif_loop.lsf.bsub import (
+            is_lsf_scheduler_framing as _is_framing,
+            parse_lsf_job_id as _parse,
+        )
         for line in self.proc.stdout:
             stripped = line.rstrip("\n")
-            if not self.job_id:
-                jid = _parse(stripped)
-                if jid:
-                    self.job_id = jid
-                    self._try_log_lsf(
-                        "job_id.detected",
-                        True,
-                        job_id=jid,
-                    )
-                    # LSF scheduler framing is not backend JSONL protocol data.
-                    continue
+            jid = _parse(stripped)
+            if jid and not self.job_id:
+                self.job_id = jid
+                self._try_log_lsf(
+                    "job_id.detected",
+                    True,
+                    job_id=jid,
+                )
+            if self.log_launcher == "lsf" and (jid is not None or _is_framing(stripped)):
+                # LSF scheduler framing is never backend JSONL protocol data,
+                # including lines emitted after the job id was already seen.
+                self._try_log_lsf("scheduler.framing", True)
+                continue
             self.stdout_queue.put(stripped)
 
     def _read_stderr(self) -> None:
