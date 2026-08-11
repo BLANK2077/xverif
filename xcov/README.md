@@ -94,13 +94,34 @@ xverif_cov_get_schema
   位于其 `urg-summary/` 子目录。
 - `XVERIF_XCOV_CACHE_MAX_BYTES`：cache 总字节上限，默认 20 GiB。
 - `XVERIF_XCOV_CACHE_MAX_ENTRIES`：cache entry 上限，默认 128。
+- `XVERIF_XCOV_URG_BACKEND`：每次 URG 的执行 backend，只接受 `direct|lsf`，默认
+  `direct`；不会从外层 `XVERIF_MCP_BACKEND` 或仅存在的 `XVERIF_LSF_BSUB` 推断。
+- `XVERIF_XCOV_URG_QUEUE`：内层 URG LSF queue；backend=lsf 时必填。
+- `XVERIF_XCOV_URG_RESOURCE`：可选内层 URG LSF resource string。
+- `XVERIF_XCOV_URG_STARTUP_TIMEOUT_SEC`：等待 batch job 从 submitted/PEND 进入 running
+  的超时，默认 120 秒。
+- `XVERIF_XCOV_URG_RUN_TIMEOUT_SEC`：job running 后的 URG 执行超时，默认 600 秒。
 
 固定 URG summary 使用内容寻址 cache。key 包含 VDB 内容 hash、可选 run-manifest
 hash、URG 绝对路径/release/文件身份、固定 argv、parser/cache version、merged selection
 和当前 EL hash。每个 entry 校验六文件 hash/size 与 semantic counts；per-key `fcntl`
 锁保证并发 miss 只执行一次 URG，完成后经 fsync 和 atomic rename 发布。损坏 entry
 隔离后重建，超过 24 小时的 abandoned staging 才清理。`session.status` 的
-`cached_indexes.state/key/hit` 可观察当前 index 和 cold/warm 状态。
+`cached_indexes.state/key/hit/urg_execution` 可观察当前 index、cold/warm、direct/LSF、
+submitted queue/resource、job name/id 和 exit status。warm hit 的 `submitted=false`，不会
+调用 bsub。
+
+内层 LSF 固定执行：
+
+```text
+bsub -K -J <job> -q <XVERIF_XCOV_URG_QUEUE> [-R <resource>] <urg> -full64 ...
+```
+
+`XVERIF_LSF_BSUB`/`XVERIF_LSF_BKILL` 只覆盖命令入口；不得预置 `-I/-K/-J/-q/-R`。
+VDB、EL、cache、report、hier 和 log 必须位于登录节点与计算节点共同可见的绝对路径。
+runner 会把 URG 的路径参数规范化为绝对路径，但不会把本地目录复制到计算节点。startup、
+run timeout 或取消会按 job id（尚未取得 id 时按唯一 job name）执行 bkill，并终止本地
+bsub process；失败不会改走 direct。
 
 ## 常用请求
 
@@ -114,8 +135,9 @@ hash、URG 绝对路径/release/文件身份、固定 argv、parser/cache versio
 `exclusion_policy:"default|strict"`。打开 session 只生成/读取固定 URG summary，
 不会 import pynpi 或调用 `cov.open`。首次 exclusion 操作才创建 NPI 上下文；此时
 `strict` 在双参数接口上把 `cov.ConfigOpt.ExclusionInStrictMode` 传给 `cov.open`，
-拒绝把已覆盖对象设为 report-time exclusion；xcov 从不公开 `ExcludeByStmtLevel`。同名 alive session 一律返回
-`SESSION_EXISTS`；xcov 不比较旧、新 VDB，不复用旧 backend，也不隐式关闭后重开。
+拒绝把已覆盖对象设为 report-time exclusion；xcov 从不公开 `ExcludeByStmtLevel`。同名
+alive session 返回 `SESSION_EXISTS`；同一 native 进程的其它 alive name 返回
+`SESSION_CAPACITY_EXCEEDED`。xcov 不比较旧、新 VDB，不复用旧 backend，也不隐式关闭后重开。
 需要切换 VDB 时，调用方必须先显式执行 `session.close`，再发起新的
 `session.open`。`fake`、`reuse`、`reopen` 都不是公开参数，字符串
 `target.vdb:"fake"` 也没有特殊含义；`FakeCoverageBackend` 只允许测试通过

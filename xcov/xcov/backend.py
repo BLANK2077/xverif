@@ -29,6 +29,7 @@ from .errors import XcovError
 from .logging import log_lifecycle_event
 from .urg_summary import UrgSummaryIndex
 from .urg_cache import load_cached_urg_summary
+from .urg_runner import UrgRunner
 
 Json = Dict[str, Any]
 
@@ -659,6 +660,10 @@ class CanonicalCoverageBackend(CoverageBackend):
     def cache_info(self) -> Json | None:
         value = getattr(self._delegate, "cache_info", None)
         return dict(value) if isinstance(value, dict) else None
+
+    @property
+    def npi_initialized(self) -> bool:
+        return bool(getattr(self._delegate, "npi_initialized", False))
 
     def tests(self) -> List[Json]:
         return canonicalize_backend_tests(
@@ -2067,6 +2072,7 @@ class UrgCoverageBackend(CoverageBackend):
     exclusion_policy: str = "default"
     urg_cache_dir: str | None = None
     run_manifest_digest: str | None = None
+    session_id: str | None = None
     npi_factory: Callable[..., CoverageBackend] = field(
         default=NpiCoverageBackend,
         repr=False,
@@ -2087,6 +2093,7 @@ class UrgCoverageBackend(CoverageBackend):
                 cache_root=self.urg_cache_dir,
                 el_path=self._summary_el_path,
                 run_manifest_digest=self.run_manifest_digest,
+                runner=UrgRunner(session_id=self.session_id),
             )
         return self._urg_index
 
@@ -2095,6 +2102,7 @@ class UrgCoverageBackend(CoverageBackend):
         if canonical != self._summary_el_path:
             self._summary_el_path = canonical
             self._urg_index = None
+            self.cache_info = None
 
     def invalidate_summary(self) -> None:
         self._urg_index = None

@@ -383,6 +383,11 @@ tools/xverif-loop-client --socket <repo>/tmp/xverif-loop.sock --json \
 | `XVERIF_XCOV_VERDI_HOME` | 覆盖 xcov 使用的 Verdi 安装路径 |
 | `XVERIF_XCOV_LOG_DIR` | 覆盖 xcov 日志目录，默认 `~/.xverif/xcov` |
 | `XVERIF_XCOV_LOG=0` | 关闭 xcov 日志 |
+| `XVERIF_XCOV_URG_BACKEND` | xcov 内层 URG backend，只接受 `direct|lsf`，默认 `direct` |
+| `XVERIF_XCOV_URG_QUEUE` | 内层 `bsub -K` URG queue；backend=lsf 时必填，不继承 session queue |
+| `XVERIF_XCOV_URG_RESOURCE` | 可选内层 URG resource string |
+| `XVERIF_XCOV_URG_STARTUP_TIMEOUT_SEC` | 内层 URG job PEND→running 超时，默认 120s |
+| `XVERIF_XCOV_URG_RUN_TIMEOUT_SEC` | 内层 URG running 超时，默认 600s |
 | `XVERIF_MCP_FAKE_LSF` | 仅 MCP namespace 的显式 fake LSF，严格布尔 `0|1` |
 | `XVERIF_LOOP_BACKEND` | 非 MCP UDS wrapper backend，只接受 `direct`（默认）或 `lsf` |
 | `XVERIF_LOOP_SOCKET` | 非 MCP UDS wrapper socket 路径，默认 `<repo>/tmp/xverif-loop-<uid>.sock` |
@@ -396,6 +401,11 @@ tools/xverif-loop-client --socket <repo>/tmp/xverif-loop.sock --json \
 | `LD_LIBRARY_PATH` | 需包含 `<verdi-install>/share/NPI/lib/LINUX64` |
 
 所有 timeout 变量只接受无首尾空白的有限正数；backend、布尔或 timeout 配置非法时启动立即返回 typed config error。MCP 与 UDS wrapper 的 fake LSF 开关互不别名，也不会在启动、请求或 cleanup 失败时自动切换 backend。
+
+当外层 xcov session 和内层 URG 都使用 LSF 时，外层始终是一个长期
+`bsub -I tools/xcov --stdio-loop`，每个 cold URG 则是独立 `bsub -K`。两个 queue/resource
+命名空间必须分别配置；warm summary cache hit 不提交内层 job。所有 coverage 输入、EL、
+cache、report 与临时 hier 必须位于登录节点和计算节点共同可见的绝对路径。
 
 xdebug/xcov stateful session 会写结构化 MCP 日志：
 

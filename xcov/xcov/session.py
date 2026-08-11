@@ -59,16 +59,36 @@ class XcovSession:
             "top_scopes": top_scopes,
             "worker": self.worker,
             "exclusion_policy": self.exclusion_policy,
+            "npi_initialized": bool(
+                getattr(self.backend, "npi_initialized", False)
+            ),
         }
 
     def cache_status(self) -> Json:
         info = self.backend.cache_info
         if info is None:
-            return {"state": "lazy", "key": None, "hit": None}
+            return {
+                "state": "lazy", "key": None, "hit": None,
+                "urg_execution": None,
+            }
+        execution = info.get("urg_execution")
+        public_execution = None
+        if isinstance(execution, dict):
+            public_execution = {
+                "backend": execution.get("backend"),
+                "submitted": bool(execution.get("submitted")),
+                "status": execution.get("status"),
+                "queue": execution.get("queue"),
+                "resource": execution.get("resource"),
+                "job_name": execution.get("job_name"),
+                "job_id": execution.get("job_id"),
+                "exit_status": execution.get("exit_status"),
+            }
         return {
             "state": "ready",
             "key": info.get("key"),
             "hit": info.get("hit"),
+            "urg_execution": public_execution,
         }
 
     def mark_exclusion_dirty(self) -> None:
@@ -192,6 +212,8 @@ class SessionManager:
         backend = self._backend_factory(vdb, exclusion_policy=exclusion_policy)
         if hasattr(backend, "exclusion_policy"):
             backend.exclusion_policy = exclusion_policy
+        if hasattr(backend, "session_id"):
+            backend.session_id = sid
         if cache_dir is not None and hasattr(backend, "urg_cache_dir"):
             backend.urg_cache_dir = str(Path(cache_dir).resolve() / "urg-summary")
         if hasattr(backend, "run_manifest_digest"):

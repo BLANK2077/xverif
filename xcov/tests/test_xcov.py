@@ -61,7 +61,7 @@ class _TestBackend(_CoverageBackend):
     def unload_exclusions(self,test="merged"): pass
     def scope_functional_from_urg(self): return []
     def scope_assert_from_urg(self): return []
-from xcov.errors import XcovError
+from xcov.errors import XcovError, error_response
 from xcov.logging import log_root, sanitize_for_log
 from xcov.provenance import resource_sha256
 from xcov.protocol import (
@@ -589,6 +589,13 @@ def test_urg_backend_initializes_npi_only_for_exclusion(monkeypatch, tmp_path):
     assert backend.scope_metrics()["top"]["line"]["covered"] == 1
     assert created == []
     assert backend.npi_initialized is False
+    assert backend.cache_info == {"key": "unit", "hit": False}
+
+    backend.set_summary_exclusion(str(tmp_path / "working.el"))
+    assert backend.cache_info is None
+    assert backend._urg_index is None
+    assert created == []
+    assert backend.npi_initialized is False
 
     backend.save_exclusions(str(tmp_path / "baseline.el"))
     backend.save_exclusions(str(tmp_path / "second.el"))
@@ -732,6 +739,35 @@ def test_schema_action_can_publish_strict_manifest_string_constraints():
     assert '"pattern": "^[0-9a-f]{64}$"' in encoded
 
 
+def test_urg_lsf_failure_detail_is_part_of_strict_error_contract():
+    rsp = error_response(
+        "session.open",
+        "urg-lsf-timeout",
+        "URG_SUMMARY_FAILED",
+        "URG summary generation failed",
+        returncode=124,
+        urg_execution={
+            "backend": "lsf",
+            "submitted": True,
+            "status": "run_timeout",
+            "queue": "urg_queue",
+            "resource": None,
+            "job_name": "xverif_xcov_urg_unit",
+            "job_id": "123",
+            "exit_status": 124,
+            "cleanup": {
+                "target": "job_id",
+                "bkill_returncode": 9,
+                "bkill_ok": False,
+                "process": "terminated",
+                "complete": False,
+            },
+        },
+    )
+
+    validate_response("session.open", rsp)
+
+
 def test_schema_action_rejects_open_empty_and_unknown_schema_nodes():
     rsp = Dispatcher().dispatch({
         "api_version": "xcov.v1",
@@ -832,6 +868,7 @@ def test_response_completeness_is_bound_to_returned_items():
     })
     assert session_rsp["data"]["cached_indexes"] == {
         "state": "lazy", "key": None, "hit": None,
+        "urg_execution": None,
     }
     for action, singleton in (
         ("schema", schema_rsp),
@@ -1408,6 +1445,7 @@ def test_session_public_json_does_not_scan_scopes():
     backend = CountingBackend()
     session = XcovSession("cov0", "unit-test.vdb", backend, "custom")
     assert session.public_json()["top_scope_count"] == 1
+    assert session.public_json()["npi_initialized"] is False
     assert backend.scopes_called == 0
 
 

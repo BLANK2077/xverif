@@ -38,14 +38,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("fake_bsub: missing command", file=sys.stderr)
         return 2
 
-    delay_ms = _env_int("FAKE_BSUB_PENDING_DELAY_MS")
-    if delay_ms > 0:
-        time.sleep(delay_ms / 1000.0)
-
     if os.environ.get("FAKE_BSUB_STDOUT_NOISE_BEFORE_READY"):
         print("Job <123> is submitted to fake queue.", flush=True)
     if os.environ.get("FAKE_BSUB_SCHEDULER_FRAMING"):
         print("<<Waiting for dispatch ...>>", flush=True)
+
+    delay_ms = _env_int("FAKE_BSUB_PENDING_DELAY_MS")
+    if delay_ms > 0:
+        time.sleep(delay_ms / 1000.0)
+
+    if os.environ.get("FAKE_BSUB_SCHEDULER_FRAMING"):
         print("<<Starting on fake-host>>", flush=True)
 
     stderr_lines = _env_int("FAKE_BSUB_STDERR_LINES")

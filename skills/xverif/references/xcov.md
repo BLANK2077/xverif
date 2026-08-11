@@ -177,7 +177,15 @@ assert export（输出目录内保留 `asserts.txt`，并生成 `assert.json`、
 - 普通查询失败：检查 URG、VDB 和固定六件套错误，不要切换到 NPI fallback。
 - URG summary 默认缓存于 `.xverif/xcov/cache/urg-summary`；可用
   `XVERIF_XCOV_CACHE_DIR` 指定共享可见的绝对缓存根。`session.status` 的
-  `cached_indexes.state/key/hit` 可区分尚未读取、cold miss 与 warm hit。
+  `cached_indexes.state/key/hit/urg_execution` 可区分尚未读取、cold miss、warm hit 与
+  direct/LSF job；warm hit 的 `submitted=false`。
+- 内层 URG LSF 必须显式设置 `XVERIF_XCOV_URG_BACKEND=lsf` 和独立的
+  `XVERIF_XCOV_URG_QUEUE`，可选 `XVERIF_XCOV_URG_RESOURCE`；它固定使用 `bsub -K`，不继承
+  外层 session queue，也不会因为存在 `XVERIF_LSF_BSUB` 自动启用。VDB、EL、cache、report、
+  hier 与 log 必须是计算节点可见的绝对共享路径。
+- `XVERIF_XCOV_URG_STARTUP_TIMEOUT_SEC` 管 PEND→running，
+  `XVERIF_XCOV_URG_RUN_TIMEOUT_SEC` 管 URG 执行；timeout/cancel 使用 job id 或唯一 job name
+  bkill，失败不会 fallback 到 direct。
 - cache key 包含 VDB 内容、run manifest、URG provenance/固定参数、merged selection 和
   EL 内容；EL 变更会生成新 key。损坏 entry 会被隔离并重新生成，不会降级为 NPI 读取。
 - 缓存默认最多 20 GiB/128 entries，可用 `XVERIF_XCOV_CACHE_MAX_BYTES` 和

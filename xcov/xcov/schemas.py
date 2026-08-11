@@ -411,6 +411,28 @@ def _error_schema(action: str | None = None) -> Json:
         "detail.parse_error": _string(min_length=1),
         "detail.report_dir": _string(min_length=1),
         "detail.returncode": _integer(0),
+        "detail.urg_execution": _object({
+            "backend": _string(enum=["direct", "lsf"]),
+            "submitted": _bool(),
+            "status": _string(min_length=1),
+            "queue": NULLABLE_STRING,
+            "resource": NULLABLE_STRING,
+            "job_name": NULLABLE_STRING,
+            "job_id": NULLABLE_STRING,
+            "exit_status": {"oneOf": [_integer(), {"type": "null"}]},
+            "error_type": _string(min_length=1),
+            "cleanup": _object({
+                "target": _string(enum=["job_id", "job_name"]),
+                "bkill_returncode": _integer(),
+                "bkill_ok": _bool(),
+                "bkill_error_type": _string(min_length=1),
+                "process": _string(enum=["terminated", "killed", "unresolved", "already_exited"]),
+                "complete": _bool(),
+            }),
+        }, required=[
+            "backend", "submitted", "status", "queue", "resource",
+            "job_name", "job_id", "exit_status",
+        ]),
         "detail.registry_action": _string(min_length=1),
         "detail.requested_action": _string(),
         "detail.row_index": _integer(0),
@@ -504,9 +526,10 @@ SESSION = _object({
     "top_scopes": _string_array(),
     "worker": _string(min_length=1),
     "exclusion_policy": _string(enum=["default", "strict"]),
+    "npi_initialized": _bool(),
 }, required=[
     "session_id", "state", "vdb", "test_count", "top_scope_count",
-    "top_scopes", "worker", "exclusion_policy",
+    "top_scopes", "worker", "exclusion_policy", "npi_initialized",
 ])
 
 RUN_MANIFEST_RESOURCE = _object({
@@ -901,7 +924,23 @@ SCHEMAS: Dict[str, Json] = {
                 "state": _string(enum=["lazy", "ready"]),
                 "key": NULLABLE_STRING,
                 "hit": {"oneOf": [_bool(), {"type": "null"}]},
-            }, required=["state", "key", "hit"]),
+                "urg_execution": {"oneOf": [
+                    _object({
+                        "backend": _string(enum=["direct", "lsf", "injected"]),
+                        "submitted": _bool(),
+                        "status": _string(min_length=1),
+                        "queue": NULLABLE_STRING,
+                        "resource": NULLABLE_STRING,
+                        "job_name": NULLABLE_STRING,
+                        "job_id": NULLABLE_STRING,
+                        "exit_status": {"oneOf": [_integer(), {"type": "null"}]},
+                    }, required=[
+                        "backend", "submitted", "status", "queue", "resource",
+                        "job_name", "job_id", "exit_status",
+                    ]),
+                    {"type": "null"},
+                ]},
+            }, required=["state", "key", "hit", "urg_execution"]),
         }, required=["session", "cached_indexes"]),
     ),
     "session.close": _schema_entry(

@@ -549,10 +549,11 @@ class Dispatcher:
             urg_args.extend(["-hier", hier_file])
 
         from .urg_runner import UrgRunner
-        result = UrgRunner().run(urg_args, timeout=300)
+        result = UrgRunner(session_id=sess.session_id).run(urg_args, timeout=300)
         if result.returncode != 0:
             raise XcovError("URG_FAILED", f"URG export failed (exit {result.returncode})",
-                            detail={"stderr": result.stderr[:500]})
+                            stderr=result.stderr[:500],
+                            urg_execution=result.scheduler)
 
         structured = None
         if action in {"export.assert", "export.functional_coverage"}:
@@ -652,7 +653,9 @@ class Dispatcher:
         stage_dir.mkdir()
 
         # ── Single URG call for all scopes × all metrics ──
-        with tempfile.TemporaryDirectory(prefix=".xcov-urg-export-") as urg_dir:
+        with tempfile.TemporaryDirectory(
+            prefix=".xcov-urg-export-", dir=stage_dir,
+        ) as urg_dir:
             hier_path = Path(urg_dir) / "combined.hier"
             hier_path.write_text(combined_hier, encoding="utf-8")
             urg_args = [
@@ -661,11 +664,12 @@ class Dispatcher:
                 "-hier", str(hier_path),
             ]
             urg_args.extend(sess.el_file_arg)
-            result = UrgRunner().run(urg_args, timeout=600)
+            result = UrgRunner(session_id=sess.session_id).run(urg_args, timeout=600)
             if result.returncode != 0:
                 raise XcovError(
                     "URG_FAILED", f"URG export failed (exit {result.returncode})",
                     stderr=result.stderr[:500],
+                    urg_execution=result.scheduler,
                 )
             modinfo_path = Path(urg_dir) / "modinfo.txt"
             if not modinfo_path.is_file():

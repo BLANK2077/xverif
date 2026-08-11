@@ -282,8 +282,11 @@ def load_cached_urg_summary(
     for directory in (entries, locks, staging, access):
         directory.mkdir(parents=True, exist_ok=True)
     _cleanup_abandoned_staging(staging, locks)
-
     identity = _cache_identity(vdb, el_path, run_manifest_digest)
+    # Validate the selected URG execution backend even on a cache hit.  A bad
+    # LSF configuration must not appear healthy merely because another process
+    # populated this key earlier.
+    active_runner = runner or UrgRunner()
     key = _identity_key(identity)
     entry = entries / key
     lock_path = locks / f"{key}.lock"
@@ -297,11 +300,11 @@ def load_cached_urg_summary(
                 "key": key,
                 "hit": True,
                 "entry": str(entry),
+                "urg_execution": _cache_hit_execution(active_runner),
             }
         if entry.exists():
             _quarantine(entry, quarantine, key)
 
-        active_runner = runner or UrgRunner()
         with tempfile.TemporaryDirectory(prefix=f"{key}.", dir=staging) as stage_name:
             stage = Path(stage_name)
             report = stage / "report"
@@ -319,6 +322,7 @@ def load_cached_urg_summary(
                     "URG summary generation failed",
                     returncode=result.returncode,
                     stderr_tail=result.stderr[-500:],
+                    urg_execution=getattr(result, "scheduler", None),
                 )
             index = parse_urg_summary(report)
             artifacts = _artifact_metadata(report)
@@ -348,4 +352,43 @@ def load_cached_urg_summary(
             _fsync_directory(entries)
             _touch_access(access, key)
             _evict_lru(root, key)
-            return index, {"key": key, "hit": False, "entry": str(entry)}
+            return index, {
+                "key": key,
+                "hit": False,
+                "entry": str(entry),
+                "urg_execution": _run_execution(result),
+            }
+
+
+def _cache_hit_execution(runner: Any) -> Json:
+    method = getattr(runner, "cache_hit_metadata", None)
+    if callable(method):
+        value = method()
+        if isinstance(value, dict):
+            return dict(value)
+    return {
+        "backend": "injected",
+        "submitted": False,
+        "status": "cache_hit",
+        "queue": None,
+        "resource": None,
+        "job_name": None,
+        "job_id": None,
+        "exit_status": None,
+    }
+
+
+def _run_execution(result: Any) -> Json:
+    value = getattr(result, "scheduler", None)
+    if isinstance(value, dict):
+        return dict(value)
+    return {
+        "backend": "injected",
+        "submitted": True,
+        "status": "completed",
+        "queue": None,
+        "resource": None,
+        "job_name": None,
+        "job_id": None,
+        "exit_status": getattr(result, "returncode", None),
+    }

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import shlex
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -193,6 +195,17 @@ def test_content_addressed_urg_cache_cold_warm_corrupt_and_el_invalidation(
     assert first.tests == second.tests == ("test0",)
     assert first_meta["hit"] is False
     assert second_meta["hit"] is True
+    assert first_meta["urg_execution"]["submitted"] is True
+    assert second_meta["urg_execution"] == {
+        "backend": "injected",
+        "submitted": False,
+        "status": "cache_hit",
+        "queue": None,
+        "resource": None,
+        "job_name": None,
+        "job_id": None,
+        "exit_status": None,
+    }
     assert first_meta["key"] == second_meta["key"]
     assert len(runner.calls) == 1
     manifest = __import__("json").loads(
@@ -235,6 +248,339 @@ def test_content_addressed_urg_cache_cold_warm_corrupt_and_el_invalidation(
         repaired_meta["key"], excluded_meta["key"],
     }
     assert len(runner.calls) == 4
+
+
+def _fake_command(path: Path, body: str) -> str:
+    path.write_text("#!/usr/bin/env python3\n" + body + "\n", encoding="utf-8")
+    path.chmod(0o755)
+    return str(path)
+
+
+def _fake_lsf_commands() -> tuple[str, str]:
+    return (
+        shlex.join([sys.executable, "-m", "xverif_loop.lsf.fake_bsub"]),
+        shlex.join([sys.executable, "-m", "xverif_loop.lsf.fake_bkill"]),
+    )
+
+
+def test_urg_runner_does_not_inherit_outer_lsf_without_explicit_backend(
+    monkeypatch, tmp_path,
+):
+    from xcov.urg_runner import UrgRunner
+
+    fake = _fake_command(tmp_path / "urg-direct", "raise SystemExit(0)")
+    monkeypatch.setenv("XVERIF_LSF_BSUB", "'invalid outer command")
+    monkeypatch.delenv("XVERIF_XCOV_URG_BACKEND", raising=False)
+
+    runner = UrgRunner()
+
+    assert runner.backend == "direct"
+    assert runner.build_argv([fake]) == [fake]
+
+
+def test_urg_runner_lsf_requires_its_own_queue(monkeypatch):
+    from xcov.errors import XcovError
+    from xcov.urg_runner import UrgRunner
+
+    monkeypatch.setenv("XVERIF_XCOV_URG_BACKEND", "lsf")
+    monkeypatch.delenv("XVERIF_XCOV_URG_QUEUE", raising=False)
+
+    with pytest.raises(XcovError) as caught:
+        UrgRunner()
+    assert caught.value.code == "XCOV_URG_CONFIG_INVALID"
+
+
+def test_urg_runner_lsf_rejects_interactive_bsub_and_canonicalizes_paths(
+    tmp_path,
+):
+    from xcov.errors import XcovError
+    from xcov.urg_runner import UrgRunner
+
+    with pytest.raises(XcovError) as caught:
+        UrgRunner(
+            backend="lsf",
+            bsub_cmd="bsub -I",
+            bkill_cmd="bkill",
+            queue="urg_queue",
+        )
+    assert caught.value.code == "XCOV_URG_CONFIG_INVALID"
+
+    fake = _fake_command(tmp_path / "urg-paths", "raise SystemExit(0)")
+    runner = UrgRunner(
+        backend="lsf",
+        bsub_cmd="bsub-wrapper",
+        bkill_cmd="bkill-wrapper",
+        queue="urg_queue",
+    )
+    argv = runner.build_argv([
+        fake,
+        "-dir", "relative.vdb",
+        "-report", "relative-report",
+        "-hier", "relative.hier",
+        "-elfile", "relative.el",
+    ], job_name="fixed-job")
+    for option in ("-dir", "-report", "-hier", "-elfile"):
+        assert Path(argv[argv.index(option) + 1]).is_absolute()
+    assert argv[:8] == [
+        "bsub-wrapper", "-K", "-J", "fixed-job",
+        "-q", "urg_queue", fake, "-dir",
+    ]
+
+
+def test_urg_runner_fake_lsf_success_uses_batch_k_and_records_job(
+    monkeypatch, tmp_path,
+):
+    from xcov.urg_runner import UrgRunner
+
+    fake = _fake_command(
+        tmp_path / "urg-success",
+        "import sys\nprint('inner urg complete')\nraise SystemExit(0)",
+    )
+    bsub, bkill = _fake_lsf_commands()
+    monkeypatch.setenv("FAKE_BSUB_STDOUT_NOISE_BEFORE_READY", "1")
+    monkeypatch.setenv("FAKE_BSUB_SCHEDULER_FRAMING", "1")
+    runner = UrgRunner(
+        backend="lsf",
+        bsub_cmd=bsub,
+        bkill_cmd=bkill,
+        queue="urg_queue",
+        resource="select[mem>2048]",
+        startup_timeout_sec=1.0,
+        run_timeout_sec=2.0,
+    )
+
+    result = runner.run([fake])
+
+    assert result.returncode == 0, result.stderr
+    assert "-K" in result.argv and "-I" not in result.argv
+    assert result.argv[result.argv.index("-q") + 1] == "urg_queue"
+    assert result.argv[result.argv.index("-R") + 1] == "select[mem>2048]"
+    assert result.argv[result.argv.index("-J") + 1].startswith("xverif_xcov_urg_")
+    assert result.scheduler["backend"] == "lsf"
+    assert result.scheduler["submitted"] is True
+    assert result.scheduler["status"] == "completed"
+    assert result.scheduler["job_id"] == "123"
+    assert result.scheduler["exit_status"] == 0
+
+
+def test_urg_runner_fake_lsf_fast_completion_preserves_zero_exit(
+    monkeypatch, tmp_path,
+):
+    from xcov.urg_runner import UrgRunner
+
+    fake = _fake_command(tmp_path / "urg-fast", "raise SystemExit(0)")
+    bsub, bkill = _fake_lsf_commands()
+    monkeypatch.setenv("FAKE_BSUB_STDOUT_NOISE_BEFORE_READY", "1")
+    monkeypatch.delenv("FAKE_BSUB_SCHEDULER_FRAMING", raising=False)
+    runner = UrgRunner(
+        backend="lsf",
+        bsub_cmd=bsub,
+        bkill_cmd=bkill,
+        queue="urg_fast",
+        startup_timeout_sec=1.0,
+        run_timeout_sec=1.0,
+    )
+
+    result = runner.run([fake])
+
+    assert result.returncode == 0
+    assert result.scheduler["submitted"] is True
+    assert result.scheduler["status"] == "completed"
+    assert result.scheduler["exit_status"] == 0
+
+
+def test_urg_runner_fake_lsf_rejection_without_job_id_is_not_submitted(
+    monkeypatch, tmp_path,
+):
+    from xcov.urg_runner import UrgRunner
+
+    fake = _fake_command(tmp_path / "urg-rejected", "raise SystemExit(0)")
+    bsub, bkill = _fake_lsf_commands()
+    monkeypatch.delenv("FAKE_BSUB_STDOUT_NOISE_BEFORE_READY", raising=False)
+    monkeypatch.delenv("FAKE_BSUB_SCHEDULER_FRAMING", raising=False)
+    monkeypatch.setenv("FAKE_BSUB_EXIT_BEFORE_READY", "1")
+    runner = UrgRunner(
+        backend="lsf",
+        bsub_cmd=bsub,
+        bkill_cmd=bkill,
+        queue="urg_rejected",
+        startup_timeout_sec=1.0,
+        run_timeout_sec=1.0,
+    )
+
+    result = runner.run([fake])
+
+    assert result.returncode == 77
+    assert result.scheduler["submitted"] is False
+    assert result.scheduler["job_id"] is None
+    assert result.scheduler["status"] == "submission_rejected"
+    assert result.scheduler["exit_status"] == 77
+
+
+def test_urg_summary_cache_fake_lsf_cold_submits_and_warm_skips_job(
+    monkeypatch, tmp_path,
+):
+    from xcov import urg_cache, urg_runner
+
+    counter = tmp_path / "urg-invocations.txt"
+    artifacts = {
+        name: (
+            SESSION_XML if name == "session.xml" else
+            "Total tests in report: 1\n"
+            "Data from the following tests was used to generate this report\n"
+            "test0\n" if name == "tests.txt" else
+            "placeholder\n"
+        )
+        for name in REQUIRED_ARTIFACTS
+    }
+    fake = _fake_command(
+        tmp_path / "urg-cache",
+        "import pathlib, sys\n"
+        f"counter = pathlib.Path({str(counter)!r})\n"
+        "counter.write_text(counter.read_text() + '1\\n' if counter.exists() else '1\\n')\n"
+        "args = sys.argv[1:]\n"
+        "report = pathlib.Path(args[args.index('-report') + 1])\n"
+        f"artifacts = {artifacts!r}\n"
+        "report.mkdir(parents=True, exist_ok=True)\n"
+        "for name, content in artifacts.items():\n"
+        "    (report / name).write_text(content, encoding='utf-8')\n",
+    )
+    bsub, bkill = _fake_lsf_commands()
+    vdb = tmp_path / "cache.vdb"
+    vdb.mkdir()
+    (vdb / "content").write_text("v1", encoding="utf-8")
+    monkeypatch.setattr(urg_runner, "get_urg_path", lambda: fake)
+    monkeypatch.setattr(
+        urg_cache,
+        "_urg_identity",
+        lambda: {"path": fake, "size_bytes": Path(fake).stat().st_size, "mtime_ns": 1},
+    )
+    monkeypatch.setenv("XVERIF_XCOV_URG_BACKEND", "lsf")
+    monkeypatch.setenv("XVERIF_XCOV_URG_QUEUE", "summary_queue")
+    monkeypatch.setenv("XVERIF_LSF_BSUB", bsub)
+    monkeypatch.setenv("XVERIF_LSF_BKILL", bkill)
+    monkeypatch.setenv("FAKE_BSUB_STDOUT_NOISE_BEFORE_READY", "1")
+    monkeypatch.setenv("FAKE_BSUB_SCHEDULER_FRAMING", "1")
+
+    _, cold = urg_cache.load_cached_urg_summary(
+        str(vdb), cache_root=tmp_path / "cache",
+    )
+    _, warm = urg_cache.load_cached_urg_summary(
+        str(vdb), cache_root=tmp_path / "cache",
+    )
+
+    assert cold["hit"] is False
+    assert cold["urg_execution"]["backend"] == "lsf"
+    assert cold["urg_execution"]["submitted"] is True
+    assert cold["urg_execution"]["status"] == "completed"
+    assert cold["urg_execution"]["queue"] == "summary_queue"
+    assert cold["urg_execution"]["job_id"] == "123"
+    assert warm["hit"] is True
+    assert warm["urg_execution"] == {
+        "backend": "lsf",
+        "submitted": False,
+        "status": "cache_hit",
+        "queue": "summary_queue",
+        "resource": None,
+        "job_name": None,
+        "job_id": None,
+        "exit_status": None,
+    }
+    assert counter.read_text(encoding="utf-8").splitlines() == ["1"]
+
+
+def test_urg_runner_fake_lsf_pending_timeout_cleans_by_job_id(
+    monkeypatch, tmp_path,
+):
+    from xcov.urg_runner import UrgRunner
+
+    fake = _fake_command(tmp_path / "urg-never-starts", "raise SystemExit(0)")
+    bsub, bkill = _fake_lsf_commands()
+    monkeypatch.setenv("FAKE_BSUB_STDOUT_NOISE_BEFORE_READY", "1")
+    monkeypatch.setenv("FAKE_BSUB_SCHEDULER_FRAMING", "1")
+    monkeypatch.setenv("FAKE_BSUB_PENDING_DELAY_MS", "1000")
+    runner = UrgRunner(
+        backend="lsf",
+        bsub_cmd=bsub,
+        bkill_cmd=bkill,
+        queue="urg_pending",
+        startup_timeout_sec=0.5,
+        run_timeout_sec=1.0,
+    )
+
+    result = runner.run([fake])
+
+    assert result.returncode == 124
+    assert result.scheduler["status"] == "startup_timeout"
+    assert result.scheduler["job_id"] == "123"
+    assert result.scheduler["cleanup"]["target"] == "job_id"
+    assert result.scheduler["cleanup"]["bkill_ok"] is True
+    assert result.scheduler["cleanup"]["complete"] is True
+
+
+def test_urg_runner_fake_lsf_run_timeout_cleans_by_job_id(
+    monkeypatch, tmp_path,
+):
+    from xcov.urg_runner import UrgRunner
+
+    fake = _fake_command(
+        tmp_path / "urg-slow",
+        "import time\ntime.sleep(30)",
+    )
+    bsub, bkill = _fake_lsf_commands()
+    monkeypatch.setenv("FAKE_BSUB_STDOUT_NOISE_BEFORE_READY", "1")
+    monkeypatch.setenv("FAKE_BSUB_SCHEDULER_FRAMING", "1")
+    runner = UrgRunner(
+        backend="lsf",
+        bsub_cmd=bsub,
+        bkill_cmd=bkill,
+        queue="urg_slow",
+        startup_timeout_sec=1.0,
+        run_timeout_sec=0.05,
+    )
+
+    result = runner.run([fake])
+
+    assert result.returncode == 124
+    assert result.scheduler["status"] == "run_timeout"
+    assert result.scheduler["job_id"] == "123"
+    assert result.scheduler["cleanup"]["target"] == "job_id"
+    assert result.scheduler["cleanup"]["bkill_ok"] is True
+    assert result.scheduler["cleanup"]["complete"] is True
+
+
+def test_urg_runner_fake_lsf_reports_partial_bkill_cleanup(
+    monkeypatch, tmp_path,
+):
+    from xcov.urg_runner import UrgRunner
+
+    fake = _fake_command(
+        tmp_path / "urg-bkill-fails",
+        "import time\ntime.sleep(30)",
+    )
+    bsub, _ = _fake_lsf_commands()
+    failing_bkill = shlex.join([
+        sys.executable, "-c", "raise SystemExit(9)",
+    ])
+    monkeypatch.setenv("FAKE_BSUB_STDOUT_NOISE_BEFORE_READY", "1")
+    monkeypatch.setenv("FAKE_BSUB_SCHEDULER_FRAMING", "1")
+    runner = UrgRunner(
+        backend="lsf",
+        bsub_cmd=bsub,
+        bkill_cmd=failing_bkill,
+        queue="urg_cleanup",
+        startup_timeout_sec=1.0,
+        run_timeout_sec=0.05,
+    )
+
+    result = runner.run([fake])
+
+    assert result.returncode == 124
+    assert result.scheduler["status"] == "run_timeout"
+    assert result.scheduler["cleanup"]["bkill_returncode"] == 9
+    assert result.scheduler["cleanup"]["bkill_ok"] is False
+    assert result.scheduler["cleanup"]["process"] in {"terminated", "killed"}
+    assert result.scheduler["cleanup"]["complete"] is False
 
 
 def test_content_addressed_urg_cache_serializes_concurrent_miss(monkeypatch, tmp_path):

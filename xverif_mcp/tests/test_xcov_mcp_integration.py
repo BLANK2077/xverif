@@ -13,6 +13,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import shlex
 import sys
 from pathlib import Path
 from typing import Any
@@ -142,6 +143,115 @@ def test_cov_session_open_close(monkeypatch, test_vdb, xverif_home):
     })
     closed = json.loads(content[0].text)
     assert closed["ok"] is True
+
+
+def test_cov_fake_lsf_outer_and_inner_urg_full_chain(
+    monkeypatch, test_vdb, xverif_home, tmp_path,
+):
+    """外层 bsub -I stdio-loop 与内层 bsub -K URG 同时生效。"""
+    fake_bsub = shlex.join([
+        sys.executable, "-m", "xverif_loop.lsf.fake_bsub",
+    ])
+    fake_bkill = shlex.join([
+        sys.executable, "-m", "xverif_loop.lsf.fake_bkill",
+    ])
+    overrides = {
+        "XVERIF_HOME": xverif_home,
+        "XVERIF_MCP_BACKEND": "lsf",
+        "XVERIF_LSF_BSUB": fake_bsub,
+        "XVERIF_LSF_BKILL": fake_bkill,
+        "XVERIF_XCOV_URG_BACKEND": "lsf",
+        "XVERIF_XCOV_URG_QUEUE": "inner_urg_queue",
+        "XVERIF_XCOV_CACHE_DIR": str(tmp_path / "shared-cache"),
+        "FAKE_BSUB_STDOUT_NOISE_BEFORE_READY": "1",
+        "FAKE_BSUB_SCHEDULER_FRAMING": "1",
+    }
+    server = _server(monkeypatch, overrides)
+
+    content, _ = _call_tool(server, "xverif_cov_session_open", {
+        "name": "mcp_fake_lsf_fullchain",
+        "vdb": test_vdb,
+        "queue": "outer_session_queue",
+        "resource": "select[type==any]",
+    })
+    opened = json.loads(content[0].text)
+    assert opened["ok"] is True, opened
+    outer = opened["session"]["scheduler"]
+    assert outer["mode"] == "lsf"
+    assert outer["status"] == "ready"
+    assert outer["requested"] == {
+        "queue": "outer_session_queue",
+        "resource": "select[type==any]",
+    }
+    assert outer["submitted"]["queue"] == "outer_session_queue"
+    assert outer["submitted"]["job_id"] == "123"
+
+    content, _ = _call_tool(server, "xverif_cov_session_doctor", {
+        "session_id": "mcp_fake_lsf_fullchain",
+        "verbose": True,
+    })
+    doctor = json.loads(content[0].text)
+    assert doctor["ok"] is True, doctor
+    status = doctor["backend_response"]
+    assert status["ok"] is True, status
+    assert status["data"]["session"]["npi_initialized"] is False
+    cached = status["data"]["cached_indexes"]
+    assert cached["state"] == "ready"
+    assert cached["hit"] is False
+    inner = cached["urg_execution"]
+    assert inner["backend"] == "lsf"
+    assert inner["submitted"] is True
+    assert inner["status"] == "completed"
+    assert inner["queue"] == "inner_urg_queue"
+    assert inner["job_id"] == "123"
+    assert inner["exit_status"] == 0
+
+    content, _ = _call_tool(server, "xverif_cov_session_close", {
+        "session_id": "mcp_fake_lsf_fullchain",
+    })
+    closed = json.loads(content[0].text)
+    assert closed["ok"] is True, closed
+
+    content, _ = _call_tool(server, "xverif_cov_session_open", {
+        "name": "mcp_fake_lsf_warm",
+        "vdb": test_vdb,
+        "queue": "outer_session_queue",
+        "resource": "select[type==any]",
+    })
+    warm_opened = json.loads(content[0].text)
+    assert warm_opened["ok"] is True, warm_opened
+    assert warm_opened["session"]["scheduler"]["submitted"]["queue"] == (
+        "outer_session_queue"
+    )
+
+    content, _ = _call_tool(server, "xverif_cov_session_doctor", {
+        "session_id": "mcp_fake_lsf_warm",
+        "verbose": True,
+    })
+    warm_doctor = json.loads(content[0].text)
+    assert warm_doctor["ok"] is True, warm_doctor
+    warm_status = warm_doctor["backend_response"]
+    assert warm_status["ok"] is True, warm_status
+    assert warm_status["data"]["session"]["npi_initialized"] is False
+    warm_cached = warm_status["data"]["cached_indexes"]
+    assert warm_cached["state"] == "ready"
+    assert warm_cached["hit"] is True
+    assert warm_cached["urg_execution"] == {
+        "backend": "lsf",
+        "submitted": False,
+        "status": "cache_hit",
+        "queue": "inner_urg_queue",
+        "resource": None,
+        "job_name": None,
+        "job_id": None,
+        "exit_status": None,
+    }
+
+    content, _ = _call_tool(server, "xverif_cov_session_close", {
+        "session_id": "mcp_fake_lsf_warm",
+    })
+    warm_closed = json.loads(content[0].text)
+    assert warm_closed["ok"] is True, warm_closed
 
 
 def test_cov_code_coverage_summary(monkeypatch, test_vdb, xverif_home):
@@ -279,7 +389,13 @@ def test_cov_export_code_coverage(monkeypatch, test_vdb, xverif_home, tmp_path):
         assert (instance_dir / "navigation.xout").is_file()
         assert (instance_dir / "line.json").is_file()
         assert (instance_dir / "line.xout").is_file()
-        assert (instance_dir / "line.urg.txt").is_file()
+        line_entry = next(
+            metric for metric in item["metrics"] if metric["metric"] == "line"
+        )
+        assert line_entry["raw"] == "../raw/modinfo.urg.txt"
+        assert (instance_dir / line_entry["raw"]).resolve().is_file()
+    run_dir = Path(payload["summary"]["output_dir"])
+    assert [path.name for path in (run_dir / "raw").iterdir()] == ["modinfo.urg.txt"]
 
     _call_tool(server, "xverif_cov_session_close", {
         "session_id": "mcp_int_export",

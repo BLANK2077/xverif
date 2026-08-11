@@ -47,4 +47,10 @@ queue/resource 优先级为 session open 显式参数、`XVERIF_LSF_SESSION_QUEU
 环境和 open 参数中的 queue/resource 都必须是无首尾空白的非空字符串；空值不会被接受后
 静默省略 `-q/-R`，避免 effective/submitted 与真实 argv 漂移。
 
+xcov 外层 session job 与内层 URG job 是两个独立配置面：本页的 session queue 只控制
+`bsub -I tools/xcov --stdio-loop`。若要把 cache miss 的 URG 也提交 LSF，另设
+`XVERIF_XCOV_URG_BACKEND=lsf`、必填 `XVERIF_XCOV_URG_QUEUE`，以及可选
+`XVERIF_XCOV_URG_RESOURCE`；内层固定 `bsub -K`。禁止从外层 queue 猜测内层 queue，任何
+失败都不转 direct。
+
 如果必须 LSF 但不能使用 MCP SDK，或要脚本化驱动 session，改用 [../sdk-free-loop/overview.md](../sdk-free-loop/overview.md)。

@@ -1864,3 +1864,55 @@ native stdio-loop 同时承载多个 MCP xcov session”的架构缺陷，本阶
 `xcov.unit` 137 passed、`xverif_mcp.unit` 163 passed、host `xverif_mcp.process` 141 passed、
 `skills.xverif` 16 passed 和 `skills.xverif_admin` 1 passed；全部通过正式 catalog focused
 入口执行。
+
+### 16.5 阶段 5：内层 URG batch LSF 与 fake LSF
+
+旧 `UrgRunner` 只要发现通用 `XVERIF_LSF_BSUB` 就自动进入 LSF，并在命令缺少 interactive
+flag 时追加 `-I`。这会把外层 MCP session 的 LSF 环境误解释为内层 URG 配置，既没有独立
+queue，也没有 job id、PEND/run timeout 或 bkill，确认属于实际架构缺陷。
+
+本阶段改为：
+
+- `XVERIF_XCOV_URG_BACKEND=direct|lsf` 是唯一 backend 选择，默认 direct；仅设置
+  `XVERIF_LSF_BSUB` 或外层 `XVERIF_MCP_BACKEND=lsf` 不会触发内层 LSF；
+- backend=lsf 必须显式提供 `XVERIF_XCOV_URG_QUEUE`，resource 只来自独立的
+  `XVERIF_XCOV_URG_RESOURCE`；禁止继承或猜测外层 session queue；
+- 每次 cache miss/detail export 独立执行
+  `bsub -K -J <unique> -q <queue> [-R <resource>] <urg> -full64 ...`；override command
+  不得预置 `-I/-K/-J/-q/-R`，避免重复或互相覆盖；
+- runner 分别记录 submitting、submitted/PEND、running、completed/failed、startup timeout、
+  run timeout、submission failure 和 cancel；job id、job name、queue/resource、exit status
+  写入 lifecycle log，summary cache 的 `urg_execution` 同时提供公开观察面；
+- job submission 后继续等待 `<<Starting on ...>>` 或首个真实 job 输出，job id 本身不再被
+  误判为 PEND 已结束；startup timeout 与 run timeout 分开配置；
+- timeout/cancel 优先按 job id bkill，尚未取得 id 时按唯一 job name；随后终止本地 bsub
+  process group。bkill partial failure 明确记录，不执行 direct fallback；
+- URG 的 `-dir/-report/-elfile/-hier` 全部规范化为绝对路径；code export 的临时 hier/report
+  移到 output staging 同一文件系统，避免默认 `/tmp` 对计算节点不可见；调用方仍必须保证
+  VDB、EL、cache、report、hier 与 log 是共享存储；
+- warm cache hit 在校验 LSF 配置后直接返回 `submitted=false,status=cache_hit`，不创建
+  bsub process/job。
+
+fake LSF 覆盖精确 `-K/-J/-q/-R`、cold 一次提交/warm 零提交、submitted→PEND→running、
+startup/run timeout、按 job identity bkill、bkill partial failure、direct 与外层环境隔离。
+本机没有安装真实 LSF，因此依照用户要求复用 xdebug 的 repository fake LSF，不把 fake
+结果表述成真实集群验收。full-chain 用例实际启动外层 `bsub -I tools/xcov --stdio-loop`，再由
+该独立 loop 在 cold cache miss 时启动内层 `bsub -K urg ...`；两层使用不同 queue，公开状态
+可观察 requested/effective/submitted queue、job name/id 和 lifecycle。第一次 summary 后
+`npi_initialized=false`，第二次相同 summary 命中 warm cache 且内层 `submitted=false`，证明
+read-only coverage 没有加载 NPI，cache hit 也没有提交 URG job。
+
+阶段门禁结果：
+
+| suite | 执行面 | 结果 |
+|---|---|---:|
+| `xcov.unit` | regression/catalog | 148 passed |
+| `xcov.urg_backend` | regression/host，真实 URG/VDB | 7 passed |
+| `xcov.modinfo_complex` | regression/host，真实 URG/VDB | 5 passed |
+| `xcov.mcp_integration` | nightly/host，含 full-chain fake LSF | 17 passed |
+| `xverif_mcp.process` | regression/host | 141 passed |
+| `skills.xverif` | catalog | 16 passed |
+| `skills.xverif_admin` | catalog | 1 passed |
+
+以上 focused suite 均由正式 catalog gate 入口执行；不存在失败后切换 direct、继承外层 queue
+或用窄化测试替代 full-chain 的情况。
