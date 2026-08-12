@@ -1263,6 +1263,21 @@ class Dispatcher:
                     kind = doc.kind
                     csv_line = i + 1  # 1-based
 
+                    if kind == "container":
+                        resolution = resolved_map.get((kind, group.source_file, row["_line_no"]))
+                        if resolution is not None and resolution["status"] == "matched":
+                            stats["matched"] += 1
+                        else:
+                            stats["object_not_found"] += 1
+                            all_errors.append({
+                                "status": "error", "row": row["_line_no"],
+                                "coverage_kind": kind, "source_file": group.source_file,
+                                "error_type": "OBJECT_NOT_FOUND", "field": None,
+                                "message": "容器 CSV 行在 VDB 中未唯一匹配",
+                                "note": "instance 必须是 URG XML 真实 fullname；functional 容器必须精确匹配 group/point/cross。",
+                            })
+                        continue
+
                     # Level 1: CSV format check
                     err = _check_csv_row_format(kind, row, csv_line)
                     if err:
@@ -1388,10 +1403,14 @@ class Dispatcher:
                         if row["coverage_kind"] == document.kind
                     ]
                     for row in kind_rows:
-                        result = sess.backend.set_exclusion(
-                            row["coverage_refs"][0],
-                            True,
-                            test="merged",
+                        result = (
+                            sess.backend.set_exclusion_locator(
+                                row["locators"][0], True, test="merged",
+                            )
+                            if document.kind == "container"
+                            else sess.backend.set_exclusion(
+                                row["coverage_refs"][0], True, test="merged",
+                            )
                         )
                         if result["status"] == "failed":
                             raise XcovError(
@@ -1406,7 +1425,7 @@ class Dispatcher:
                 backups: Dict[str, Path] = {}
                 replaced: List[str] = []
                 try:
-                    for kind in ("code", "functional", "assertion"):
+                    for kind in ("code", "functional", "assertion", "container"):
                         destination = output_dir / f"{kind}.el"
                         if destination.exists():
                             backup = temp_root / f"{kind}.previous.el"
@@ -1423,7 +1442,7 @@ class Dispatcher:
                     sess.backend.load_exclusions(
                         [
                             str(output_dir / f"{kind}.el")
-                            for kind in ("code", "functional", "assertion")
+                            for kind in ("code", "functional", "assertion", "container")
                         ],
                         test="merged",
                     )
@@ -1431,10 +1450,10 @@ class Dispatcher:
                     _record_csv_documents(sess, documents)
                     sess.mark_reasons_persisted()
                     sess.loaded_el_without_reasons = False
-                    sess.loaded_el_file_count = 3
+                    sess.loaded_el_file_count = 4
                     _fsync_directory(output_dir)
                 except Exception:
-                    for kind in reversed(("code", "functional", "assertion")):
+                    for kind in reversed(("code", "functional", "assertion", "container")):
                         destination = output_dir / f"{kind}.el"
                         if kind in replaced and destination.exists():
                             destination.unlink()
@@ -1649,8 +1668,14 @@ def _resolve_csv(req: Json, sess) -> tuple[List[Any], List[Json]]:
     args = action_args(req)
     _require_merged(args)
     documents = parse_directory(_csv_directory(req))
+    leaf_documents = [document for document in documents if document.kind != "container"]
     rows = sess.backend.items(test="merged")
-    return documents, resolve_documents(documents, rows)
+    resolutions = resolve_documents(leaf_documents, rows)
+    container = next(document for document in documents if document.kind == "container")
+    container_records = [row for group in container.groups for row in group.rows]
+    if container_records:
+        resolutions.extend(sess.backend.resolve_container_records(container_records, test="merged"))
+    return documents, resolutions
 
 
 def _apply_csv_refs_transactionally(sess, resolutions: List[Json]) -> List[Json]:
@@ -1660,10 +1685,14 @@ def _apply_csv_refs_transactionally(sess, resolutions: List[Json]) -> List[Json]
         rows: List[Json] = []
         try:
             for resolution in resolutions:
-                result = sess.backend.set_exclusion(
-                    resolution["coverage_refs"][0],
-                    True,
-                    test="merged",
+                result = (
+                    sess.backend.set_exclusion_locator(
+                        resolution["locators"][0], True, test="merged",
+                    )
+                    if resolution["coverage_kind"] == "container"
+                    else sess.backend.set_exclusion(
+                        resolution["coverage_refs"][0], True, test="merged",
+                    )
                 )
                 result.pop("_csv_row", None)
                 rows.append(result)

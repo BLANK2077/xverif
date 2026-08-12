@@ -287,6 +287,9 @@ class SyntheticInstance:
     def full_name(self) -> str:
         return self._name
 
+    def type(self) -> str:
+        return "npiCovInstance"
+
     def instance_handles(self) -> list["SyntheticInstance"]:
         return []
 
@@ -303,6 +306,9 @@ class SyntheticCoverageDb:
 
     def instance_handles(self) -> list[SyntheticInstance]:
         return [self.instance]
+
+    def handle_by_name(self, name: str) -> SyntheticInstance | None:
+        return self.instance if name == self.instance.full_name() else None
 
 
 class SyntheticCovModule:
@@ -489,7 +495,7 @@ def test_exclusion_csv_is_strict_stable_and_preserves_multiline_reason(tmp_path:
         parse_directory(csv_root)
 
 
-def test_csv_to_el_uses_builtin_two_pass_index_and_publishes_three_native_files(
+def test_csv_to_el_uses_builtin_two_pass_index_and_publishes_four_native_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     csv_root = tmp_path / "csv"
@@ -527,21 +533,62 @@ def test_csv_to_el_uses_builtin_two_pass_index_and_publishes_three_native_files(
 
     published = compile_csv_to_el(database, native_test, csv_root, tmp_path / "el")
     assert [row["coverage_kind"] for row in published] == [
-        "code", "functional", "assertion",
+        "code", "functional", "assertion", "container",
     ]
-    assert all(row["preflight_passes"] == 1 for row in published)
-    assert all(row["apply_passes"] == 1 for row in published)
-    assert all(row["matched_count"] == 1 for row in published)
+    assert all(row["preflight_passes"] == 1 for row in published[:3])
+    assert all(row["apply_passes"] == 1 for row in published[:3])
+    assert all(row["matched_count"] == 1 for row in published[:3])
+    assert published[3]["preflight_passes"] == 0
+    assert published[3]["apply_passes"] == 0
+    assert published[3]["matched_count"] == 0
     assert line.setter_values == [1]
     assert assertion.setter_values == [1]
     assert functional._children[0]._children[0].setter_values == [1]
     assert cov.release_count > 0
     assert all(Path(row["path"]).read_text(encoding="utf-8") for row in published)
-    assert native_test.calls[-3:] == [
+    assert native_test.calls[-4:] == [
         ("load", str(tmp_path / "el" / "code.el")),
         ("load", str(tmp_path / "el" / "functional.el")),
         ("load", str(tmp_path / "el" / "assertion.el")),
+        ("load", str(tmp_path / "el" / "container.el")),
     ]
+
+
+def test_container_csv_is_optional_and_has_strict_target_shapes(tmp_path: Path) -> None:
+    csv_root = tmp_path / "csv"
+    _write_csv_set(csv_root)
+    documents = parse_directory(csv_root)
+    assert [document.kind for document in documents] == [
+        "code", "functional", "assertion", "container",
+    ]
+    assert documents[-1].groups == []
+
+    (csv_root / "container_exclusions.csv").write_text(
+        "# schema_version=xcov-container-exclusions.v1\n"
+        "# coverage_kind=container\n"
+        "target_kind,scope,covergroup,item,expansion_root,reason\n"
+        "instance,top.u0,,,top,recursive root\n"
+        "covergroup,top,top::cg_mode,,,whole group\n"
+        "coverpoint,top,top::cg_mode,cp_mode,,whole point\n"
+        "cross,top,top::cg_mode,cx_mode,,whole cross\n",
+        encoding="utf-8",
+    )
+    container = parse_directory(csv_root)[-1]
+    assert [row["target_kind"] for row in container.groups[0].rows] == [
+        "instance", "covergroup", "coverpoint", "cross",
+    ]
+    format_directory(csv_root, write=True)
+    assert "# source_file=" not in (
+        csv_root / "container_exclusions.csv"
+    ).read_text(encoding="utf-8")
+
+    bad = (csv_root / "container_exclusions.csv").read_text(encoding="utf-8").replace(
+        "covergroup,top,top::cg_mode,,,whole group",
+        "covergroup,top,top::cg_mode,cp_mode,,whole group",
+    )
+    (csv_root / "container_exclusions.csv").write_text(bad, encoding="utf-8")
+    with pytest.raises(ExclusionCsvError, match="empty item"):
+        parse_directory(csv_root)
 
 
 def test_csv_to_el_missing_target_does_not_mutate_or_publish(

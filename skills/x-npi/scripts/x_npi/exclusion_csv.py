@@ -11,16 +11,18 @@ from typing import Any, Dict, List
 
 
 Json = Dict[str, Any]
-KINDS = ("code", "functional", "assertion")
+KINDS = ("code", "functional", "assertion", "container")
 FILE_NAMES = {
     "code": "code_exclusions.csv",
     "functional": "functional_exclusions.csv",
     "assertion": "assertion_exclusions.csv",
+    "container": "container_exclusions.csv",
 }
 SCHEMA_VERSIONS = {
     "code": "xcov-code-exclusions.v1",
     "functional": "xcov-functional-exclusions.v1",
     "assertion": "xcov-assertion-exclusions.v1",
+    "container": "xcov-container-exclusions.v1",
 }
 FIELDS = {
     "code": ("scope", "metric", "line", "object", "bin", "reason"),
@@ -28,9 +30,13 @@ FIELDS = {
         "scope", "line", "covergroup", "coverpoint", "cross", "bin", "reason",
     ),
     "assertion": ("scope", "line", "assertion", "assertion_kind", "reason"),
+    "container": (
+        "target_kind", "scope", "covergroup", "item", "expansion_root", "reason",
+    ),
 }
 CODE_METRICS = ("line", "toggle", "branch", "condition", "fsm")
 ASSERTION_KINDS = ("assertion", "cover_property", "cover_sequence")
+CONTAINER_KINDS = ("instance", "covergroup", "coverpoint", "cross")
 MAX_CSV_BYTES = 64 * 1024 * 1024
 MAX_CSV_RECORDS = 100_000
 MAX_CSV_FIELD_CHARS = 16 * 1024
@@ -66,10 +72,13 @@ def exclusion_paths(directory: str | os.PathLike[str]) -> Dict[str, Path]:
 
 
 def parse_directory(directory: str | os.PathLike[str]) -> List[ExclusionDocument]:
-    return [
-        parse_document(path, kind)
-        for kind, path in exclusion_paths(directory).items()
-    ]
+    documents = []
+    for kind, path in exclusion_paths(directory).items():
+        if kind == "container" and not path.exists():
+            documents.append(ExclusionDocument(kind, path, []))
+        else:
+            documents.append(parse_document(path, kind))
+    return documents
 
 
 def validate_directory(directory: str | os.PathLike[str]) -> List[Json]:
@@ -131,6 +140,9 @@ def parse_document(path: Path, expected_kind: str) -> ExclusionDocument:
             if header != expected:
                 _error(path, line_no, f"header must be exactly {expected!r}")
             continue
+        if current is None and expected_kind == "container":
+            current = ExclusionGroup("", [])
+            groups.append(current)
         if current is None:
             _error(path, line_no, "data row requires a source_file group")
         if len(record) != len(header):
@@ -216,6 +228,28 @@ def _validate_row(path: Path, line_no: int, kind: str, row: Json) -> None:
         _error(path, line_no, "reason is required")
     if not row["scope"].strip():
         _error(path, line_no, "scope is required")
+    if kind == "container":
+        target_kind = row["target_kind"]
+        if target_kind not in CONTAINER_KINDS:
+            _error(path, line_no, f"target_kind must be one of {CONTAINER_KINDS!r}")
+        covergroup = row["covergroup"].strip()
+        item = row["item"].strip()
+        expansion_root = row["expansion_root"].strip()
+        if target_kind == "instance":
+            if covergroup or item:
+                _error(path, line_no, "instance requires empty covergroup and item")
+            if not expansion_root:
+                _error(path, line_no, "instance requires expansion_root")
+        else:
+            if not covergroup:
+                _error(path, line_no, f"{target_kind} requires covergroup")
+            if expansion_root:
+                _error(path, line_no, f"{target_kind} requires empty expansion_root")
+            if target_kind == "covergroup" and item:
+                _error(path, line_no, "covergroup requires empty item")
+            if target_kind in {"coverpoint", "cross"} and not item:
+                _error(path, line_no, f"{target_kind} requires item")
+        return
     line_text = row["line"].strip()
     if not (kind == "code" and row.get("metric") == "toggle" and not line_text):
         try:
@@ -262,10 +296,12 @@ def format_document(document: ExclusionDocument) -> str:
         "code": ("scope", "line", "metric", "object", "bin"),
         "functional": ("scope", "line", "covergroup", "coverpoint", "cross", "bin"),
         "assertion": ("scope", "line", "assertion", "assertion_kind"),
+        "container": ("target_kind", "scope", "covergroup", "item", "expansion_root"),
     }[document.kind]
     for group in sorted(document.groups, key=lambda value: value.source_file):
-        output.write("\n")
-        output.write(f"# source_file={group.source_file}\n")
+        if document.kind != "container":
+            output.write("\n")
+            output.write(f"# source_file={group.source_file}\n")
         for row in sorted(group.rows, key=lambda value: tuple(
             int(value[key]) if key == "line" and value[key] else 0 if key == "line" else value[key]
             for key in sort_fields
@@ -278,7 +314,10 @@ def format_directory(directory: str | os.PathLike[str], *, write: bool = False) 
     documents = parse_directory(directory)
     formatted = {document.kind: format_document(document) for document in documents}
     changed = {
-        document.kind: document.path.read_text(encoding="utf-8") != formatted[document.kind]
+        document.kind: (
+            not document.path.exists()
+            or document.path.read_text(encoding="utf-8") != formatted[document.kind]
+        )
         for document in documents
     }
     if write and any(changed.values()):
@@ -294,8 +333,9 @@ def format_directory(directory: str | os.PathLike[str], *, write: bool = False) 
                     staged = stage / FILE_NAMES[document.kind]
                     staged.write_text(formatted[document.kind], encoding="utf-8")
                     backup = stage / f"{FILE_NAMES[document.kind]}.previous"
-                    os.replace(document.path, backup)
-                    backups[document.kind] = backup
+                    if document.path.exists():
+                        os.replace(document.path, backup)
+                        backups[document.kind] = backup
                     os.replace(staged, document.path)
                     replaced.append(document.kind)
             except Exception:

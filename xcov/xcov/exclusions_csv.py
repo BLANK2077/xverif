@@ -20,16 +20,18 @@ from .limits import (
 
 Json = Dict[str, Any]
 
-KINDS = ("code", "functional", "assertion")
+KINDS = ("code", "functional", "assertion", "container")
 FILE_NAMES = {
     "code": "code_exclusions.csv",
     "functional": "functional_exclusions.csv",
     "assertion": "assertion_exclusions.csv",
+    "container": "container_exclusions.csv",
 }
 SCHEMA_VERSIONS = {
     "code": "xcov-code-exclusions.v1",
     "functional": "xcov-functional-exclusions.v1",
     "assertion": "xcov-assertion-exclusions.v1",
+    "container": "xcov-container-exclusions.v1",
 }
 FIELDS = {
     "code": ("scope", "metric", "line", "object", "bin", "reason"),
@@ -49,9 +51,13 @@ FIELDS = {
         "assertion_kind",
         "reason",
     ),
+    "container": (
+        "target_kind", "scope", "covergroup", "item", "expansion_root", "reason",
+    ),
 }
 CODE_METRICS = ("line", "toggle", "branch", "condition", "fsm")
 ASSERTION_KINDS = ("assertion", "cover_property", "cover_sequence")
+CONTAINER_KINDS = ("instance", "covergroup", "coverpoint", "cross")
 
 
 @dataclass
@@ -77,10 +83,13 @@ def exclusion_paths(directory: str | os.PathLike[str]) -> Dict[str, Path]:
 
 
 def parse_directory(directory: str | os.PathLike[str]) -> List[ExclusionDocument]:
-    return [
-        parse_document(path, kind)
-        for kind, path in exclusion_paths(directory).items()
-    ]
+    documents = []
+    for kind, path in exclusion_paths(directory).items():
+        if kind == "container" and not path.exists():
+            documents.append(ExclusionDocument(kind, path, []))
+        else:
+            documents.append(parse_document(path, kind))
+    return documents
 
 
 def parse_document(path: Path, expected_kind: str) -> ExclusionDocument:
@@ -150,6 +159,9 @@ def parse_document(path: Path, expected_kind: str) -> ExclusionDocument:
                     f"header must be exactly {expected_header!r}",
                 )
             continue
+        if current is None and expected_kind == "container":
+            current = ExclusionGroup("", [])
+            groups.append(current)
         if current is None:
             _csv_error(path, line_no, "data row requires a source_file group")
         if len(row) != len(header):
@@ -256,6 +268,28 @@ def _validate_row(path: Path, line_no: int, kind: str, row: Json) -> None:
         _csv_error(path, line_no, "reason is required")
     if not row["scope"].strip():
         _csv_error(path, line_no, "scope is required")
+    if kind == "container":
+        target_kind = row["target_kind"]
+        if target_kind not in CONTAINER_KINDS:
+            _csv_error(path, line_no, f"target_kind must be one of {CONTAINER_KINDS!r}")
+        covergroup = row["covergroup"].strip()
+        item = row["item"].strip()
+        expansion_root = row["expansion_root"].strip()
+        if target_kind == "instance":
+            if covergroup or item:
+                _csv_error(path, line_no, "instance requires empty covergroup and item")
+            if not expansion_root:
+                _csv_error(path, line_no, "instance requires expansion_root")
+        else:
+            if not covergroup:
+                _csv_error(path, line_no, f"{target_kind} requires covergroup")
+            if expansion_root:
+                _csv_error(path, line_no, f"{target_kind} requires empty expansion_root")
+            if target_kind == "covergroup" and item:
+                _csv_error(path, line_no, "covergroup requires empty item")
+            if target_kind in {"coverpoint", "cross"} and not item:
+                _csv_error(path, line_no, f"{target_kind} requires item")
+        return
     line_text = row["line"].strip()
     if not (kind == "code" and row.get("metric") == "toggle" and not line_text):
         try:
@@ -442,10 +476,12 @@ def format_document(document: ExclusionDocument) -> str:
             "bin",
         ),
         "assertion": ("scope", "line", "assertion", "assertion_kind"),
+        "container": ("target_kind", "scope", "covergroup", "item", "expansion_root"),
     }[document.kind]
     for group in groups:
-        output.write("\n")
-        output.write(f"# source_file={group.source_file}\n")
+        if document.kind != "container":
+            output.write("\n")
+            output.write(f"# source_file={group.source_file}\n")
         for row in sorted(
             group.rows,
             key=lambda item: tuple(
@@ -465,7 +501,8 @@ def format_directory(directory: str, write: bool = False) -> List[Json]:
         formatted = format_document(document)
         formatted_by_kind[document.kind] = formatted
         changed_by_kind[document.kind] = (
-            document.path.read_text(encoding="utf-8") != formatted
+            not document.path.exists()
+            or document.path.read_text(encoding="utf-8") != formatted
         )
 
     if write and any(changed_by_kind.values()):
@@ -493,8 +530,9 @@ def format_directory(directory: str, write: bool = False) -> List[Json]:
                     if kind not in staged:
                         continue
                     backup = stage / f"{FILE_NAMES[kind]}.previous"
-                    os.replace(document.path, backup)
-                    backups[kind] = backup
+                    if document.path.exists():
+                        os.replace(document.path, backup)
+                        backups[kind] = backup
                     os.replace(staged[kind], document.path)
                     replaced.append(kind)
                 descriptor = os.open(root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))

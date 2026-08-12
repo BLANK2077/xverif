@@ -528,6 +528,10 @@ class CoverageBackend:
         """Resolve an URG semantic gap payload into transient exclusion targets."""
         raise NotImplementedError
 
+    def resolve_container_records(self, records: List[Json], test: str = "merged") -> List[Json]:
+        """Resolve exact instance/functional container selectors into NPI locators."""
+        raise NotImplementedError
+
 
 def _canonical_scope_metric(scope: str, metric: Any, values: Any) -> Json:
     operation = "scope_metrics.canonicalize"
@@ -780,6 +784,9 @@ class CanonicalCoverageBackend(CoverageBackend):
 
     def resolve_gap_payload(self, payload: Json, test: str = "merged") -> Json:
         return self._delegate.resolve_gap_payload(payload, test=test)
+
+    def resolve_container_records(self, records: List[Json], test: str = "merged") -> List[Json]:
+        return self._delegate.resolve_container_records(records, test=test)
 
     def set_summary_exclusion(self, el_path: str | None) -> None:
         setter = getattr(self._delegate, "set_summary_exclusion", None)
@@ -1460,6 +1467,8 @@ class NpiCoverageBackend(CoverageBackend):
         pinned = self.locator_handles.get(_locator_key(locator))
         if pinned:
             current = pinned
+        elif locator.get("root") == "instance":
+            current = self.db.handle_by_name(locator["scope"])
         elif locator.get("root") == "functional":
             current = self._api().call("test.testbench_metric_handle", test_hdl)
         else:
@@ -1500,6 +1509,54 @@ class NpiCoverageBackend(CoverageBackend):
         finally:
             if not pinned:
                 self.release_if_handle(current)
+
+    def resolve_container_records(self, records: List[Json], test: str = "merged") -> List[Json]:
+        self._merged_only(test)
+        functional_rows: List[Json] | None = None
+        results: List[Json] = []
+        for record in records:
+            target_kind = str(record["target_kind"])
+            matches: List[Json] = []
+            if target_kind == "instance":
+                handle = self.db.handle_by_name(record["scope"])
+                if handle:
+                    try:
+                        if str(handle.type()) == "npiCovInstance" and str(handle.full_name()) == record["scope"]:
+                            matches = [{
+                                "root": "instance", "scope": record["scope"],
+                                "path": [], "type": "npiCovInstance",
+                                "name": str(handle.name() or record["scope"].rsplit(".", 1)[-1]),
+                            }]
+                    finally:
+                        self.release_if_handle(handle)
+            else:
+                if functional_rows is None:
+                    functional_rows = self.items(metrics=["functional"], test=test, functional_only=True)
+                expected_type = {
+                    "covergroup": "npiCovCovergroup",
+                    "coverpoint": "npiCovCoverpoint",
+                    "cross": "npiCovCross",
+                }[target_kind]
+                for row in functional_rows:
+                    if row.get("type") != expected_type or row.get("scope") != record["scope"]:
+                        continue
+                    if row.get("covergroup") != record["covergroup"]:
+                        continue
+                    if target_kind != "covergroup" and row.get(target_kind) != record["item"]:
+                        continue
+                    matches.extend(row.get("_exclude_targets") or [])
+            results.append({
+                "coverage_kind": "container",
+                "source_file": "",
+                "csv_line": record["_line_no"],
+                "status": "matched" if len(matches) == 1 else "missing" if not matches else "ambiguous",
+                "validity": "still_valid" if len(matches) == 1 else "coverage_object_missing" if not matches else "ambiguous",
+                "match_count": len(matches),
+                "reason": record["reason"],
+                "coverage_refs": [],
+                "locators": matches,
+            })
+        return results
 
     def resolve_gap_payload(self, payload: Json, test: str = "merged") -> Json:
         """Resolve an URG-only artifact after the user requests exclusion.
@@ -2182,6 +2239,9 @@ class UrgCoverageBackend(CoverageBackend):
 
     def resolve_gap_payload(self, payload: Json, test: str = "merged") -> Json:
         return self._exclude_backend().resolve_gap_payload(payload, test=test)
+
+    def resolve_container_records(self, records: List[Json], test: str = "merged") -> List[Json]:
+        return self._exclude_backend().resolve_container_records(records, test=test)
 
     def set_exclusion_locator(self, locator: Json, excluded: bool = True,
                               test: str = "merged") -> Json:

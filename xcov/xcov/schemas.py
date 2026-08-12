@@ -827,7 +827,7 @@ LINE_UPDATE = _object({
 }, required=["old_line", "new_line"])
 
 CSV_WORKFLOW_ITEM = _object({
-    "coverage_kind": _string(enum=["code", "functional", "assertion"]),
+    "coverage_kind": _string(enum=["code", "functional", "assertion", "container"]),
     "path": _string(min_length=1),
     "group_count": _integer(0),
     "record_count": _integer(0),

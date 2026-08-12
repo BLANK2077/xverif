@@ -207,7 +207,7 @@ def compile_csv_to_el(
     csv_directory: str | os.PathLike[str],
     output_directory: str | os.PathLike[str],
 ) -> List[Json]:
-    """Compile strict three-file CSV sidecars into opaque per-kind EL files.
+    """Compile strict CSV sidecars into four opaque per-kind EL files.
 
     The built-in resolver performs exactly two streaming traversals per non-empty
     coverage kind: a read-only uniqueness preflight followed by an apply pass.
@@ -256,12 +256,12 @@ def compile_csv_to_el(
 
         destinations = {
             kind: output_root / f"{kind}.el"
-            for kind in ("code", "functional", "assertion")
+            for kind in ("code", "functional", "assertion", "container")
         }
         backups: Dict[str, Path] = {}
         replaced: List[str] = []
         try:
-            for kind in ("code", "functional", "assertion"):
+            for kind in ("code", "functional", "assertion", "container"):
                 destination = destinations[kind]
                 if destination.is_symlink() or (destination.exists() and not destination.is_file()):
                     raise CoverageExclusionError(f"unsafe EL output target: {destination}")
@@ -273,10 +273,10 @@ def compile_csv_to_el(
                 replaced.append(kind)
             load_exclusion_files(
                 test,
-                [destinations[kind] for kind in ("code", "functional", "assertion")],
+                [destinations[kind] for kind in ("code", "functional", "assertion", "container")],
             )
         except Exception:
-            for kind in reversed(("code", "functional", "assertion")):
+            for kind in reversed(("code", "functional", "assertion", "container")):
                 destination = destinations[kind]
                 if kind in replaced and destination.exists():
                     destination.unlink()
@@ -286,7 +286,7 @@ def compile_csv_to_el(
             load_exclusion_files(test, [baseline])
             raise
     return [indexes[kind].published(str(destinations[kind]))
-            for kind in ("code", "functional", "assertion")]
+            for kind in ("code", "functional", "assertion", "container")]
 
 
 _METRIC_METHODS = {
@@ -372,6 +372,7 @@ class _SelectorRecord:
         self.apply_matches = 0
         self.changed = 0
         self.already = 0
+        self.locator: Json | None = None
 
 
 class _WalkContext:
@@ -448,6 +449,11 @@ class _SelectorIndex:
             return (self.kind, str(row["scope"]), record.source_file,
                     int(row["line"]), str(row["covergroup"]),
                     str(row["coverpoint"]), str(row["cross"]), str(row["bin"]))
+        if self.kind == "container":
+            return (
+                self.kind, str(row["target_kind"]), str(row["scope"]),
+                str(row["covergroup"]), str(row["item"]),
+            )
         return (self.kind, str(row["scope"]), record.source_file,
                 int(row["line"]), str(row["assertion"]), str(row["assertion_kind"]))
 
@@ -457,7 +463,19 @@ class _SelectorIndex:
             result.update(self.keys.get(key, ()))
         return result
 
-    def observe(self, ids: Iterable[int], target: Any, test: Any, apply: bool) -> None:
+    def has_functional_prefix(self, scope: str, covergroup: str) -> bool:
+        for record in self.records:
+            row = record.row
+            if str(row.get("scope") or "") != scope:
+                continue
+            if str(row.get("covergroup") or "") == covergroup:
+                return True
+        return False
+
+    def observe(
+        self, ids: Iterable[int], target: Any, test: Any, apply: bool,
+        locator: Json,
+    ) -> None:
         selected = set(ids)
         if len(selected) > 1:
             lines = sorted(self.records[record_id].csv_line for record_id in selected)
@@ -469,6 +487,8 @@ class _SelectorIndex:
             record = self.records[record_id]
             if not apply:
                 record.preflight_matches += 1
+                if record.locator is None:
+                    record.locator = dict(locator)
                 continue
             record.apply_matches += 1
             result = set_report_time_excluded(target, test, True)
@@ -528,7 +548,30 @@ def _scan_document(db: Any, test: Any, index: _SelectorIndex, *, apply: bool) ->
         index.apply_passes += 1
     else:
         index.preflight_passes += 1
-    if index.kind == "functional":
+    if apply:
+        _replay_document(db, test, index)
+        return
+    if index.kind == "container":
+        for record in index.records:
+            if record.row["target_kind"] != "instance":
+                continue
+            handle = _optional_call(db, "handle_by_name", record.row["scope"])
+            if not handle:
+                continue
+            try:
+                if _string_call(handle, "type") != "npiCovInstance":
+                    raise CoverageExclusionError("container instance target has wrong NPI type")
+                index.visited_handles += 1
+                index.observe((record.record_id,), handle, test, apply, {
+                    "root": "instance", "scope": str(record.row["scope"]),
+                    "path": [], "type": "npiCovInstance",
+                    "name": _string_call(handle, "name"),
+                })
+            finally:
+                _release(handle)
+        if not any(record.row["target_kind"] != "instance" for record in index.records):
+            return
+    if index.kind in {"functional", "container"}:
         metric = _optional_call(test, "testbench_metric_handle")
         if not metric:
             return
@@ -537,34 +580,39 @@ def _scan_document(db: Any, test: Any, index: _SelectorIndex, *, apply: bool) ->
         finally:
             _release(metric)
         return
-    for instance in _handles(db, "instance_handles"):
+    for scope in sorted(index.scopes):
+        instance = _optional_call(db, "handle_by_name", scope)
+        if not instance:
+            continue
         try:
-            _walk_instance(instance, test, index, apply)
+            if _string_call(instance, "type") != "npiCovInstance":
+                raise CoverageExclusionError(
+                    f"exact coverage scope {scope!r} is not an npiCovInstance"
+                )
+            _walk_exact_instance(instance, scope, test, index, apply)
         finally:
             _release(instance)
 
 
-def _walk_instance(instance: Any, test: Any, index: _SelectorIndex, apply: bool) -> None:
-    scope = _string_call(instance, "full_name")
-    if not _scope_is_relevant(scope, index.scopes):
-        return
-    if scope in index.scopes:
-        for metric_name in index.metrics:
-            metric = _optional_call(instance, _METRIC_METHODS[metric_name])
-            if not metric:
-                continue
-            try:
-                if index.kind == "assertion":
-                    _walk_assertion(metric, scope, test, index, _WalkContext(), apply)
-                else:
-                    _walk_code(metric, metric_name, scope, test, index, _WalkContext(), apply)
-            finally:
-                _release(metric)
-    for child in _handles(instance, "instance_handles"):
+def _walk_exact_instance(
+    instance: Any, scope: str, test: Any, index: _SelectorIndex, apply: bool,
+) -> None:
+    actual_scope = _string_call(instance, "full_name")
+    if actual_scope != scope:
+        raise CoverageExclusionError(
+            f"handle_by_name identity mismatch: requested {scope!r}, got {actual_scope!r}"
+        )
+    for metric_name in index.metrics:
+        metric = _optional_call(instance, _METRIC_METHODS[metric_name])
+        if not metric:
+            continue
         try:
-            _walk_instance(child, test, index, apply)
+            if index.kind == "assertion":
+                _walk_assertion(metric, scope, test, index, _WalkContext(), apply)
+            else:
+                _walk_code(metric, metric_name, scope, test, index, _WalkContext(), apply)
         finally:
-            _release(child)
+            _release(metric)
 
 
 def _source_context(handle: Any, test: Any, parent: _WalkContext) -> _WalkContext:
@@ -597,6 +645,7 @@ def _walk_code(
     index: _SelectorIndex,
     parent: _WalkContext,
     apply: bool,
+    path: tuple[int, ...] = (),
 ) -> None:
     index.visited_handles += 1
     typ = _string_call(handle, "type")
@@ -616,10 +665,13 @@ def _walk_code(
 
     if typ in _LEAF_TYPES[index.kind if index.kind != "code" else metric]:
         keys = _code_candidate_keys(index, handle, test, scope, metric, name, context)
-        index.observe(index.candidate_ids(keys), handle, test, apply)
-    for child in _handles(handle, "child_handles"):
+        index.observe(index.candidate_ids(keys), handle, test, apply, {
+            "root": "metric", "scope": scope, "metric": metric,
+            "path": list(path), "type": typ, "name": name,
+        })
+    for child_index, child in enumerate(_handles(handle, "child_handles")):
         try:
-            _walk_code(child, metric, scope, test, index, context, apply)
+            _walk_code(child, metric, scope, test, index, context, apply, (*path, child_index))
         finally:
             _release(child)
 
@@ -663,6 +715,7 @@ def _walk_functional(
     index: _SelectorIndex,
     parent: _WalkContext,
     apply: bool,
+    path: tuple[int, ...] = (),
 ) -> None:
     index.visited_handles += 1
     typ = _string_call(handle, "type")
@@ -673,11 +726,28 @@ def _walk_functional(
         context = _WalkContext(**{
             **context.__dict__, "covergroup": name, "coverpoint": "", "cross": "",
         })
+        scope, group = _functional_group_identity(name, full_name)
+        if not index.has_functional_prefix(scope, group):
+            return
     elif typ == "npiCovCoverpoint":
         context = _WalkContext(**{**context.__dict__, "coverpoint": name, "cross": ""})
     elif typ == "npiCovCross":
         context = _WalkContext(**{**context.__dict__, "cross": name, "coverpoint": ""})
-    if typ in _LEAF_TYPES["functional"]:
+    if index.kind == "container" and typ in {
+        "npiCovCovergroup", "npiCovCoverpoint", "npiCovCross",
+    }:
+        target_kind = {
+            "npiCovCovergroup": "covergroup",
+            "npiCovCoverpoint": "coverpoint",
+            "npiCovCross": "cross",
+        }[typ]
+        scope, group = _functional_group_identity(context.covergroup, full_name)
+        item = "" if target_kind == "covergroup" else name
+        key = ("container", target_kind, scope, group, item)
+        index.observe(index.candidate_ids((key,)), handle, test, apply, {
+            "root": "functional", "path": list(path), "type": typ, "name": name,
+        })
+    if index.kind == "functional" and typ in _LEAF_TYPES["functional"]:
         if not full_name:
             full_name = ".".join(
                 value for value in (
@@ -692,12 +762,25 @@ def _walk_functional(
              context.covergroup, context.coverpoint, context.cross, name)
             for source_file in _path_suffixes(context.source_file)
         )
-        index.observe(index.candidate_ids(keys), handle, test, apply)
-    for child in _handles(handle, "child_handles"):
+        index.observe(index.candidate_ids(keys), handle, test, apply, {
+            "root": "functional", "path": list(path), "type": typ, "name": name,
+        })
+    for child_index, child in enumerate(_handles(handle, "child_handles")):
         try:
-            _walk_functional(child, test, index, context, apply)
+            _walk_functional(child, test, index, context, apply, (*path, child_index))
         finally:
             _release(child)
+
+
+def _functional_group_identity(name: str, full_name: str) -> tuple[str, str]:
+    if "::" in name:
+        return name.rsplit("::", 1)[0], name
+    if full_name == name:
+        return "", name
+    suffix = "." + name
+    if full_name.endswith(suffix):
+        return full_name[:-len(suffix)], name
+    return "", name
 
 
 def _functional_parts(value: Any) -> List[str]:
@@ -722,6 +805,7 @@ def _walk_assertion(
     index: _SelectorIndex,
     parent: _WalkContext,
     apply: bool,
+    path: tuple[int, ...] = (),
 ) -> None:
     index.visited_handles += 1
     typ = _string_call(handle, "type")
@@ -736,11 +820,73 @@ def _walk_assertion(
             for source_file in _path_suffixes(context.source_file)
             for assertion_name in names
         )
-        index.observe(index.candidate_ids(keys), handle, test, apply)
-    for child in _handles(handle, "child_handles"):
+        index.observe(index.candidate_ids(keys), handle, test, apply, {
+            "root": "metric", "scope": scope, "metric": "assert",
+            "path": list(path), "type": typ, "name": name,
+        })
+    for child_index, child in enumerate(_handles(handle, "child_handles")):
         try:
-            _walk_assertion(child, scope, test, index, context, apply)
+            _walk_assertion(child, scope, test, index, context, apply, (*path, child_index))
         finally:
+            _release(child)
+
+
+def _replay_document(db: Any, test: Any, index: _SelectorIndex) -> None:
+    roots: Dict[tuple[Any, ...], Json] = {}
+    for record in index.records:
+        locator = record.locator
+        if locator is None:
+            continue
+        root_key = (
+            locator["root"], locator.get("scope", ""), locator.get("metric", ""),
+        )
+        node = roots.setdefault(root_key, {"children": {}, "records": []})
+        for child_index in locator["path"]:
+            node = node["children"].setdefault(
+                child_index, {"children": {}, "records": []},
+            )
+        node["records"].append(record.record_id)
+
+    for (root_kind, scope, metric), trie in roots.items():
+        current = None
+        try:
+            if root_kind == "instance":
+                current = _optional_call(db, "handle_by_name", scope)
+            elif root_kind == "functional":
+                current = _optional_call(test, "testbench_metric_handle")
+            else:
+                instance = _optional_call(db, "handle_by_name", scope)
+                if not instance:
+                    continue
+                try:
+                    current = _optional_call(instance, _METRIC_METHODS[metric])
+                finally:
+                    _release(instance)
+            if not current:
+                continue
+            _replay_trie(current, trie, test, index)
+        finally:
+            if current:
+                _release(current)
+
+
+def _replay_trie(handle: Any, trie: Json, test: Any, index: _SelectorIndex) -> None:
+    index.visited_handles += 1
+    typ = _string_call(handle, "type")
+    name = _string_call(handle, "name")
+    for record_id in trie["records"]:
+        locator = index.records[record_id].locator
+        if locator and typ == locator["type"] and name == locator["name"]:
+            index.observe((record_id,), handle, test, True, locator)
+    if not trie["children"]:
+        return
+    children = _handles(handle, "child_handles")
+    try:
+        for child_index, child_trie in trie["children"].items():
+            if 0 <= child_index < len(children):
+                _replay_trie(children[child_index], child_trie, test, index)
+    finally:
+        for child in children:
             _release(child)
 
 

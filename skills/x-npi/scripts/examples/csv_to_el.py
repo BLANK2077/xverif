@@ -49,7 +49,7 @@ def main() -> int:
                     "published_count": len(published),
                     "resolver": "builtin_indexed",
                     "npi_usage": "exclusion_only",
-                    "complexity_contract": "O(H*P+R)",
+                    "complexity_contract": "exact-instance O(U), functional request-pruned",
                     "traversal_passes": sum(
                         item["preflight_passes"] + item["apply_passes"]
                         for item in published

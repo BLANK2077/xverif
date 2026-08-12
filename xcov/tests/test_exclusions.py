@@ -465,7 +465,7 @@ def test_compile_time_exclusion_is_immutable_on_remove():
     assert response["data"]["items"][0]["after"] is False
 
 
-def test_csv_compile_publishes_three_files_and_loads_union(tmp_path, monkeypatch):
+def test_csv_compile_publishes_four_files_and_loads_union(tmp_path, monkeypatch):
     monkeypatch.setenv("XVERIF_XCOV_EXPORT_ROOTS", str(tmp_path))
     root = tmp_path / "coverage_exclusions"
     output = tmp_path / "native"
@@ -485,6 +485,7 @@ def test_csv_compile_publishes_three_files_and_loads_union(tmp_path, monkeypatch
         "code.el",
         "functional.el",
         "assertion.el",
+        "container.el",
     }
 
 
@@ -547,6 +548,36 @@ def test_formatter_is_stable_and_check_does_not_write(tmp_path):
     formatted_path = root / "code_exclusions.csv"
     formatted_path.write_text(first, encoding="utf-8")
     assert format_document(parse_directory(root)[0]) == first
+
+
+def test_container_csv_is_optional_and_validates_exact_target_shapes(tmp_path):
+    root = tmp_path / "coverage_exclusions"
+    _write_csvs(root)
+    assert parse_directory(root)[-1].groups == []
+    path = root / "container_exclusions.csv"
+    path.write_text(
+        "# schema_version=xcov-container-exclusions.v1\n"
+        "# coverage_kind=container\n"
+        "target_kind,scope,covergroup,item,expansion_root,reason\n"
+        "instance,top.u_dut,,,top,递归展开目标\n"
+        "covergroup,top,top::behavior_cg,,,排除整个组\n"
+        "coverpoint,top,top::behavior_cg,sel_cp,,排除整个点\n"
+        "cross,top,top::behavior_cg,sel_cross,,排除整个交叉\n",
+        encoding="utf-8",
+    )
+    document = parse_directory(root)[-1]
+    assert document.row_count == 4
+    assert "# source_file=" not in format_document(document)
+
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "covergroup,top,top::behavior_cg,,,排除整个组",
+            "covergroup,top,top::behavior_cg,sel_cp,,排除整个组",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(XcovError, match="empty item"):
+        parse_directory(root)
 
 
 def test_exclusion_action_xout_is_human_readable(tmp_path):

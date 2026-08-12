@@ -227,9 +227,9 @@ Fixture cache miss 只通过正式 `--xverif-prepare` 补齐，不自动仿真�
 | 阶段 | 状态 | Commit | 验证与证据 | 备注 |
 | --- | --- | --- | --- | --- |
 | 1. 任务书与 Goal | completed | `1ef17aa` | 文档 diff/check；goal active | 未纳入无关工作树改动 |
-| 2. URG IR 与 ratio | completed | 本阶段提交 | `xcov.unit` 166 passed；`skills.x_npi` 22 passed | XML 真实/synthetic 分离；`0/0` pct=null |
-| 3. Container CSV | pending | - | - | - |
-| 4. x-npi resolver 与 CLI | pending | - | - | - |
+| 2. URG IR 与 ratio | completed | `830ed38` | `xcov.unit` 166 passed；`skills.x_npi` 22 passed | XML 真实/synthetic 分离；`0/0` pct=null |
+| 3. Container CSV | completed | 本阶段提交 | `xcov.unit` 167 passed；`skills.x_npi` 23 passed | 旧三文件兼容；四 CSV/EL 原子发布；容器定位器接通 |
+| 4. x-npi resolver 与 CLI | in_progress | - | code/assertion 已改 exact `handle_by_name`；apply 已改 locator trie replay | 待独立 container CLI、真实与性能门禁 |
 | 5. xcov actions 与 MCP | pending | - | - | - |
 | 6. 正式回归与 skill | pending | - | - | - |
 | 7. 全仓验证与推送 | pending | - | - | - |
