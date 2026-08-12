@@ -10,7 +10,7 @@ import inspect
 import os
 from pathlib import Path
 import tempfile
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Protocol, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Sequence
 
 if TYPE_CHECKING:
     from .exclusion_csv import ExclusionDocument
@@ -21,17 +21,6 @@ Json = Dict[str, Any]
 
 class CoverageExclusionError(RuntimeError):
     """Raised when a native pynpi exclusion operation fails."""
-
-
-class ExclusionTargetContext(Protocol):
-    """A resolver-owned, short-lived exact NPI target handle context."""
-
-    def __enter__(self) -> Any: ...
-
-    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> bool | None: ...
-
-
-TargetResolver = Callable[[str, str, Json], ExclusionTargetContext]
 
 
 def _cov() -> Any:
@@ -213,18 +202,19 @@ def unload_exclusions(test: Any) -> None:
 
 
 def compile_csv_to_el(
+    db: Any,
     test: Any,
     csv_directory: str | os.PathLike[str],
     output_directory: str | os.PathLike[str],
-    resolve_target: TargetResolver,
 ) -> List[Json]:
     """Compile strict three-file CSV sidecars into opaque per-kind EL files.
 
-    ``resolve_target(kind, source_file, row)`` must return a context manager
-    yielding exactly one freshly traversed NPI score handle. The compiler never
-    caches handles across rows. A resolver must fail on zero/ambiguous matches.
-    Any failure restores the baseline native exclusion state and publishes no
-    new EL set. CSV ``reason`` remains only in CSV and is never written to EL.
+    The built-in resolver performs exactly two streaming traversals per non-empty
+    coverage kind: a read-only uniqueness preflight followed by an apply pass.
+    It indexes CSV selectors and never scans the VDB once per CSV row, retains
+    native handles across traversal callbacks, or materializes all coverage
+    rows. Any failure restores the baseline native exclusion state and publishes
+    no new EL set. CSV ``reason`` remains only in CSV and is never written to EL.
     """
 
     from .exclusion_csv import parse_directory
@@ -232,6 +222,16 @@ def compile_csv_to_el(
     documents = parse_directory(csv_directory)
     output_root = Path(output_directory).resolve()
     output_root.mkdir(parents=True, exist_ok=True)
+    indexes = {
+        document.kind: _SelectorIndex(document)
+        for document in documents
+    }
+    for document in documents:
+        index = indexes[document.kind]
+        if index.record_count:
+            _scan_document(db, test, index, apply=False)
+            index.require_unique("preflight")
+
     with tempfile.TemporaryDirectory(prefix=".x-npi-csv-el-", dir=output_root) as temp:
         stage = Path(temp)
         baseline = stage / "baseline.el"
@@ -240,7 +240,11 @@ def compile_csv_to_el(
         try:
             unload_exclusions(test)
             for document in documents:
-                _apply_document(test, document, resolve_target)
+                index = indexes[document.kind]
+                if index.record_count:
+                    index.begin_apply()
+                    _scan_document(db, test, index, apply=True)
+                    index.require_unique("apply")
                 path = stage / f"{document.kind}.el"
                 save_exclusion_file(test, path)
                 staged[document.kind] = path
@@ -281,32 +285,463 @@ def compile_csv_to_el(
             unload_exclusions(test)
             load_exclusion_files(test, [baseline])
             raise
-    return [
-        {"coverage_kind": kind, "path": str(destinations[kind]), "status": "published"}
-        for kind in ("code", "functional", "assertion")
-    ]
+    return [indexes[kind].published(str(destinations[kind]))
+            for kind in ("code", "functional", "assertion")]
 
 
-def _apply_document(
-    test: Any,
-    document: ExclusionDocument,
-    resolve_target: TargetResolver,
-) -> None:
-    for group in document.groups:
-        for row in group.rows:
-            context = resolve_target(document.kind, group.source_file, dict(row))
-            if not hasattr(context, "__enter__") or not hasattr(context, "__exit__"):
-                raise CoverageExclusionError(
-                    "resolve_target must return a handle context manager"
+_METRIC_METHODS = {
+    "line": "line_metric_handle",
+    "toggle": "toggle_metric_handle",
+    "branch": "branch_metric_handle",
+    "condition": "condition_metric_handle",
+    "fsm": "fsm_metric_handle",
+    "assert": "assert_metric_handle",
+}
+_LEAF_TYPES = {
+    "line": frozenset({"npiCovStmtBin"}),
+    "toggle": frozenset({"npiCovToggleBin"}),
+    "branch": frozenset({"npiCovBranchBin"}),
+    "condition": frozenset({"npiCovConditionBin"}),
+    "fsm": frozenset({"npiCovStateBin", "npiCovTransBin", "npiCovSeqBin"}),
+    "assertion": frozenset({
+        "npiCovAssert", "npiCovCoverProperty", "npiCovCoverSequence",
+    }),
+    "functional": frozenset({"npiCovCoverBin"}),
+}
+_ASSERT_KINDS = {
+    "npiCovAssert": "assertion",
+    "npiCovCoverProperty": "cover_property",
+    "npiCovCoverSequence": "cover_sequence",
+}
+
+
+def _normalized_path(value: Any) -> str:
+    return str(value or "").replace("\\", "/").strip("/")
+
+
+def _path_suffixes(value: Any) -> Iterable[str]:
+    parts = [part for part in _normalized_path(value).split("/") if part]
+    for index in range(len(parts)):
+        yield "/".join(parts[index:])
+
+
+def _normalized_transition(value: Any) -> str:
+    return str(value or "").replace(" ", "")
+
+
+def _optional_call(obj: Any, name: str, *args: Any) -> Any:
+    try:
+        return _method(obj, name)(*args)
+    except CoverageExclusionError:
+        raise
+    except Exception as exc:
+        raise CoverageExclusionError(f"pynpi {name} call failed") from exc
+
+
+def _string_call(obj: Any, name: str, *args: Any) -> str:
+    value = _optional_call(obj, name, *args)
+    if not isinstance(value, str) or not value:
+        raise CoverageExclusionError(f"pynpi {name} did not return a non-empty string")
+    return value
+
+
+def _optional_string_call(obj: Any, name: str, *args: Any) -> str:
+    value = _optional_call(obj, name, *args)
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise CoverageExclusionError(f"pynpi {name} did not return a string or null")
+    return value
+
+
+def _release(handle: Any) -> None:
+    if handle:
+        try:
+            _cov().release_handle(handle)
+        except Exception as exc:
+            raise CoverageExclusionError("pynpi cov.release_handle failed") from exc
+
+
+class _SelectorRecord:
+    def __init__(self, record_id: int, source_file: str, csv_line: int, row: Json) -> None:
+        self.record_id = record_id
+        self.source_file = source_file
+        self.csv_line = csv_line
+        self.row = row
+        self.preflight_matches = 0
+        self.apply_matches = 0
+        self.changed = 0
+        self.already = 0
+
+
+class _WalkContext:
+    def __init__(
+        self,
+        source_file: str = "",
+        source_line: int = 0,
+        toggle_objects: tuple[str, ...] = (),
+        branch: str = "",
+        condition: str = "",
+        fsm: str = "",
+        covergroup: str = "",
+        coverpoint: str = "",
+        cross: str = "",
+    ) -> None:
+        self.source_file = source_file
+        self.source_line = source_line
+        self.toggle_objects = toggle_objects
+        self.branch = branch
+        self.condition = condition
+        self.fsm = fsm
+        self.covergroup = covergroup
+        self.coverpoint = coverpoint
+        self.cross = cross
+
+
+class _SelectorIndex:
+    def __init__(self, document: ExclusionDocument) -> None:
+        self.document = document
+        self.records: List[_SelectorRecord] = []
+        self.keys: Dict[tuple[Any, ...], List[int]] = {}
+        self.visited_handles = 0
+        self.preflight_passes = 0
+        self.apply_passes = 0
+        for group in document.groups:
+            for row in group.rows:
+                record = _SelectorRecord(
+                    len(self.records), _normalized_path(group.source_file),
+                    int(row.get("_line_no") or 0), dict(row),
                 )
-            with context as target:
-                if target is None:
-                    raise CoverageExclusionError("resolver returned no exclusion target")
-                result = set_report_time_excluded(target, test, True)
-                if result["status"] not in {"changed", "already_in_state"}:
-                    raise CoverageExclusionError(
-                        f"failed to apply {document.kind} exclusion: {result['status']}"
-                    )
+                self.records.append(record)
+                self.keys.setdefault(self._record_key(record), []).append(record.record_id)
+
+    @property
+    def kind(self) -> str:
+        return self.document.kind
+
+    @property
+    def record_count(self) -> int:
+        return len(self.records)
+
+    @property
+    def scopes(self) -> frozenset[str]:
+        return frozenset(str(record.row["scope"]) for record in self.records)
+
+    @property
+    def metrics(self) -> tuple[str, ...]:
+        if self.kind == "code":
+            return tuple(sorted({str(record.row["metric"]) for record in self.records}))
+        if self.kind == "assertion":
+            return ("assert",)
+        return ("functional",)
+
+    def _record_key(self, record: _SelectorRecord) -> tuple[Any, ...]:
+        row = record.row
+        if self.kind == "code":
+            metric = str(row["metric"])
+            line = None if metric == "toggle" else int(row["line"])
+            bin_name = (_normalized_transition(row["bin"])
+                        if metric in {"toggle", "fsm"} else str(row["bin"]))
+            return (self.kind, str(row["scope"]), metric, record.source_file,
+                    line, str(row["object"]), bin_name)
+        if self.kind == "functional":
+            return (self.kind, str(row["scope"]), record.source_file,
+                    int(row["line"]), str(row["covergroup"]),
+                    str(row["coverpoint"]), str(row["cross"]), str(row["bin"]))
+        return (self.kind, str(row["scope"]), record.source_file,
+                int(row["line"]), str(row["assertion"]), str(row["assertion_kind"]))
+
+    def candidate_ids(self, keys: Iterable[tuple[Any, ...]]) -> set[int]:
+        result: set[int] = set()
+        for key in keys:
+            result.update(self.keys.get(key, ()))
+        return result
+
+    def observe(self, ids: Iterable[int], target: Any, test: Any, apply: bool) -> None:
+        selected = set(ids)
+        if len(selected) > 1:
+            lines = sorted(self.records[record_id].csv_line for record_id in selected)
+            raise CoverageExclusionError(
+                f"TARGET_AMBIGUOUS: one {self.kind} NPI target is selected by "
+                f"multiple CSV rows {lines}"
+            )
+        for record_id in selected:
+            record = self.records[record_id]
+            if not apply:
+                record.preflight_matches += 1
+                continue
+            record.apply_matches += 1
+            result = set_report_time_excluded(target, test, True)
+            if result["status"] == "changed":
+                record.changed += 1
+            elif result["status"] == "already_in_state":
+                record.already += 1
+            else:
+                raise CoverageExclusionError(
+                    f"failed to apply {self.kind} exclusion at CSV line "
+                    f"{record.csv_line}: {result['status']}"
+                )
+
+    def begin_apply(self) -> None:
+        for record in self.records:
+            record.apply_matches = 0
+            record.changed = 0
+            record.already = 0
+
+    def require_unique(self, phase: str) -> None:
+        attribute = "preflight_matches" if phase == "preflight" else "apply_matches"
+        for record in self.records:
+            count = int(getattr(record, attribute))
+            if count != 1:
+                reason = "TARGET_MISSING" if count == 0 else "TARGET_AMBIGUOUS"
+                if phase == "apply" and record.preflight_matches == 1:
+                    reason = "TARGET_CHANGED_BETWEEN_PASSES"
+                raise CoverageExclusionError(
+                    f"{reason}: {self.kind} CSV line {record.csv_line} "
+                    f"matched {count} NPI targets"
+                )
+
+    def published(self, path: str) -> Json:
+        return {
+            "coverage_kind": self.kind,
+            "path": path,
+            "status": "published",
+            "record_count": self.record_count,
+            "preflight_passes": self.preflight_passes,
+            "apply_passes": self.apply_passes,
+            "visited_handle_count": self.visited_handles,
+            "matched_count": sum(record.apply_matches for record in self.records),
+            "changed_count": sum(record.changed for record in self.records),
+            "already_in_state_count": sum(record.already for record in self.records),
+        }
+
+
+def _scope_is_relevant(scope: str, wanted: frozenset[str]) -> bool:
+    return any(
+        candidate == scope or candidate.startswith(scope + ".")
+        for candidate in wanted
+    )
+
+
+def _scan_document(db: Any, test: Any, index: _SelectorIndex, *, apply: bool) -> None:
+    if apply:
+        index.apply_passes += 1
+    else:
+        index.preflight_passes += 1
+    if index.kind == "functional":
+        metric = _optional_call(test, "testbench_metric_handle")
+        if not metric:
+            return
+        try:
+            _walk_functional(metric, test, index, _WalkContext(), apply)
+        finally:
+            _release(metric)
+        return
+    for instance in _handles(db, "instance_handles"):
+        try:
+            _walk_instance(instance, test, index, apply)
+        finally:
+            _release(instance)
+
+
+def _walk_instance(instance: Any, test: Any, index: _SelectorIndex, apply: bool) -> None:
+    scope = _string_call(instance, "full_name")
+    if not _scope_is_relevant(scope, index.scopes):
+        return
+    if scope in index.scopes:
+        for metric_name in index.metrics:
+            metric = _optional_call(instance, _METRIC_METHODS[metric_name])
+            if not metric:
+                continue
+            try:
+                if index.kind == "assertion":
+                    _walk_assertion(metric, scope, test, index, _WalkContext(), apply)
+                else:
+                    _walk_code(metric, metric_name, scope, test, index, _WalkContext(), apply)
+            finally:
+                _release(metric)
+    for child in _handles(instance, "instance_handles"):
+        try:
+            _walk_instance(child, test, index, apply)
+        finally:
+            _release(child)
+
+
+def _source_context(handle: Any, test: Any, parent: _WalkContext) -> _WalkContext:
+    source_file = _optional_call(handle, "file_name")
+    source_line = _optional_call(handle, "line_no", test)
+    updates: Dict[str, Any] = {}
+    if isinstance(source_file, str) and source_file:
+        updates["source_file"] = source_file
+    elif source_file is not None and not isinstance(source_file, str):
+        raise CoverageExclusionError("pynpi file_name did not return a string or null")
+    if isinstance(source_line, int) and not isinstance(source_line, bool) and source_line > 0:
+        updates["source_line"] = source_line
+    elif source_line not in (None, -1):
+        raise CoverageExclusionError(
+            "pynpi line_no did not return a positive integer, -1, or null"
+        )
+    if updates:
+        return _WalkContext(**{
+            **parent.__dict__,
+            **updates,
+        })
+    return parent
+
+
+def _walk_code(
+    handle: Any,
+    metric: str,
+    scope: str,
+    test: Any,
+    index: _SelectorIndex,
+    parent: _WalkContext,
+    apply: bool,
+) -> None:
+    index.visited_handles += 1
+    typ = _string_call(handle, "type")
+    name = _string_call(handle, "name")
+    context = _source_context(handle, test, parent)
+    if metric == "toggle" and typ in {"npiCovSignal", "npiCovSignalBit"}:
+        context = _WalkContext(**{
+            **context.__dict__,
+            "toggle_objects": (*context.toggle_objects, name),
+        })
+    elif metric == "branch" and typ == "npiCovBranch":
+        context = _WalkContext(**{**context.__dict__, "branch": name})
+    elif metric == "condition" and typ == "npiCovCondition":
+        context = _WalkContext(**{**context.__dict__, "condition": name})
+    elif metric == "fsm" and typ in {"npiCovFSM", "npiCovFsm"}:
+        context = _WalkContext(**{**context.__dict__, "fsm": name})
+
+    if typ in _LEAF_TYPES[index.kind if index.kind != "code" else metric]:
+        keys = _code_candidate_keys(index, handle, test, scope, metric, name, context)
+        index.observe(index.candidate_ids(keys), handle, test, apply)
+    for child in _handles(handle, "child_handles"):
+        try:
+            _walk_code(child, metric, scope, test, index, context, apply)
+        finally:
+            _release(child)
+
+
+def _code_candidate_keys(
+    index: _SelectorIndex,
+    handle: Any,
+    test: Any,
+    scope: str,
+    metric: str,
+    name: str,
+    context: _WalkContext,
+) -> Iterable[tuple[Any, ...]]:
+    if metric == "toggle":
+        transition = _optional_call(handle, "toggle_type", test)
+        bin_names = {_normalized_transition(name), _normalized_transition(transition)}
+        objects = set(context.toggle_objects)
+        line: int | None = None
+    else:
+        bin_names = {
+            "" if metric == "line"
+            else _normalized_transition(name) if metric == "fsm"
+            else name
+        }
+        objects = {
+            "line": {""},
+            "branch": {context.branch},
+            "condition": {context.condition},
+            "fsm": {context.fsm},
+        }[metric]
+        line = context.source_line
+    for source_file in _path_suffixes(context.source_file):
+        for object_name in objects:
+            for bin_name in bin_names:
+                yield ("code", scope, metric, source_file, line, object_name, bin_name)
+
+
+def _walk_functional(
+    handle: Any,
+    test: Any,
+    index: _SelectorIndex,
+    parent: _WalkContext,
+    apply: bool,
+) -> None:
+    index.visited_handles += 1
+    typ = _string_call(handle, "type")
+    name = _string_call(handle, "name")
+    full_name = _optional_string_call(handle, "full_name")
+    context = _source_context(handle, test, parent)
+    if typ == "npiCovCovergroup":
+        context = _WalkContext(**{
+            **context.__dict__, "covergroup": name, "coverpoint": "", "cross": "",
+        })
+    elif typ == "npiCovCoverpoint":
+        context = _WalkContext(**{**context.__dict__, "coverpoint": name, "cross": ""})
+    elif typ == "npiCovCross":
+        context = _WalkContext(**{**context.__dict__, "cross": name, "coverpoint": ""})
+    if typ in _LEAF_TYPES["functional"]:
+        if not full_name:
+            full_name = ".".join(
+                value for value in (
+                    context.covergroup,
+                    context.coverpoint or context.cross,
+                    name,
+                ) if value
+            )
+        scope = _functional_scope(full_name, context, name)
+        keys = (
+            ("functional", scope, source_file, context.source_line,
+             context.covergroup, context.coverpoint, context.cross, name)
+            for source_file in _path_suffixes(context.source_file)
+        )
+        index.observe(index.candidate_ids(keys), handle, test, apply)
+    for child in _handles(handle, "child_handles"):
+        try:
+            _walk_functional(child, test, index, context, apply)
+        finally:
+            _release(child)
+
+
+def _functional_parts(value: Any) -> List[str]:
+    return [part for part in str(value).replace("::", ".").split(".") if part]
+
+
+def _functional_scope(full_name: str, context: _WalkContext, bin_name: str) -> str:
+    components = [context.covergroup, context.coverpoint or context.cross, bin_name]
+    suffix = [_functional_parts(value)[-1] for value in components if value]
+    parts = _functional_parts(full_name)
+    if not suffix or len(parts) < len(suffix) or parts[-len(suffix):] != suffix:
+        raise CoverageExclusionError(
+            "pynpi functional full_name does not match traversal components"
+        )
+    return ".".join(parts[:-len(suffix)])
+
+
+def _walk_assertion(
+    handle: Any,
+    scope: str,
+    test: Any,
+    index: _SelectorIndex,
+    parent: _WalkContext,
+    apply: bool,
+) -> None:
+    index.visited_handles += 1
+    typ = _string_call(handle, "type")
+    name = _string_call(handle, "name")
+    full_name = _optional_string_call(handle, "full_name")
+    context = _source_context(handle, test, parent)
+    if typ in _LEAF_TYPES["assertion"]:
+        names = {candidate for candidate in (name, full_name) if candidate}
+        keys = (
+            ("assertion", scope, source_file, context.source_line,
+             assertion_name, _ASSERT_KINDS[typ])
+            for source_file in _path_suffixes(context.source_file)
+            for assertion_name in names
+        )
+        index.observe(index.candidate_ids(keys), handle, test, apply)
+    for child in _handles(handle, "child_handles"):
+        try:
+            _walk_assertion(child, scope, test, index, context, apply)
+        finally:
+            _release(child)
 
 
 def _require_exclusion_success(

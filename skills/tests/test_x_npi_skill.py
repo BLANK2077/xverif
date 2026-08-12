@@ -4,7 +4,6 @@ import json
 import os
 import subprocess
 import sys
-from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -247,6 +246,82 @@ class RecordingExclusionTest:
         return self.results.get("unload", 1)
 
 
+class SyntheticCoverageHandle(RecordingExclusionItem):
+    def __init__(self, typ: str, name: str, full_name: str, source: str = "",
+                 line: int = -1, children: list["SyntheticCoverageHandle"] | None = None) -> None:
+        super().__init__()
+        self._type = typ
+        self._name = name
+        self._full_name = full_name
+        self._source = source
+        self._line = line
+        self._children = children or []
+
+    def type(self) -> str:
+        return self._type
+
+    def name(self) -> str:
+        return self._name
+
+    def full_name(self) -> str:
+        return self._full_name
+
+    def file_name(self) -> str:
+        return self._source
+
+    def line_no(self, test: object) -> int:
+        return self._line
+
+    def child_handles(self) -> list["SyntheticCoverageHandle"]:
+        return list(self._children)
+
+    def toggle_type(self, test: object) -> str:
+        return self._name
+
+
+class SyntheticInstance:
+    def __init__(self, name: str, metrics: dict[str, SyntheticCoverageHandle]) -> None:
+        self._name = name
+        self._metrics = metrics
+
+    def full_name(self) -> str:
+        return self._name
+
+    def instance_handles(self) -> list["SyntheticInstance"]:
+        return []
+
+    def line_metric_handle(self) -> SyntheticCoverageHandle | None:
+        return self._metrics.get("line")
+
+    def assert_metric_handle(self) -> SyntheticCoverageHandle | None:
+        return self._metrics.get("assert")
+
+
+class SyntheticCoverageDb:
+    def __init__(self, instance: SyntheticInstance) -> None:
+        self.instance = instance
+
+    def instance_handles(self) -> list[SyntheticInstance]:
+        return [self.instance]
+
+
+class SyntheticCovModule:
+    def __init__(self) -> None:
+        self.release_count = 0
+
+    def release_handle(self, handle: object) -> None:
+        self.release_count += 1
+
+
+class SyntheticCompileTest(RecordingExclusionTest):
+    def __init__(self, functional: SyntheticCoverageHandle) -> None:
+        super().__init__()
+        self.functional = functional
+
+    def testbench_metric_handle(self) -> SyntheticCoverageHandle:
+        return self.functional
+
+
 def _write_csv_set(root: Path, *, reason: str = "architectural unreachable") -> None:
     root.mkdir()
     reason_field = '"' + reason.replace('"', '""') + '"'
@@ -383,31 +458,149 @@ def test_exclusion_csv_is_strict_stable_and_preserves_multiline_reason(tmp_path:
         parse_directory(csv_root)
 
 
-def test_csv_to_el_uses_fresh_contexts_and_publishes_three_native_files(tmp_path: Path) -> None:
+def test_csv_to_el_uses_builtin_two_pass_index_and_publishes_three_native_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     csv_root = tmp_path / "csv"
     _write_csv_set(csv_root)
-    native_test = RecordingExclusionTest()
-    targets: list[tuple[str, str, dict[str, object]]] = []
+    line = SyntheticCoverageHandle(
+        "npiCovStmtBin", "statement", "top.line.statement",
+        "/build/project/rtl/design.sv", 10,
+    )
+    assertion = SyntheticCoverageHandle(
+        "npiCovAssert", "a_reset", "top.a_reset",
+        "/build/project/tb/assertions.sv", 30,
+    )
+    functional = SyntheticCoverageHandle(
+        "npiCovCovergroup", "cg_mode", "top.cg_mode", "/build/project/tb/coverage.sv", 20,
+        [SyntheticCoverageHandle(
+            "npiCovCoverpoint", "cp_mode", "top.cg_mode.cp_mode", children=[
+                SyntheticCoverageHandle(
+                    "npiCovCoverBin", "idle", "top.cg_mode.cp_mode.idle",
+                ),
+            ],
+        )],
+    )
+    native_test = SyntheticCompileTest(functional)
+    database = SyntheticCoverageDb(SyntheticInstance(
+        "top",
+        {
+            "line": SyntheticCoverageHandle("npiCovMetric", "line", "top.line", children=[line]),
+            "assert": SyntheticCoverageHandle(
+                "npiCovMetric", "assert", "top.assert", children=[assertion],
+            ),
+        },
+    ))
+    cov = SyntheticCovModule()
+    monkeypatch.setattr("x_npi.coverage._cov", lambda: cov)
 
-    @contextmanager
-    def target_context(item: RecordingExclusionItem):
-        yield item
-
-    def resolver(kind: str, source_file: str, row: dict[str, object]):
-        targets.append((kind, source_file, row))
-        return target_context(RecordingExclusionItem())
-
-    published = compile_csv_to_el(native_test, csv_root, tmp_path / "el", resolver)
+    published = compile_csv_to_el(database, native_test, csv_root, tmp_path / "el")
     assert [row["coverage_kind"] for row in published] == [
         "code", "functional", "assertion",
     ]
-    assert [item[0] for item in targets] == ["code", "functional", "assertion"]
+    assert all(row["preflight_passes"] == 1 for row in published)
+    assert all(row["apply_passes"] == 1 for row in published)
+    assert all(row["matched_count"] == 1 for row in published)
+    assert line.setter_values == [1]
+    assert assertion.setter_values == [1]
+    assert functional._children[0]._children[0].setter_values == [1]
+    assert cov.release_count > 0
     assert all(Path(row["path"]).read_text(encoding="utf-8") for row in published)
     assert native_test.calls[-3:] == [
         ("load", str(tmp_path / "el" / "code.el")),
         ("load", str(tmp_path / "el" / "functional.el")),
         ("load", str(tmp_path / "el" / "assertion.el")),
     ]
+
+
+def test_csv_to_el_missing_target_does_not_mutate_or_publish(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    csv_root = tmp_path / "csv"
+    _write_csv_set(csv_root)
+    database = SyntheticCoverageDb(SyntheticInstance("top", {}))
+    native_test = SyntheticCompileTest(SyntheticCoverageHandle(
+        "npiCovMetric", "functional", "functional",
+    ))
+    monkeypatch.setattr("x_npi.coverage._cov", lambda: SyntheticCovModule())
+    with pytest.raises(CoverageExclusionError, match="TARGET_MISSING"):
+        compile_csv_to_el(database, native_test, csv_root, tmp_path / "el")
+    assert native_test.calls == []
+    assert not (tmp_path / "el" / "code.el").exists()
+
+
+def test_csv_to_el_cli_has_no_external_resolver_contract() -> None:
+    script = SKILL / "scripts/examples/csv_to_el.py"
+    source = script.read_text(encoding="utf-8")
+    assert "--resolver" not in source
+    assert "importlib" not in source
+    assert "from xcov" not in source
+    assert "import xcov" not in source
+    proc = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert proc.returncode == 0
+    assert "--resolver" not in proc.stdout
+    for option in ("--vdb", "--csv-directory", "--output-directory", "--strict"):
+        assert option in proc.stdout
+
+
+@pytest.mark.parametrize("record_count", [1_000, 10_000])
+def test_csv_to_el_operation_count_is_linear(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, record_count: int,
+) -> None:
+    csv_root = tmp_path / "csv"
+    csv_root.mkdir()
+    rows = "".join(
+        f"top,line,{line},,,linear guard\n"
+        for line in range(1, record_count + 1)
+    )
+    (csv_root / "code_exclusions.csv").write_text(
+        "# schema_version=xcov-code-exclusions.v1\n"
+        "# coverage_kind=code\n"
+        "scope,metric,line,object,bin,reason\n"
+        "# source_file=rtl/linear.sv\n" + rows,
+        encoding="utf-8",
+    )
+    (csv_root / "functional_exclusions.csv").write_text(
+        "# schema_version=xcov-functional-exclusions.v1\n"
+        "# coverage_kind=functional\n"
+        "scope,line,covergroup,coverpoint,cross,bin,reason\n",
+        encoding="utf-8",
+    )
+    (csv_root / "assertion_exclusions.csv").write_text(
+        "# schema_version=xcov-assertion-exclusions.v1\n"
+        "# coverage_kind=assertion\n"
+        "scope,line,assertion,assertion_kind,reason\n",
+        encoding="utf-8",
+    )
+    leaves = [
+        SyntheticCoverageHandle(
+            "npiCovStmtBin", f"statement_{line}", f"top.line.statement_{line}",
+            "/build/project/rtl/linear.sv", line,
+        )
+        for line in range(1, record_count + 1)
+    ]
+    database = SyntheticCoverageDb(SyntheticInstance("top", {
+        "line": SyntheticCoverageHandle("npiCovMetric", "line", "top.line", children=leaves),
+    }))
+    native_test = SyntheticCompileTest(SyntheticCoverageHandle(
+        "npiCovMetric", "functional", "functional",
+    ))
+    monkeypatch.setattr("x_npi.coverage._cov", lambda: SyntheticCovModule())
+
+    published = compile_csv_to_el(database, native_test, csv_root, tmp_path / "el")
+    code = published[0]
+    assert code["preflight_passes"] == 1
+    assert code["apply_passes"] == 1
+    assert code["visited_handle_count"] == 2 * (record_count + 1)
+    assert code["matched_count"] == record_count
+    assert published[1]["visited_handle_count"] == 0
+    assert published[2]["visited_handle_count"] == 0
 
 
 def test_value_and_json_helpers_are_deterministic() -> None:
