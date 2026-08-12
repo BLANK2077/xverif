@@ -529,10 +529,11 @@ session 单 engine、engine 串行请求、NPI mutex、MCP session lock、genera
 - registry 升级采用停机切换：禁止新旧 engine 混跑；非空 v3 registry 明确返回
   `REGISTRY_MIGRATION_REQUIRED`，空 v3 registry 才允许原子归档。
 - 最终测试独立运行 fast、regression、nightly 三档门禁。
-- 不执行 `--xverif-prepare`；不执行当前会强制 `rebuild=True` 的
+- 初始约束是不执行 `--xverif-prepare`；F06 确认唯一缺口后，用户明确授权克制重建，因此只对
+  `xdebug.stream_differential_tool` 执行一次精确 prepare。仍不执行会扩大重建范围的
   `--xverif-fixture-validation`。
-- cache miss、fixture fingerprint mismatch 或 required fixture 缺失时停止，不重建、不
-  fallback、不把 required suite 改为 skip。
+- cache miss、fixture fingerprint mismatch 或 required fixture 缺失时先停止并审计；除用户随后
+  明确授权的单一精确 prepare 外，不扩大重建范围、不 fallback、不把 required suite 改为 skip。
 - 采用分阶段中文详细提交，不创建 PR，不推送远端。
 - `kill`、`gc` 和 timeout containment 不建立新的锁类别，统一复用 session close/cleanup
   生命周期临界区。
@@ -543,11 +544,11 @@ session 单 engine、engine 串行请求、NPI mutex、MCP session lock、genera
 | --- | --- | --- | --- |
 | F00 | 计划、基线与 goal | completed | `27da5d4` |
 | F01 | per-session registry 与 action 热路径 | completed | `38eea24` |
-| F02 | xdebug config 与 owner-sharded logging | completed | 本提交 |
-| F03 | xcov 与 MCP owner logging | completed | 本提交 |
-| F04 | URG cache 与 fixture atomic claim | completed | 本提交 |
-| F05 | 静态/strace 门禁、文档与 skill | completed | 本提交 |
-| F06 | clean build、三档全量回归与最终证据 | blocked | 本提交 |
+| F02 | xdebug config 与 owner-sharded logging | completed | `c224b16` |
+| F03 | xcov 与 MCP owner logging | completed | `393a276` |
+| F04 | URG cache 与 fixture atomic claim | completed | `918ab52` |
+| F05 | 静态/strace 门禁、文档与 skill | completed | `eb1d9f8` |
+| F06 | clean build、三档全量回归与最终证据 | completed | `7160694`、`8c94793`、最终证据提交 |
 
 最终必须满足：产品和 testinfra 源码中只有 session lifecycle lease 实现可以引用 `flock`；普通
 query、list、doctor、config、log 与 xcov cache hit 的 `strace -f -e trace=flock` 结果为零。
@@ -616,7 +617,7 @@ query、list、doctor、config、log 与 xcov cache hit 的 `strace -f -e trace=
 - 已通过 Makefile 安装并逐目录验收 `xverif`、`xverif-admin` 到 `~/.codex/skills` 与
   `~/.claude/skills`。
 
-### 2026-08-12 F06 最终验收状态
+### 2026-08-12 F06 初次验收阻塞记录
 
 - 根目录 `make clean && make all -j4`：通过。`clean` 只清理构建产物，没有删除或准备 fixture
   cache。
@@ -633,3 +634,30 @@ query、list、doctor、config、log 与 xcov cache hit 的 `strace -f -e trace=
   旧 generation。完成 regression/nightly 必须显式运行
   `pytest --xverif-prepare xdebug.stream_differential_tool`，这会重建缓存，与本任务“不要触发缓存
   重建”的硬约束冲突，因此没有执行，也没有切换 runner、fixture 或测试层级。
+
+### 2026-08-13 F06 授权后最终验收
+
+- 用户明确授权“允许重建，但是要克制”后，仅执行一次正式入口
+  `pytest --xverif-prepare xdebug.stream_differential_tool`。发布 fingerprint 为
+  `459101d9c14005d6b2704a26b50223a137ad328026f2ae0eb0620ce31ee3f9bb`；重建后只读审计确认
+  regression 的 18 个、nightly 的 27 个 required fixture 均无缺口，且时间窗口内只有该 fixture
+  的 `current.json` 更新。没有运行 `all-generated` 或全量 fixture validation。
+- 第一轮 host regression 真正执行 1173 项并暴露 7 项失败：5 项来自 contract helper 仍写 v3
+  全局 registry，1 项来自 heartbeat 固定睡眠，1 项来自 LSF rejection 与 pipe reader 的 job id
+  竞态。修正在 `7160694` 提交；正式 focused suite 分别通过 `xdebug.contract` 114、
+  `testinfra.unit` 53、`xverif_mcp.process` 141。
+- 修正后 host regression 全量通过：1173 passed，结果目录
+  `.xverif-test-results/20260812-233732-23uc9oeh`。
+- 第一轮 host nightly 的产品、NPI 与 fixture 尚未进入唯一失败点：MCP SDK 在 pytest `tee-sys`
+  捕获下取得不支持 `fileno()` 的 stderr 对象。`8c94793` 仅让真实 wire 测试显式使用
+  `sys.__stderr__`，没有改变 server、backend 或 transport；focused real fullchain 1 passed。
+- 修正后 host nightly 全量通过：1274 passed、2 skipped，结果目录
+  `.xverif-test-results/20260812-235449-v_bikaab`。两个 skip 均来自 catalog 声明的 `real_lsf`
+  可选依赖，宿主缺少 `bsub`、`bjobs`、`bkill`；没有把 required suite 降级为 skip。
+- 最终 fast 全量重跑通过：574 passed，结果目录
+  `.xverif-test-results/20260813-000517-i0ubhbch`。
+- nightly 的 native XOUT 采集会把运行时路径、PID、时间戳写回历史审阅文档；两轮均在测试结束后
+  对该已确认副作用应用精确逆补丁，没有保留动态证据或覆盖用户改动。
+- 最终源码审计仍只有 `xdebug/src/engine/session/session_lifecycle_lease.h` 两处 `flock()` 调用，分别
+  对应生命周期 lease 的加锁与解锁；普通 action/query/list/doctor/config/log/cache hit 没有新增
+  `flock`。工作树在最终记录前为干净状态。
