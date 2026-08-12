@@ -47,12 +47,15 @@ list（如 `-show brief line+cond`），不能写成 `-show summary+tests` 组�
 Coverage 分析和 exclusion 的标准顺序：
 
 1. 打开 VDB session。
-2. 按用户需要选择一种初始状态：用 `exclude.load` 导入 EL、用 `exclude.csv.apply` 导入三类
+2. 按用户需要选择一种初始状态：用 `exclude.load` 导入 EL、用 `exclude.csv.apply` 导入四类
    CSV，或不加载任何 exclusion。不要自动选择或静默 fallback。
 3. 先用 `scope.summary`、`scope.children`、`code_coverage.summary` 查询覆盖率。
 4. 用 `export.code_coverage`、`export.functional_coverage` 或 `export.assert` 导出具体缺口，不能
    只依据压缩摘要决定排除。
 5. 对每个 gap 选择补充激励，或调用 `exclude.add` 并为每个条目提供具体非空 `reason`。
+   容器级目标使用 `exclude.instance.add/remove` 或 `exclude.functional.add/remove`：instance 默认
+   只作用于 self，`recursive=true` 只展开 fixed URG XML 的真实 instance；functional 仅支持
+   covergroup、coverpoint、cross。module、wildcard、regex 均不支持。
 6. 重新查询覆盖率并再次导出具体缺口，确认目的没有退化。
 7. 调用 `exclude.csv.export` 原子合并 reason-bearing CSV；随后调用 `export.exclude` 保存 EL。
 8. 确认 CSV 和 EL 均成功落盘后，才允许关闭 session。
@@ -171,6 +174,11 @@ assert export（输出目录内保留 `asserts.txt`，并生成 `assert.json`、
   traversal path 或数据库内部唯一 ID。旧 artifact 对应的对象若已被排除并从 NPI score
   视图隐藏，应重新导出当前 gap，不能绕过 wrapper 调低层 `handle_by_name` 猜测对象。
   不要构造或发送已删除的 `args.selectors`。`coverage_ref` 只在生成它的 session 内有效。
+- 容器 action 全部先预检再原子设置。递归 instance 的 reason 展开为 exact target metadata；
+  remove 只按已记录 ownership 移除，不根据当前 XML 重新扩大范围。同一 exact target 若被不同
+  reason 或 expansion root 请求，返回 `TARGET_OWNERSHIP_CONFLICT`。
+- `container_exclusions.csv` 是可选第四份 sidecar，保存 instance/group/point/cross exact target；
+  缺少它的旧三文件目录继续合法。compile 成功后发布并 union-load 四份 EL。
 - 同一 session 内重复 add 同一身份但提供新 reason 时，内存 reason 更新；若
   `exclude.csv.export` 发现目标 CSV 已有同一身份但 reason 不同，则三类文件均不写入，必须
   先由用户决定保留哪一个原因。

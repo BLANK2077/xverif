@@ -502,6 +502,12 @@ class CoverageBackend:
               functional_only: bool = False) -> List[Json]:
         raise NotImplementedError
 
+    def exact_scope_items(self, metrics: List[str], scope: str, test: str = "merged") -> List[Json]:
+        raise NotImplementedError
+
+    def functional_items_filtered(self, covergroups: set[str], test: str = "merged") -> List[Json]:
+        raise NotImplementedError
+
     def gap_items(self, metric: str, scope: Optional[str] = None,
                   test: str = "merged") -> List[Json]:
         """Internal export rows including direct exclusion locators."""
@@ -752,6 +758,18 @@ class CanonicalCoverageBackend(CoverageBackend):
     def gap_items(self, metric: str, scope: Optional[str] = None,
                   test: str = "merged") -> List[Json]:
         return self._delegate.gap_items(metric, scope=scope, test=test)
+
+    def exact_scope_items(self, metrics: List[str], scope: str, test: str = "merged") -> List[Json]:
+        return canonicalize_coverage_items(
+            self._delegate.exact_scope_items(metrics, scope, test=test),
+            backend_type=self._backend_type, worker_kind=self.worker_kind,
+        )
+
+    def functional_items_filtered(self, covergroups: set[str], test: str = "merged") -> List[Json]:
+        return canonicalize_coverage_items(
+            self._delegate.functional_items_filtered(covergroups, test=test),
+            backend_type=self._backend_type, worker_kind=self.worker_kind,
+        )
 
     def load_exclusions(self, paths: List[str], test: str = "merged") -> List[Json]:
         return self._delegate.load_exclusions(paths, test=test)
@@ -1256,6 +1274,36 @@ class NpiCoverageBackend(CoverageBackend):
                 self.coverage_identities[ref] = coverage_identity_for_row(row)
             row.pop("_exclude_targets", None)
         return rows
+
+    def exact_scope_items(self, metrics: List[str], scope: str, test: str = "merged") -> List[Json]:
+        test_hdl = self._test_handle(test)
+        instance = self.db.handle_by_name(scope)
+        if not instance:
+            return []
+        rows: List[Json] = []
+        try:
+            if str(instance.full_name()) != scope:
+                return []
+            self._walk_items(instance, test_hdl, metrics, scope, rows, recurse_instances=False)
+        finally:
+            self.release_if_handle(instance)
+        self._publish_item_identities(rows)
+        return rows
+
+    def functional_items_filtered(self, covergroups: set[str], test: str = "merged") -> List[Json]:
+        rows: List[Json] = []
+        self._walk_functional_items(
+            self._test_handle(test), None, rows, group_filter=covergroups,
+        )
+        self._publish_item_identities(rows)
+        return rows
+
+    def _publish_item_identities(self, rows: List[Json]) -> None:
+        for row in rows:
+            ref = row.get("coverage_ref")
+            if isinstance(ref, str):
+                self.coverage_identities[ref] = coverage_identity_for_row(row)
+            row.pop("_exclude_targets", None)
 
     def gap_items(self, metric: str, scope: Optional[str] = None,
                   test: str = "merged") -> List[Json]:
@@ -1768,6 +1816,7 @@ class NpiCoverageBackend(CoverageBackend):
         scope: Optional[str],
         rows: List[Json],
         handle_callback: Optional[Callable[[Any, Json], None]] = None,
+        recurse_instances: bool = True,
     ) -> None:
         api = self._api()
         inst_full = _required_string(api, "instance.full_name", inst)
@@ -1789,6 +1838,8 @@ class NpiCoverageBackend(CoverageBackend):
                         )
                     finally:
                         self.release_if_handle(metric_hdl)
+        if not recurse_instances:
+            return
         for child in api.call("instance.instance_handles", inst):
             try:
                 self._walk_items(
@@ -1843,6 +1894,7 @@ class NpiCoverageBackend(CoverageBackend):
         scope: Optional[str],
         rows: List[Json],
         handle_callback: Optional[Callable[[Any, Json], None]] = None,
+        group_filter: Optional[set[str]] = None,
     ) -> None:
         metric_hdl = self._api().call(
             "test.testbench_metric_handle",
@@ -1865,6 +1917,7 @@ class NpiCoverageBackend(CoverageBackend):
                         None,
                         handle_callback,
                         (index,),
+                        group_filter,
                     )
                 finally:
                     self.release_if_handle(child)
@@ -1881,6 +1934,7 @@ class NpiCoverageBackend(CoverageBackend):
         parent_source: Optional[Json],
         handle_callback: Optional[Callable[[Any, Json], None]] = None,
         traversal_path: tuple[int, ...] = (),
+        group_filter: Optional[set[str]] = None,
     ) -> None:
         api = self._api()
         typ = _required_string(api, "coverage.type", hdl)
@@ -1888,6 +1942,8 @@ class NpiCoverageBackend(CoverageBackend):
         path = dict(functional_path)
         if typ == "npiCovCovergroup":
             path = {"covergroup": name}
+            if group_filter is not None and name not in group_filter and full_name not in group_filter:
+                return
         elif typ == "npiCovCoverpoint":
             path["coverpoint"] = name
         elif typ == "npiCovCross":
@@ -1993,6 +2049,7 @@ class NpiCoverageBackend(CoverageBackend):
                     own_source or parent_source,
                     handle_callback,
                     (*traversal_path, index),
+                    group_filter,
                 )
             finally:
                 self.release_if_handle(child)
@@ -2228,6 +2285,12 @@ class UrgCoverageBackend(CoverageBackend):
             metrics=metrics, scope=scope, test=test,
             functional_only=functional_only,
         )
+
+    def exact_scope_items(self, metrics: List[str], scope: str, test: str = "merged") -> List[Json]:
+        return self._exclude_backend().exact_scope_items(metrics, scope, test=test)
+
+    def functional_items_filtered(self, covergroups: set[str], test: str = "merged") -> List[Json]:
+        return self._exclude_backend().functional_items_filtered(covergroups, test=test)
 
     def gap_items(self, metric: str, scope: Optional[str] = None,
                   test: str = "merged") -> List[Json]:

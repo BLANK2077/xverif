@@ -149,11 +149,14 @@ def test_x_npi_large_vdb_exclusion_scans_only_selected_metric(
     )
     assert proc.returncode == 0, proc.stderr[-8000:] + "\n" + proc.stdout[-4000:]
     result = json.loads(proc.stdout)
-    code, functional, assertion = result["items"]
+    code, functional, assertion, container = result["items"]
     assert code["preflight_passes"] == 1
     assert code["apply_passes"] == 1
     assert code["matched_count"] == 1
     assert code["visited_handle_count"] > 0
     assert functional["visited_handle_count"] == 0
     assert assertion["visited_handle_count"] == 0
+    assert container["preflight_passes"] == 0
+    assert container["apply_passes"] == 0
+    assert container["visited_handle_count"] == 0
     assert all(Path(item["path"]).is_file() for item in result["items"])

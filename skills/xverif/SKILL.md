@@ -16,6 +16,9 @@ description: >
 > 必须先执行 `exclude.csv.export`，再执行 `export.exclude`，确认两类文件均成功后才能关闭。
 > assert/function exclusion 先读取结构化 XOUT/JSON 的 `Axxxx`/`FCxxxx` gap；禁止使用已删除的
 > exclusion selector 参数。关闭或丢失 session 后，尚未导出的 reason 无法恢复。
+> Instance/covergroup/coverpoint/cross 容器使用专用 `exclude.instance.*` 与
+> `exclude.functional.*` action；不支持 module selector。递归 instance 只依据 URG XML 真实层次，
+> remove 只依据 session 已记录的 exact ownership。
 
 ## 任务路由
 

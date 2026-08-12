@@ -255,7 +255,7 @@ CSV 用 `# source_file=...` 划分连续源码分组；`reason` 必填，同一
 关闭 session 不允许静默丢失尚未持久化的 reason。存在 dirty reason 时，普通
 `session.close` 返回 `UNPERSISTED_EXCLUSION_REASON` 并保留可继续查询/导出的 live session；
 只有显式传入 `{"confirm_discard_reasons":true}` 才关闭并报告丢弃计数。完成排除后应先调用
-`exclude.csv.export`，将当前 session 中具备可移植身份的 exclusion 原子合并到三类 CSV；
+`exclude.csv.export`，将当前 session 中具备可移植身份的 exclusion 原子合并到四类 CSV；
 再调用 `export.exclude` 导出原生 EL。EL 不保存 reason，只有 CSV export/compile/apply
 成功才把 reason revision 标记为已持久化；仅从 EL 导入的条目没有 reason，CSV 导出会明确
 告警并省略这些条目。
@@ -273,16 +273,16 @@ line/condition/branch/toggle 保持原子提交；只有 FSM 允许因 NPI 不�
 NPI score 视图隐藏而不再可解析，应重新导出当前 gap，不会调用不稳定的低层查询强行恢复。
 
 ```json
-{"api_version":"xcov.v1","action":"exclude.load","target":{"session_id":"cov0"},"args":{"paths":["code.el","functional.el","assertion.el"]}}
+{"api_version":"xcov.v1","action":"exclude.load","target":{"session_id":"cov0"},"args":{"paths":["code.el","functional.el","assertion.el","container.el"]}}
 ```
 
 CSV action：
 
-- `exclude.csv.validate/apply/compile/format` 分别负责静态合同、session 应用、三 EL
+- `exclude.csv.validate/apply/compile/format` 分别负责静态合同、session 应用、四 EL
   发布和稳定排序；CSV 工作流不读取 Git 状态或 commit。
 - apply/compile 对每行要求恰好一个 score object；零匹配或多匹配都会明确失败。
-- `compile` 先完成三类 validate/resolve/apply，在同一输出目录写临时 EL；全部成功
-  后发布 `code.el`、`functional.el`、`assertion.el`，随后按该顺序重新加载。
+- `compile` 先完成四类 validate/resolve/apply，在同一输出目录写临时 EL；全部成功
+  后发布 `code.el`、`functional.el`、`assertion.el`、`container.el`，随后按该顺序重新加载。
   任一记录失败不发布产物，并恢复 compile 前的 session exclusion。
 - `format` 默认 check，只有 `write:true` 才写文件。
 

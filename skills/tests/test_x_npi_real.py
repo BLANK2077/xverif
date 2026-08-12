@@ -179,11 +179,53 @@ def test_x_npi_csv_to_el_is_standalone_on_real_vdb(
     assert document["summary"]["npi_usage"] == "exclusion_only"
     assert document["summary"]["traversal_passes"] == 6
     assert [row["coverage_kind"] for row in document["data"]["items"]] == [
-        "code", "functional", "assertion",
+        "code", "functional", "assertion", "container",
     ]
-    assert all(row["matched_count"] == 1 for row in document["data"]["items"])
+    assert all(row["matched_count"] == 1 for row in document["data"]["items"][:3])
+    assert document["data"]["items"][3]["matched_count"] == 0
     assert all(Path(row["path"]).is_file() for row in document["data"]["items"])
     assert "--resolver" not in (EXAMPLES / "csv_to_el.py").read_text(encoding="utf-8")
+
+
+def test_x_npi_container_cli_expands_xml_instance_and_compiles_real_vdb(
+    xverif_fixture: Any, tmp_path: Path,
+) -> None:
+    resources = xverif_fixture("xcov.exclusion")
+    report = tmp_path / "urg"
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(SKILL / "scripts")
+    summary_proc = subprocess.run(
+        [
+            sys.executable, str(EXAMPLES / "coverage_summary.py"),
+            "--vdb", str(resources / "exclusion.vdb"),
+            "--report", str(report), "--limit", "10",
+        ],
+        cwd=tmp_path, env=env, text=True, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, timeout=180, check=False,
+    )
+    assert summary_proc.returncode == 0, summary_proc.stderr
+    summary = json.loads(summary_proc.stdout)
+    assert summary["summary"]["npi_initialized"] is False
+    proc = subprocess.run(
+        [
+            sys.executable, str(EXAMPLES / "container_exclude.py"),
+            "--vdb", str(resources / "exclusion.vdb"),
+            "--urg-report", str(report),
+            "--csv-directory", str(tmp_path / "csv"),
+            "--output-directory", str(tmp_path / "el"),
+            "--instance", "top.u_dut", "--reason", "real exact instance",
+        ],
+        cwd=tmp_path, env=env, text=True, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, timeout=240, check=False,
+    )
+    assert proc.returncode == 0, proc.stderr[-8000:] + "\n" + proc.stdout[-4000:]
+    document = json.loads(proc.stdout)
+    assert document["ok"] is True
+    assert document["summary"]["requested_exact_target_count"] == 1
+    assert document["summary"]["instance_traversal"] == "handle_by_name_no_hierarchy_scan"
+    assert {path.name for path in (tmp_path / "el").iterdir()} == {
+        "code.el", "functional.el", "assertion.el", "container.el",
+    }
 
 
 def test_x_npi_urg_reads_all_coverage_types_without_npi(

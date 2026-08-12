@@ -977,13 +977,26 @@ class Dispatcher:
                         exact_rows.append({**row, "reason": record["reason"], "_owner_key": key})
         else:
             for item in requested:
-                exact_rows.append({
+                candidate = {
                     "target_kind": item["target_kind"], "scope": item["scope"],
                     "covergroup": item["covergroup"], "item": item.get("item", ""),
                     "expansion_root": "", "reason": (
                         _required_reason(item["reason"]) if adding else "remove"
                     ),
-                })
+                }
+                if adding:
+                    exact_rows.append(candidate)
+                else:
+                    identity = _container_identity(candidate)
+                    for key, record in sess.exclusion_records.items():
+                        row = record.get("csv_row") or {}
+                        if (
+                            row.get("coverage_kind") == "container"
+                            and _container_identity(row) == identity
+                        ):
+                            exact_rows.append({
+                                **row, "reason": record["reason"], "_owner_key": key,
+                            })
         if not exact_rows:
             raise XcovError("EXCLUSION_NOT_OWNED", "没有匹配的已记录容器排除目标")
         unique: Dict[tuple, Json] = {}
@@ -1003,16 +1016,18 @@ class Dispatcher:
                     "target_kind", "scope", "covergroup", "item", "expansion_root",
                 )}
                 csv_row.update({"coverage_kind": "container", "source_file": ""})
-                ownership_key = "csv:" + json.dumps(
-                    csv_row, sort_keys=True, separators=(",", ":"),
-                )
-                previous = sess.exclusion_records.get(ownership_key)
                 candidate = {"reason": row["reason"], "csv_row": csv_row}
-                if previous is not None and previous != candidate:
-                    raise XcovError(
-                        "TARGET_OWNERSHIP_CONFLICT",
-                        "target 已由不同 reason 或 expansion root 持有",
-                    )
+                for previous in sess.exclusion_records.values():
+                    previous_row = previous.get("csv_row") or {}
+                    if (
+                        previous_row.get("coverage_kind") == "container"
+                        and _container_identity(previous_row) == _container_identity(row)
+                        and previous != candidate
+                    ):
+                        raise XcovError(
+                            "TARGET_OWNERSHIP_CONFLICT",
+                            "target 已由不同 reason 或 expansion root 持有",
+                        )
         for line, row in enumerate(exact_rows, 1):
             row["_line_no"] = line
         resolutions = sess.backend.resolve_container_records(exact_rows, test="merged")
@@ -1816,7 +1831,22 @@ def _resolve_csv(req: Json, sess) -> tuple[List[Any], List[Json]]:
     _require_merged(args)
     documents = parse_directory(_csv_directory(req))
     leaf_documents = [document for document in documents if document.kind != "container"]
-    rows = sess.backend.items(test="merged")
+    rows: List[Json] = []
+    exact_metrics: Dict[str, set[str]] = defaultdict(set)
+    functional_groups: set[str] = set()
+    for document in leaf_documents:
+        for group in document.groups:
+            for row in group.rows:
+                if document.kind == "functional":
+                    functional_groups.add(str(row["covergroup"]))
+                else:
+                    exact_metrics[str(row["scope"])].add(
+                        "assert" if document.kind == "assertion" else str(row["metric"])
+                    )
+    for scope, metrics in sorted(exact_metrics.items()):
+        rows.extend(sess.backend.exact_scope_items(sorted(metrics), scope, test="merged"))
+    if functional_groups:
+        rows.extend(sess.backend.functional_items_filtered(functional_groups, test="merged"))
     resolutions = resolve_documents(leaf_documents, rows)
     container = next(document for document in documents if document.kind == "container")
     container_records = [row for group in container.groups for row in group.rows]
