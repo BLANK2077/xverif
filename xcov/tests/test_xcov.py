@@ -157,7 +157,7 @@ def _fake_dispatcher() -> Dispatcher:
 
 
 def test_container_actions_expand_exact_targets_and_remove_recorded_ownership():
-    dispatcher = _fake_dispatcher()
+    dispatcher = Dispatcher(SessionManager(backend_factory=_TestBackend))
     opened = dispatcher.dispatch({
         "api_version": "xcov.v1", "action": "session.open",
         "target": {"vdb": "fixture.vdb"}, "args": {"name": "cov"},
@@ -186,7 +186,7 @@ def test_container_actions_expand_exact_targets_and_remove_recorded_ownership():
 
 
 def test_functional_container_schema_rejects_module_and_unknown_fields():
-    dispatcher = _fake_dispatcher()
+    dispatcher = Dispatcher(SessionManager(backend_factory=_TestBackend))
     response = dispatcher.dispatch({
         "api_version": "xcov.v1", "action": "exclude.functional.add",
         "target": {"session_id": "cov"}, "args": {"items": [{
