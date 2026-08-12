@@ -42,6 +42,7 @@ BINARIES = (
     "test_list_manager",
     "test_versioned_json_store",
     "test_clock_sampling_event_manager",
+    "test_relationship_traversal",
 )
 
 

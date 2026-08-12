@@ -114,3 +114,31 @@ def test_large_summary_fixture_fingerprints_generator_recipe_probe_and_tools() -
     fingerprint, tool_identity = store.fingerprint(spec)
     assert len(fingerprint) == 64
     assert set(tool_identity) == {"VCS_HOME", "VERDI_HOME"}
+
+
+def test_design_hierarchy_fixture_preserves_validated_npi_experiment_recipe() -> None:
+    registry = FixtureRegistry.load(
+        ROOT / "testinfra/fixtures.v1.yaml",
+        ROOT / "testinfra/schemas/fixtures.v1.schema.json",
+    )
+    spec = registry.by_id("xdebug.design_hierarchy")
+    assert spec.source_dir == "xdebug/testdata/design/hierarchy_types"
+    assert spec.inputs == ("hierarchy_types_fixture.sv",)
+    assert spec.builder["argv"] == [
+        "vcs",
+        "-full64",
+        "-sverilog",
+        "-timescale=1ns/1ps",
+        "-debug_access+all",
+        "-kdb",
+        "-lca",
+        "{source}/hierarchy_types_fixture.sv",
+        "-top",
+        "hierarchy_types_top",
+        "-o",
+        "{resources}/simv",
+    ]
+    assert spec.outputs == (
+        FixtureOutput("daidir", "simv.daidir", "dir", 1),
+    )
+    assert spec.tool_env == ("VERDI_HOME",)

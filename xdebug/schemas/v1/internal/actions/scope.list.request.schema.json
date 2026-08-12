@@ -99,6 +99,22 @@
           "oneOf": [
             {
               "required": [
+                "daidir",
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "design"
+                }
+              },
+              "not": {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            },
+            {
+              "required": [
                 "fsdb",
                 "mode"
               ],
@@ -134,6 +150,10 @@
               "type": "string",
               "minLength": 1
             },
+            "daidir": {
+              "type": "string",
+              "minLength": 1
+            },
             "fsdb": {
               "type": "string",
               "minLength": 1
@@ -148,6 +168,11 @@
                 "anyOf": [
                   {
                     "required": [
+                      "daidir"
+                    ]
+                  },
+                  {
+                    "required": [
                       "fsdb"
                     ]
                   }
@@ -160,8 +185,17 @@
                   "session_id"
                 ]
               },
-              "required": [
-                "fsdb"
+              "anyOf": [
+                {
+                  "required": [
+                    "daidir"
+                  ]
+                },
+                {
+                  "required": [
+                    "fsdb"
+                  ]
+                }
               ]
             }
           ],
@@ -196,11 +230,17 @@
               "enum": [
                 "all",
                 "module",
+                "interface",
+                "interface_array",
+                "gen_scope",
+                "internal_scope",
+                "modport",
+                "mpport",
                 "port",
                 "signal"
               ],
               "default": "all",
-              "description": "只返回 module、port、signal，或三者都返回。"
+              "description": "只返回指定层级对象 kind，或使用 all 返回全部 kind。"
             },
             "level": {
               "type": "integer",
@@ -211,6 +251,16 @@
             "path": {
               "type": "string",
               "description": "Scope path to list. Empty string or '.' returns top-level scopes."
+            },
+            "source": {
+              "type": "string",
+              "enum": [
+                "wave",
+                "design",
+                "merged"
+              ],
+              "default": "wave",
+              "description": "Hierarchy evidence source. wave requires FSDB, design requires daidir, and merged requires both resources."
             }
           },
           "additionalProperties": false
@@ -233,7 +283,146 @@
           "additionalProperties": false
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              {
+                "not": {
+                  "required": [
+                    "args"
+                  ]
+                }
+              },
+              {
+                "properties": {
+                  "args": {
+                    "not": {
+                      "required": [
+                        "source"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              },
+              {
+                "properties": {
+                  "args": {
+                    "properties": {
+                      "source": {
+                        "const": "wave"
+                      }
+                    },
+                    "required": [
+                      "source"
+                    ]
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "target": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "session_id"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "fsdb"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "args": {
+                "properties": {
+                  "source": {
+                    "const": "design"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              }
+            },
+            "required": [
+              "args"
+            ]
+          },
+          "then": {
+            "properties": {
+              "target": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "session_id"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "daidir"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "args": {
+                "properties": {
+                  "source": {
+                    "const": "merged"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              }
+            },
+            "required": [
+              "args"
+            ]
+          },
+          "then": {
+            "properties": {
+              "target": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "session_id"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "daidir",
+                      "fsdb"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
     }
   ]
 }

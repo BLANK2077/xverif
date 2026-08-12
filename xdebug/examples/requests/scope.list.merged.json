@@ -1,0 +1,21 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "scope.list",
+  "target": {
+    "daidir": "simv.daidir",
+    "fsdb": "waves.fsdb"
+  },
+  "args": {
+    "source": "merged",
+    "path": "top",
+    "level": 1,
+    "kind": "interface",
+    "include_patterns": [
+      "links*"
+    ],
+    "exclude_patterns": []
+  },
+  "limits": {
+    "max_rows": 100
+  }
+}

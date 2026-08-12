@@ -56,6 +56,17 @@
 - 不要在各 action 中自行判断 daidir/fsdb/session 的优先级。
 - public session 选择统一走 `target.session_id`。
 
+## Design Hierarchy Relationship Walker
+
+`scope.list source=design|merged` 的层级发现复用统一 relationship walker，不在 action
+handler 内另写平行枚举器。hierarchy 关系沿 instance/internal scope 递归；interface 的
+modport/mpport 是侧向关系，计入 visited/object budget，但不增加 hierarchy depth。
+
+响应按 kind 保留分组数组。每个对象必须发布 canonical `path`、`kind`、`sources`、
+`queryable` 和 `traceable`；merged 只按 canonical path 合并证据，不能把 design-only 对象
+标成 waveform-queryable。summary 使用 `visited_count` 和统一的
+`returned_count/response_truncated/truncation_scopes`，不新增同义完整性字段。
+
 ## Response Builder 与 XOUT Renderer
 
 路径：

@@ -271,6 +271,20 @@ fixtures:
       - argv: [python3, "{repo}/testinfra/leaf/probe_fixture.py", --resources, "{resources}", --xdebug, "{repo}/tools/xdebug", --daidir-glob, simv.daidir]
     tool_env: [VERDI_HOME]
 
+  - id: xdebug.design_hierarchy
+    build_capabilities: [vcs, npi]
+    source_dir: xdebug/testdata/design/hierarchy_types
+    inputs: [hierarchy_types_fixture.sv]
+    builder:
+      argv: [vcs, -full64, -sverilog, "-timescale=1ns/1ps", "-debug_access+all", -kdb, -lca, "{source}/hierarchy_types_fixture.sv", -top, hierarchy_types_top, -o, "{resources}/simv"]
+      cwd: "{source}"
+      timeout_sec: 1200
+    outputs:
+      - {name: daidir, path: simv.daidir, kind: dir}
+    probes:
+      - argv: [python3, "{repo}/testinfra/leaf/probe_fixture.py", --resources, "{resources}", --xdebug, "{repo}/tools/xdebug", --daidir-glob, simv.daidir]
+    tool_env: [VERDI_HOME]
+
   - id: xdebug.active_trace_runner
     build_capabilities: [make, gxx, npi]
     source_dir: xdebug/tests/active_trace_chain

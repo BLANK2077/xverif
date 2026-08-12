@@ -1,0 +1,52 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "scope.list",
+  "tool": {"name": "xdebug", "version": "0.1.0"},
+  "session": {
+    "session_id": "combined_a",
+    "mode": "combined",
+    "daidir": "simv.daidir",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/combined_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
+  "summary": {
+    "source": "merged",
+    "path": "top",
+    "level": 1,
+    "kind": "interface",
+    "include_patterns": ["links*"],
+    "exclude_patterns": [],
+    "visited_count": 2,
+    "scanned_row_count": 2,
+    "returned_module_count": 0,
+    "returned_port_count": 0,
+    "returned_signal_count": 0,
+    "total_module_count": 0,
+    "total_port_count": 0,
+    "total_signal_count": 0,
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 2,
+    "returned_count": 2,
+    "truncation_scopes": []
+  },
+  "data": {
+    "modules": [],
+    "interfaces": [
+      {"name": "links[0]", "path": "top.links[0]", "kind": "interface", "sources": ["wave", "design"], "queryable": true, "traceable": true, "array_path": "top.links"},
+      {"name": "links[1]", "path": "top.links[1]", "kind": "interface", "sources": ["design"], "queryable": false, "traceable": true, "array_path": "top.links"}
+    ],
+    "interface_arrays": [],
+    "gen_scopes": [],
+    "internal_scopes": [],
+    "modports": [],
+    "mpports": [],
+    "ports": [],
+    "signals": []
+  },
+  "error": null
+}

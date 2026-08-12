@@ -5,7 +5,8 @@ xdebug 是 daidir/FSDB 确定性事实入口。本文件覆盖高频决策链，
 ## 1. 建立资源、scope 和 config
 
 - `daidir` 提供 scope、driver、load、source 和静态依赖；`fsdb` 提供值、事件、窗口和协议；combined session 支持 active driver。
-- 用 `scope.roots` 找根，再用 `scope.list` 确认 hierarchy、真实信号和最终 leaf path。
+- 用 `scope.roots` 找根，再用 `scope.list` 确认 hierarchy、真实信号和最终 leaf path。默认 `source=wave`；纯 daidir 层级发现使用 `source=design`，同时需要设计关系和波形可查询性时使用 `source=merged`。读取每项的 `sources/queryable/traceable`，不能把只有 design 证据的对象当作可直接波形查询。
+- `scope.list` 的 `level` 控制 hierarchy 深度，`limits.max_rows` 控制对象预算；modport/mpport 计入 visited budget，但不增加 hierarchy depth。`response_truncated=true` 时结合 `visited_count/returned_count/truncation_scopes` 缩小 path、level 或 kind，不把截断结果当成完整层级。
 - packed struct/aggregate 必须落实到 payload leaf；不能把 aggregate knownness 当最终结论。
 - 记录 clock/reset、valid/ready/data、payload fields、state/counter、channel/id/opcode。
 - 更完整的 scope/design/source/graph 能力见 [全量 action 索引](../generated/xdebug-actions.md)。

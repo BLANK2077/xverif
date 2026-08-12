@@ -616,8 +616,12 @@ suites:
     level: integration
     intent: [contract, semantics]
     domains: [design]
-    runner: {kind: pytest, path: xdebug/tests/design/test_design_semantics.py}
-    fixtures: [xdebug.design_uart, xdebug.design_p3]
+    runner:
+      kind: pytest
+      paths:
+        - xdebug/tests/design/test_design_semantics.py
+        - xdebug/tests/design/test_design_hierarchy_runtime.py
+    fixtures: [xdebug.design_uart, xdebug.design_p3, xdebug.design_hierarchy]
     capabilities: [child_process, npi, daidir]
     hermetic: false
     deterministic: true

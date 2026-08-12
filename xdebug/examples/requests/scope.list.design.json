@@ -2,14 +2,17 @@
   "api_version": "xdebug.v1",
   "action": "scope.list",
   "target": {
-    "session_id": "case_a"
+    "daidir": "simv.daidir"
   },
   "args": {
-    "source": "wave",
+    "source": "design",
     "path": "top",
-    "level": 1,
+    "level": 2,
     "kind": "all",
     "include_patterns": [],
     "exclude_patterns": []
+  },
+  "limits": {
+    "max_rows": 1000
   }
 }

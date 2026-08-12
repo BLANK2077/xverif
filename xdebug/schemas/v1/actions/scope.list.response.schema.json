@@ -2,9 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "xdebug.scope.list.response.v1",
   "title": "scope.list response",
-  "description": "List waveform modules, ports, signals, interface instances, and interface ports.",
-  "x-description-zh": "按 module 层级列出 FSDB module、port 和 signal；interface 实例归入 signal，interface 端口归入 port。",
-  "x-output_notes": "scope.list 成功响应的 summary 字段为 summary.analysis_complete, summary.exclude_patterns, summary.include_patterns, summary.kind, summary.level, summary.path, summary.response_truncated, summary.returned_count, summary.returned_module_count, summary.returned_port_count, summary.returned_signal_count, summary.scan_complete, summary.scanned_row_count, summary.total_count, summary.total_module_count, summary.total_port_count, summary.total_signal_count, summary.truncation_scopes；data 字段为 data.modules, data.ports, data.signals。未知字段会被拒绝。完整性和裁剪事实使用 summary.scan_complete, summary.analysis_complete, summary.response_truncated, summary.total_count, summary.returned_count, summary.truncation_scopes。",
+  "description": "List bounded waveform, design, or merged hierarchy objects with source and capability evidence.",
+  "x-description-zh": "有界列出 waveform、design 或 merged 层级对象，并保留来源与可查询/可追踪能力证据。",
+  "x-output_notes": "scope.list 成功响应的 summary 字段为 summary.analysis_complete, summary.exclude_patterns, summary.include_patterns, summary.kind, summary.level, summary.path, summary.response_truncated, summary.returned_count, summary.returned_module_count, summary.returned_port_count, summary.returned_signal_count, summary.scan_complete, summary.scanned_row_count, summary.source, summary.total_count, summary.total_module_count, summary.total_port_count, summary.total_signal_count, summary.truncation_scopes, summary.visited_count；data 字段为 data.gen_scopes, data.interface_arrays, data.interfaces, data.internal_scopes, data.modports, data.modules, data.mpports, data.ports, data.signals。未知字段会被拒绝。完整性和裁剪事实使用 summary.scan_complete, summary.analysis_complete, summary.response_truncated, summary.total_count, summary.returned_count, summary.truncation_scopes。",
   "$defs": {
     "jsonValue": {
       "anyOf": [
@@ -42,6 +42,13 @@
     "successSummary": {
       "type": "object",
       "properties": {
+        "source": {
+          "enum": [
+            "wave",
+            "design",
+            "merged"
+          ]
+        },
         "path": {
           "type": "string"
         },
@@ -53,6 +60,12 @@
           "enum": [
             "all",
             "module",
+            "interface",
+            "interface_array",
+            "gen_scope",
+            "internal_scope",
+            "modport",
+            "mpport",
             "port",
             "signal"
           ]
@@ -70,6 +83,10 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "visited_count": {
+          "type": "integer",
+          "minimum": 0
         },
         "scanned_row_count": {
           "type": "integer",
@@ -139,11 +156,13 @@
         "returned_signal_count",
         "scan_complete",
         "scanned_row_count",
+        "source",
         "total_count",
         "total_module_count",
         "total_port_count",
         "total_signal_count",
-        "truncation_scopes"
+        "truncation_scopes",
+        "visited_count"
       ]
     },
     "successData": {
@@ -158,6 +177,30 @@
                 "type": "string",
                 "minLength": 1
               },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "const": "module"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "wave",
+                    "design"
+                  ]
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "queryable": {
+                "type": "boolean"
+              },
+              "traceable": {
+                "type": "boolean"
+              },
               "module_name": {
                 "anyOf": [
                   {
@@ -168,23 +211,6 @@
                     "minLength": 1
                   }
                 ]
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "module_name",
-              "name"
-            ]
-          }
-        },
-        "ports": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string",
-                "minLength": 1
               },
               "direction": {
                 "enum": [
@@ -204,13 +230,573 @@
                     "minimum": 1
                   }
                 ]
+              },
+              "array_path": {
+                "type": "string",
+                "minLength": 1
               }
             },
             "additionalProperties": false,
             "required": [
-              "direction",
+              "kind",
               "name",
-              "width"
+              "path",
+              "queryable",
+              "sources",
+              "traceable"
+            ]
+          }
+        },
+        "interfaces": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "const": "interface"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "wave",
+                    "design"
+                  ]
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "queryable": {
+                "type": "boolean"
+              },
+              "traceable": {
+                "type": "boolean"
+              },
+              "module_name": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "input",
+                  "output",
+                  "inout",
+                  "interface"
+                ]
+              },
+              "width": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                ]
+              },
+              "array_path": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "name",
+              "path",
+              "queryable",
+              "sources",
+              "traceable"
+            ]
+          }
+        },
+        "interface_arrays": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "const": "interface_array"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "wave",
+                    "design"
+                  ]
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "queryable": {
+                "type": "boolean"
+              },
+              "traceable": {
+                "type": "boolean"
+              },
+              "module_name": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "input",
+                  "output",
+                  "inout",
+                  "interface"
+                ]
+              },
+              "width": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                ]
+              },
+              "array_path": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "name",
+              "path",
+              "queryable",
+              "sources",
+              "traceable"
+            ]
+          }
+        },
+        "gen_scopes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "const": "gen_scope"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "wave",
+                    "design"
+                  ]
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "queryable": {
+                "type": "boolean"
+              },
+              "traceable": {
+                "type": "boolean"
+              },
+              "module_name": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "input",
+                  "output",
+                  "inout",
+                  "interface"
+                ]
+              },
+              "width": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                ]
+              },
+              "array_path": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "name",
+              "path",
+              "queryable",
+              "sources",
+              "traceable"
+            ]
+          }
+        },
+        "internal_scopes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "const": "internal_scope"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "wave",
+                    "design"
+                  ]
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "queryable": {
+                "type": "boolean"
+              },
+              "traceable": {
+                "type": "boolean"
+              },
+              "module_name": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "input",
+                  "output",
+                  "inout",
+                  "interface"
+                ]
+              },
+              "width": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                ]
+              },
+              "array_path": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "name",
+              "path",
+              "queryable",
+              "sources",
+              "traceable"
+            ]
+          }
+        },
+        "modports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "const": "modport"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "wave",
+                    "design"
+                  ]
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "queryable": {
+                "type": "boolean"
+              },
+              "traceable": {
+                "type": "boolean"
+              },
+              "module_name": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "input",
+                  "output",
+                  "inout",
+                  "interface"
+                ]
+              },
+              "width": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                ]
+              },
+              "array_path": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "name",
+              "path",
+              "queryable",
+              "sources",
+              "traceable"
+            ]
+          }
+        },
+        "mpports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "const": "mpport"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "wave",
+                    "design"
+                  ]
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "queryable": {
+                "type": "boolean"
+              },
+              "traceable": {
+                "type": "boolean"
+              },
+              "module_name": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "input",
+                  "output",
+                  "inout",
+                  "interface"
+                ]
+              },
+              "width": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                ]
+              },
+              "array_path": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "name",
+              "path",
+              "queryable",
+              "sources",
+              "traceable"
+            ]
+          }
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "const": "port"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "wave",
+                    "design"
+                  ]
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "queryable": {
+                "type": "boolean"
+              },
+              "traceable": {
+                "type": "boolean"
+              },
+              "module_name": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "input",
+                  "output",
+                  "inout",
+                  "interface"
+                ]
+              },
+              "width": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                ]
+              },
+              "array_path": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "name",
+              "path",
+              "queryable",
+              "sources",
+              "traceable"
             ]
           }
         },
@@ -223,6 +809,49 @@
                 "type": "string",
                 "minLength": 1
               },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "const": "signal"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "wave",
+                    "design"
+                  ]
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "queryable": {
+                "type": "boolean"
+              },
+              "traceable": {
+                "type": "boolean"
+              },
+              "module_name": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "input",
+                  "output",
+                  "inout",
+                  "interface"
+                ]
+              },
               "width": {
                 "anyOf": [
                   {
@@ -233,19 +862,33 @@
                     "minimum": 1
                   }
                 ]
+              },
+              "array_path": {
+                "type": "string",
+                "minLength": 1
               }
             },
             "additionalProperties": false,
             "required": [
+              "kind",
               "name",
-              "width"
+              "path",
+              "queryable",
+              "sources",
+              "traceable"
             ]
           }
         }
       },
       "additionalProperties": false,
       "required": [
+        "gen_scopes",
+        "interface_arrays",
+        "interfaces",
+        "internal_scopes",
+        "modports",
         "modules",
+        "mpports",
         "ports",
         "signals"
       ]
@@ -1649,6 +2292,13 @@
     "successSummary0": {
       "type": "object",
       "properties": {
+        "source": {
+          "enum": [
+            "wave",
+            "design",
+            "merged"
+          ]
+        },
         "path": {
           "type": "string"
         },
@@ -1660,6 +2310,12 @@
           "enum": [
             "all",
             "module",
+            "interface",
+            "interface_array",
+            "gen_scope",
+            "internal_scope",
+            "modport",
+            "mpport",
             "port",
             "signal"
           ]
@@ -1677,6 +2333,10 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "visited_count": {
+          "type": "integer",
+          "minimum": 0
         },
         "scanned_row_count": {
           "type": "integer",
@@ -1746,11 +2406,13 @@
         "returned_signal_count",
         "scan_complete",
         "scanned_row_count",
+        "source",
         "total_count",
         "total_module_count",
         "total_port_count",
         "total_signal_count",
-        "truncation_scopes"
+        "truncation_scopes",
+        "visited_count"
       ]
     },
     "successData0": {
@@ -1765,6 +2427,30 @@
                 "type": "string",
                 "minLength": 1
               },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "const": "module"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "wave",
+                    "design"
+                  ]
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "queryable": {
+                "type": "boolean"
+              },
+              "traceable": {
+                "type": "boolean"
+              },
               "module_name": {
                 "anyOf": [
                   {
@@ -1775,23 +2461,6 @@
                     "minLength": 1
                   }
                 ]
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "module_name",
-              "name"
-            ]
-          }
-        },
-        "ports": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string",
-                "minLength": 1
               },
               "direction": {
                 "enum": [
@@ -1811,13 +2480,573 @@
                     "minimum": 1
                   }
                 ]
+              },
+              "array_path": {
+                "type": "string",
+                "minLength": 1
               }
             },
             "additionalProperties": false,
             "required": [
-              "direction",
+              "kind",
               "name",
-              "width"
+              "path",
+              "queryable",
+              "sources",
+              "traceable"
+            ]
+          }
+        },
+        "interfaces": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "const": "interface"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "wave",
+                    "design"
+                  ]
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "queryable": {
+                "type": "boolean"
+              },
+              "traceable": {
+                "type": "boolean"
+              },
+              "module_name": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "input",
+                  "output",
+                  "inout",
+                  "interface"
+                ]
+              },
+              "width": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                ]
+              },
+              "array_path": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "name",
+              "path",
+              "queryable",
+              "sources",
+              "traceable"
+            ]
+          }
+        },
+        "interface_arrays": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "const": "interface_array"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "wave",
+                    "design"
+                  ]
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "queryable": {
+                "type": "boolean"
+              },
+              "traceable": {
+                "type": "boolean"
+              },
+              "module_name": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "input",
+                  "output",
+                  "inout",
+                  "interface"
+                ]
+              },
+              "width": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                ]
+              },
+              "array_path": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "name",
+              "path",
+              "queryable",
+              "sources",
+              "traceable"
+            ]
+          }
+        },
+        "gen_scopes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "const": "gen_scope"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "wave",
+                    "design"
+                  ]
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "queryable": {
+                "type": "boolean"
+              },
+              "traceable": {
+                "type": "boolean"
+              },
+              "module_name": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "input",
+                  "output",
+                  "inout",
+                  "interface"
+                ]
+              },
+              "width": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                ]
+              },
+              "array_path": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "name",
+              "path",
+              "queryable",
+              "sources",
+              "traceable"
+            ]
+          }
+        },
+        "internal_scopes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "const": "internal_scope"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "wave",
+                    "design"
+                  ]
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "queryable": {
+                "type": "boolean"
+              },
+              "traceable": {
+                "type": "boolean"
+              },
+              "module_name": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "input",
+                  "output",
+                  "inout",
+                  "interface"
+                ]
+              },
+              "width": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                ]
+              },
+              "array_path": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "name",
+              "path",
+              "queryable",
+              "sources",
+              "traceable"
+            ]
+          }
+        },
+        "modports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "const": "modport"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "wave",
+                    "design"
+                  ]
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "queryable": {
+                "type": "boolean"
+              },
+              "traceable": {
+                "type": "boolean"
+              },
+              "module_name": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "input",
+                  "output",
+                  "inout",
+                  "interface"
+                ]
+              },
+              "width": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                ]
+              },
+              "array_path": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "name",
+              "path",
+              "queryable",
+              "sources",
+              "traceable"
+            ]
+          }
+        },
+        "mpports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "const": "mpport"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "wave",
+                    "design"
+                  ]
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "queryable": {
+                "type": "boolean"
+              },
+              "traceable": {
+                "type": "boolean"
+              },
+              "module_name": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "input",
+                  "output",
+                  "inout",
+                  "interface"
+                ]
+              },
+              "width": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                ]
+              },
+              "array_path": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "name",
+              "path",
+              "queryable",
+              "sources",
+              "traceable"
+            ]
+          }
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "const": "port"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "wave",
+                    "design"
+                  ]
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "queryable": {
+                "type": "boolean"
+              },
+              "traceable": {
+                "type": "boolean"
+              },
+              "module_name": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "input",
+                  "output",
+                  "inout",
+                  "interface"
+                ]
+              },
+              "width": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                ]
+              },
+              "array_path": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "name",
+              "path",
+              "queryable",
+              "sources",
+              "traceable"
             ]
           }
         },
@@ -1830,6 +3059,49 @@
                 "type": "string",
                 "minLength": 1
               },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "const": "signal"
+              },
+              "sources": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "wave",
+                    "design"
+                  ]
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "queryable": {
+                "type": "boolean"
+              },
+              "traceable": {
+                "type": "boolean"
+              },
+              "module_name": {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                ]
+              },
+              "direction": {
+                "enum": [
+                  "input",
+                  "output",
+                  "inout",
+                  "interface"
+                ]
+              },
               "width": {
                 "anyOf": [
                   {
@@ -1840,19 +3112,33 @@
                     "minimum": 1
                   }
                 ]
+              },
+              "array_path": {
+                "type": "string",
+                "minLength": 1
               }
             },
             "additionalProperties": false,
             "required": [
+              "kind",
               "name",
-              "width"
+              "path",
+              "queryable",
+              "sources",
+              "traceable"
             ]
           }
         }
       },
       "additionalProperties": false,
       "required": [
+        "gen_scopes",
+        "interface_arrays",
+        "interfaces",
+        "internal_scopes",
+        "modports",
         "modules",
+        "mpports",
         "ports",
         "signals"
       ]

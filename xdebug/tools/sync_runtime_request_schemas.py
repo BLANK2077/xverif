@@ -340,7 +340,7 @@ RUNTIME_CONSUMER_CONTRACTS_BY_ACTION: dict[
     ),
     "scope.list": _runtime_consumer_contract(
         "scope.list",
-        {"exclude_patterns", "include_patterns", "kind", "level", "path"},
+        {"exclude_patterns", "include_patterns", "kind", "level", "path", "source"},
     ),
     "scope.roots": _runtime_consumer_contract("scope.roots", {"source"}),
     "session.close": _named_runtime_consumer_contract(
@@ -1672,11 +1672,34 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
             "description": "AXI channel to inspect.",
         }
     if action == "scope.list":
+        selected_props["source"] = {
+            "type": "string",
+            "enum": ["wave", "design", "merged"],
+            "default": "wave",
+            "description": (
+                "Hierarchy evidence source. wave requires FSDB, design requires "
+                "daidir, and merged requires both resources."
+            ),
+            "x-description-zh": (
+                "层级证据来源：wave 要求 FSDB，design 要求 daidir，merged 要求两者。"
+            ),
+        }
         selected_props["kind"] = {
             "type": "string",
-            "enum": ["all", "module", "port", "signal"],
+            "enum": [
+                "all", "module", "interface", "interface_array",
+                "gen_scope", "internal_scope", "modport", "mpport",
+                "port", "signal",
+            ],
             "default": "all",
-            "description": "只返回 module、port、signal，或三者都返回。",
+            "description": "只返回指定层级对象 kind，或使用 all 返回全部 kind。",
+        }
+    if action == "scope.roots":
+        selected_props["source"] = {
+            "type": "string",
+            "enum": ["auto", "wave", "design"],
+            "default": "auto",
+            "description": "scope roots 或证据的来源选择。",
         }
     if action == "protocol.handshake.inspect":
         selected_props["data"] = copy.deepcopy(ADDITIONAL_ARG_SCHEMAS["data"])
@@ -2175,6 +2198,83 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
                     "required": ["target", "args"],
                 }
             }
+        ]
+    if action == "scope.list":
+        updated["allOf"] = [
+            {
+                "if": {
+                    "anyOf": [
+                        {"not": {"required": ["args"]}},
+                        {
+                            "properties": {
+                                "args": {"not": {"required": ["source"]}}
+                            },
+                            "required": ["args"],
+                        },
+                        {
+                            "properties": {
+                                "args": {
+                                    "properties": {"source": {"const": "wave"}},
+                                    "required": ["source"],
+                                }
+                            },
+                            "required": ["args"],
+                        },
+                    ]
+                },
+                "then": {
+                    "properties": {
+                        "target": {
+                            "anyOf": [
+                                {"required": ["session_id"]},
+                                {"required": ["fsdb"]},
+                            ]
+                        }
+                    }
+                },
+            },
+            {
+                "if": {
+                    "properties": {
+                        "args": {
+                            "properties": {"source": {"const": "design"}},
+                            "required": ["source"],
+                        }
+                    },
+                    "required": ["args"],
+                },
+                "then": {
+                    "properties": {
+                        "target": {
+                            "anyOf": [
+                                {"required": ["session_id"]},
+                                {"required": ["daidir"]},
+                            ]
+                        }
+                    }
+                },
+            },
+            {
+                "if": {
+                    "properties": {
+                        "args": {
+                            "properties": {"source": {"const": "merged"}},
+                            "required": ["source"],
+                        }
+                    },
+                    "required": ["args"],
+                },
+                "then": {
+                    "properties": {
+                        "target": {
+                            "anyOf": [
+                                {"required": ["session_id"]},
+                                {"required": ["daidir", "fsdb"]},
+                            ]
+                        }
+                    }
+                },
+            },
         ]
     if action != "expr.normalize":
         updated.pop("oneOf", None)

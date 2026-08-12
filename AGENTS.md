@@ -340,6 +340,12 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 
 ### 2026-08-12 环境错误复盘
 
+- 错误现象：复核新增 fixture/catalog 时，手写 Python probe 导入了不存在的 `testinfra.xverif_test.catalog.load_catalog`，未进入 registry 加载。
+- 误判原因：根据模块用途猜测公共 helper 名，没有先检查实际 API 或直接使用正式 catalog suite。
+- 以后规则：testinfra catalog/fixture 校验统一先查 `testinfra.unit` 的正式测试入口并从 gate/suite 执行；临时 Python probe 只有在核对真实导出符号后才使用。
+
+### 2026-08-12 环境错误复盘
+
 - 错误现象：运行 `xverif_mcp.process` focused suite 时未显式设置 `XVERIF_TEST_EXECUTION_ENV=host`，被 required suite preflight 在收集前拒绝。
 - 误判原因：按该 suite 无真实 NPI/EDA 能力推断可直接执行，忽略 catalog 对进程集成测试声明了 host 执行边界。
 - 以后规则：focused suite 启动前除核对 gate membership 外，还必须从 plan/catalog 核对执行环境要求；凡 preflight 要求 host，首次命令即显式设置 `XVERIF_TEST_EXECUTION_ENV=host`。

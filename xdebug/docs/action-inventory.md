@@ -57,7 +57,7 @@ contract error，不表示存在兼容入口。
 | `waveform.cursor.list` | waveform | stable | waveform | waveform engine forward | partial |
 | `waveform.cursor.delete` | waveform | stable | waveform | waveform engine forward | partial |
 | `waveform.cursor.use` | waveform | stable | waveform | waveform engine forward | partial |
-| `scope.list` | waveform | stable | waveform | waveform engine forward | regression |
+| `scope.list` | waveform | stable | any | unified engine forward | regression |
 | `scope.roots` | waveform | stable | any | waveform engine forward | targeted |
 | `nwave.rc.generate` | waveform | stable | waveform | waveform engine forward | partial |
 | `value.at` | waveform | stable | waveform | waveform engine forward | regression |

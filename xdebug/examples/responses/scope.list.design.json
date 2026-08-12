@@ -1,0 +1,53 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "scope.list",
+  "tool": {"name": "xdebug", "version": "0.1.0"},
+  "session": null,
+  "summary": {
+    "source": "design",
+    "path": "top",
+    "level": 2,
+    "kind": "all",
+    "include_patterns": [],
+    "exclude_patterns": [],
+    "visited_count": 6,
+    "scanned_row_count": 6,
+    "returned_module_count": 1,
+    "returned_port_count": 0,
+    "returned_signal_count": 0,
+    "total_module_count": 1,
+    "total_port_count": 0,
+    "total_signal_count": 0,
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 6,
+    "returned_count": 6,
+    "truncation_scopes": []
+  },
+  "data": {
+    "modules": [
+      {"name": "u_worker", "path": "top.g_lane[0].u_worker", "kind": "module", "sources": ["design"], "queryable": false, "traceable": true, "module_name": "worker"}
+    ],
+    "interfaces": [
+      {"name": "links[0]", "path": "top.links[0]", "kind": "interface", "sources": ["design"], "queryable": false, "traceable": true, "array_path": "top.links"}
+    ],
+    "interface_arrays": [
+      {"name": "links", "path": "top.links", "kind": "interface_array", "sources": ["design"], "queryable": false, "traceable": true}
+    ],
+    "gen_scopes": [
+      {"name": "g_lane[0]", "path": "top.g_lane[0]", "kind": "gen_scope", "sources": ["design"], "queryable": false, "traceable": true}
+    ],
+    "internal_scopes": [],
+    "modports": [
+      {"name": "producer", "path": "top.links[0].producer", "kind": "modport", "sources": ["design"], "queryable": false, "traceable": true}
+    ],
+    "mpports": [
+      {"name": "valid", "path": "top.links[0].producer.valid", "kind": "mpport", "sources": ["design"], "queryable": false, "traceable": true, "direction": "output"}
+    ],
+    "ports": [],
+    "signals": []
+  },
+  "error": null
+}

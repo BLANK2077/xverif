@@ -844,6 +844,18 @@ APB 配置的基础字段为 `paddr/pwdata/prdata/pwrite/penable/psel/clk/rst_n`
 复用一次完整 FSDB 扫描；地址查询按需构建独立索引。分析缓存达到 hard limit 时返回
 明确错误，不会静默缩小时间范围或切换数据源。
 
+### Design-aware hierarchy：scope.list
+
+`scope.list` 默认 `source=wave`，保持现有 FSDB 层级发现语义。纯 daidir 使用
+`source=design`；同时拥有 daidir/FSDB 并需要合并来源与能力证据时使用 `source=merged`。
+wave/design/merged 分别要求 FSDB、daidir、两者，资源缺失时不会静默切换 source。
+
+`kind` 支持 `module/interface/interface_array/gen_scope/internal_scope/modport/mpport/port/signal`。
+返回对象包含 `sources/queryable/traceable`；只有 `queryable=true` 才能继续执行波形查询，
+`traceable=true` 表示可进入设计追踪。用 `level` 限制 hierarchy 深度，用 `limits.max_rows`
+限制对象预算；若 `response_truncated=true`，必须检查
+`visited_count/returned_count/truncation_scopes` 后缩小查询。
+
 ### 联合定位：trace.active_driver
 
 当同时有 `daidir` 和 `fsdb` 时，用 `trace.active_driver` 把“某时刻波形值”连接到“当前生效的设计驱动证据”：

@@ -6,6 +6,7 @@
       "session_id": "case_a"
     },
     "args": {
+      "source": "wave",
       "path": "top",
       "level": 1,
       "kind": "all",
@@ -30,11 +31,13 @@
       "server_host": "localhost"
     },
     "summary": {
+      "source": "wave",
       "path": "top",
       "level": 1,
       "kind": "all",
       "include_patterns": [],
       "exclude_patterns": [],
+      "visited_count": 5,
       "scanned_row_count": 5,
       "returned_module_count": 1,
       "returned_port_count": 2,
@@ -53,17 +56,44 @@
       "modules": [
         {
           "name": "u0",
+          "path": "top.u0",
+          "kind": "module",
+          "sources": [
+            "wave"
+          ],
+          "queryable": true,
+          "traceable": false,
           "module_name": "worker"
         }
       ],
+      "interfaces": [],
+      "interface_arrays": [],
+      "gen_scopes": [],
+      "internal_scopes": [],
+      "modports": [],
+      "mpports": [],
       "ports": [
         {
           "name": "u0.bus",
+          "path": "top.u0.bus",
+          "kind": "port",
+          "sources": [
+            "wave"
+          ],
+          "queryable": true,
+          "traceable": false,
           "direction": "interface",
           "width": null
         },
         {
           "name": "u0.req_i",
+          "path": "top.u0.req_i",
+          "kind": "port",
+          "sources": [
+            "wave"
+          ],
+          "queryable": true,
+          "traceable": false,
           "direction": "input",
           "width": 1
         }
@@ -71,10 +101,24 @@
       "signals": [
         {
           "name": "clk",
+          "path": "top.clk",
+          "kind": "signal",
+          "sources": [
+            "wave"
+          ],
+          "queryable": true,
+          "traceable": false,
           "width": 1
         },
         {
           "name": "link",
+          "path": "top.link",
+          "kind": "signal",
+          "sources": [
+            "wave"
+          ],
+          "queryable": true,
+          "traceable": false,
           "width": null
         }
       ]

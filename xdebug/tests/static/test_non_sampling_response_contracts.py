@@ -339,8 +339,8 @@ def test_all_registered_success_examples_match_a_correlated_variant() -> None:
                     f"{action}: {errors[0].json_path}: "
                     f"{errors[0].message}"
                 )
-    assert response_count == 60
-    assert witness_count == 59
+    assert response_count == 62
+    assert witness_count == 61
     assert not failures, "\n".join(failures)
 
 
@@ -537,6 +537,29 @@ def test_unknown_fields_and_type_or_enum_drift_are_rejected() -> None:
 
     summary, data = _variant("scope.list", "listed")
     summary["kind"] = "whatever"
+    _assert_pair_invalid("scope.list", summary, data)
+
+    summary, data = _variant("scope.list", "listed")
+    data["interfaces"] = [{
+        "name": "bus_if",
+        "path": "top.bus_if",
+        "kind": "signal",
+        "sources": ["design"],
+        "queryable": False,
+        "traceable": True,
+    }]
+    _assert_pair_invalid("scope.list", summary, data)
+
+    summary, data = _variant("scope.list", "listed")
+    data["modules"] = [{
+        "name": "dut",
+        "path": "top.dut",
+        "kind": "module",
+        "sources": ["design"],
+        "queryable": False,
+        "traceable": True,
+    }]
+    data["modules"][0].pop("sources")
     _assert_pair_invalid("scope.list", summary, data)
 
     summary, data = _variant("apb.config.load", "loaded")

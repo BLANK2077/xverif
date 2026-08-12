@@ -3,6 +3,7 @@
 #include "service/engine_globals.h"
 
 #include "core/output/completeness.h"
+#include "design/hierarchy/relationship_walker.h"
 
 #include "npi_fsdb.h"
 
@@ -11,6 +12,7 @@
 #include <fnmatch.h>
 #include <functional>
 #include <memory>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -119,7 +121,7 @@ class ScopeListHandler : public EngineActionHandler {
 public:
     const char* action_name() const override { return "scope.list"; }
     bool needs_design() const override { return false; }
-    bool needs_waveform() const override { return true; }
+    bool needs_waveform() const override { return false; }
 
     Json run(ContractBoundRequest& request, EngineActionContext& ctx) const override {
         auto args = request.args();
@@ -127,6 +129,7 @@ public:
             args.value("path", std::string("")));
         if (requested_path == ".") requested_path.clear();
         int level = args.value("level", 0);
+        const std::string source = args.value("source", std::string("wave"));
         std::string kind = args.value("kind", std::string("all"));
         Json include_patterns = args["include_patterns"].exists()
             ? args["include_patterns"].consume_subtree(
@@ -136,14 +139,37 @@ public:
             ? args["exclude_patterns"].consume_subtree(
                   "scope.list.exclude_patterns")
             : Json::array();
-        if (kind != "all" && kind != "module" &&
-            kind != "port" && kind != "signal") {
+        const std::set<std::string> supported_kinds = {
+            "all", "module", "interface", "interface_array", "gen_scope",
+            "internal_scope", "modport", "mpport", "port", "signal"};
+        if (source != "wave" && source != "design" && source != "merged") {
             return make_handler_error(
                 "INVALID_REQUEST",
-                "scope.list args.kind must be all, module, port, or signal",
+                "scope.list args.source must be wave, design, or merged",
+                {{"invalid_arg", "args.source"},
+                 {"available_values", Json::array({"wave", "design", "merged"})}});
+        }
+        if (supported_kinds.find(kind) == supported_kinds.end()) {
+            return make_handler_error(
+                "INVALID_REQUEST",
+                "scope.list args.kind is not supported",
                 {{"invalid_arg", "args.kind"},
                  {"available_values",
-                  Json::array({"all", "module", "port", "signal"})}});
+                  Json::array({"all", "module", "interface", "interface_array",
+                               "gen_scope", "internal_scope", "modport", "mpport",
+                               "port", "signal"})}});
+        }
+        const bool want_wave = source == "wave" || source == "merged";
+        const bool want_design = source == "design" || source == "merged";
+        const bool wave_available = g_has_waveform && g_fsdb_file;
+        const bool design_available = g_has_design;
+        if ((want_wave && !wave_available) || (want_design && !design_available)) {
+            return make_handler_error(
+                "RESOURCE_UNAVAILABLE",
+                "scope.list requested a source that is not loaded",
+                {{"invalid_arg", "args.source"},
+                 {"missing_resource", !wave_available && want_wave
+                                          ? "waveform" : "design database"}});
         }
         for (const char* field : {"include_patterns", "exclude_patterns"}) {
             const Json& patterns =
@@ -165,8 +191,8 @@ public:
         int max_rows = limits.value("max_rows", -1);
 
         npiFsdbScopeHandle root_scope = nullptr;
-        std::string path;
-        if (!requested_path.empty()) {
+        std::string path = requested_path;
+        if (want_wave && !requested_path.empty()) {
             root_scope = npi_fsdb_scope_by_name(
                 g_fsdb_file, requested_path.c_str(), nullptr);
             if (root_scope) {
@@ -175,7 +201,7 @@ public:
                 if (path.empty()) path = requested_path;
             }
         }
-        if (!requested_path.empty() && !root_scope) {
+        if (want_wave && !requested_path.empty() && !root_scope) {
             return make_handler_error(
                 "SCOPE_NOT_FOUND",
                 "waveform scope not found: " + requested_path,
@@ -193,6 +219,7 @@ public:
 
         size_t scanned_row_count = 0;
         std::vector<ScopeItem> matched_items;
+        std::map<std::pair<std::string, std::string>, std::size_t> item_indexes;
         std::set<std::string> declared_composite_objects;
 
         auto add_item = [&](const std::string& item_kind,
@@ -209,7 +236,34 @@ public:
                 matches_any(exclude_patterns, name)) {
                 return;
             }
-            matched_items.push_back({item_kind, name, value});
+            Json normalized = value;
+            if (!normalized.contains("name")) normalized["name"] = name;
+            if (!normalized.contains("path"))
+                normalized["path"] = path.empty() ? name : path + "." + name;
+            normalized["kind"] = item_kind;
+            if (!normalized.contains("sources"))
+                normalized["sources"] = Json::array({"wave"});
+            if (!normalized.contains("queryable")) normalized["queryable"] = true;
+            if (!normalized.contains("traceable")) normalized["traceable"] = false;
+            const auto identity = std::make_pair(
+                item_kind, normalized.value("path", name));
+            const auto existing = item_indexes.find(identity);
+            if (existing == item_indexes.end()) {
+                item_indexes.emplace(identity, matched_items.size());
+                matched_items.push_back({item_kind, name, normalized});
+                return;
+            }
+            Json& prior = matched_items[existing->second].value;
+            for (const auto& item_source : normalized["sources"]) {
+                bool present = false;
+                for (const auto& prior_source : prior["sources"])
+                    if (prior_source == item_source) present = true;
+                if (!present) prior["sources"].push_back(item_source);
+            }
+            prior["queryable"] = prior.value("queryable", false) ||
+                                   normalized.value("queryable", false);
+            prior["traceable"] = prior.value("traceable", false) ||
+                                  normalized.value("traceable", false);
         };
 
         auto add_signals = [&](npiFsdbScopeHandle scope) {
@@ -382,11 +436,11 @@ public:
             }
         };
 
-        if (root_scope &&
+        if (want_wave && root_scope &&
             !is_interface_instance_scope(root_scope) &&
             !is_interface_port_scope(root_scope)) {
             visit_scope(root_scope, 0);
-        } else if (!root_scope) {
+        } else if (want_wave && !root_scope) {
             npiFsdbScopeIter iter = ctx.resources.own_fsdb_scope_iter(
                 npi_fsdb_iter_top_scope(g_fsdb_file));
             if (!iter) {
@@ -431,6 +485,41 @@ public:
             }
         }
 
+        const size_t wave_visited_count = scanned_row_count;
+        DesignRelationshipWalkResult design_result;
+        if (want_design) {
+            constexpr std::size_t kDesignObjectBudget = 100000;
+            design_result = walk_design_relationships(
+                requested_path, level, kDesignObjectBudget, ctx.resources);
+            if (!requested_path.empty() && !design_result.root_found) {
+                return make_handler_error(
+                    "SCOPE_NOT_FOUND",
+                    "design scope not found: " + requested_path,
+                    {{"invalid_arg", "args.path"},
+                     {"missing_name", requested_path},
+                     {"missing_resource", "design scope"}});
+            }
+            for (const auto& item : design_result.items) {
+                Json value = {
+                    {"name", item.name},
+                    {"path", item.path},
+                    {"kind", item.kind},
+                    {"sources", Json::array({"design"})},
+                    {"queryable", true},
+                    {"traceable", item.kind == "module" ||
+                                      item.kind == "interface" ||
+                                      item.kind == "port" ||
+                                      item.kind == "signal" ||
+                                      item.kind == "mpport"}
+                };
+                if (!item.module_name.empty())
+                    value["module_name"] = item.module_name;
+                if (!item.direction.empty()) value["direction"] = item.direction;
+                if (!item.array_path.empty()) value["array_path"] = item.array_path;
+                add_item(item.kind, relative_name(item.path, path), value);
+            }
+        }
+
         std::sort(
             matched_items.begin(), matched_items.end(),
             [](const ScopeItem& lhs, const ScopeItem& rhs) {
@@ -444,12 +533,18 @@ public:
         for (const auto& item : matched_items) {
             if (item.kind == "module") ++total_module_count;
             else if (item.kind == "port") ++total_port_count;
-            else ++total_signal_count;
+            else if (item.kind == "signal") ++total_signal_count;
         }
 
         Json modules = Json::array();
         Json ports = Json::array();
         Json signals = Json::array();
+        Json interfaces = Json::array();
+        Json interface_arrays = Json::array();
+        Json gen_scopes = Json::array();
+        Json internal_scopes = Json::array();
+        Json modports = Json::array();
+        Json mpports = Json::array();
         const size_t returned_limit =
             max_rows < 0
                 ? matched_items.size()
@@ -459,20 +554,31 @@ public:
             const ScopeItem& item = matched_items[index];
             if (item.kind == "module") modules.push_back(item.value);
             else if (item.kind == "port") ports.push_back(item.value);
-            else signals.push_back(item.value);
+            else if (item.kind == "signal") signals.push_back(item.value);
+            else if (item.kind == "interface") interfaces.push_back(item.value);
+            else if (item.kind == "interface_array") interface_arrays.push_back(item.value);
+            else if (item.kind == "gen_scope") gen_scopes.push_back(item.value);
+            else if (item.kind == "internal_scope") internal_scopes.push_back(item.value);
+            else if (item.kind == "modport") modports.push_back(item.value);
+            else if (item.kind == "mpport") mpports.push_back(item.value);
         }
 
         const size_t matched_row_count = matched_items.size();
         const size_t returned_row_count =
-            modules.size() + ports.size() + signals.size();
+            modules.size() + ports.size() + signals.size() + interfaces.size() +
+            interface_arrays.size() + gen_scopes.size() + internal_scopes.size() +
+            modports.size() + mpports.size();
         const bool truncated = returned_row_count < matched_row_count;
         Json out;
         out["summary"] = {
             {"path", path},
+            {"source", source},
             {"level", level},
             {"kind", kind},
             {"include_patterns", include_patterns},
             {"exclude_patterns", exclude_patterns},
+            {"visited_count", static_cast<int>(
+                wave_visited_count + design_result.visited_count)},
             {"scanned_row_count", static_cast<int>(scanned_row_count)},
             {"returned_module_count", static_cast<int>(modules.size())},
             {"returned_port_count", static_cast<int>(ports.size())},
@@ -483,17 +589,25 @@ public:
         };
         xdebug_core::set_completeness(
             out["summary"],
-            true,
-            true,
-            truncated,
+            !design_result.budget_exhausted,
+            !design_result.budget_exhausted,
+            truncated || design_result.budget_exhausted,
             matched_row_count,
             returned_row_count,
-            truncated
-                ? std::vector<std::string>{"response_rows"}
-                : std::vector<std::string>{});
+            design_result.budget_exhausted
+                ? std::vector<std::string>{"analysis_objects"}
+                : truncated
+                    ? std::vector<std::string>{"response_rows"}
+                    : std::vector<std::string>{});
         out["modules"] = modules;
         out["ports"] = ports;
         out["signals"] = signals;
+        out["interfaces"] = interfaces;
+        out["interface_arrays"] = interface_arrays;
+        out["gen_scopes"] = gen_scopes;
+        out["internal_scopes"] = internal_scopes;
+        out["modports"] = modports;
+        out["mpports"] = mpports;
         return out;
     }
 

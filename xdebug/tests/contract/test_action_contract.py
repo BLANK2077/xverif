@@ -2144,6 +2144,7 @@ def test_line_limit_and_scan_budget_request_contracts_are_strict(
         "action": "scope.list",
         "target": resource_target,
         "args": {
+            "source": "wave",
             "path": "top",
             "level": 1,
             "kind": "port",
@@ -2151,6 +2152,30 @@ def test_line_limit_and_scan_budget_request_contracts_are_strict(
             "exclude_patterns": ["*debug*"],
         },
     })
+    scope.validate({
+        "api_version": "xdebug.v1",
+        "action": "scope.list",
+        "target": {"daidir": "simv.daidir"},
+        "args": {"source": "design", "kind": "gen_scope"},
+    })
+    scope.validate({
+        "api_version": "xdebug.v1",
+        "action": "scope.list",
+        "target": {"daidir": "simv.daidir", "fsdb": "waves.fsdb"},
+        "args": {"source": "merged", "kind": "mpport"},
+    })
+    for args, target in (
+        ({"source": "wave"}, {"daidir": "simv.daidir"}),
+        ({"source": "design"}, {"fsdb": "waves.fsdb"}),
+        ({"source": "merged"}, {"daidir": "simv.daidir"}),
+    ):
+        with pytest.raises(jsonschema.ValidationError):
+            scope.validate({
+                "api_version": "xdebug.v1",
+                "action": "scope.list",
+                "target": target,
+                "args": args,
+            })
     for legacy_args in (
         {"recursive": True},
         {"max_depth": 2},

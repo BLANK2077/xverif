@@ -162,6 +162,7 @@ ENGINE_SRCS = src/engine/main.cpp \
 
 
 DESIGN_SRCS = src/design/service/action_support.cpp \
+              src/design/hierarchy/relationship_walker.cpp \
               src/design/service/trace_actions.cpp \
               src/design/common/xdebug_design_paths.cpp \
               src/design/ast/ast_extractor.cpp \
@@ -295,6 +296,7 @@ $(eval $(call CPP_UNIT_BINARY,test_protocol_query_filter,$(BUILD)/src/engine/ser
 $(eval $(call CPP_UNIT_BINARY,test_protocol_statistics_filter,$(BUILD)/src/engine/service/actions/protocol/protocol_statistics_filter.o $(BUILD)/src/waveform/filter/value_filter.o $(BUILD)/src/core/value/logic_value.o $(BUILD)/src/api/text_response_builder.o,))
 $(eval $(call CPP_UNIT_BINARY,test_trace_source_path_formatter,$(BUILD)/src/engine/service/trace_source_path_formatter.o $(BUILD)/src/api/text_response_builder.o $(CORE_OBJS),$(LDFLAGS)))
 $(eval $(call CPP_UNIT_BINARY,test_trace_x_chain_identity,,))
+$(eval $(call CPP_UNIT_BINARY,test_relationship_traversal,,))
 $(eval $(call CPP_UNIT_BINARY,test_common_blocks,$(CORE_OBJS) $(BUILD)/src/api/text_response_builder.o $(BUILD)/src/api/xout_renderer.o,$(LDFLAGS)))
 $(eval $(call CPP_UNIT_BINARY,test_contract_bound_request,$(BUILD)/src/engine/service/contract_bound_request.o,))
 $(eval $(call CPP_UNIT_BINARY,test_logic_value,$(BUILD)/src/core/value/logic_value.o,))

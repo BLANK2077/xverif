@@ -9,7 +9,17 @@
 ```
 
 ```json
-{"api_version":"xdebug.v1","action":"scope.list","target":{"session_id":"case_a"},"args":{"path":"top","level":1,"kind":"all","include_patterns":[],"exclude_patterns":[]}}
+{"api_version":"xdebug.v1","action":"scope.list","target":{"session_id":"case_a"},"args":{"source":"wave","path":"top","level":1,"kind":"all","include_patterns":[],"exclude_patterns":[]}}
+```
+
+纯 design 与 merged 层级分别显式选择 source；不要因某一资源缺失而自动切换：
+
+```json
+{"api_version":"xdebug.v1","action":"scope.list","target":{"daidir":"simv.daidir"},"args":{"source":"design","path":"top","level":2,"kind":"all"},"limits":{"max_rows":1000}}
+```
+
+```json
+{"api_version":"xdebug.v1","action":"scope.list","target":{"daidir":"simv.daidir","fsdb":"waves.fsdb"},"args":{"source":"merged","path":"top","level":1,"kind":"interface"},"limits":{"max_rows":100}}
 ```
 
 ## 加载信号组并多时间点取值

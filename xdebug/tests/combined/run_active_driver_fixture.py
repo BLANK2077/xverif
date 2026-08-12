@@ -269,7 +269,15 @@ def check_interface_is_signal(session_id: str):
         failed += 1
         return
     signals = response.get("data", {}).get("signals", [])
-    if signals != [{"name": "link", "width": None}]:
+    if signals != [{
+        "name": "link",
+        "path": "if_root_tb.link",
+        "kind": "signal",
+        "sources": ["wave"],
+        "queryable": True,
+        "traceable": False,
+        "width": None,
+    }]:
         print(
             "FAIL: scope_list_interface_signal — expected one unexpanded "
             f"interface signal, got {signals}"
@@ -295,9 +303,16 @@ def check_interface_is_signal(session_id: str):
         failed += 1
         return
     ports = response.get("data", {}).get("ports", [])
-    if ports != [
-        {"name": "u_src.bus", "direction": "interface", "width": None}
-    ]:
+    if ports != [{
+        "name": "u_src.bus",
+        "path": "if_root_tb.u_src.bus",
+        "kind": "port",
+        "sources": ["wave"],
+        "queryable": True,
+        "traceable": False,
+        "direction": "interface",
+        "width": None,
+    }]:
         print(
             "FAIL: scope_list_interface_port — expected direction=interface, "
             f"got {ports}"

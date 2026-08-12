@@ -32,6 +32,10 @@
           "type": "string",
           "minLength": 1
         },
+        "daidir": {
+          "type": "string",
+          "minLength": 1
+        },
         "fsdb": {
           "type": "string",
           "minLength": 1
@@ -46,6 +50,11 @@
             "anyOf": [
               {
                 "required": [
+                  "daidir"
+                ]
+              },
+              {
+                "required": [
                   "fsdb"
                 ]
               }
@@ -58,8 +67,17 @@
               "session_id"
             ]
           },
-          "required": [
-            "fsdb"
+          "anyOf": [
+            {
+              "required": [
+                "daidir"
+              ]
+            },
+            {
+              "required": [
+                "fsdb"
+              ]
+            }
           ]
         }
       ],
@@ -94,11 +112,17 @@
           "enum": [
             "all",
             "module",
+            "interface",
+            "interface_array",
+            "gen_scope",
+            "internal_scope",
+            "modport",
+            "mpport",
             "port",
             "signal"
           ],
           "default": "all",
-          "description": "只返回 module、port、signal，或三者都返回。"
+          "description": "只返回指定层级对象 kind，或使用 all 返回全部 kind。"
         },
         "level": {
           "type": "integer",
@@ -109,6 +133,16 @@
         "path": {
           "type": "string",
           "description": "Scope path to list. Empty string or '.' returns top-level scopes."
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "wave",
+            "design",
+            "merged"
+          ],
+          "default": "wave",
+          "description": "Hierarchy evidence source. wave requires FSDB, design requires daidir, and merged requires both resources."
         }
       },
       "additionalProperties": false
@@ -132,18 +166,18 @@
     }
   },
   "additionalProperties": false,
-  "description": "List waveform modules, ports, signals, interface instances, and interface ports.",
-  "x-purpose": "分类列出 FSDB module、port 和 signal。",
-  "x-how_it_works": "args.level=0 只返回当前 module 的声明 port/signal、interface 实例（归入 signal）、interface 端口（归入 port，direction=interface）和直接子 module；1/2/3 继续进入相应 module 层级。include_patterns/exclude_patterns 用区分大小写的 */? glob 匹配相对 summary.path 的 name，exclude 优先且不剪枝；kind 接受 all、module、port、signal。结果不进入 interface，也不展开 composite 成员。",
-  "x-when_to_use": "用相对 name 确认真实层次、端口、信号和 interface 声明。",
-  "x-arg_contract_notes": "optional: path, level(default 0), kind(default all), include_patterns, exclude_patterns; limits: max_rows",
-  "x-description-zh": "按 module 层级列出 FSDB module、port 和 signal；interface 实例归入 signal，interface 端口归入 port。",
+  "description": "List bounded waveform, design, or merged hierarchy objects with source and capability evidence.",
+  "x-purpose": "有界列出 waveform/design 层级对象。",
+  "x-how_it_works": "source=wave（默认）要求 FSDB，design 要求 daidir，merged 要求两者；保留 level 深度语义。kind 支持 module/interface/interface_array/gen_scope/internal_scope/modport/mpport/port/signal。每项发布 sources/queryable/traceable，summary 发布 visited_count 与 canonical 完整性字段。",
+  "x-when_to_use": "发现 elaborated generate、interface array、modport/mpport，或把设计层级证据与波形可查询性合并。",
+  "x-arg_contract_notes": "optional: source(default wave), path, level(default 0), kind(default all), include_patterns, exclude_patterns; limits: max_rows",
+  "x-description-zh": "有界列出 waveform、design 或 merged 层级对象，并保留来源与可查询/可追踪能力证据。",
   "x-agent": {
     "use_when": [
-      "Need module-relative hierarchy contents classified as modules, ports, and declared signals from the active waveform; interface instances are signals and interface ports use direction=interface."
+      "Need bounded hierarchy discovery from waveform, design, or both, including generate scopes, interfaces, interface arrays, modports, and mpports."
     ],
     "do_not_use_when": [
-      "Do not use it when only database roots are needed, one known signal must be resolved, or composite members must be expanded."
+      "Do not use it when only database roots are needed or one known leaf signal must be resolved."
     ],
     "alternatives": [
       {
@@ -156,7 +190,146 @@
       }
     ],
     "constraints": [
-      "optional: path, level(default 0), kind(default all), include_patterns, exclude_patterns; limits: max_rows"
+      "optional: source(default wave), path, level(default 0), kind(default all), include_patterns, exclude_patterns; limits: max_rows"
     ]
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "anyOf": [
+          {
+            "not": {
+              "required": [
+                "args"
+              ]
+            }
+          },
+          {
+            "properties": {
+              "args": {
+                "not": {
+                  "required": [
+                    "source"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "args"
+            ]
+          },
+          {
+            "properties": {
+              "args": {
+                "properties": {
+                  "source": {
+                    "const": "wave"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              }
+            },
+            "required": [
+              "args"
+            ]
+          }
+        ]
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "anyOf": [
+              {
+                "required": [
+                  "session_id"
+                ]
+              },
+              {
+                "required": [
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "args": {
+            "properties": {
+              "source": {
+                "const": "design"
+              }
+            },
+            "required": [
+              "source"
+            ]
+          }
+        },
+        "required": [
+          "args"
+        ]
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "anyOf": [
+              {
+                "required": [
+                  "session_id"
+                ]
+              },
+              {
+                "required": [
+                  "daidir"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "args": {
+            "properties": {
+              "source": {
+                "const": "merged"
+              }
+            },
+            "required": [
+              "source"
+            ]
+          }
+        },
+        "required": [
+          "args"
+        ]
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "anyOf": [
+              {
+                "required": [
+                  "session_id"
+                ]
+              },
+              {
+                "required": [
+                  "daidir",
+                  "fsdb"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
 }

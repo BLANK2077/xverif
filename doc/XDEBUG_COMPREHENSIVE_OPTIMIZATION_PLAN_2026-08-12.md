@@ -191,7 +191,7 @@ native CLI、engine、session、MCP、SDK-free loop、schema、example、XOUT、
 
 ### C07 Design-aware hierarchy
 
-状态：`pending`
+状态：`completed`
 
 - 共享 relationship walker 和 scope.list source/kind 扩展。
 - 将临时 generate/interface array/modport fixture 正式化。
@@ -311,9 +311,9 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 | C02 安全/batch | completed | `0fe1328` | 安全随机、batch/MCP、XOUT 边界及 focused suites 全绿 |
 | C03 Session | completed | `111d386` | 生命周期 lease/NPI 串行、deadline/超时终止、list 纯读、close graceful/force 与全 surface 迁移完成 |
 | C04 FSDB identity | completed | `7e27303` | registry v3 纳秒指纹、open 二次校验、query 前 fail-closed gate 与 RESOURCE_CHANGED AI 证据完成 |
-| C05 Transport | completed | 本提交 | 64 MiB 统一边界、block I/O、单调 deadline、严格 env 与结构化错误完成 |
-| C06 Cache | completed | 本提交 | 全元数据预算、O(1) stats、批量 LRU、有界 APB/AXI selection 与资源/等价性门禁完成 |
-| C07 Hierarchy | pending | - | - |
+| C05 Transport | completed | `0725a50` | 64 MiB 统一边界、block I/O、单调 deadline、严格 env 与结构化错误完成 |
+| C06 Cache | completed | `477efdd` | 全元数据预算、O(1) stats、批量 LRU、有界 APB/AXI selection 与资源/等价性门禁完成 |
+| C07 Hierarchy | completed | 本提交 | `scope.list` 的 wave/design/merged 与 generate/interface array/modport/mpport 关系完成真实 VCS/NPI 验证；未扩展 mixed-language/bind |
 | C08 APB export | pending | - | - |
 | C09 AI/schema | pending | - | - |
 | C10 清理 | pending | - | - |
@@ -344,9 +344,14 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 | 2026-08-12 | C06 | `make -C xdebug all` / `xdebug.cpp_unit` / `xdebug.static` | host | PASS | 构建通过；1 / 108 passed |
 | 2026-08-12 | C06 | counter / synthetic existing / stream | host | PASS | 1 / 2 / 2 passed |
 | 2026-08-12 | C06 | APB VIP / AXI VIP / analysis cache benchmark | host | PASS | nightly required 各 1 passed；benchmark 含等价、RSS、估算字节、scanner 与 cardinality 硬门禁 |
+| 2026-08-12 | C07 | build / request、response、hint、internal、current sample 生成检查 / schema / examples / runtime compatibility | host | PASS | 构建通过；279 schemas；222 examples；全部生成产物一致 |
+| 2026-08-12 | C07 | `xdebug.design_semantics` / `xdebug.static` / `xdebug.cpp_unit` | host | PASS | 6 / 108 / 1 passed；新 fixture 由 VCS 生成 daidir，真实 NPI 验证 generate/interface array/modport/mpport |
+| 2026-08-12 | C07 | `xdebug.contract` / `xdebug.synthetic_existing` / `skills.xverif` | host | PASS | 112 / 2 / 16 passed |
+| 2026-08-12 | C07 | `testinfra.unit` | host | PARTIAL | C07 相关 catalog、fixture、C++ runner 检查通过；39 passed，唯一失败来自另一个任务未跟踪 flock 报告中的机器绝对路径，未修改、未过滤 |
 
 ## 11. 偏差与阻塞记录
 
 - C02 首轮 runtime 验证与并行链接发生竞态，统一冻结构建并重建后串行复验全部通过；已按仓库规则写入环境复盘，不计为产品失败。
 - C06 首轮 probe unit 的 symlink escape 测试把目标误建在允许目录内；修正为同级真实外部目标后正式 cpp_unit 通过。AXI VIP 首轮因其独立 runner 未传递 probe marker 而未生成测试 artifact，补齐每个 runner 自有 tmp marker 后完整复验通过。
+- C07 首轮 design runtime 因 action catalog 已改为 `requires:any`、但 internal request schema 尚未重生成而在 helper routing 层拒绝 design-only session；重生成并加入一致性复验后 6 个真实 NPI 用例全过。旧 synthetic fixture 还按字段全集比较 wave item，更新为验证新增 source/capability 证据。`testinfra.unit` 剩余唯一失败属于另一个任务的未跟踪 flock 报告，不进入本阶段提交。
 - 任何 fallback、范围扩展、required suite 降级、公共合同偏离必须先取得用户确认，再记录于此。

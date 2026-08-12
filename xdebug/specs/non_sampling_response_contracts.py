@@ -2687,40 +2687,59 @@ def _list_export_contract() -> tuple[NonSamplingSuccessVariant, ...]:
 
 
 def _scope_list_contract() -> tuple[NonSamplingSuccessVariant, ...]:
-    module = _closed(
-        {
-            "name": _string(),
-            "module_name": _nullable(_string()),
-        },
-        ("name", "module_name"),
+    kinds = (
+        "module", "interface", "interface_array", "gen_scope",
+        "internal_scope", "modport", "mpport", "port", "signal",
     )
-    port = _closed(
-        {
-            "name": _string(),
-            "direction": {
-                "enum": ["input", "output", "inout", "interface"]
+
+    def hierarchy_item(kind: str) -> Schema:
+        return _closed(
+            {
+                "name": _string(),
+                "path": _string(),
+                "kind": {"const": kind},
+                "sources": {
+                    **_array(
+                        {"enum": ["wave", "design"]},
+                        min_items=1,
+                    ),
+                    "uniqueItems": True,
+                },
+                "queryable": {"type": "boolean"},
+                "traceable": {"type": "boolean"},
+                "module_name": _nullable(_string()),
+                "direction": {
+                    "enum": ["input", "output", "inout", "interface"]
+                },
+                "width": _nullable(_integer(minimum=1)),
+                "array_path": _string(),
             },
-            "width": _nullable(_integer(minimum=1)),
-        },
-        ("name", "direction", "width"),
-    )
-    signal = _closed(
-        {
-            "name": _string(),
-            "width": _nullable(_integer(minimum=1)),
-        },
-        ("name", "width"),
-    )
+            ("name", "path", "kind", "sources", "queryable", "traceable"),
+        )
+
+    group_kinds = {
+        "modules": "module",
+        "interfaces": "interface",
+        "interface_arrays": "interface_array",
+        "gen_scopes": "gen_scope",
+        "internal_scopes": "internal_scope",
+        "modports": "modport",
+        "mpports": "mpport",
+        "ports": "port",
+        "signals": "signal",
+    }
     return (
         _variant(
             "listed",
             _summary(
                 {
+                    "source": {"enum": ["wave", "design", "merged"]},
                     "path": {"type": "string"},
                     "level": _integer(),
-                    "kind": {"enum": ["all", "module", "port", "signal"]},
+                    "kind": {"enum": ["all", *kinds]},
                     "include_patterns": _array(_string()),
                     "exclude_patterns": _array(_string()),
+                    "visited_count": _integer(),
                     "scanned_row_count": _integer(),
                     "returned_module_count": _integer(),
                     "returned_port_count": _integer(),
@@ -2730,11 +2749,13 @@ def _scope_list_contract() -> tuple[NonSamplingSuccessVariant, ...]:
                     "total_signal_count": _integer(),
                 },
                 (
+                    "source",
                     "path",
                     "level",
                     "kind",
                     "include_patterns",
                     "exclude_patterns",
+                    "visited_count",
                     "scanned_row_count",
                     "returned_module_count",
                     "returned_port_count",
@@ -2747,11 +2768,10 @@ def _scope_list_contract() -> tuple[NonSamplingSuccessVariant, ...]:
             ),
             _closed(
                 {
-                    "modules": _array(module),
-                    "ports": _array(port),
-                    "signals": _array(signal),
+                    group: _array(hierarchy_item(kind))
+                    for group, kind in group_kinds.items()
                 },
-                ("modules", "ports", "signals"),
+                tuple(group_kinds),
             ),
         ),
     )

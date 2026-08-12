@@ -1966,7 +1966,7 @@
       "name": "scope.list",
       "category": "waveform",
       "status": "stable",
-      "requires": "waveform",
+      "requires": "any",
       "handler_kind": "engine_forward",
       "schemas": {
         "request": "schemas/v1/actions/scope.list.request.schema.json",
@@ -1974,22 +1974,26 @@
       },
       "examples": {
         "request": [
-          "examples/requests/scope.list.basic.json"
+          "examples/requests/scope.list.basic.json",
+          "examples/requests/scope.list.design.json",
+          "examples/requests/scope.list.merged.json"
         ],
         "response": [
-          "examples/responses/scope.list.basic.json"
+          "examples/responses/scope.list.basic.json",
+          "examples/responses/scope.list.design.json",
+          "examples/responses/scope.list.merged.json"
         ]
       },
-      "description_en": "List waveform modules, ports, signals, interface instances, and interface ports.",
-      "description_zh": "按 module 层级列出 FSDB module、port 和 signal；interface 实例归入 signal，interface 端口归入 port。",
+      "description_en": "List bounded waveform, design, or merged hierarchy objects with source and capability evidence.",
+      "description_zh": "有界列出 waveform、design 或 merged 层级对象，并保留来源与可查询/可追踪能力证据。",
       "purposes": [
         "discover"
       ],
       "use_when": [
-        "Need module-relative hierarchy contents classified as modules, ports, and declared signals from the active waveform; interface instances are signals and interface ports use direction=interface."
+        "Need bounded hierarchy discovery from waveform, design, or both, including generate scopes, interfaces, interface arrays, modports, and mpports."
       ],
       "do_not_use_when": [
-        "Do not use it when only database roots are needed, one known signal must be resolved, or composite members must be expanded."
+        "Do not use it when only database roots are needed or one known leaf signal must be resolved."
       ],
       "alternatives": [
         {
