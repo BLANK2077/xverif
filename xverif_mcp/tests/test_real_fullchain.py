@@ -53,7 +53,7 @@ def test_real_mcp_wire_reaches_xdebug_and_xcov(
     )
 
     async def run() -> None:
-        async with stdio_client(params) as (read, write):
+        async with stdio_client(params, errlog=sys.__stderr__) as (read, write):
             async with ClientSession(read, write) as session:
                 initialized = await session.initialize()
                 assert initialized.serverInfo.name == "xverif"
