@@ -4,7 +4,6 @@
 #include "core/schema/internal_request_contract.h"
 #include "core/diagnostic_error.h"
 #include "json_line_reader.h"
-#include "session_lifecycle_lease.h"
 #include "session_manager.h"
 #include "session_transport.h"
 #include "logging/action_log.h"
@@ -76,19 +75,8 @@ bool send_request_capture(const std::string& session_id,
         request.value("action", std::string());
     SessionManager manager;
     SessionInfo session;
-    {
-        // The lifecycle lease protects only the registry/generation snapshot.
-        // Holding it across a vendor request would prevent a timed-out helper
-        // from terminating the blocked engine process from outside.
-        SessionLifecycleLease lease(session_id);
-        if (!lease.locked()) {
-            status = "lifecycle_lock_failed";
-            message =
-                "failed to acquire the session lifecycle lease";
-            return false;
-        }
-        SessionRegistryResult lookup =
-            manager.lookup_session(session_id, session);
+    SessionRegistryResult lookup =
+        manager.lookup_session(session_id, session);
         if (!lookup.ok()) {
             status =
                 lookup.status == SessionRegistryStatus::NotFound
@@ -101,23 +89,22 @@ bool send_request_capture(const std::string& session_id,
             xdebug_core::log_transport_event(
                 "engine", session_id, "send_request.session_not_found", false,
                 {{"action", action}});
-            return false;
-        }
-        if (session.lifecycle_state != "active") {
+        return false;
+    }
+    if (session.lifecycle_state != "active") {
             status = session.lifecycle_state;
             message =
                 session.lifecycle_state == "cleanup_failed"
                     ? "session cleanup failed and retained managed evidence"
                     : "session is not active";
-            return false;
-        }
-        if (!xdebug_design::xdebug_design_generation_matches(
-                session_id, session.generation)) {
+        return false;
+    }
+    if (!xdebug_design::xdebug_design_generation_matches(
+            session_id, session.generation)) {
             status = "registry_invalid";
             message =
                 "session registry and generation marker do not match";
-            return false;
-        }
+        return false;
     }
     Json rpc = request;
     const xdebug_core::TransportTimeoutOverrideMs timeout_override_ms =
@@ -195,13 +182,6 @@ bool send_request_capture(const std::string& session_id,
         data = response.value("data", Json::object());
         if (response.contains("__xout") && response["__xout"].is_string())
             data["__xout"] = response["__xout"];
-        if (!manager.touch_session(
-                session_id, session.generation)) {
-            status = "registry_invalid";
-            message =
-                "failed to persist activity for the expected session generation";
-            return false;
-        }
         status = "ok";
         message.clear();
         xdebug_core::log_transport_event("engine", session_id, "send_request.ok", true,
@@ -324,13 +304,6 @@ bool send_request_capture(const std::string& session_id,
     data = response.value("data", Json::object());
     if (response.contains("__xout") && response["__xout"].is_string())
         data["__xout"] = response["__xout"];
-    if (!manager.touch_session(
-            session_id, session.generation)) {
-        status = "registry_invalid";
-        message =
-            "failed to persist activity for the expected session generation";
-        return false;
-    }
     xdebug_core::log_transport_event("engine", session_id, "send_request.ok", true,
                                      {{"action", action}});
     status = "ok";

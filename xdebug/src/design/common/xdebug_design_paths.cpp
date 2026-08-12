@@ -124,6 +124,14 @@ std::string xdebug_design_session_json_path(const std::string& session_id) {
     return xdebug_core::session_json_path(tool_config(), session_id);
 }
 
+std::string xdebug_design_session_state_path(const std::string& session_id) {
+    return xdebug_design_session_dir(session_id) + "/state.json";
+}
+
+std::string xdebug_design_session_activity_path(const std::string& session_id) {
+    return xdebug_design_session_dir(session_id) + "/activity";
+}
+
 std::string xdebug_design_generation_marker_path(
     const std::string& session_id) {
     return xdebug_design_session_dir(session_id) + "/generation";
@@ -150,14 +158,6 @@ bool xdebug_design_ensure_home() {
               ensure_dir(xdebug_design_home_dir()) &&
               ensure_dir(xdebug_design_sessions_dir()) &&
               ensure_dir(xdebug_design_lifecycle_locks_dir());
-    if (ok) {
-        int fd = open(
-            xdebug_design_registry_lock_path().c_str(),
-            O_RDWR | O_CREAT | O_CLOEXEC,
-            0600);
-        ok = fd >= 0;
-        if (fd >= 0 && close(fd) != 0) ok = false;
-    }
     return ok;
 }
 

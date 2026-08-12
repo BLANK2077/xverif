@@ -34,8 +34,11 @@ def _wave_value_at_args() -> dict:
 
 
 def _registry(isolated_home: Path) -> dict:
-    path = isolated_home / ".xdebug" / "engine" / "registry.json"
-    return json.loads(path.read_text(encoding="utf-8"))
+    sessions_root = isolated_home / ".xdebug" / "engine" / "sessions"
+    sessions = []
+    for path in sorted(sessions_root.glob("*/state.json")):
+        sessions.append(json.loads(path.read_text(encoding="utf-8")))
+    return {"version": 4, "sessions": sessions}
 
 
 def _registry_session(isolated_home: Path, session_id: str) -> dict:
@@ -48,8 +51,6 @@ def _kill_all(cli_runner: CliRunner) -> None:
 
 
 def _write_registry_session(isolated_home: Path, record: dict) -> None:
-    path = isolated_home / ".xdebug" / "engine" / "registry.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
     canonical = {
         "session_id": "",
         "generation": "1" * 64,
@@ -93,10 +94,6 @@ def _write_registry_session(isolated_home: Path, record: dict) -> None:
         canonical[f"{prefix}_size"] = stat_result.st_size
         canonical[f"{prefix}_dev"] = stat_result.st_dev
         canonical[f"{prefix}_inode"] = stat_result.st_ino
-    path.write_text(
-        json.dumps({"version": 3, "sessions": [canonical]}, indent=2),
-        encoding="utf-8",
-    )
     session_id = canonical["session_id"]
     path_hash = 1469598103934665603
     for byte in session_id.encode("utf-8"):
@@ -110,6 +107,10 @@ def _write_registry_session(isolated_home: Path, record: dict) -> None:
         / f"{session_id[:16]}_{path_hash:016x}"
     )
     session_dir.mkdir(parents=True, exist_ok=True)
+    (session_dir / "state.json").write_text(
+        json.dumps(canonical, indent=2) + "\n",
+        encoding="utf-8",
+    )
     (session_dir / "generation").write_text(
         canonical["generation"] + "\n",
         encoding="utf-8",
@@ -779,12 +780,10 @@ def test_session_tcp_auth_secure_random_failure_fails_closed(
         "status": "error",
         "error_code": "SECURE_RANDOM_UNAVAILABLE",
     }
-    registry_path = isolated_home / ".xdebug" / "engine" / "registry.json"
-    if registry_path.exists():
-        assert not any(
-            item["session_id"] == name
-            for item in _registry(isolated_home).get("sessions", [])
-        )
+    assert not any(
+        item["session_id"] == name
+        for item in _registry(isolated_home).get("sessions", [])
+    )
 
 
 @pytest.mark.session
@@ -863,49 +862,36 @@ def test_direct_resource_timeout_cleans_process_and_registry(
 
 
 @pytest.mark.session
-@pytest.mark.parametrize(
-    "registry_text",
-    [
-        "{not-json",
-        json.dumps({"version": 1, "sessions": []}),
-        json.dumps(
-            {
-                "version": 3,
-                "sessions": [
-                    {
-                        "session_id": "partial",
-                        "transport": "uds",
-                    }
-                ],
-            }
-        ),
-    ],
-)
-def test_registry_invalid_fails_closed_for_list_and_lookup(
-    registry_text: str,
+def test_invalid_session_state_is_isolated_for_list_and_fails_targeted_lookup(
     cli_runner: CliRunner,
     isolated_home: Path,
 ) -> None:
-    path = isolated_home / ".xdebug" / "engine" / "registry.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(registry_text, encoding="utf-8")
+    session_id = "invalid_state"
+    path_hash = 1469598103934665603
+    for byte in session_id.encode("utf-8"):
+        path_hash ^= byte
+        path_hash = (path_hash * 1099511628211) & ((1 << 64) - 1)
+    directory = (
+        isolated_home / ".xdebug" / "engine" / "sessions" /
+        f"{session_id[:16]}_{path_hash:016x}"
+    )
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "state.json").write_text("{not-json\n", encoding="utf-8")
 
-    for request in (
-        _request("session.list"),
+    listed = cli_runner.run(_request("session.list"), timeout_sec=5)
+    assert listed.ok
+    assert listed.response["data"]["sessions"] == []
+
+    lookup = cli_runner.run(
         _request(
             "value.at",
-            target={"session_id": "missing"},
+            target={"session_id": session_id},
             args=_wave_value_at_args(),
         ),
-    ):
-        result = cli_runner.run(request, timeout_sec=5)
-        assert not result.ok
-        assert result.response["error"]["code"] == "REGISTRY_INVALID"
-        assert result.response["summary"] == {
-            "status": "error",
-            "error_code": "REGISTRY_INVALID",
-        }
-        assert result.response["data"] is None
+        timeout_sec=5,
+    )
+    assert not lookup.ok
+    assert lookup.response["error"]["code"] == "REGISTRY_INVALID"
 
 
 @pytest.mark.session

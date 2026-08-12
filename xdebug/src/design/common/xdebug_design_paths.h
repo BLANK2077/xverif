@@ -13,6 +13,8 @@ std::string xdebug_design_lifecycle_locks_dir();
 std::string xdebug_design_session_lifecycle_lock_path(
     const std::string& session_id);
 std::string xdebug_design_session_json_path(const std::string& session_id);
+std::string xdebug_design_session_state_path(const std::string& session_id);
+std::string xdebug_design_session_activity_path(const std::string& session_id);
 std::string xdebug_design_generation_marker_path(
     const std::string& session_id);
 std::string xdebug_design_socket_path(const std::string& session_id);

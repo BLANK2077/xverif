@@ -541,8 +541,8 @@ session 单 engine、engine 串行请求、NPI mutex、MCP session lock、genera
 
 | 阶段 | 内容 | 状态 | 提交 |
 | --- | --- | --- | --- |
-| F00 | 计划、基线与 goal | in_progress | pending |
-| F01 | per-session registry 与 action 热路径 | pending | pending |
+| F00 | 计划、基线与 goal | completed | `27da5d4` |
+| F01 | per-session registry 与 action 热路径 | completed | 本提交 |
 | F02 | xdebug config 与 owner-sharded logging | pending | pending |
 | F03 | xcov 与 MCP owner logging | pending | pending |
 | F04 | URG cache 与 fixture atomic claim | pending | pending |
@@ -551,3 +551,12 @@ session 单 engine、engine 串行请求、NPI mutex、MCP session lock、genera
 
 最终必须满足：产品和 testinfra 源码中只有 session lifecycle lease 实现可以引用 `flock`；普通
 query、list、doctor、config、log 与 xcov cache hit 的 `strace -f -e trace=flock` 结果为零。
+
+### 2026-08-12 F01 验证
+
+- `make -C xdebug all -j4`：通过。
+- `xdebug.cpp_unit`：通过，1 suite passed。
+- `xdebug.static`：119 passed。
+- `xdebug.session`：39 passed；使用正式 regression suite 和既有 fixture cache，没有 prepare。
+- registry 已改为每 session `state.json`；关闭 generation 归档到 `history/`；query/doctor 不再取得
+  lifecycle lease；activity 使用独立 marker。

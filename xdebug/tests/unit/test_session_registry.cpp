@@ -166,11 +166,9 @@ int main() {
             .ok());
     assert(registry.get(alias, current).ok());
     assert(current.last_active == 200);
-    struct stat registry_before_noop;
-    assert(
-        stat(
-            xdebug_design::xdebug_design_registry_path().c_str(),
-            &registry_before_noop) == 0);
+    struct stat activity_before_noop;
+    assert(stat(xdebug_design::xdebug_design_session_activity_path(alias).c_str(),
+                &activity_before_noop) == 0);
     assert(
         registry
             .touch_if_generation(alias, generation_two, 200)
@@ -184,12 +182,10 @@ int main() {
     assert(
         stale_touch.status ==
         xdebug_engine::SessionRegistryStatus::GenerationMismatch);
-    struct stat registry_after_noop;
-    assert(
-        stat(
-            xdebug_design::xdebug_design_registry_path().c_str(),
-            &registry_after_noop) == 0);
-    assert(registry_before_noop.st_ino == registry_after_noop.st_ino);
+    struct stat activity_after_noop;
+    assert(stat(xdebug_design::xdebug_design_session_activity_path(alias).c_str(),
+                &activity_after_noop) == 0);
+    assert(activity_before_noop.st_ino == activity_after_noop.st_ino);
     assert(registry.get(alias, current).ok());
     assert(current.last_active == 200);
     assert(
@@ -243,9 +239,8 @@ int main() {
         output << "{\"version\":1,\"sessions\":[]}\n";
     }
     std::vector<xdebug_engine::SessionInfo> sessions;
-    assert(
-        registry.load_all(sessions).status ==
-        xdebug_engine::SessionRegistryStatus::Invalid);
+    assert(registry.load_all(sessions).status ==
+           xdebug_engine::SessionRegistryStatus::Invalid);
     assert(sessions.empty());
 
     {
@@ -261,5 +256,17 @@ int main() {
         registry.load_all(sessions).status ==
         xdebug_engine::SessionRegistryStatus::Invalid);
     assert(sessions.empty());
+
+    // A valid empty v3 registry is the only automatic cutover case.
+    {
+        std::ofstream output(
+            xdebug_design::xdebug_design_registry_path().c_str(),
+            std::ios::trunc);
+        assert(output.good());
+        output << "{\"version\":3,\"sessions\":[]}\n";
+    }
+    assert(registry.load_all(sessions).ok());
+    assert(access(xdebug_design::xdebug_design_registry_path().c_str(), F_OK) != 0);
+    assert(access((xdebug_design::xdebug_design_registry_path() + ".v3.retired").c_str(), F_OK) == 0);
     return 0;
 }

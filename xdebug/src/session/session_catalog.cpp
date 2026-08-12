@@ -4,10 +4,13 @@
 #include "common/path_utils.h"
 #include "session/session_registry_contract.h"
 
+#include <algorithm>
 #include <cerrno>
+#include <dirent.h>
 #include <fstream>
 #include <iterator>
 #include <stdexcept>
+#include <sys/stat.h>
 #include <unistd.h>
 
 namespace xdebug {
@@ -17,6 +20,78 @@ namespace {
 std::string canonical_registry_path() {
     std::string home = xdebug_core::env_raw_string("HOME");
     return (home.empty() ? xdebug_core::temporary_dir() : home) + "/.xdebug/engine/registry.json";
+}
+
+std::string canonical_sessions_dir() {
+    std::string home = xdebug_core::env_raw_string("HOME");
+    return (home.empty() ? xdebug_core::temporary_dir() : home) +
+           "/.xdebug/engine/sessions";
+}
+
+std::string state_path(const std::string& id) {
+    return canonical_sessions_dir() + "/" +
+           xdebug_core::session_dir_name(id) + "/state.json";
+}
+
+SessionCatalogResult read_state(const std::string& path,
+                                SessionRecord& record) {
+    std::ifstream in(path.c_str());
+    if (!in) {
+        return access(path.c_str(), F_OK) != 0 && errno == ENOENT
+            ? SessionCatalogResult(SessionCatalogStatus::NotFound,
+                                   "SESSION_NOT_FOUND", "session not found")
+            : SessionCatalogResult(SessionCatalogStatus::Invalid,
+                                   "REGISTRY_INVALID", "cannot read per-session state");
+    }
+    try {
+        const std::string text((std::istreambuf_iterator<char>(in)),
+                               std::istreambuf_iterator<char>());
+        xdebug_core::SessionRegistryJson value =
+            xdebug_core::SessionRegistryJson::parse(text);
+        xdebug_core::SessionInfo session;
+        std::string error;
+        if (!xdebug_core::session_registry_record_from_json(value, session, error)) {
+            return {SessionCatalogStatus::Invalid, "REGISTRY_INVALID",
+                    "per-session state is invalid: " + error};
+        }
+        record.id = session.session_id;
+        record.lifecycle_state = session.lifecycle_state;
+        record.daidir = session.dbdir_path;
+        record.fsdb = session.fsdb_file;
+        record.socket_path = session.socket_path;
+        record.transport = session.transport;
+        record.file_dir = session.file_dir;
+        record.host = session.host;
+        record.bind_host = session.bind_host;
+        record.port = session.port;
+        record.server_host = session.server_host;
+        record.ownership_token_hash = session.ownership_token_hash;
+        record.server_pid = static_cast<int>(session.server_pid);
+        record.created_at = static_cast<long long>(session.created_at);
+        record.last_active = static_cast<long long>(session.last_active);
+        record.dbdir_mtime_ns = session.dbdir_mtime_ns;
+        record.dbdir_size = session.dbdir_size;
+        record.dbdir_dev = session.dbdir_dev;
+        record.dbdir_inode = session.dbdir_inode;
+        record.fsdb_mtime_ns = session.fsdb_mtime_ns;
+        record.fsdb_size = session.fsdb_size;
+        record.fsdb_dev = session.fsdb_dev;
+        record.fsdb_inode = session.fsdb_inode;
+        record.mode = !record.daidir.empty() && !record.fsdb.empty()
+            ? "combined" : (!record.daidir.empty() ? "design" : "waveform");
+        struct stat activity;
+        const size_t slash = path.rfind('/');
+        const std::string activity_path =
+            path.substr(0, slash) + "/activity";
+        if (stat(activity_path.c_str(), &activity) == 0 &&
+            activity.st_mtime > record.last_active) {
+            record.last_active = activity.st_mtime;
+        }
+        return {};
+    } catch (const std::exception& exc) {
+        return {SessionCatalogStatus::Invalid, "REGISTRY_INVALID",
+                std::string("cannot parse per-session state: ") + exc.what()};
+    }
 }
 
 bool fingerprint_is_zero(
@@ -119,89 +194,50 @@ SessionCatalog::SessionCatalog() : path_(canonical_registry_path()) {}
 SessionCatalogResult SessionCatalog::read_all(
     std::vector<SessionRecord>& records) const {
     records.clear();
-    std::ifstream in(path_.c_str());
-    if (!in) {
-        if (access(path_.c_str(), F_OK) != 0 && errno == ENOENT)
-            return {};
-        return {
-            SessionCatalogStatus::Invalid,
-            "REGISTRY_INVALID",
-            "cannot read canonical session registry"
-        };
-    }
-    try {
-        const std::string text(
-            (std::istreambuf_iterator<char>(in)),
-            std::istreambuf_iterator<char>());
-        xdebug_core::SessionRegistryJson root =
-            xdebug_core::SessionRegistryJson::parse(text);
-        std::vector<xdebug_core::SessionInfo> sessions;
-        std::string error;
-        if (!xdebug_core::session_registry_document_from_json(
-                root, sessions, error)) {
-            return {
-                SessionCatalogStatus::Invalid,
-                "REGISTRY_INVALID",
-                "canonical session registry is invalid: " + error
-            };
+    DIR* directory = opendir(canonical_sessions_dir().c_str());
+    if (!directory)
+        return errno == ENOENT ? SessionCatalogResult()
+                              : SessionCatalogResult(SessionCatalogStatus::Invalid,
+                                                     "REGISTRY_INVALID",
+                                                     "cannot enumerate session states");
+    errno = 0;
+    while (dirent* entry = readdir(directory)) {
+        const std::string name = entry->d_name;
+        if (name == "." || name == "..") continue;
+        SessionRecord record;
+        const SessionCatalogResult read = read_state(
+            canonical_sessions_dir() + "/" + name + "/state.json", record);
+        if (!read.ok()) {
+            errno = 0;
+            continue;
         }
-        for (const auto& session : sessions) {
-            SessionRecord record;
-            record.id = session.session_id;
-            record.lifecycle_state = session.lifecycle_state;
-            record.daidir = session.dbdir_path;
-            record.fsdb = session.fsdb_file;
-            record.socket_path = session.socket_path;
-            record.transport = session.transport;
-            record.file_dir = session.file_dir;
-            record.host = session.host;
-            record.bind_host = session.bind_host;
-            record.port = session.port;
-            record.server_host = session.server_host;
-            record.ownership_token_hash =
-                session.ownership_token_hash;
-            record.server_pid = static_cast<int>(session.server_pid);
-            record.created_at = static_cast<long long>(session.created_at);
-            record.last_active = static_cast<long long>(session.last_active);
-            record.dbdir_mtime_ns = session.dbdir_mtime_ns;
-            record.dbdir_size = session.dbdir_size;
-            record.dbdir_dev = session.dbdir_dev;
-            record.dbdir_inode = session.dbdir_inode;
-            record.fsdb_mtime_ns = session.fsdb_mtime_ns;
-            record.fsdb_size = session.fsdb_size;
-            record.fsdb_dev = session.fsdb_dev;
-            record.fsdb_inode = session.fsdb_inode;
-            record.mode = !record.daidir.empty() && !record.fsdb.empty()
-                ? "combined"
-                : (!record.daidir.empty() ? "design" : "waveform");
-            records.push_back(std::move(record));
-        }
-        return {};
-    } catch (const std::exception& exc) {
-        return {
-            SessionCatalogStatus::Invalid,
-            "REGISTRY_INVALID",
-            std::string("cannot parse canonical session registry: ") + exc.what()
-        };
+        records.push_back(record);
+        errno = 0;
     }
+    const int read_errno = errno;
+    const bool closed = closedir(directory) == 0;
+    if (read_errno != 0 || !closed) {
+        records.clear();
+        return {SessionCatalogStatus::Invalid, "REGISTRY_INVALID",
+                "cannot complete session state enumeration"};
+    }
+    std::sort(records.begin(), records.end(),
+              [](const SessionRecord& lhs, const SessionRecord& rhs) {
+                  return lhs.id < rhs.id;
+              });
+    return {};
 }
 
 SessionCatalogResult SessionCatalog::get(
     const std::string& id,
     SessionRecord& record) const {
-    std::vector<SessionRecord> records;
-    SessionCatalogResult result = read_all(records);
-    if (!result.ok()) return result;
-    for (const auto& candidate : records) {
-        if (candidate.id != id) continue;
-        record = candidate;
-        return {};
-    }
-    return {
-        SessionCatalogStatus::NotFound,
-        "SESSION_NOT_FOUND",
-        "session not found: " + id
-    };
+    SessionCatalogResult result = read_state(state_path(id), record);
+    if (result.status == SessionCatalogStatus::NotFound)
+        result.message = "session not found: " + id;
+    if (result.ok() && record.id != id)
+        return {SessionCatalogStatus::Invalid, "REGISTRY_INVALID",
+                "per-session state identity does not match its directory"};
+    return result;
 }
 
 SessionCatalogResult SessionCatalog::list(

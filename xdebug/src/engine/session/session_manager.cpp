@@ -1196,14 +1196,6 @@ SessionRegistryResult SessionManager::list_sessions_checked(
 SessionHealth SessionManager::diagnose_session(const std::string& session_id) {
     SessionHealth health;
     health.session_id = session_id;
-
-    SessionLifecycleLease lease(session_id);
-    if (!lease.locked()) {
-        health.status = SessionHealthStatus::RegistryInvalid;
-        health.message =
-            "Session lifecycle lease could not be acquired";
-        return health;
-    }
     SessionInfo session;
     SessionRegistryResult lookup =
         registry_->get(session_id, session);

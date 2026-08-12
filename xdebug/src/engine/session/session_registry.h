@@ -82,12 +82,11 @@ public:
 
 private:
     std::string registry_path_;
-
-    int acquire_registry_lock();
-    bool release_registry_lock(int fd);
-    SessionRegistryResult load_all_unlocked(
-        std::vector<SessionInfo>& sessions);
-    bool save_all_unlocked(const std::vector<SessionInfo>& sessions);
+    SessionRegistryResult check_legacy_registry();
+    SessionRegistryResult read_one(
+        const std::string& session_id,
+        SessionInfo& session);
+    bool write_one(const SessionInfo& session);
 };
 
 } // namespace xdebug_engine
