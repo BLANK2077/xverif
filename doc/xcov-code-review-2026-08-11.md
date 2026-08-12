@@ -2065,6 +2065,118 @@ native 状态，因此只支持 CSV→EL 与 EL load/save/unload，明确不支�
 resolver，无 `--resolver MODULE:FACTORY` 或 xcov 私有依赖。x-npi/xverif 的 SKILL、coverage
 reference 和 `agents/openai.yaml` 已同步。
 
+#### 16.8.1 Functional exclusion lazy point locator 实验
+
+2026-08-12 在 `xverif/tmp` 使用真实 `xcov.exclusion` 和 37.5 万行、3,001 scope 的
+`xcov.large_summary` VDB 对 functional exclusion 定位进行了只读实验。pynpi 暴露的真实结构是
+`npiCovTestbenchMetric -> npiCovCovergroup -> npiCovCoverpoint|npiCovCross -> npiCovCoverBin`，
+不是 bin 平铺；`database.handle_by_name()` 只支持 coverage instance，不能把 functional 名称当作
+直达接口。对 testbench metric 根调用 typed `covergroup_handles()` 等关系方法在该真实 VDB 上返回
+空列表，可靠入口仍是 `child_handles()`。
+
+大型 VDB 对同一唯一 selector 的结果如下：全树 DFS 访问 93,000 个节点、执行 15,001 次 child
+expansion、耗时约 1.111 秒；按请求 group/point 做子树剪枝后访问 3,008 个节点、执行 3 次 child
+expansion、耗时约 0.0190 秒；第一遍发现后保存 point 整数 locator，第二遍按 locator 重放并逐级
+校验 type/name，只访问 6 个业务节点、耗时约 0.00865 秒。三种方法命中完全一致。根
+`child_handles()` 仍一次返回全部约 3,000 个 group handle，因此第二遍仍需 release 3,008 个返回
+handle，但避免了对无关 group 读取身份和展开子树。
+
+正式优化应采用 lazy point locator，而不是 VDB bin 全量索引：
+
+- 只为 CSV 请求维护 `scope + group + point|cross` 前缀索引，规模为 `O(R)`；
+- cache miss 时按 `group -> point|cross -> bin` 剪枝定位，并记录 group/point 的整数 child path、
+  type 和 name；
+- cache hit 时按 path 重放到 point，每级重新验证 type/name，path 越界或身份变化返回
+  `TARGET_CHANGED_BETWEEN_PASSES`；
+- bin 匹配仅临时建立当前 point 下“请求 bin 名 -> CSV row id”映射，不索引 VDB 全部 bin；
+- 不缓存任何 native handle，不持久化 locator，不在失败时静默重扫或换接口。
+
+实验产物保存在 ignored 的 `xverif/tmp/x_npi_functional_pruning_experiment.py`、
+`functional_pruning_exclusion_lazy_point.json` 和
+`functional_pruning_large_summary_lazy_point.json`。
+
+#### 16.8.2 容器级 exclusion 的真实 VDB 验证
+
+2026-08-12 继续在 `xverif/tmp` 使用真实 `xcov.exclusion` VDB，分别对
+`npiCovCovergroup`、`npiCovCoverpoint` 和 `npiCovInstance` 执行
+`set_report_time_excluded -> save EL -> unload -> load EL` 闭环，并以固定
+`urg -full64 -xml_verbose -format text -show summary -elfile` 复核最终报告。结论不是所有对象都需要
+定位到叶子后逐项设置：
+
+- **整个 covergroup 可以直接 exclude。** 对 `top::behavior_cg` 设置一次后，NPI 中 group 和下级
+  point 均显示 report-time excluded；EL 只包含 `covergroup top::behavior_cg`。URG 将该 group 的
+  11 个 functional bins 全部计为 excluded，`Group value="0/0" excl="11"`，无需遍历 bin。
+- **整个 coverpoint 可以直接 exclude。** 对 `sel_cp` 设置一次后，其 3 个 bin 均继承 excluded；
+  EL 以 group 加 `coveritem "sel_cp"` 表达。URG 显示该 point 为 `0/0, excl=3`。由于 fixture 的
+  cross 依赖该 point，相关 6 个 cross bins 也随之失去可计分输入，group 最终只剩另一个 point 的
+  `2/2`，共显示 9 个 excluded；调用方不能把“point 自身 3 bins”与“依赖 cross 的联动影响”混为一谈。
+- **整个 code instance 可以直接 exclude。** 对 `top.u_dut` 的 `npiCovInstance` 设置一次，EL 只包含
+  `INSTANCE:top.u_dut`。NPI unload/reload 后 instance 状态保持正确；URG 将该实例的 Line 18、Cond
+  15、Toggle 22、Branch 12、Assert 2 个对象全部从分母移除，FSM 指标也从该实例和上级 hierarchical
+  score 中移除。metric 子 handle 本身不会报告继承的 excluded 状态，因此不能用逐 metric status
+  作为 instance exclusion 是否生效的判据，应检查 instance 状态和 URG 报告。
+- **pynpi coverage model 没有独立 module-definition handle，因而不能“一次 setter 直接 exclude 整个
+  module definition”。** 公开 relation 只有 instance、各 metric 和叶子对象；`npiCovInstance.def_name()`
+  只能返回 `exclusion_dut` 字符串，不会返回可设置 exclusion 的 module handle。实测 exclude
+  `top.u_dut` 后 hierarchical instance score 已变化，但 `modlist.txt` 中 `exclusion_dut` 的 module
+  definition coverage 仍保持原值，这进一步证明 instance exclusion 不等于 module-definition
+  exclusion。若合同需要“按 module 名排除”，只能先按 `def_name` 找到所有实例并逐实例设置；这是
+  `O(I)` 的显式批处理语义，不应伪装成原生 module handle，也不应通过手写 EL 私有语法 fallback。
+
+因此 CSV resolver 应把 `covergroup`、`coverpoint|cross`、`instance` 作为一等 container target：命中
+container 时只调用一次 setter，只有 bin、code leaf 等精细 selector 才向下定位。functional lazy
+locator 仍应停在 point 级，恰好可以同时支持 point 容器和其下 bin；code instance 则应优先使用
+`database.handle_by_name(<instance fullname>)`，完全避免扫描 code metric 树。
+
+本次还发现一个独立 parser 缺陷：合法的 group/point exclusion 会令 URG XML ratio 出现 `0/0`，当前
+x-npi typed summary parser 对其百分比字段执行 `float(None)` 并失败。原始 URG 产物完整且 NPI/EL
+闭环成功，所以这不是 exclusion 失败；后续应让 parser 把 `0/0` 的 `coverage_pct` 表示为 `null`，并
+保留 `excluded` 计数。实验探针、EL、JSON 和四组 URG 报告均保存在 ignored 的
+`xverif/tmp/x_npi_container_exclusion_probe.py`、`container-exclusion-run-20260812/`、
+`container_exclusion_result_20260812.json`、`container-exclusion-urg-20260812/` 与
+`container-exclusion-urg-raw-20260812/`。
+
+#### 16.8.3 Instance exclusion 非递归及合同收紧
+
+2026-08-12 在具有 5 层设计层次的真实 `xcov.comprehensive` VDB 上，对父实例
+`top.u_core0` 重复执行 setter、EL save/unload/reload 和固定 URG 复核。EL 只有
+`INSTANCE:top.u_core0`，但该 exclusion **不会递归排除子实例**：
+
+- 父实例 NPI 状态变为 report-time excluded，5 个后代
+  `g_pipe.u_proc`、`u_reg_a`、`u_reg_b`、`u_alu`、`u_ctl` 的 excluded/report-time/partial
+  状态在 setter 后及 EL reload 后均为 false；
+- URG 仍完整保留每个子实例原有的 Line、Cond、Toggle、FSM、Branch、Assert 分母，子实例 metric
+  的 `excl` 均为 0；
+- 父实例只排除直接属于自身的 coverage 对象。本 fixture 中 `u_core0` 自身的 42 个 port toggle
+  被排除，故父及根的 Toggle 分母分别由 212 降至 170、350 降至 308；父节点显示的其它 metric
+  主要是后代 aggregate，因此仍保持原值，不能把父节点上的 `exclude status="Excluded"` 解读为
+  subtree exclusion；
+- 先前叶子实例 `top.u_dut` 的全部 code metric 被排除，是因为它没有子实例，只能证明“instance
+  self exclusion”，不能证明递归传播。
+
+公开合同据此收紧为：code container exclusion **只接受精确 instance fullname，且语义明确为
+non-recursive self exclusion**；不提供 module selector，也不默认遍历 descendants。若调用方确实
+希望排除整个 instance subtree，必须显式提交每个 instance fullname，由 resolver 对每个精确实例各
+设置一次；不得把单个父 instance 请求静默扩展为递归操作。实验产物位于 ignored 的
+`xverif/tmp/x_npi_parent_instance_exclusion_probe.py`、`parent-instance-exclusion-20260812/` 和
+`parent-instance-baseline-20260812/`。
+
+#### 16.8.4 URG XML 驱动的递归 instance exclusion 可行性
+
+2026-08-12 复用固定 summary 的 `session.xml`，只收集 XML 中真实出现的 `type="instance"`
+节点，在 `top.u_core0` 子树展开出父节点及 5 个真实后代，再逐个调用 coverage database
+`handle_by_name(fullname)`。6 个目标全部直达并设置成功，整个过程没有调用 NPI
+`instance_handles()`，生成的 EL 含 6 条 `INSTANCE:`；应用 EL 后 URG 显示该子树全部 code metric
+变为 `0/0` 并进入 excluded 计数，兄弟 `top.u_core1` 不受影响。
+
+当前 xcov 已把固定 URG 六件套完整保存到内容寻址 cache，并把 XML scope 解析成
+`full_name/parent/depth` IR；但 parser 还会按 fullname 补 synthetic ancestors。正式递归 resolver
+必须在 IR 中区分 XML 真实 instance 与 synthetic scope，只允许前者进入 NPI。首次建立真实
+parent/children adjacency 为 `O(S)`，单次目标子树展开和 `handle_by_name` 设置为 `O(K)`，NPI
+hierarchy traversal 和 metric/bin traversal 均为 0。实验位于 ignored 的
+`xverif/tmp/x_npi_xml_recursive_instance_exclusion.py` 与
+`xml-recursive-instance-exclusion-20260812/`。
+
 阶段门禁结果：`skills.x_npi` 17 passed、`skills.xverif` 16 passed、`skills.public_docs` 3 passed；
 host `skills.x_npi_real` 5 passed，覆盖真实 AXI/APB/stream FSDB、真实 NPI exclusion
 set/save/load/unload 和真实 URG code/assert/functional typed 读取。额外用正式 37.5 万行 fixture
