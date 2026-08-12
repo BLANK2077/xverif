@@ -296,12 +296,19 @@ Examples
 
   Join waveform time to active design driver:
 
+    # xdebug-example:trace.active_driver:begin
     printf '%s\n' '{
-      "api_version":"xdebug.v1",
-      "action":"trace.active_driver",
-      "target":{"session_id":"case_a"},
-      "args":{"signal":"top.u.ready","requested_time":"100ns"}
+      "api_version": "xdebug.v1",
+      "action": "trace.active_driver",
+      "target": {
+        "session_id": "my_debug_session"
+      },
+      "args": {
+        "signal": "top.u.ready",
+        "time": "120ns"
+      }
     }' | xdebug -
+    # xdebug-example:trace.active_driver:end
 
 Logs and troubleshooting
 ------------------------

@@ -65,13 +65,26 @@ class XverifDebugAdapter:
         kind: str = "request",
         view: str = "mcp",
         include_examples: bool = True,
+        response_detail: str | None = None,
+        child_action: str | None = None,
     ) -> Json:
         from xverif_mcp.schema_projection import project
+        native_args: Json = {"action": action, "kind": kind}
+        effective_detail = "full"
+        if kind == "response" and action == "batch":
+            effective_detail = response_detail or "summary"
+            native_args["response_detail"] = effective_detail
+            if child_action is not None:
+                native_args["child_action"] = child_action
         native = self._one_shot({
             "api_version": "xdebug.v1", "action": "schema",
-            "args": {"action": action, "kind": kind},
+            "args": native_args,
         })
-        return project(action, kind, view, native, include_examples)
+        return project(
+            action, kind, view, native, include_examples,
+            response_detail=effective_detail,
+            child_action=child_action,
+        )
 
     def _one_shot(self, req: Json) -> Json:
         from xverif_mcp.runner import StatelessCliRunner

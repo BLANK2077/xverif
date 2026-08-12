@@ -21,7 +21,8 @@ xdebug public API 以 action-specific schema 为 source of truth。任何文档�
 - `xdebug/tools/sync_runtime_request_schemas.py`
 - `xdebug/tools/sync_internal_request_schema.py`
 - `xdebug/tools/sync_value_response_schemas.py`
-- `xdebug/tools/sync_axi_response_schemas.py`
+- `xdebug/tools/sync_response_schemas.py`
+- `xdebug/specs/non_sampling_response_contracts.py`（AXI 等非采样 action 的业务对象合同，由统一 response 生成器消费）
 - `xdebug/tools/sync_protocol_statistics_response_schemas.py`
 - `xdebug/tools/sync_action_schema_hints.py`
 - `xdebug/tools/audit_runtime_schema_compatibility.py`
@@ -124,7 +125,7 @@ xdebug 参数错误有两层：
 - `invalid_arg`：错误字段路径。
 - `expected`：期望类型、范围或语义。
 - `received_type`：实际 JSON 类型。
-- `allowed_values`：合法 enum。
+- `available_values`：当前错误的合法 enum 或可选对象。错误响应不发布 `allowed_values`；action catalog descriptor 中的 `allowed_values` 仅表示参数到 enum 的元数据映射，两者语义不同。
 - `did_you_mean`：常见错字段的正确字段路径。
 - `required_any_of`：至少提供其中一组参数。
 - `correct_example`：最小正确请求模板。
@@ -143,7 +144,7 @@ xdebug 参数错误有两层：
 python3 xdebug/tools/sync_runtime_request_schemas.py
 python3 xdebug/tools/sync_internal_request_schema.py
 python3 xdebug/tools/sync_value_response_schemas.py
-python3 xdebug/tools/sync_axi_response_schemas.py
+python3 xdebug/tools/sync_response_schemas.py
 python3 xdebug/tools/sync_protocol_statistics_response_schemas.py
 python3 xdebug/tools/sync_action_schema_hints.py
 python3 xdebug/tools/sync_action_metadata.py
@@ -155,7 +156,7 @@ python3 xdebug/tools/sync_action_metadata.py
 python3 xdebug/tools/sync_runtime_request_schemas.py --check
 python3 xdebug/tools/sync_internal_request_schema.py --check
 python3 xdebug/tools/sync_value_response_schemas.py --check
-python3 xdebug/tools/sync_axi_response_schemas.py --check
+python3 xdebug/tools/sync_response_schemas.py --check
 python3 xdebug/tools/sync_protocol_statistics_response_schemas.py --check
 python3 xdebug/tools/sync_action_schema_hints.py --check
 python3 xdebug/tools/sync_action_metadata.py --check
@@ -169,6 +170,21 @@ python3 xdebug/tools/sync_action_metadata.py --check
   校验；未知 action child 单独使用公开 schema 中的
   `batchChild__unknown_child_error` 定义校验。不得把未知 child 或 envelope 当作已由
   递归边界覆盖，也不得修改公开 schema 来换取运行时性能。
+- native `schema` action 省略 `response_detail` 时保持 `full` 兼容语义。只有
+  `action=batch, kind=response` 可显式选择 `summary|child|full`：`summary` 是不读取
+  4.8 MiB full artifact 的独立紧凑 outer-envelope/selector 合同，不验证 child payload；
+  `child` 必须同时提供一个非 batch 的 `child_action` 并只读取该 action response schema；
+  `full` 返回 checked-in 完整 recursive union。三者用 `relation.completeness` 明示完整性。
+- MCP 获取 batch response schema 时默认请求 `summary`；普通 action response 默认
+  `full`。调用方需要验证单个 child 时请求 `child`，只有确实需要完整 union 时显式请求
+  `full`，不得把 summary 当成 child 的精确合同。
+- `examples/requests-invalid/manifest.json` 是组合约束反例的 canonical manifest；
+  `validate_examples.py`、C++ runtime validator unit 和 MCP schema projection 共同消费。
+  每个 witness 必须同时被 Draft-7 runtime 子集和 Draft 2020-12 拒绝。
+- README/help 的 canonical 请求片段由 `skills/xverif/specs/examples.yaml` 指向 checked-in
+  request example，再由 `skills/xverif/scripts/generate_references.py` 同步 marker 区域。
+  `skills.public_docs` 会解析所有公开 `json` fence，并对完整 native/MCP call 使用当前
+  action/tool schema 校验；非完整 JSON 片段必须标为 `jsonc` 等其它 fence。
 
 ## 基础校验
 

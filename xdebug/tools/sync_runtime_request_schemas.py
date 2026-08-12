@@ -39,6 +39,7 @@ ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
     "aggregate": {"type": "object"},
     "bind_host": {"type": "string", "minLength": 1},
     "cache_scope": {"type": "string", "enum": ["full", "range"], "default": "full"},
+    "child_action": {"type": "string", "minLength": 1},
     "channel": {"type": "string"},
     "config": {"type": "object"},
     "data": {
@@ -149,6 +150,11 @@ ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
         "items": {"type": "string", "minLength": 1},
     },
     "render_time_unit": {"type": "string", "enum": ["auto", "ps", "ns", "us"]},
+    "response_detail": {
+        "type": "string",
+        "enum": ["summary", "child", "full"],
+        "default": "full",
+    },
     "threshold": {"type": "string"},
     "time": {"type": "string", "minLength": 1},
     "top_n": {"type": "integer", "minimum": 1},
@@ -339,7 +345,7 @@ RUNTIME_CONSUMER_CONTRACTS_BY_ACTION: dict[
     ),
     "schema": _named_runtime_consumer_contract(
         "xdebug::catalog_schema_response(const Json&)",
-        {"kind"},
+        {"kind", "response_detail", "child_action"},
     ),
     "scope.list": _runtime_consumer_contract(
         "scope.list",
@@ -1787,6 +1793,25 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
             "enum": ["first", "last", "all"],
             "default": "first",
         }
+    if action == "schema":
+        selected_props["response_detail"] = {
+            "type": "string",
+            "enum": ["summary", "child", "full"],
+            "default": "full",
+            "description": (
+                "Response-schema expansion for action=batch and kind=response. "
+                "summary returns a compact outer-envelope/selector contract, "
+                "child returns exactly one child action response schema, and "
+                "full returns the complete checked-in batch schema."
+            ),
+        }
+        selected_props["child_action"] = {
+            "type": "string",
+            "minLength": 1,
+            "description": (
+                "Exact public child action selected when response_detail=child."
+            ),
+        }
     if action == "event.export":
         selected_props["mode"] = {"type": "string", "enum": ["export"], "default": "export"}
     if action in {
@@ -2043,6 +2068,40 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
                 },
                 "then": {"not": {"required": ["line_limit"]}},
             }
+        ]
+    if action == "schema":
+        args["allOf"] = list(args.get("allOf", [])) + [
+            {
+                "if": {"required": ["response_detail"]},
+                "then": {
+                    "properties": {
+                        "action": {"const": "batch"},
+                        "kind": {"const": "response"},
+                    },
+                    "required": ["kind"],
+                },
+            },
+            {
+                "if": {"required": ["child_action"]},
+                "then": {
+                    "properties": {
+                        "action": {"const": "batch"},
+                        "kind": {"const": "response"},
+                        "response_detail": {"const": "child"},
+                    },
+                    "required": ["kind", "response_detail"],
+                },
+            },
+            {
+                "if": {
+                    "required": ["response_detail"],
+                    "properties": {
+                        "response_detail": {"const": "child"},
+                    },
+                },
+                "then": {"required": ["child_action"]},
+                "else": {"not": {"required": ["child_action"]}},
+            },
         ]
     if action == "session.open":
         args["allOf"] = list(args.get("allOf", [])) + [

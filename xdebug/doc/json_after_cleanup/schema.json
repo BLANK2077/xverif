@@ -18,12 +18,15 @@
     "session": null,
     "summary": {
       "action": "signal.statistics",
-      "kind": "request"
+      "kind": "request",
+      "response_detail": "full",
+      "selected_child": null
     },
     "data": {
       "schema_path": "schemas/v1/actions/signal.statistics.request.schema.json",
       "examples": [],
       "constraints": [],
+      "relation": null,
       "schema": {
         "$id": "xdebug.signal.statistics.request.v1",
         "title": "signal.statistics request",

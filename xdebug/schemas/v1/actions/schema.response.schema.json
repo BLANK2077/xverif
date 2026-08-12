@@ -4,7 +4,7 @@
   "title": "schema response",
   "description": "Return the request or response schema for an action.",
   "x-description-zh": "返回指定 action 的 request/response JSON schema。",
-  "x-output_notes": "schema 成功响应的 summary 字段为 summary.action, summary.kind；data 字段为 data.constraints, data.examples, data.schema, data.schema_path。未知字段会被拒绝。",
+  "x-output_notes": "schema 成功响应的 summary 字段为 summary.action, summary.kind, summary.response_detail, summary.selected_child；data 字段为 data.constraints, data.examples, data.relation, data.schema, data.schema_path。未知字段会被拒绝。",
   "$defs": {
     "jsonValue": {
       "anyOf": [
@@ -43,16 +43,35 @@
       "type": "object",
       "properties": {
         "action": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "kind": {
-          "type": "string"
+          "enum": [
+            "request",
+            "response"
+          ]
+        },
+        "response_detail": {
+          "enum": [
+            "summary",
+            "child",
+            "full"
+          ]
+        },
+        "selected_child": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": false,
       "required": [
         "action",
-        "kind"
+        "kind",
+        "response_detail",
+        "selected_child"
       ]
     },
     "successData": {
@@ -85,6 +104,38 @@
             "additionalProperties": false
           }
         },
+        "relation": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "full_schema_path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "completeness": {
+                  "enum": [
+                    "outer-envelope-only",
+                    "selected-child-response",
+                    "complete-recursive-union"
+                  ]
+                },
+                "child_selector": {
+                  "const": "args.child_action"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "child_selector",
+                "completeness",
+                "full_schema_path"
+              ]
+            }
+          ]
+        },
         "schema": {
           "$ref": "#/$defs/jsonValue"
         },
@@ -96,6 +147,7 @@
       "required": [
         "constraints",
         "examples",
+        "relation",
         "schema",
         "schema_path"
       ]
@@ -1426,16 +1478,35 @@
       "type": "object",
       "properties": {
         "action": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "kind": {
-          "type": "string"
+          "enum": [
+            "request",
+            "response"
+          ]
+        },
+        "response_detail": {
+          "enum": [
+            "summary",
+            "child",
+            "full"
+          ]
+        },
+        "selected_child": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": false,
       "required": [
         "action",
-        "kind"
+        "kind",
+        "response_detail",
+        "selected_child"
       ]
     },
     "successData0": {
@@ -1468,6 +1539,38 @@
             "additionalProperties": false
           }
         },
+        "relation": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "full_schema_path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "completeness": {
+                  "enum": [
+                    "outer-envelope-only",
+                    "selected-child-response",
+                    "complete-recursive-union"
+                  ]
+                },
+                "child_selector": {
+                  "const": "args.child_action"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "child_selector",
+                "completeness",
+                "full_schema_path"
+              ]
+            }
+          ]
+        },
         "schema": {
           "$ref": "#/$defs/jsonValue"
         },
@@ -1479,6 +1582,7 @@
       "required": [
         "constraints",
         "examples",
+        "relation",
         "schema",
         "schema_path"
       ]

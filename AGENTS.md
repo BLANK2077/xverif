@@ -84,14 +84,14 @@ Makefile 不再提供测试 target；裸 `pytest` 是 usage error。普通 regre
 - `xdebug/specs/actions/actions.yaml` 是 action 名称、状态、handler、required args、required target、schema 路径和 example 路径的目录级 source of truth；修改公共 action 合同时必须先核对这里，不能只改 handler 或单个 JSON schema。
 - runtime request 的允许参数集合、共享语义说明和 action-specific 补充参数维护在 `xdebug/tools/sync_runtime_request_schemas.py` 与 `xdebug/specs/action_contracts.py`。同名参数不得靠另一个 action 的既有 schema 推断业务语义；新增、删除或改名参数时必须同步 handler、`actions.yaml`、该生成脚本、checked-in schema 和 request example，禁止只手改生成后的 schema。
 - 跨 action 的复用业务对象必须在共享合同组件中定义，再由生成器投影到各 action；例如 reset 一律为 `{"signal":"<one-bit waveform path>","polarity":"active_low|active_high"}`。不得重新引入 `rst_n`、裸 string reset、表达式 reset 或默认极性；外部 config 文件、持久化配置、runtime response 和 request schema 必须使用同一对象。
-- 10 个公开 AXI action 的 response schema 统一由 `xdebug/tools/sync_axi_response_schemas.py` 生成；AXI `summary/data`、transaction、config、finding 等业务对象必须在生成器中定义并关闭未知字段，禁止直接手改 checked-in AXI response schema。
+- 所有公开 action（包括 AXI）的 response schema 统一由 `xdebug/tools/sync_response_schemas.py` 生成；AXI `summary/data`、transaction、config、finding 等业务对象维护在 `xdebug/specs/non_sampling_response_contracts.py`，再由统一生成器投影并关闭未知字段，禁止直接手改 checked-in AXI response schema。
 - schema 的 AI-facing purpose、使用场景和参数说明由 `skills/xverif/references/xdebug/action-reference.md`、`actions.yaml` 和 `xdebug/tools/sync_action_schema_hints.py` 同步；需要修改提示时先改 source，不在生成 schema 中单独维护漂移副本。
 - 所有公开 request 顶层和 `args` 默认使用 `additionalProperties: false`；`query`、`output`、`time_range`、`match` 等嵌套对象也必须显式列出属性并关闭未知字段，除非合同明确要求可扩展对象。
 - handler 接受的每个公共参数都必须出现在 action-specific schema 中并实际生效；schema 中公开但实现不支持的参数必须删除或返回明确错误，禁止接受后静默忽略。参数名、enum、默认值、required/conditional-required 语义必须在 native CLI、MCP、schema、example 和 skill 中一致。
 - request/response schema 与 `examples/requests`、`examples/responses` 必须成对维护。response 不得在 `summary` 和 `data` 重复同一事实；时间只发布一个 canonical 带单位字符串，截断必须区分完整分析计数与返回行数，并提供 `truncated`、`truncation_scope` 或对应完整性字段。
 - request schema 可声明 Draft 2020-12，但运行时使用 embedded Draft-7 兼容子集；新增共享对象、条件约束或 response 投影后必须先更新 generator/source，再运行 runtime-compatibility audit，禁止直接编辑生成产物。
 - AXI 时间字段统一使用语义化名称。已确认使用 `valid_begin_time` 表示当前 address/data payload 首次被采样为有效并持续到该 beat handshake 的时间；它不是字面意义上的 VALID 上升沿，back-to-back VALID 连续为 1 时，新 payload 在前一 beat handshake 后首次出现的采样点就是新的 `valid_begin_time`。
-- 提交 schema 相关改动前至少执行：`python3 xdebug/tools/sync_runtime_request_schemas.py --check`、`python3 xdebug/tools/sync_axi_response_schemas.py --check`、`python3 xdebug/tools/sync_action_schema_hints.py --check`、`python3 xdebug/tools/audit_runtime_schema_compatibility.py`、`python3 xdebug/tools/validate_schema.py`、`python3 xdebug/tools/validate_examples.py`，并按变更范围运行 `xdebug.contract` 与对应 skill catalog suite。request schema 必须保持 embedded Draft-7 validator 可执行子集；不能因文件声明 Draft 2020-12 就使用运行时未支持关键字。`xdebug.contract` 涉及真实 FSDB/NPI 时必须整体在沙箱外运行。
+- 提交 schema 相关改动前至少执行：`python3 xdebug/tools/sync_runtime_request_schemas.py --check`、`python3 xdebug/tools/sync_response_schemas.py --check`、`python3 xdebug/tools/sync_action_schema_hints.py --check`、`python3 xdebug/tools/audit_runtime_schema_compatibility.py`、`python3 xdebug/tools/validate_schema.py`、`python3 xdebug/tools/validate_examples.py`，并按变更范围运行 `xdebug.contract` 与对应 skill catalog suite。request schema 必须保持 embedded Draft-7 validator 可执行子集；不能因文件声明 Draft 2020-12 就使用运行时未支持关键字。`xdebug.contract` 涉及真实 FSDB/NPI 时必须整体在沙箱外运行。
 - 生成检查发现仓库既有或无关 schema 漂移时，不允许静默忽略、过滤失败或顺手批量重写无关 action；必须区分本次引入与 baseline 漂移，明确报告，并把无关修复拆到独立计划或提交。
 
 ## xdebug 外部材料
@@ -331,6 +331,18 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 - 错误现象：复核 pynpi coverage instance lookup 时使用系统 Python 3.14，`cov.open` 在 `_cov_l0.so` 的 SWIG 字符串转换中触发 SIGSEGV，尚未进入 lookup。
 - 误判原因：执行临时 inline probe 时只设置了 Verdi `PYTHONPATH`，没有遵守仓库已确认的 `.conda-xverif` Python 兼容环境合同。
 - 以后规则：所有 pynpi coverage probe 都使用仓库 `.conda-xverif/bin/python`，启动前同时核对解释器版本和 Verdi Python 路径；系统 Python 的 SWIG 崩溃不作为 NPI coverage 产品结论。
+
+### 2026-08-12 环境错误复盘
+
+- 错误现象：在仓库根目录测量 `schema` action 的 batch summary 时再次使用了不存在的 `xdebug/tools/xdebug`，命令以 127 退出，未启动产品逻辑。
+- 误判原因：沿用了以 `xdebug/` 为工作目录时的 README 相对入口，没有在性能命令前核对根目录下的实际可执行文件。
+- 以后规则：从仓库根目录执行 native xdebug probe 前先用 `test -x xdebug/xdebug` 核对入口，并固定使用该路径；不存在的 wrapper 入口失败不作为性能或功能结果。
+
+### 2026-08-12 环境错误复盘
+
+- 错误现象：找到正确 native binary 后仍用不存在的 `--output-format json` 参数测量 batch summary，CLI 返回 usage，未进入 `schema` action。
+- 误判原因：根据其它 surface 的输出参数猜测 native CLI flags，没有先读取当前 `xdebug --help` 的 `--json|--text` 合同。
+- 以后规则：native CLI probe 在拼接性能测量命令前先运行并读取当前 `--help`，JSON stdin 固定使用已确认的 `xdebug/xdebug --json -`；usage 失败不得计入产品测量。
 
 ### 2026-08-12 环境错误复盘
 

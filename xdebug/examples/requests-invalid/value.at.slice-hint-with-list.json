@@ -1,0 +1,6 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "value.at",
+  "target": {"session_id": "case_a"},
+  "args": {"list": "watch", "time": "100ns", "slice_hint": {"chunk_width": 8}}
+}

@@ -1,92 +1,22 @@
 #!/usr/bin/env python3
-"""Validate xdebug JSON examples against local schema files.
+"""Validate positive examples and canonical invalid request witnesses.
 
-The validator implements the small JSON Schema subset used by xdebug contract
-schemas: type, enum, required, properties, additionalProperties, items, and
-basic anyOf/oneOf/allOf. It is dependency-free by design.
+Requests must have the same verdict under the public Draft 2020-12 declaration
+and the embedded runtime's Draft-7 interpretation.  Invalid witnesses are
+manifested separately so MCP projections and the C++ validator consume the
+same executable counterexamples.
 """
 
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, List
 
 from jsonschema import Draft7Validator, Draft202012Validator, ValidationError as JsonSchemaValidationError
 
 
-class ValidationError(Exception):
-    pass
-
-
 def fail(message: str) -> None:
     raise SystemExit(f"ERROR: {message}")
-
-
-def type_ok(value: Any, expected: str) -> bool:
-    if expected == "object":
-        return isinstance(value, dict)
-    if expected == "array":
-        return isinstance(value, list)
-    if expected == "string":
-        return isinstance(value, str)
-    if expected == "boolean":
-        return isinstance(value, bool)
-    if expected == "integer":
-        return isinstance(value, int) and not isinstance(value, bool)
-    if expected == "number":
-        return (isinstance(value, int) or isinstance(value, float)) and not isinstance(value, bool)
-    if expected == "null":
-        return value is None
-    return False
-
-
-def validate(value: Any, schema: Dict[str, Any], path: str = "$") -> None:
-    for key in ("allOf",):
-        if key in schema:
-            for child in schema[key]:
-                validate(value, child, path)
-    for key in ("anyOf", "oneOf"):
-        if key in schema:
-            errors = []
-            ok_count = 0
-            for child in schema[key]:
-                try:
-                    validate(value, child, path)
-                    ok_count += 1
-                except ValidationError as exc:
-                    errors.append(str(exc))
-            if key == "anyOf" and ok_count == 0:
-                raise ValidationError(f"{path}: no anyOf schema matched: {errors}")
-            if key == "oneOf" and ok_count != 1:
-                raise ValidationError(f"{path}: expected exactly one oneOf match, got {ok_count}")
-
-    if "enum" in schema and value not in schema["enum"]:
-        raise ValidationError(f"{path}: {value!r} not in enum {schema['enum']!r}")
-
-    if "type" in schema:
-        expected = schema["type"]
-        expected_types = [expected] if isinstance(expected, str) else list(expected)
-        if not any(type_ok(value, t) for t in expected_types):
-            raise ValidationError(f"{path}: expected type {expected}, got {type(value).__name__}")
-
-    if isinstance(value, dict):
-        for name in schema.get("required", []):
-            if name not in value:
-                raise ValidationError(f"{path}: missing required property {name!r}")
-        props = schema.get("properties", {})
-        if not isinstance(props, dict):
-            props = {}
-        for name, child in props.items():
-            if name in value:
-                validate(value[name], child, f"{path}.{name}")
-        if schema.get("additionalProperties") is False:
-            extra = set(value) - set(props)
-            if extra:
-                raise ValidationError(f"{path}: additional properties not allowed: {sorted(extra)}")
-
-    if isinstance(value, list) and isinstance(schema.get("items"), dict):
-        for idx, item in enumerate(value):
-            validate(item, schema["items"], f"{path}[{idx}]")
 
 
 def load_json(path: Path) -> Any:
@@ -122,6 +52,56 @@ def validate_file(path: Path, schemas: Path) -> None:
         fail(f"{path}: does not match {schema_path}: {exc}")
 
 
+def validate_invalid_witnesses(examples: Path, schemas: Path) -> int:
+    manifest_path = examples / "requests-invalid" / "manifest.json"
+    manifest = load_json(manifest_path)
+    if not isinstance(manifest, dict) or manifest.get("version") != 1:
+        fail(f"{manifest_path}: expected version 1 invalid-witness manifest")
+    witnesses = manifest.get("witnesses")
+    if not isinstance(witnesses, list) or not witnesses:
+        fail(f"{manifest_path}: witnesses must be a non-empty array")
+    seen_paths: set[str] = set()
+    root = examples.parent
+    for index, entry in enumerate(witnesses):
+        if not isinstance(entry, dict):
+            fail(f"{manifest_path}: witnesses[{index}] must be an object")
+        action = entry.get("action")
+        relative = entry.get("path")
+        description = entry.get("description")
+        violations = entry.get("violates")
+        if not all(isinstance(value, str) and value for value in
+                   (action, relative, description)):
+            fail(f"{manifest_path}: witnesses[{index}] has incomplete metadata")
+        if not isinstance(violations, list) or not violations or not all(
+                isinstance(value, str) and value for value in violations):
+            fail(f"{manifest_path}: witnesses[{index}].violates must be non-empty")
+        if relative in seen_paths:
+            fail(f"{manifest_path}: duplicate witness path {relative}")
+        seen_paths.add(relative)
+        witness_path = root / relative
+        request = load_json(witness_path)
+        if not isinstance(request, dict) or request.get("action") != action:
+            fail(f"{witness_path}: action does not match manifest entry {action}")
+        schema_path = action_schema_path(schemas, action, "request")
+        schema = load_json(schema_path)
+        draft7_valid = Draft7Validator(schema).is_valid(request)
+        draft202012_valid = Draft202012Validator(schema).is_valid(request)
+        if draft7_valid != draft202012_valid:
+            fail(f"{witness_path}: Draft-7 and Draft 2020-12 verdicts differ")
+        if draft7_valid:
+            fail(f"{witness_path}: canonical invalid witness was accepted")
+    actual = {
+        str(path.relative_to(root))
+        for path in (examples / "requests-invalid").glob("*.json")
+        if path.name != "manifest.json"
+    }
+    missing = actual - seen_paths
+    stale = seen_paths - actual
+    if missing or stale:
+        fail(f"{manifest_path}: unmanifested={sorted(missing)} missing={sorted(stale)}")
+    return len(witnesses)
+
+
 def main(argv: List[str]) -> int:
     examples = Path(argv[1]) if len(argv) > 1 else Path("xdebug/examples")
     schemas = Path(argv[2]) if len(argv) > 2 else Path("xdebug/schemas/v1")
@@ -129,12 +109,17 @@ def main(argv: List[str]) -> int:
         fail(f"examples root does not exist: {examples}")
     if not schemas.exists():
         fail(f"schemas root does not exist: {schemas}")
-    files = sorted(examples.rglob("*.json"))
+    invalid_root = examples / "requests-invalid"
+    files = sorted(
+        path for path in examples.rglob("*.json")
+        if invalid_root not in path.parents and path != invalid_root
+    )
     if not files:
         fail(f"no examples found under {examples}")
     for path in files:
         validate_file(path, schemas)
-    print(f"validated {len(files)} examples")
+    invalid_count = validate_invalid_witnesses(examples, schemas)
+    print(f"validated {len(files)} examples and {invalid_count} invalid request witnesses")
     return 0
 
 

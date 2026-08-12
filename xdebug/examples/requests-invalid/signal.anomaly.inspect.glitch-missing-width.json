@@ -1,0 +1,6 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "signal.anomaly.inspect",
+  "target": {"session_id": "case_a"},
+  "args": {"signals": ["top.u.valid"], "checks": [{"type": "glitch"}]}
+}

@@ -1,0 +1,6 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "value.at",
+  "target": {"session_id": "case_a"},
+  "args": {"time": "100ns"}
+}

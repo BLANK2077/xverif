@@ -286,7 +286,7 @@
     "target"
   ],
   "x-purpose": "统计已完成 AXI 事务。",
-  "x-how_it_works": "复用 canonical AXI 缓存；ID 队列内部取 OR，direction、ID、address 三类条件取 AND。",
+  "x-how_it_works": "复用 canonical AXI 缓存；ID 队列内部取 OR，direction、ID、address 三类条件取 AND；逐笔明细用 axi.query，pending/latency/outstanding 用 axi.analysis，artifact 用 axi.export。",
   "x-when_to_use": "按方向、ID 和地址核对 AXI 事务次数。",
   "x-arg_contract_notes": "required: name; filter direction/ids/address with AND; address mode is exact/range/mask",
   "x-agent": {
@@ -296,7 +296,20 @@
     "do_not_use_when": [
       "Inspecting individual AXI payload beats or pending transactions."
     ],
-    "alternatives": [],
+    "alternatives": [
+      {
+        "action": "axi.query",
+        "when": "Inspect filtered AXI transactions, channels, or payload beats."
+      },
+      {
+        "action": "axi.analysis",
+        "when": "Analyze AXI pending transactions, latency, or outstanding activity."
+      },
+      {
+        "action": "axi.export",
+        "when": "Persist selected AXI transaction evidence as an artifact."
+      }
+    ],
     "constraints": [
       "required: name; filter direction/ids/address with AND; address mode is exact/range/mask"
     ]

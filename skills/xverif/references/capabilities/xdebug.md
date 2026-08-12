@@ -104,6 +104,8 @@ TSV/CSV data artifact 及 meta。用 `scanned_transaction_count`、
 只需要计数时使用 `apb.statistics`：`filter.direction` 与 `filter.address` 取 AND，address
 只能选择 exact 队列、闭区间 range 或 value/mask 三种模式之一。它只统计已完成事务，
 复用同一 session/config 的 canonical APB 缓存，不接受 `line_limit`，也不会重新扫描 FSDB。
+需要逐笔 payload 时改用 `apb.query`，需要完整 artifact 时使用 `apb.export`，需要单笔
+原始信号现场时使用 `apb.transfer_window`。
 
 ## 6. 宏观波形和多模态观察
 
@@ -140,13 +142,15 @@ TSV/CSV data artifact 及 meta。用 `scanned_transaction_count`、
 - 只需要事务数时使用 `axi.statistics`。`filter.ids` 队列内部取 OR；direction、IDs、
   address 三类条件取 AND；address 只能选择 exact、range、mask 一种模式。该 action
   只遍历缓存中的 completed transaction，不返回 payload，也不处理 pending。
+  逐笔 transaction/channel/beat 使用 `axi.query`，pending/latency/outstanding 使用
+  `axi.analysis`，持久化事务证据使用 `axi.export`。
 - 两个 statistics action 的 `unresolved_transaction_count` 只统计最终 AND 谓词仍无法
   判断的事务；XOUT `notes` block 会固定说明它是“被引用的 address/ID 含 X/Z 或不可解析”
   导致的计数，不应自行猜测其含义。
 
 ## Common failures
 
-- 参数不确定：查询 action schema，读取 `invalid_arg/expected/allowed_values/did_you_mean/required_any_of/correct_example`。
+- 参数不确定：查询 action schema，读取错误中的 `invalid_arg/expected/available_values/did_you_mean/required_any_of/correct_example`。错误不发布 `allowed_values`；catalog descriptor 的同名 `allowed_values` 是参数 enum 元数据映射。
 - 响应 truncated/partial：缩小查询或使用该 action 明确支持的 limits/export。
 - `REQUEST_TOO_LARGE`：读取 `received_bytes/max_bytes/transport/phase`，按 `next_actions` 拆分 batch、减少内联配置或使用有界 export；不要原样重试、提高全局上限、截断请求或切换 transport。
 - `INVALID_CONFIG`：读取 `config_key/config_source/expected`，按 `next_actions` 修正配置并启动新进程；`recoverable=false` 表示同一进程内重试无效，`received_redacted=true` 表示敏感原值已隐藏。

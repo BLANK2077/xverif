@@ -94,7 +94,7 @@ public:
                                       {"action", "scope.roots"},
                                       {"target", {{"session_id", "case_a"}}},
                                       {"args", {{"source", "auto"}}}}},
-                 {"example_note", "Example only; choose args.source from allowed_values."}});
+                 {"example_note", "Example only; choose args.source from available_values."}});
 
         const bool want_wave = source == "auto" || source == "wave";
         const bool want_design = source == "auto" || source == "design";

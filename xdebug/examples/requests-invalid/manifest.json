@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "witnesses": [
+    {
+      "action": "value.at",
+      "path": "examples/requests-invalid/value.at.missing-source.json",
+      "description": "Invalid: omits every value-source selector.",
+      "violates": ["args source oneOf: zero selected branches"]
+    },
+    {
+      "action": "value.at",
+      "path": "examples/requests-invalid/value.at.multiple-sources.json",
+      "description": "Invalid: selects both signal and list sources.",
+      "violates": ["args source oneOf: more than one selector supplied"]
+    },
+    {
+      "action": "value.at",
+      "path": "examples/requests-invalid/value.at.slice-hint-with-list.json",
+      "description": "Invalid: slice_hint condition requires the direct signal source.",
+      "violates": ["args allOf if/then: slice_hint requires signal"]
+    },
+    {
+      "action": "expr.normalize",
+      "path": "examples/requests-invalid/expr.normalize.missing-selector.json",
+      "description": "Invalid: omits both expression and signal selectors.",
+      "violates": ["args oneOf: zero selected branches"]
+    },
+    {
+      "action": "expr.normalize",
+      "path": "examples/requests-invalid/expr.normalize.multiple-selectors.json",
+      "description": "Invalid: supplies both expression and signal selectors.",
+      "violates": ["args oneOf: more than one selector supplied"]
+    },
+    {
+      "action": "signal.anomaly.inspect",
+      "path": "examples/requests-invalid/signal.anomaly.inspect.glitch-missing-width.json",
+      "description": "Invalid: the glitch discriminator omits min_pulse_width.",
+      "violates": ["args.checks items oneOf: zero matching branches"]
+    },
+    {
+      "action": "apb.export",
+      "path": "examples/requests-invalid/apb.export.format-without-path.json",
+      "description": "Invalid: file_format condition requires output.path.",
+      "violates": ["args.output allOf if/then: file_format requires path"]
+    }
+  ]
+}

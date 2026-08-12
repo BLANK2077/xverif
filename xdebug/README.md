@@ -255,8 +255,10 @@ MCP client 配置示例（direct 模式）：
 `xverif_debug_get_schema` 默认返回 MCP 投影：结果中的
 `args_schema` 和 `limits_schema` 是 query tool 内层同名参数的唯一字段合同；
 `constraints` 只补充跨字段业务语义，`minimal_call` 可直接复制。
-无需再查询一次 response schema；
-只查看完整 response schema 时使用 `kind="response", view="response"`。
+无需再查询一次 response schema；普通 action 查看完整 response schema 时使用
+`kind="response", view="response"`。`batch` 在 MCP 上默认返回 compact summary；
+精确 child 使用 `response_detail="child", child_action="<action>"`，完整递归 union
+必须显式使用 `response_detail="full"`。
 
 xcov 提供对称的 `xverif_cov_session_open/list/doctor/close/kill/gc`。debug/cov query 都禁止 native lifecycle action。xdebug dead loop 只使用固定 native admin path 精确 doctor/kill；xcov backend 随 loop 退出，kill 不虚构 native kill。清理部分失败会保留 tombstone，不切换 transport/backend。
 
@@ -264,7 +266,7 @@ xcov 提供对称的 `xverif_cov_session_open/list/doctor/close/kill/gc`。debug
 
 LSF 模式将 `XVERIF_MCP_BACKEND` 设为 `lsf`：
 
-```json
+```jsonc
 "XVERIF_MCP_BACKEND": "lsf",
 "XVERIF_LSF_SESSION_QUEUE": "interactive"
 ```
@@ -438,21 +440,20 @@ file session 示例：
 
 所有请求统一使用这个 envelope：
 
+<!-- xdebug-example:trace.driver:begin -->
 ```json
 {
   "api_version": "xdebug.v1",
-  "request_id": "optional-id",
   "action": "trace.driver",
   "target": {
-    "daidir": "simv.daidir",
-    "fsdb": "waves.fsdb"
+    "daidir": "simv.daidir"
   },
   "args": {
-    "output": {"verbose": false}
-  },
-  "limits": {}
+    "signal": "top.u.ready"
+  }
 }
 ```
+<!-- xdebug-example:trace.driver:end -->
 
 ### 输出控制
 
@@ -761,54 +762,57 @@ data 默认只返回首、末 handshake 时间，`include_data:true` 时才增�
 请求的 clock edge 在 FSDB 中存在。写事务同时返回 AW/首末 W/B 时间、
 `phase_order`、beat count 和 B response dependency 诊断。
 
-`event.find` 查 first/last/all occurrence。已有 event config 时传 `name`；临时查询可直接传 `expr` + `clk` + `signals`，不会留下持久 event config。表达式支持布尔组合和数值比较，可直接写 counter 阈值，例如 `wait_count >= 512`：
+`event.find` 查 first/last/all occurrence。已有 event config 时传 `name`；临时查询可直接传 `expr` + `clock` + `signals`，不会留下持久 event config。表达式支持布尔组合和数值比较，可直接写 counter 阈值，例如 `wait_count >= 512`：
 
+<!-- xdebug-example:event.find:begin -->
 ```json
 {
   "api_version": "xdebug.v1",
   "action": "event.find",
-  "target": {"session_id": "case_a"},
+  "target": {
+    "session_id": "case_a"
+  },
   "args": {
-    "expr": "valid && !ready && wait_count >= 512",
-    "clk": "top.clk",
+    "clock": "top.u.clk",
     "signals": {
       "valid": "top.u.valid",
       "ready": "top.u.ready",
       "wait_count": "top.u.dbg_wait_count"
     },
-    "time_range": {
-      "begin": "0ns",
-      "end": "100us"
-    },
-    "mode": "last"
+    "expr": "valid && !ready && wait_count >= 512",
+    "mode": "all",
+    "line_limit": 5
   }
 }
 ```
+<!-- xdebug-example:event.find:end -->
 
 `mode` 可为 `first`、`last` 或 `all`。`last` 会按 `scan_limit` 或 `limits.max_rows` 扫描后返回最后一个匹配点。
 
-对 valid/ready 类协议，合法 idle 或 backpressure 窗口不等价于 bug。优先用 valid-qualified `event.find`、`signal.changes` 和 `window.verify` 证明超时路径；`detect_abnormal` 只适合作为粗粒度 smoke。payload knownness 建议检查 leaf field，不要直接把 packed struct aggregate 的 unknown finding 当作最终结论。
+对 valid/ready 类协议，合法 idle 或 backpressure 窗口不等价于 bug。优先用 valid-qualified `event.find`、`signal.changes` 和 `window.verify` 证明超时路径；`signal.anomaly.inspect` 只适合作为粗粒度 smoke。payload knownness 建议检查 leaf field，不要直接把 packed struct aggregate 的 unknown finding 当作最终结论。
 
 导出事件默认只返回聚合信息和少量 examples。完整 rows 必须显式请求：
 
+<!-- xdebug-example:event.export:begin -->
 ```json
 {
   "api_version": "xdebug.v1",
   "action": "event.export",
-  "target": {"session_id": "case_a"},
-  "args": {
-    "name": "if0",
-    "expr": "valid && !ready",
-    "time_range": {
-      "begin": "0ns",
-      "end": "100us"
-    }
+  "target": {
+    "session_id": "case_a"
   },
-  "limits": {
-    "max_events": 1000
+  "args": {
+    "clock": "top.u.clk",
+    "signals": {
+      "valid": "top.u.valid",
+      "ready": "top.u.ready"
+    },
+    "expr": "valid && !ready",
+    "line_limit": 5
   }
 }
 ```
+<!-- xdebug-example:event.export:end -->
 
 需要 event rows：
 
@@ -866,21 +870,21 @@ wave/design/merged 分别要求 FSDB、daidir、两者，资源缺失时不会�
 
 当同时有 `daidir` 和 `fsdb` 时，用 `trace.active_driver` 把“某时刻波形值”连接到“当前生效的设计驱动证据”：
 
+<!-- xdebug-example:trace.active_driver:begin -->
 ```json
 {
   "api_version": "xdebug.v1",
   "action": "trace.active_driver",
   "target": {
-    "daidir": "simv.daidir",
-    "fsdb": "waves.fsdb"
+    "session_id": "my_debug_session"
   },
   "args": {
     "signal": "top.u.ready",
-    "requested_time": "120ns",
-    "include_control": true
+    "time": "120ns"
   }
 }
 ```
+<!-- xdebug-example:trace.active_driver:end -->
 
 推荐 debug flow：
 

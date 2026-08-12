@@ -48,9 +48,55 @@
           ],
           "default": "request",
           "description": "schema action 要返回的 JSON Schema 类别：request 或 response。"
+        },
+        "response_detail": {
+          "type": "string",
+          "enum": [
+            "summary",
+            "child",
+            "full"
+          ],
+          "default": "full",
+          "description": "Response-schema expansion for action=batch and kind=response. summary returns a compact outer-envelope/selector contract, child returns exactly one child action response schema, and full returns the complete checked-in batch schema."
+        },
+        "child_action": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Exact public child action selected when response_detail=child."
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {"required": ["response_detail"]},
+          "then": {
+            "properties": {
+              "action": {"const": "batch"},
+              "kind": {"const": "response"}
+            },
+            "required": ["kind"]
+          }
+        },
+        {
+          "if": {"required": ["child_action"]},
+          "then": {
+            "properties": {
+              "action": {"const": "batch"},
+              "kind": {"const": "response"},
+              "response_detail": {"const": "child"}
+            },
+            "required": ["kind", "response_detail"]
+          }
+        },
+        {
+          "if": {
+            "required": ["response_detail"],
+            "properties": {"response_detail": {"const": "child"}}
+          },
+          "then": {"required": ["child_action"]},
+          "else": {"not": {"required": ["child_action"]}}
+        }
+      ]
     },
     "limits": {
       "type": "object",

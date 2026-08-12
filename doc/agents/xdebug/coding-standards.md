@@ -9,7 +9,7 @@
 - 不引入同义字段，除非有明确迁移计划和 deprecated 说明。
 - 删除或收紧字段时，同步 runtime、schema、examples、docs、skill、MCP、tests。
 - 错误码是机器合同，不能只依赖 message 文本。
-- 参数错误必须可恢复：schema 层和 action handler 层都应尽量返回 `invalid_arg`、`expected`、`allowed_values`、`did_you_mean`、`required_any_of`、`correct_example` 等结构化字段。
+- 参数错误必须可恢复：schema 层和 action handler 层都应尽量返回 `invalid_arg`、`expected`、`available_values`、`did_you_mean`、`required_any_of`、`correct_example` 等结构化字段。错误候选只使用 `error.available_values`；action catalog descriptor 的 `allowed_values` 是参数到 enum 的元数据映射，不是错误字段。
 - `REQUEST_TOO_LARGE` 必须返回 `limit_name=request_bytes`、实际/上限字节数、`transport`、`phase` 和可执行的 `next_actions`，并固定 `recoverable=false`。不得截断后继续解析、自动提高全局上限或静默切换 transport。
 - `INVALID_CONFIG` 必须返回非空 `config_key`、`config_source=environment|default|request`、`expected` 和 `next_actions`，并固定 `recoverable=false`。敏感配置值不得写入 `received`、message 或日志；需要表达“已收到但已隐藏”时使用 `received_redacted=true`。
 

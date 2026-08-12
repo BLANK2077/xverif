@@ -207,6 +207,9 @@
     spec.use_when = {"Count completed APB read and write transactions after applying protocol filters."};
     spec.do_not_use_when = {"Inspecting individual APB transaction payloads or pending transfers."};
     spec.alternatives = Json::array();
+    spec.alternatives.push_back({{"action", "apb.query" }, {"when", "Inspect individual filtered APB transactions and payloads." }});
+    spec.alternatives.push_back({{"action", "apb.export" }, {"when", "Persist the complete filtered APB transaction set as TSV or CSV." }});
+    spec.alternatives.push_back({{"action", "apb.transfer_window" }, {"when", "Inspect raw signal evidence around one selected APB transfer." }});
     registry.register_spec(spec);
 }
 {
@@ -508,6 +511,9 @@
     spec.use_when = {"Count completed AXI read and write transactions after applying protocol filters."};
     spec.do_not_use_when = {"Inspecting individual AXI payload beats or pending transactions."};
     spec.alternatives = Json::array();
+    spec.alternatives.push_back({{"action", "axi.query" }, {"when", "Inspect filtered AXI transactions, channels, or payload beats." }});
+    spec.alternatives.push_back({{"action", "axi.analysis" }, {"when", "Analyze AXI pending transactions, latency, or outstanding activity." }});
+    spec.alternatives.push_back({{"action", "axi.export" }, {"when", "Persist selected AXI transaction evidence as an artifact." }});
     registry.register_spec(spec);
 }
 {
@@ -1091,8 +1097,8 @@
     spec.handler_kind = "schema";
     spec.request_schema = "schemas/v1/actions/schema.request.schema.json";
     spec.response_schema = "schemas/v1/actions/schema.response.schema.json";
-    spec.request_examples = {"examples/requests/schema.basic.json"};
-    spec.response_examples = {"examples/responses/schema.basic.json"};
+    spec.request_examples = {"examples/requests/schema.basic.json", "examples/requests/schema.batch-child.json"};
+    spec.response_examples = {"examples/responses/schema.basic.json", "examples/responses/schema.batch-child.json"};
     spec.args.required = {"action"};
     spec.description_en = "Return the request or response schema for an action.";
     spec.description_zh = "返回指定 action 的 request/response JSON schema。";

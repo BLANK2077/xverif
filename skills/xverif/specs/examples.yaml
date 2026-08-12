@@ -8,3 +8,26 @@ examples:
       list: ready_path
       times: [100ns, 120ns]
       clock: top.clk
+public_snippets:
+  - target: xdebug/README.md
+    action: trace.driver
+    source: xdebug/examples/requests/trace.driver.basic.json
+    format: json
+  - target: xdebug/README.md
+    action: event.find
+    source: xdebug/examples/requests/event.find.basic.json
+    format: json
+  - target: xdebug/README.md
+    action: event.export
+    source: xdebug/examples/requests/event.export.basic.json
+    format: json
+  - target: xdebug/README.md
+    action: trace.active_driver
+    source: xdebug/examples/requests/trace.active_driver.basic.json
+    format: json
+  - target: xdebug/help.txt
+    action: trace.active_driver
+    source: xdebug/examples/requests/trace.active_driver.basic.json
+    format: shell
+    marker_style: text
+    indent: 4

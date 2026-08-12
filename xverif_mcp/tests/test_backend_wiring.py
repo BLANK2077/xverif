@@ -69,6 +69,82 @@ def test_backend_uses_session_manager():
     assert isinstance(backend._sessions, McpSessionManager)
 
 
+def test_debug_schema_adapter_defaults_batch_response_to_compact_summary(
+    monkeypatch,
+) -> None:
+    calls = []
+
+    class DummyRunner:
+        def run_json(self, tool, argv, input_text):
+            calls.append(json.loads(input_text))
+            return {
+                "ok": True,
+                "data": {
+                    "schema": {"x-contract-completeness": "outer-envelope-only"},
+                    "schema_path": "",
+                    "relation": {"completeness": "outer-envelope-only"},
+                },
+            }
+
+    monkeypatch.setattr("xverif_mcp.runner.StatelessCliRunner", DummyRunner)
+    adapter = XverifDebugAdapter(mode="direct")
+    result = adapter.schema("batch", "response", view="response")
+
+    assert calls[0]["args"] == {
+        "action": "batch",
+        "kind": "response",
+        "response_detail": "summary",
+    }
+    assert result["summary"]["response_detail"] == "summary"
+
+
+def test_debug_schema_adapter_requires_explicit_full_batch_expansion(
+    monkeypatch,
+) -> None:
+    calls = []
+
+    class DummyRunner:
+        def run_json(self, tool, argv, input_text):
+            calls.append(json.loads(input_text))
+            return {
+                "ok": True,
+                "data": {
+                    "schema": {"$id": "xdebug.batch.response.v1"},
+                    "schema_path": "schemas/v1/actions/batch.response.schema.json",
+                    "relation": {"completeness": "complete-recursive-union"},
+                },
+            }
+
+    monkeypatch.setattr("xverif_mcp.runner.StatelessCliRunner", DummyRunner)
+    adapter = XverifDebugAdapter(mode="direct")
+    result = adapter.schema(
+        "batch", "response", view="response", response_detail="full",
+    )
+
+    assert calls[0]["args"]["response_detail"] == "full"
+    assert result["summary"]["response_detail"] == "full"
+
+
+def test_mcp_schema_tool_rejects_invalid_batch_selector_combinations() -> None:
+    from xverif_mcp import server
+
+    missing_child = server.xverif_debug_get_schema(
+        "batch", kind="response", view="response", response_detail="child",
+    )
+    assert missing_child["error"]["code"] == "INVALID_ARGUMENT"
+
+    non_batch_summary = server.xverif_debug_get_schema(
+        "value.at", kind="response", view="response",
+        response_detail="summary",
+    )
+    assert non_batch_summary["error"]["code"] == "INVALID_ARGUMENT"
+
+    request_detail = server.xverif_debug_get_schema(
+        "batch", kind="request", response_detail="summary",
+    )
+    assert request_detail["error"]["code"] == "INVALID_ARGUMENT"
+
+
 def test_lsf_mode_rejected():
     from xverif_loop.config import ConfigError
     with pytest.raises(ConfigError, match=r"invalid mode='invalid'; expected 'direct' or 'lsf'"):
@@ -276,6 +352,7 @@ def test_debug_adapter_resource_free_error_uses_sessionless_mcp_example(monkeypa
                 "error": {
                     "code": "INVALID_ARGUMENT",
                     "message": "bad expr",
+                    "available_values": ["a && b", "a || b"],
                     "correct_example": {
                         "api_version": "xdebug.v1",
                         "action": "expr.normalize",
@@ -295,3 +372,5 @@ def test_debug_adapter_resource_free_error_uses_sessionless_mcp_example(monkeypa
         "tool": "xverif_debug_query",
         "args": {"action": "expr.normalize", "args": {"expr": "a && b"}},
     }
+    assert result["error"]["available_values"] == ["a && b", "a || b"]
+    assert "allowed_values" not in result["error"]

@@ -1,0 +1,5 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "expr.normalize",
+  "args": {"expr": "valid && ready", "signal": "top.u.valid"}
+}

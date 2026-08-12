@@ -1,0 +1,10 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "apb.export",
+  "target": {"session_id": "case_a"},
+  "args": {
+    "name": "apb0",
+    "time_range": {"begin": "0ns", "end": "1us"},
+    "output": {"file_format": "csv"}
+  }
+}

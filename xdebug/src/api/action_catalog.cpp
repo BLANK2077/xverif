@@ -106,6 +106,82 @@ std::string repo_root() {
     return "xdebug/";
 }
 
+Json compact_batch_response_schema(const std::vector<ActionSpec>& specs) {
+    Json child_actions = Json::array();
+    for (const auto& spec : specs) {
+        if (spec.name != "batch") child_actions.push_back(spec.name);
+    }
+    std::sort(child_actions.begin(), child_actions.end());
+    return {
+        {"$schema", "https://json-schema.org/draft/2020-12/schema"},
+        {"$id", "xdebug.batch.response.summary.v1"},
+        {"title", "batch response compact selector contract"},
+        {"description",
+         "Token-efficient batch outer-envelope contract. Child payloads are "
+         "action-discriminated and require response_detail=child for exact "
+         "validation; request response_detail=full only when the complete "
+         "recursive union is required."},
+        {"type", "object"},
+        {"required", Json::array(
+             {"api_version", "ok", "action", "tool", "session", "summary",
+              "data", "error"})},
+        {"properties",
+         {
+             {"api_version", {{"const", "xdebug.v1"}}},
+             {"request_id", {{"type", "string"}, {"minLength", 1}}},
+             {"ok", {{"type", "boolean"}}},
+             {"action", {{"const", "batch"}}},
+             {"tool", {{"type", "object"}}},
+             {"session", {{"type", Json::array({"object", "null"})}}},
+             {"summary",
+              {{"type", "object"},
+               {"required", Json::array(
+                    {"count", "all_ok", "failed_count", "failed_indexes",
+                     "failed_codes", "failed_layers"})},
+               {"properties",
+                {
+                    {"count", {{"type", "integer"}, {"minimum", 0}}},
+                    {"all_ok", {{"type", "boolean"}}},
+                    {"failed_count", {{"type", "integer"}, {"minimum", 0}}},
+                    {"failed_indexes", {{"type", "array"},
+                                        {"items", {{"type", "integer"},
+                                                   {"minimum", 0}}}}},
+                    {"failed_codes", {{"type", "array"},
+                                      {"items", {{"type", "string"}}}}},
+                    {"failed_layers", {{"type", "array"},
+                                       {"items", {{"type", "string"}}}}},
+                }},
+               {"additionalProperties", false}}},
+             {"data",
+              {{"type", "object"},
+               {"required", Json::array({"results"})},
+               {"properties",
+                {{"results",
+                  {{"type", "array"},
+                   {"items",
+                    {{"type", "object"},
+                     {"required", Json::array({"ok", "action"})},
+                     {"properties",
+                      {{"ok", {{"type", "boolean"}}},
+                       {"action", {{"type", "string"}}}}},
+                     {"additionalProperties", true},
+                     {"x-exact-child-schema",
+                      "schema(action=batch, kind=response, "
+                      "response_detail=child, child_action=<result.action>)"}}}}}}},
+               {"additionalProperties", false}}},
+             {"error", {{"type", Json::array({"object", "null"})}}},
+         }},
+        {"additionalProperties", false},
+        {"x-contract-completeness", "outer-envelope-only"},
+        {"x-child-action-count", child_actions.size()},
+        {"x-child-actions", child_actions},
+        {"x-selector",
+         {{"summary", "response_detail=summary"},
+          {"child", "response_detail=child + child_action"},
+          {"full", "response_detail=full"}}},
+    };
+}
+
 std::string schema_type_text(const Json& property) {
     if (!property.is_object() || !property.contains("type")) return "any";
     const Json& type = property["type"];
@@ -174,6 +250,10 @@ std::string render_catalog_schema_xout(const Json& response) {
     out.emit_section("summary");
     if (summary.contains("action")) out.emit_kv("action", summary["action"]);
     if (summary.contains("kind")) out.emit_kv("kind", summary["kind"]);
+    if (summary.contains("response_detail"))
+        out.emit_kv("response_detail", summary["response_detail"]);
+    if (summary.contains("selected_child") && !summary["selected_child"].is_null())
+        out.emit_kv("selected_child", summary["selected_child"]);
     if (data.contains("schema_path")) out.emit_kv("schema_path", data["schema_path"]);
     for (const char* key : {"x-purpose", "x-how_it_works", "x-when_to_use"}) {
         if (schema.contains(key) && schema[key].is_string())
@@ -302,6 +382,12 @@ Json catalog_schema_response(const Json& request) {
     std::string action = args.value("action", std::string());
     std::string kind = args.value("kind", std::string());
     if (kind.empty()) kind = "request";
+    const bool has_response_detail = args.contains("response_detail");
+    const bool has_child_action = args.contains("child_action");
+    const std::string response_detail =
+        args.value("response_detail", std::string("full"));
+    const std::string child_action =
+        args.value("child_action", std::string());
     const ActionSpec* spec = default_action_registry().find_spec(action);
     if (!spec) {
         Json suggestions = suggested_action_names(action);
@@ -333,16 +419,95 @@ Json catalog_schema_response(const Json& request) {
                          .to_json();
         return make_error(request, "schema", error);
     }
+    if ((has_response_detail || has_child_action) &&
+        (action != "batch" || kind != "response")) {
+        return make_error(
+            request, "schema",
+            DiagnosticErrorBuilder::handler(
+                "INVALID_ARGUMENT",
+                "response_detail and child_action are only valid for "
+                "action=batch with kind=response")
+                .invalid_arg(has_child_action ? "args.child_action"
+                                              : "args.response_detail")
+                .expected("action=batch and kind=response")
+                .to_json());
+    }
+    if (response_detail != "summary" && response_detail != "child" &&
+        response_detail != "full") {
+        return make_error(
+            request, "schema",
+            DiagnosticErrorBuilder::handler(
+                "INVALID_ENUM",
+                "schema args.response_detail must be summary, child, or full")
+                .invalid_arg("args.response_detail")
+                .expected("one of summary, child, full")
+                .received(response_detail)
+                .available_values(
+                    Json::array({"summary", "child", "full"}))
+                .to_json());
+    }
+    if (action == "batch" && kind == "response" &&
+        ((response_detail == "child") != has_child_action)) {
+        return make_error(
+            request, "schema",
+            DiagnosticErrorBuilder::handler(
+                "INVALID_ARGUMENT",
+                response_detail == "child"
+                    ? "args.child_action is required when response_detail=child"
+                    : "args.child_action is forbidden unless response_detail=child")
+                .invalid_arg("args.child_action")
+                .expected(response_detail == "child"
+                              ? "one exact public non-batch action"
+                              : "omit child_action")
+                .to_json());
+    }
     const std::string prefix = "schemas/v1/actions/";
     std::string path = rel;
     if (path.compare(0, prefix.size(), prefix) == 0) path = schema_root() + path.substr(prefix.size());
     Json schema;
-    if (rel.empty() || !read_json_file(path, schema)) {
+    std::string selected_schema_path = rel;
+    if (action == "batch" && kind == "response" &&
+        response_detail == "summary") {
+        schema = compact_batch_response_schema(
+            default_action_registry().list_specs());
+        selected_schema_path.clear();
+    } else if (action == "batch" && kind == "response" &&
+               response_detail == "child") {
+        const ActionSpec* child_spec =
+            default_action_registry().find_spec(child_action);
+        if (!child_spec || child_action == "batch") {
+            Json suggestions = suggested_action_names(child_action);
+            return make_error(
+                request, "schema",
+                DiagnosticErrorBuilder::handler(
+                    "UNKNOWN_ACTION",
+                    "unknown or recursive batch child action: " + child_action)
+                    .invalid_arg("args.child_action")
+                    .received(child_action)
+                    .available_values(suggestions)
+                    .to_json());
+        }
+        selected_schema_path = child_spec->response_schema;
+        std::string child_path = selected_schema_path;
+        if (child_path.compare(0, prefix.size(), prefix) == 0)
+            child_path = schema_root() + child_path.substr(prefix.size());
+        if (selected_schema_path.empty() ||
+            !read_json_file(child_path, schema)) {
+            return make_error(
+                request, "schema", "ACTION_SCHEMA_NOT_FOUND",
+                "schema not found for batch child " + child_action +
+                    " response");
+        }
+    } else if (rel.empty() || !read_json_file(path, schema)) {
         return make_error(request, "schema", "ACTION_SCHEMA_NOT_FOUND", "schema not found for " + action + " " + kind);
     }
     Json examples = Json::array();
-    const std::vector<std::string>& example_paths =
-        kind == "request" ? spec->request_examples : spec->response_examples;
+    const ActionSpec* example_spec = spec;
+    if (action == "batch" && kind == "response" &&
+        response_detail == "child")
+        example_spec = default_action_registry().find_spec(child_action);
+    const std::vector<std::string>& example_paths = kind == "request"
+        ? example_spec->request_examples : example_spec->response_examples;
     for (const auto& example_rel : example_paths) {
         Json example;
         if (read_json_file(repo_root() + example_rel, example)) {
@@ -350,9 +515,25 @@ Json catalog_schema_response(const Json& request) {
         }
     }
     Json constraints = schema.value("x-agent", Json::object()).value("constraints", Json::array());
-    response["summary"] = {{"action", action}, {"kind", kind}};
-    response["data"] = {{"schema", schema}, {"schema_path", rel},
-                        {"examples", examples}, {"constraints", constraints}};
+    response["summary"] = {{"action", action}, {"kind", kind},
+                           {"response_detail", response_detail},
+                           {"selected_child", has_child_action
+                                ? Json(child_action) : Json(nullptr)}};
+    response["data"] = {{"schema", schema},
+                        {"schema_path", selected_schema_path},
+                        {"examples", examples}, {"constraints", constraints},
+                        {"relation", nullptr}};
+    if (action == "batch" && kind == "response") {
+        response["data"]["relation"] = {
+            {"full_schema_path", spec->response_schema},
+            {"completeness", response_detail == "full"
+                ? "complete-recursive-union"
+                : response_detail == "child"
+                    ? "selected-child-response"
+                    : "outer-envelope-only"},
+            {"child_selector", "args.child_action"},
+        };
+    }
     response["__xout"] = render_catalog_schema_xout(response);
     return response;
 }

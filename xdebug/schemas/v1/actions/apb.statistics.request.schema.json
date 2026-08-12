@@ -261,7 +261,7 @@
     "target"
   ],
   "x-purpose": "统计已完成 APB 事务。",
-  "x-how_it_works": "复用 canonical APB 缓存，按 direction 与一种 address 模式过滤并分别统计 read/write。",
+  "x-how_it_works": "复用 canonical APB 缓存，按 direction 与一种 address 模式过滤并分别统计 read/write；逐笔 payload 用 apb.query，完整 artifact 用 apb.export，单笔信号现场用 apb.transfer_window。",
   "x-when_to_use": "按方向或地址核对 APB 访问次数。",
   "x-arg_contract_notes": "required: name; filter direction/address with AND; address mode is exact/range/mask",
   "x-agent": {
@@ -271,7 +271,20 @@
     "do_not_use_when": [
       "Inspecting individual APB transaction payloads or pending transfers."
     ],
-    "alternatives": [],
+    "alternatives": [
+      {
+        "action": "apb.query",
+        "when": "Inspect individual filtered APB transactions and payloads."
+      },
+      {
+        "action": "apb.export",
+        "when": "Persist the complete filtered APB transaction set as TSV or CSV."
+      },
+      {
+        "action": "apb.transfer_window",
+        "when": "Inspect raw signal evidence around one selected APB transfer."
+      }
+    ],
     "constraints": [
       "required: name; filter direction/address with AND; address mode is exact/range/mask"
     ]

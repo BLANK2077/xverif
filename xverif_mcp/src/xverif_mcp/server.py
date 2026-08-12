@@ -481,6 +481,8 @@ def xverif_debug_get_schema(
     kind: Literal["request", "response"] = "request",
     view: Literal["mcp", "response"] = "mcp",
     include_examples: bool = True,
+    response_detail: Optional[Literal["summary", "child", "full"]] = None,
+    child_action: Optional[str] = None,
 ) -> dict:
     """Return a self-explanatory action-specific xdebug schema.
 
@@ -493,6 +495,11 @@ def xverif_debug_get_schema(
         kind: "request" for input schema, "response" for output schema.
         view: "mcp" (default) or "response".
         include_examples: Include invalid MCP call examples.
+        response_detail: For response schemas, batch defaults to compact
+            "summary" while non-batch defaults to "full". Use "child" with
+            child_action for exactly one batch child; "full" is explicit.
+        child_action: Exact non-batch action used only with
+            action="batch", kind="response", response_detail="child".
     """
     if kind not in ("request", "response"):
         return _tool_error("INVALID_ARGUMENT", "kind must be 'request' or 'response'")
@@ -502,7 +509,28 @@ def xverif_debug_get_schema(
         return _tool_error("INVALID_ARGUMENT", "view='response' requires kind='response'")
     if kind == "response" and view != "response":
         return _tool_error("INVALID_ARGUMENT", "response kind requires view='response'")
-    return debug.schema(action, kind, view=view, include_examples=include_examples)
+    if kind != "response" and (response_detail is not None or child_action is not None):
+        return _tool_error(
+            "INVALID_ARGUMENT",
+            "response_detail and child_action require kind='response'",
+        )
+    if action != "batch":
+        if child_action is not None or response_detail not in (None, "full"):
+            return _tool_error(
+                "INVALID_ARGUMENT",
+                "non-batch response schemas support only response_detail='full' and forbid child_action",
+            )
+    elif kind == "response":
+        effective_detail = response_detail or "summary"
+        if (effective_detail == "child") != (child_action is not None):
+            return _tool_error(
+                "INVALID_ARGUMENT",
+                "batch response_detail='child' requires child_action; other details forbid it",
+            )
+    return debug.schema(
+        action, kind, view=view, include_examples=include_examples,
+        response_detail=response_detail, child_action=child_action,
+    )
 
 
 @xverif_tool("debug")

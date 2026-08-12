@@ -2669,6 +2669,38 @@ def explicit_schema(action: str, pointer: str) -> dict[str, Any] | None:
         DATA_POINTER + "/examples/*/value",
     }:
         return copy.deepcopy(JSON_VALUE_REF)
+    if action == "schema" and pointer == SUMMARY_POINTER:
+        return closed(
+            {
+                "action": {"type": "string", "minLength": 1},
+                "kind": {"enum": ["request", "response"]},
+                "response_detail": {"enum": ["summary", "child", "full"]},
+                "selected_child": {
+                    "type": ["string", "null"],
+                },
+            },
+            ("action", "kind", "response_detail", "selected_child"),
+        )
+    if action == "schema" and pointer == DATA_POINTER + "/relation":
+        return {
+            "anyOf": [
+                {"type": "null"},
+                closed(
+                    {
+                        "full_schema_path": {"type": "string", "minLength": 1},
+                        "completeness": {
+                            "enum": [
+                                "outer-envelope-only",
+                                "selected-child-response",
+                                "complete-recursive-union",
+                            ]
+                        },
+                        "child_selector": {"const": "args.child_action"},
+                    },
+                    ("full_schema_path", "completeness", "child_selector"),
+                ),
+            ]
+        }
     if action == "apb.config.load" and pointer == DATA_POINTER + "/config":
         return apb_config_response_schema()
     if action == "apb.config.list" and pointer in {

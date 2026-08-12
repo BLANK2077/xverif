@@ -351,7 +351,20 @@
       "do_not_use_when": [
         "Inspecting individual APB transaction payloads or pending transfers."
       ],
-      "alternatives": []
+      "alternatives": [
+        {
+          "action": "apb.query",
+          "when": "Inspect individual filtered APB transactions and payloads."
+        },
+        {
+          "action": "apb.export",
+          "when": "Persist the complete filtered APB transaction set as TSV or CSV."
+        },
+        {
+          "action": "apb.transfer_window",
+          "when": "Inspect raw signal evidence around one selected APB transfer."
+        }
+      ]
     },
     {
       "name": "axi.analysis",
@@ -845,7 +858,20 @@
       "do_not_use_when": [
         "Inspecting individual AXI payload beats or pending transactions."
       ],
-      "alternatives": []
+      "alternatives": [
+        {
+          "action": "axi.query",
+          "when": "Inspect filtered AXI transactions, channels, or payload beats."
+        },
+        {
+          "action": "axi.analysis",
+          "when": "Analyze AXI pending transactions, latency, or outstanding activity."
+        },
+        {
+          "action": "axi.export",
+          "when": "Persist selected AXI transaction evidence as an artifact."
+        }
+      ]
     },
     {
       "name": "batch",
@@ -1985,12 +2011,14 @@
         "response": "schemas/v1/actions/schema.response.schema.json"
       },
       "examples": {
-        "request": [
-          "examples/requests/schema.basic.json"
-        ],
-        "response": [
-          "examples/responses/schema.basic.json"
-        ]
+    "request": [
+      "examples/requests/schema.basic.json",
+      "examples/requests/schema.batch-child.json"
+    ],
+    "response": [
+      "examples/responses/schema.basic.json",
+      "examples/responses/schema.batch-child.json"
+    ]
       },
       "required_args": [
         "action"

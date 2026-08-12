@@ -81,6 +81,11 @@ def test_runtime_catalog_matches_specs_and_referenced_files(
         for field in ("description_en", "description_zh", "purposes", "use_when",
                       "do_not_use_when", "alternatives"):
             assert descriptor[field] == spec[field]
+        assert descriptor["alternatives"], name
+        for alternative in descriptor["alternatives"]:
+            assert alternative["action"] in expected_implemented, (name, alternative)
+            assert alternative["action"] != name, (name, alternative)
+            assert alternative["when"], (name, alternative)
         assert set(spec["examples"]["response"]).issubset(
             descriptor["response_examples"]
         )
@@ -942,7 +947,9 @@ def test_schema_error_has_canonical_shape_and_all_validation_issues(
 
 
 @pytest.mark.contract
-def test_schema_handler_enum_error_uses_diagnostic_error(cli_runner: CliRunner) -> None:
+def test_schema_handler_enum_error_uses_diagnostic_error(
+    cli_runner: CliRunner, xdebug_root: Path,
+) -> None:
     result = cli_runner.run(
         {
             "api_version": "xdebug.v1",
@@ -957,8 +964,54 @@ def test_schema_handler_enum_error_uses_diagnostic_error(cli_runner: CliRunner) 
     assert error["error_layer"] == "schema"
     assert error["invalid_arg"] == "args.kind"
     assert error["available_values"] == ["request", "response"]
-    assert error["correct_example"]["args"]["kind"] == "request"
+    assert "allowed_values" not in error
+    canonical = _load_json(
+        xdebug_root / "examples/requests/schema.basic.json"
+    )
+    assert error["correct_example"] == canonical
     assert "data" not in result.response or result.response["data"] is None
+
+
+@pytest.mark.contract
+def test_schema_enum_error_xout_uses_only_available_values(
+    cli_runner: CliRunner,
+) -> None:
+    result = cli_runner.run(
+        {
+            "api_version": "xdebug.v1",
+            "action": "schema",
+            "args": {"action": "value.at", "kind": "bad_kind"},
+        },
+        output_format="xout",
+    )
+    assert not result.ok
+    assert "available_values:" in result.response
+    assert "allowed_values:" not in result.response
+
+
+@pytest.mark.contract
+def test_compact_batch_schema_validates_checked_in_success_response(
+    cli_runner: CliRunner, xdebug_root: Path,
+) -> None:
+    result = cli_runner.run(
+        {
+            "api_version": "xdebug.v1",
+            "action": "schema",
+            "args": {
+                "action": "batch",
+                "kind": "response",
+                "response_detail": "summary",
+            },
+        },
+        output_format="json",
+    )
+    assert result.ok, result.response
+    compact_schema = result.response["data"]["schema"]
+    checked_in = _load_json(
+        xdebug_root / "examples/responses/batch.basic.json"
+    )
+    jsonschema.Draft202012Validator.check_schema(compact_schema)
+    jsonschema.Draft202012Validator(compact_schema).validate(checked_in)
 
 
 @pytest.mark.contract

@@ -9,7 +9,24 @@
 #include "session/transport_timeout.h"
 
 #include <cassert>
+#include <fstream>
 #include <stdexcept>
+
+namespace {
+
+xdebug::Json load_json_file(const std::string& relative) {
+    for (const std::string& prefix : {std::string("xdebug/"), std::string()}) {
+        std::ifstream input((prefix + relative).c_str());
+        if (!input.good()) continue;
+        xdebug::Json value;
+        input >> value;
+        return value;
+    }
+    assert(false && "canonical JSON fixture is missing");
+    return xdebug::Json();
+}
+
+}  // namespace
 
 int main() {
     using namespace xdebug;
@@ -426,6 +443,21 @@ int main() {
     assert(resource.ok);
 
     xdebug_core::RuntimeSchemaValidator runtime_validator;
+    const Json invalid_manifest = load_json_file(
+        "examples/requests-invalid/manifest.json");
+    assert(invalid_manifest["version"] == 1);
+    for (const Json& witness : invalid_manifest["witnesses"]) {
+        const std::string action = witness["action"].get<std::string>();
+        const ActionSpec* spec = registry.find_spec(action);
+        assert(spec != nullptr);
+        const Json invalid_request = load_json_file(
+            witness["path"].get<std::string>());
+        const xdebug_core::RuntimeSchemaValidationResult invalid_validation =
+            runtime_validator.validate_request(
+                action, invalid_request, spec->request_schema);
+        assert(!invalid_validation.ok);
+        assert(invalid_validation.code == "INVALID_REQUEST");
+    }
     Json large_list_index_request = {
         {"api_version", "xdebug.v1"},
         {"action", "list.delete"},

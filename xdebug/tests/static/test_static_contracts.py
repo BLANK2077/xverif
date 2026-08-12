@@ -1938,6 +1938,56 @@ def test_action_schema_coverage_is_complete() -> None:
     ) == 0
 
 
+def test_schema_batch_response_detail_contract_is_strict_and_token_aware() -> None:
+    schema = json.loads(
+        (XDEBUG / "schemas/v1/actions/schema.request.schema.json").read_text(encoding="utf-8")
+    )
+    validator = Draft202012Validator(schema)
+
+    def request(**args):
+        return {
+            "api_version": "xdebug.v1",
+            "action": "schema",
+            "args": args,
+        }
+
+    assert validator.is_valid(request(action="batch", kind="response"))
+    assert validator.is_valid(request(
+        action="batch", kind="response", response_detail="summary",
+    ))
+    assert validator.is_valid(request(
+        action="batch", kind="response", response_detail="full",
+    ))
+    assert validator.is_valid(request(
+        action="batch", kind="response", response_detail="child",
+        child_action="value.at",
+    ))
+    assert not validator.is_valid(request(
+        action="batch", kind="response", response_detail="child",
+    ))
+    assert not validator.is_valid(request(
+        action="batch", kind="response", response_detail="summary",
+        child_action="value.at",
+    ))
+    assert not validator.is_valid(request(
+        action="value.at", kind="response", response_detail="summary",
+    ))
+    assert not validator.is_valid(request(
+        action="batch", kind="request", response_detail="summary",
+    ))
+
+
+def test_native_schema_batch_projection_keeps_full_expansion_explicit() -> None:
+    source = (XDEBUG / "src/api/action_catalog.cpp").read_text(encoding="utf-8")
+    assert 'args.value("response_detail", std::string("full"))' in source
+    assert 'response_detail == "summary"' in source
+    assert 'response_detail == "child"' in source
+    assert "compact_batch_response_schema" in source
+    assert '"complete-recursive-union"' in source
+    assert '"outer-envelope-only"' in source
+    assert '"selected-child-response"' in source
+
+
 def test_current_json_samples_are_generated_from_canonical_examples() -> None:
     generator = _module("sync_json_after_cleanup_samples")
     assert generator.sync(check=True) == []

@@ -210,7 +210,7 @@ native CLI、engine、session、MCP、SDK-free loop、schema、example、XOUT、
 
 ### C09 AI/schema/docs 单源化
 
-状态：`pending`
+状态：`completed`
 
 - available_values 全链路统一。
 - batch compact schema 和 MCP summary。
@@ -314,8 +314,8 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 | C05 Transport | completed | `0725a50` | 64 MiB 统一边界、block I/O、单调 deadline、严格 env 与结构化错误完成 |
 | C06 Cache | completed | `477efdd` | 全元数据预算、O(1) stats、批量 LRU、有界 APB/AXI selection 与资源/等价性门禁完成 |
 | C07 Hierarchy | completed | `7c26474` | `scope.list` 的 wave/design/merged 与 generate/interface array/modport/mpport 关系完成真实 VCS/NPI 验证；未扩展 mixed-language/bind |
-| C08 APB export | completed | 本提交 | 73-action catalog；APB preview/闭区间/方向地址过滤/TSV/CSV/meta/no-clobber/宽度完整性完成真实 VIP FSDB/NPI 与 native XOUT 验证 |
-| C09 AI/schema | pending | - | - |
+| C08 APB export | completed | `da6e8c1` | 73-action catalog；APB preview/闭区间/方向地址过滤/TSV/CSV/meta/no-clobber/宽度完整性完成真实 VIP FSDB/NPI 与 native XOUT 验证 |
+| C09 AI/schema | completed | 本提交 | available_values、batch summary/child/full、canonical public examples、复杂反例、statistics 路由、统一 response SOT 与 AI/MCP 文档闭环 |
 | C10 清理 | pending | - | - |
 | C11 全量验收 | pending | - | - |
 
@@ -353,6 +353,10 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 | 2026-08-12 | C08 | `skills.xverif` / `skills.public_docs` / `xverif_mcp.unit` | host | PASS | 16 / 3 / 166 passed；MCP minimal call 读取 catalog 首个 canonical request example |
 | 2026-08-12 | C08 | `xdebug.apb_vip` | host，真实 VCS/NPI fixture | PASS | 1 passed；10 笔真实 APB completed transfer，验证 8 行 preview、闭区间、direction/address、decimal、TSV/CSV、meta parity、artifact width 和错误路径 |
 | 2026-08-12 | C08 | prepare `xdebug.xif_event` / `xdebug.native_xout_all` | host，真实 VCS/NPI fixtures | PASS | 缺失 fixture 按正式 prepare 入口生成并通过 probe；73 actions + 9 error cases 的 native XOUT 矩阵 1 passed |
+| 2026-08-12 | C09 | build / request、response、hint、metadata、help、current sample、skill reference 生成检查 / schema / examples / runtime compatibility | host | PASS | 构建通过；283 schemas；228 正例 + 7 canonical 反例；全部生成产物一致；Draft-7/2020-12 verdict 一致 |
+| 2026-08-12 | C09 | `xdebug.static` / `xdebug.action_runtime_catalog` / `xdebug.cpp_unit` / `xdebug.contract` | host | PASS | 116 / 1 / 1 / 114 passed；contract 包含 compact schema metaschema 与真实 batch success response 验证 |
+| 2026-08-12 | C09 | `skills.xverif` / `skills.public_docs` / `xverif_mcp.unit` | host | PASS | 16 / 4 / 178 passed；公开 strict JSON fence 对 live native/MCP schema 校验 |
+| 2026-08-12 | C09 | native `schema(batch,response)` summary/child/full 与非法组合 probe | host | PASS | summary 7,708 bytes、72 non-batch child、无 recursive child defs；default full 5,570,443 bytes；child 148,773 bytes；非法组合 schema-rejected |
 
 ## 11. 偏差与阻塞记录
 
@@ -360,4 +364,5 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 - C06 首轮 probe unit 的 symlink escape 测试把目标误建在允许目录内；修正为同级真实外部目标后正式 cpp_unit 通过。AXI VIP 首轮因其独立 runner 未传递 probe marker 而未生成测试 artifact，补齐每个 runner 自有 tmp marker 后完整复验通过。
 - C08 首轮 static 暴露测试函数边界误置与 C 风格地址字面量，修正测试后通过；首轮 contract 暴露新 action primary example 未遵守 runtime `.basic.json` 约定，统一 primary 命名并让 MCP 从 catalog 读取后通过。真实 APB VIP 进一步确认默认时间输出必须将 `1us` canonicalize 为 `1000ns`，以及 artifact-only 分支必须主动发布宽度完整性；按统一时间/宽度合同修正后完整通过。
 - C07 首轮 design runtime 因 action catalog 已改为 `requires:any`、但 internal request schema 尚未重生成而在 helper routing 层拒绝 design-only session；重生成并加入一致性复验后 6 个真实 NPI 用例全过。旧 synthetic fixture 还按字段全集比较 wave item，更新为验证新增 source/capability 证据。`testinfra.unit` 剩余唯一失败属于另一个任务的未跟踪 flock 报告，不进入本阶段提交。
+- C09 首轮 public docs 门禁发现 `xverif_mcp/README.md` 把 JSON fragment 标成 strict JSON，改为 `jsonc`；MCP 反例测试曾用普通 args schema 错验 session 专用 projection，按各自合同拆分。首轮 host contract 发现测试硬编码旧 primary example，改为核对 catalog canonical example。最终审阅又发现 compact schema 的空 initializer 被序列化为 `null` schema，改成明确 object/null 并增加 metaschema + 真实 batch response 验证。两次 native 性能 probe 因入口路径/CLI flag 误判未进入产品，已按 AGENTS.md 记录且未计入证据，第三次使用核实后的 `xdebug/xdebug --json -` 取得正式数据。
 - 任何 fallback、范围扩展、required suite 降级、公共合同偏离必须先取得用户确认，再记录于此。

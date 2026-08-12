@@ -197,6 +197,7 @@ suites:
         - xdebug/tests/static/test_composite_parameter_effectiveness.py
         - xdebug/tests/static/test_publish_run_manifest.py
         - xdebug/tests/static/test_validation_issue_response_contract.py
+        - xdebug/tests/static/test_available_values_contract.py
     hermetic: true
     deterministic: true
     cost: {class: fast, estimate_sec: 5}

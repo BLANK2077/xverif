@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 import yaml
@@ -15,6 +16,63 @@ ACTION_SPECS = ROOT / "xdebug" / "specs" / "actions" / "actions.yaml"
 ACTION_OUTPUT = SKILL / "references" / "generated" / "xdebug-actions.md"
 EXAMPLES = SKILL / "specs" / "examples.yaml"
 SURFACE_OUTPUT = SKILL / "references" / "generated" / "surface-examples.md"
+
+
+def _public_snippet(payload: dict, style: str) -> str:
+    rendered = json.dumps(payload, indent=2, ensure_ascii=False)
+    if style == "json":
+        return "```json\n" + rendered + "\n```"
+    if style == "shell":
+        return "printf '%s\\n' '" + rendered + "' | xdebug -"
+    raise ValueError(f"unknown public snippet format: {style}")
+
+
+def public_snippet_outputs(source: dict) -> dict[Path, str]:
+    snippets = source.get("public_snippets", [])
+    if not isinstance(snippets, list):
+        raise ValueError(f"{EXAMPLES} public_snippets must be a list")
+    outputs: dict[Path, str] = {}
+    for entry in snippets:
+        if not isinstance(entry, dict):
+            raise ValueError(f"{EXAMPLES} public snippet must be an object")
+        target = ROOT / entry["target"]
+        source_path = ROOT / entry["source"]
+        action = entry["action"]
+        payload = json.loads(source_path.read_text(encoding="utf-8"))
+        if payload.get("action") != action:
+            raise ValueError(f"{source_path}: expected action {action}")
+        text = outputs.get(target, target.read_text(encoding="utf-8"))
+        marker_style = entry.get("marker_style", "html")
+        if marker_style == "html":
+            begin = f"<!-- xdebug-example:{action}:begin -->"
+            end = f"<!-- xdebug-example:{action}:end -->"
+        elif marker_style == "text":
+            begin = f"# xdebug-example:{action}:begin"
+            end = f"# xdebug-example:{action}:end"
+        else:
+            raise ValueError(
+                f"{EXAMPLES}: unknown marker_style {marker_style!r}"
+            )
+        pattern = re.compile(
+            r"(?m)^[ \t]*" + re.escape(begin)
+            + r"\n.*?\n[ \t]*" + re.escape(end) + r"[ \t]*$",
+            re.DOTALL,
+        )
+        matches = pattern.findall(text)
+        if len(matches) != 1:
+            raise ValueError(
+                f"{target}: expected one marker pair for action {action}, "
+                f"found {len(matches)}"
+            )
+        body = _public_snippet(payload, entry["format"])
+        indent = " " * int(entry.get("indent", 0))
+        body = "\n".join(indent + line for line in body.splitlines())
+        replacement = indent + begin + "\n" + body + "\n" + indent + end
+        # Use a callable replacement so the literal ``\\n`` in the shell
+        # printf format is not interpreted by re.sub's replacement parser.
+        text = pattern.sub(lambda _match: replacement, text)
+        outputs[target] = text
+    return outputs
 
 
 def _required(entry: dict) -> str:
@@ -132,7 +190,9 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
+    source = yaml.safe_load(EXAMPLES.read_text(encoding="utf-8"))
     outputs = {ACTION_OUTPUT: action_reference(), SURFACE_OUTPUT: surface_examples()}
+    outputs.update(public_snippet_outputs(source))
     stale = [path for path, text in outputs.items()
              if not path.exists() or path.read_text(encoding="utf-8") != text]
     if args.check:

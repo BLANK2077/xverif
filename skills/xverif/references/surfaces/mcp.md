@@ -35,7 +35,12 @@ expr-only 成功响应的 `summary.source` 固定为
 不代表已经结合 design resource 证明信号或赋值语义。
 
 - `view="mcp"`：默认；用于构造 query tool 的内层 args/limits。
-- `kind="response", view="response"`：查看 response schema。
+- `kind="response", view="response"`：查看 response schema。普通 action 省略
+  `response_detail` 时返回完整 schema。`batch` 默认返回 token-efficient
+  `response_detail="summary"`，只包含 outer envelope、selector 与完整性关系；
+  用 `response_detail="child", child_action="<action>"` 精确读取一个 non-batch
+  child response schema；只有确实需要完整 recursive union 时才显式使用
+  `response_detail="full"`。不得把 summary 当作 child payload 的完整合同。
 - session/transport/LSF/timeout 排障转 `xverif-admin`，不自动 reopen 或 fallback。
 - `run_manifest` 可选；xdebug 提供时使用已发布的 `xdebug.run-manifest.v1`；xcov 使用
   `xcov.run-manifest.v2`，要求 `sha256-entry-tree-v2`、资源 kind、regular-file 总字节数和

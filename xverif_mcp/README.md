@@ -165,7 +165,7 @@ xdebug backend session 启动等待主要看 `XDEBUG_SESSION_START_TIMEOUT_SEC`�
 session 空闲最长存活时间看 `XDEBUG_SESSION_IDLE_TIMEOUT_SEC`（默认 86400s）。
 这些变量必须写进 MCP server 的 `env`，只在外层 shell 里 `export` 通常不会生效。
 
-```json
+```jsonc
 "env": {
   "XVERIF_MCP_STARTUP_TIMEOUT_SEC": "300",
   "XVERIF_MCP_REQUEST_TIMEOUT_SEC": "900",

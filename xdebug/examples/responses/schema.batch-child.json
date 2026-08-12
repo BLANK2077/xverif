@@ -1,0 +1,37 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "schema",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
+  "summary": {
+    "action": "batch",
+    "kind": "response",
+    "response_detail": "child",
+    "selected_child": "signal.statistics"
+  },
+  "data": {
+    "schema_path": "schemas/v1/actions/signal.statistics.response.schema.json",
+    "examples": [],
+    "constraints": [],
+    "relation": {
+      "full_schema_path": "schemas/v1/actions/batch.response.schema.json",
+      "completeness": "selected-child-response",
+      "child_selector": "args.child_action"
+    },
+    "schema": {
+      "$id": "xdebug.signal.statistics.response.v1",
+      "title": "signal.statistics response",
+      "required": [
+        "api_version",
+        "action",
+        "target",
+        "args"
+      ]
+    }
+  },
+  "error": null
+}

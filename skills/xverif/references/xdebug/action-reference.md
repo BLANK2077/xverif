@@ -20,7 +20,7 @@
 - stream action 统一写 `stream`，不写 `name`。
 - AXI/APB direction 以 action-specific schema 为准；query action 用 `read` / `write`，cursor/analysis 等 action 可按 schema 使用 `all`。
 - 导出路径统一写 `args.output.path`；不同 action 可把该 path 解释为文件、目录或文件前缀。
-- 参数错误时先读 `invalid_arg`、`expected`、`allowed_values`、`did_you_mean`、`required_any_of` 和 `correct_example`。这些字段可能来自 schema 层，也可能来自 action handler 层；不要只凭 `message` 猜下一次请求。
+- 参数错误时先读 `invalid_arg`、`expected`、`available_values`、`did_you_mean`、`required_any_of` 和 `correct_example`。这些字段可能来自 schema 层，也可能来自 action handler 层；错误响应不发布 `allowed_values`。action catalog descriptor 的 `allowed_values` 是参数到 enum 的元数据映射，不是错误候选；不要只凭 `message` 猜下一次请求。
 
 ## Waveform Action Boundaries
 
@@ -67,7 +67,7 @@
 | `apb.transaction.cursor` | stable | waveform | 在 APB transfer 间移动游标。 | 基于 APB 查询结果按 op/direction 定位 begin/next/prev 等。 | 交互式浏览 APB 事务。 | required: name, op |
 | `apb.export` | stable | waveform | 预览或导出 APB 事务。 | 必须给出完整 time_range；direction 与顶层 address exact/range/mask 取 AND。无 output.path 时固定最多返回 8 行 data.preview；有 path 时写一个按时间排序的 TSV/CSV data artifact 和 meta，不回退到 query/stream。 | 把完整过滤结果交给外部表格或脚本，并保留扫描、匹配、字节数与完整性证据。 | required: name, time_range.begin/end<br>optional: direction, address, render_time_unit, value_format, output<br>output.file_format: tsv/csv; file_format requires path |
 | `apb.query` | stable | waveform | 查询 APB transfer。 | direction 与 address exact/range/mask 取 AND；先过滤再应用 1-based `query.index`、`query.line_limit` 或 last。旧 `addr` 和标量 address 被拒绝。 | 抽取标准 APB completed transfer。 | required: name<br>address is exact/range/mask object |
-| `apb.statistics` | stable | waveform | 统计已完成 APB 事务。 | 复用 canonical APB 缓存，按 direction 与一种 address 模式过滤并分别统计 read/write。 | 按方向或地址核对 APB 访问次数。 | required: name<br>filter direction/address with AND; address mode is exact/range/mask |
+| `apb.statistics` | stable | waveform | 统计已完成 APB 事务。 | 复用 canonical APB 缓存，按 direction 与一种 address 模式过滤并分别统计 read/write；逐笔 payload 用 apb.query，完整 artifact 用 apb.export，单笔信号现场用 apb.transfer_window。 | 按方向或地址核对 APB 访问次数。 | required: name<br>filter direction/address with AND; address mode is exact/range/mask |
 | `apb.transfer_window` | experimental | waveform | 实验性 APB 窗口分析。 | 围绕指定 APB transfer 返回相关信号窗口。 | 解释单笔 APB 访问现场。 | required: name |
 | `axi.analysis` | stable | waveform | 汇总 AXI 行为。 | `analysis` 取 `latency`、`osd` 或 `pending`，分别统计完成事务延迟、outstanding 变化和扫描结束未闭合事务。 | 快速判断 AXI 接口健康度。 | required: name |
 | `axi.export` | stable | waveform | 导出 AXI 数据。 | 按 name 和 time_range 查询 AXI，再按 format/output.path 写出。 | 给外部表格或脚本分析。 | required: name<br>also one of: time_range |
@@ -79,7 +79,7 @@
 | `axi.outstanding_timeline` | experimental | waveform | 实验性 AXI outstanding 时间线。 | 跟踪请求和响应，统计未完成事务数量随时间变化。 | 发现 outstanding 积压或乱序风险。 | required: name |
 | `axi.query` | stable | waveform | 查询 AXI channel/transaction。 | direction/address/id/time_range 取 AND，time_range 按 AW/AR handshake；默认每笔返回第一拍且第一笔返回全部 beats，true 展开全部返回事务。 | 抽取标准 AXI transaction 或从精确通道握手反查。 | required: name<br>address exact/range/mask; id exact/range |
 | `axi.request_response_pair` | experimental | waveform | 实验性 AXI 请求响应配对。 | 用 ID/address/channel 信息把请求与响应关联。 | 分析 latency 和缺失响应。 | required: name |
-| `axi.statistics` | stable | waveform | 统计已完成 AXI 事务。 | 复用 canonical AXI 缓存；ID 队列内部取 OR，direction、ID、address 三类条件取 AND。 | 按方向、ID 和地址核对 AXI 事务次数。 | required: name<br>filter direction/ids/address with AND; address mode is exact/range/mask |
+| `axi.statistics` | stable | waveform | 统计已完成 AXI 事务。 | 复用 canonical AXI 缓存；ID 队列内部取 OR，direction、ID、address 三类条件取 AND；逐笔明细用 axi.query，pending/latency/outstanding 用 axi.analysis，artifact 用 axi.export。 | 按方向、ID 和地址核对 AXI 事务次数。 | required: name<br>filter direction/ids/address with AND; address mode is exact/range/mask |
 | `counter.statistics` | stable | waveform | 统计计数器行为。 | 按 clock/vld/cnt 采样，分析递增、回绕、停顿和异常。 | 判断计数器是否符合预期。 | required: clock, time_range, vld, cnt |
 | `waveform.cursor.delete` | stable | waveform | 删除游标。 | 按 name 从 CursorManager 删除记录。 | 清理不再需要的时间标记。 | required: name |
 | `waveform.cursor.get` | stable | waveform | 读取命名游标。 | 从 CursorManager 按 name 取出保存的时间和元信息。 | 把自然语言中的“刚才那个点”变成确定时间。 | required: name |

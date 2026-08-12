@@ -71,6 +71,52 @@ def test_response_kind_does_not_implicitly_change_view() -> None:
     assert result["error"]["code"] == "INVALID_ARGUMENT"
 
 
+def test_batch_response_projection_reports_compact_selector_relation() -> None:
+    native = {
+        "ok": True,
+        "data": {
+            "schema_path": "",
+            "schema": {"x-contract-completeness": "outer-envelope-only"},
+            "relation": {
+                "full_schema_path": "schemas/v1/actions/batch.response.schema.json",
+                "completeness": "outer-envelope-only",
+                "child_selector": "args.child_action",
+            },
+        },
+    }
+    result = project(
+        "batch", "response", "response", native,
+        response_detail="summary",
+    )
+    assert result["summary"] == {
+        "action": "batch",
+        "kind": "response",
+        "view": "response",
+        "response_detail": "summary",
+        "selected_child": None,
+    }
+    assert result["data"]["schema"]["x-contract-completeness"] == (
+        "outer-envelope-only"
+    )
+    assert result["data"]["relation"]["child_selector"] == "args.child_action"
+
+
+def test_batch_child_projection_names_exact_selected_child() -> None:
+    result = project(
+        "batch", "response", "response",
+        {"ok": True, "data": {
+            "schema_path": "schemas/v1/actions/value.at.response.schema.json",
+            "schema": {"$id": "xdebug.value.at.response.v1"},
+            "relation": {"completeness": "selected-child-response"},
+        }},
+        response_detail="child", child_action="value.at",
+    )
+    assert result["summary"]["selected_child"] == "value.at"
+    assert result["data"]["relation"]["completeness"] == (
+        "selected-child-response"
+    )
+
+
 def test_session_actions_use_the_dedicated_mcp_tool() -> None:
     result = project("session.open", "request", "mcp", _native_request())
     payload = result["data"]
@@ -91,6 +137,58 @@ def test_session_selector_schema_and_invalid_example_are_consistent() -> None:
     assert payload["invalid_examples"][0]["call"] == {}
 
 
+@pytest.mark.parametrize(
+    ("action", "minimum_count"),
+    [("value.at", 3), ("expr.normalize", 2),
+     ("signal.anomaly.inspect", 1), ("apb.export", 1)],
+)
+def test_complex_actions_project_canonical_invalid_witnesses(
+    action: str, minimum_count: int,
+) -> None:
+    root = Path(__file__).resolve().parents[2]
+    schema = json.loads(
+        (root / f"xdebug/schemas/v1/actions/{action}.request.schema.json")
+        .read_text(encoding="utf-8")
+    )
+    result = project(
+        action, "request", "mcp", {"ok": True, "data": {"schema": schema}}
+    )
+    invalid = result["data"]["invalid_examples"]
+    assert len(invalid) >= minimum_count
+    assert all(item["call"]["action"] == action for item in invalid)
+    assert all(item["violates"] for item in invalid)
+
+
+def test_value_at_invalid_projection_covers_zero_multiple_and_conditional() -> None:
+    result = project("value.at", "request", "mcp", _native_request())
+    violations = " ".join(
+        violation
+        for item in result["data"]["invalid_examples"]
+        for violation in item["violates"]
+    )
+    assert "zero selected" in violations
+    assert "more than one" in violations
+    assert "if/then" in violations
+    assert result["data"]["invalid_examples"][0]["call"]["args"] == {
+        "time": "100ns"
+    }
+
+
+def test_apb_query_keeps_required_omission_invalid_example() -> None:
+    root = Path(__file__).resolve().parents[2]
+    schema = json.loads(
+        (root / "xdebug/schemas/v1/actions/apb.query.request.schema.json")
+        .read_text(encoding="utf-8")
+    )
+    result = project(
+        "apb.query", "request", "mcp",
+        {"ok": True, "data": {"schema": schema}},
+    )
+    invalid = result["data"]["invalid_examples"]
+    assert invalid
+    assert any(item["call"].get("args") == {} for item in invalid)
+
+
 def test_all_action_projections_have_one_field_contract_and_one_success_example() -> None:
     root = Path(__file__).resolve().parents[2]
     actions = json.loads((root / "xdebug/specs/actions/actions.yaml").read_text(encoding="utf-8"))["actions"]
@@ -104,6 +202,43 @@ def test_all_action_projections_have_one_field_contract_and_one_success_example(
         assert not _contains_key(payload["args_schema"], "x-description-zh"), action["name"]
         assert not any(item.startswith(("必须提供：", "还必须满足以下一组参数：", "当 "))
                        for item in payload["constraints"]), action["name"]
+        args_schema = schema["properties"].get("args", {})
+        if args_schema.get("required") or args_schema.get("anyOf"):
+            assert payload["invalid_examples"], action["name"]
+
+
+def test_required_invalid_examples_are_draft7_rejected() -> None:
+    from jsonschema import Draft7Validator
+
+    root = Path(__file__).resolve().parents[2]
+    actions = json.loads(
+        (root / "xdebug/specs/actions/actions.yaml").read_text(encoding="utf-8")
+    )["actions"]
+    canonical_actions = {
+        "value.at", "expr.normalize", "signal.anomaly.inspect", "apb.export"
+    }
+    session_actions = {
+        "session.open", "session.list", "session.doctor", "session.close",
+        "session.gc",
+    }
+    for action in actions:
+        schema = json.loads(
+            (root / "xdebug" / action["schemas"]["request"])
+            .read_text(encoding="utf-8")
+        )
+        args_schema = schema["properties"].get("args", {})
+        payload = project(
+            action["name"], "request", "mcp",
+            {"ok": True, "data": {"schema": schema}},
+        )["data"]
+        for example in payload["invalid_examples"]:
+            if action["name"] in canonical_actions | session_actions:
+                continue
+            call = example["call"]
+            invalid_args = call.get("args", call)
+            assert not Draft7Validator(args_schema).is_valid(invalid_args), (
+                action["name"], example,
+            )
 
 
 def test_action_contract_registry_rejects_unknown_status_fail_closed(
@@ -223,7 +358,9 @@ def test_protocol_query_projections_publish_strong_skill_routing() -> None:
     root = Path(__file__).resolve().parents[2]
     expected = {
         "apb.query": "apb.statistics",
+        "apb.statistics": "apb.export",
         "axi.query": "output.include_data=true",
+        "axi.statistics": "axi.analysis",
         "stream.query": "apb.query/axi.query",
     }
     for action, marker in expected.items():

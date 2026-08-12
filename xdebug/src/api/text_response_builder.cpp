@@ -334,7 +334,6 @@ void TextResponseBuilder::emit_error(const Json& error) {
     if (error.contains("expected")) emit_kv("expected", error["expected"]);
     if (error.contains("received")) emit_kv("received", error["received"]);
     if (error.contains("received_type")) emit_kv("received_type", error["received_type"]);
-    if (error.contains("allowed_values")) emit_kv("allowed_values", error["allowed_values"]);
     if (error.contains("available_values")) emit_kv("available_values", error["available_values"]);
     if (error.contains("missing_name")) emit_kv("missing_name", error["missing_name"]);
     if (error.contains("missing_resource")) emit_kv("missing_resource", error["missing_resource"]);
