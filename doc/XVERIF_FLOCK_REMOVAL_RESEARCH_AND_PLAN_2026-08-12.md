@@ -625,6 +625,10 @@ query、list、doctor、config、log 与 xcov cache hit 的 `strace -f -e trace=
 - host regression：required suite preflight 在收集前停止，缺失当前指纹的
   `xdebug.stream_differential_tool` fixture cache；0 tests executed。
 - host nightly：同一 required fixture preflight 在收集前停止；0 tests executed。
+- 后续使用 `Catalog.select_gate()` 与 `FixtureStore.resolve()` 做只读全量依赖审计：regression 的
+  18 个 required fixture 中 17 个当前有效，nightly 的 27 个中 26 个当前有效；两档唯一缺口均为
+  `xdebug.stream_differential_tool`。该 fixture 当前期望指纹前缀为 `459101d9c140`，已有
+  `current.json` 指纹前缀为 `49e0a000589e`，确认不是 preflight 只报告首个错误而掩盖其它缺口。
 - 阻塞是本次 xdebug 源码变更必然改变该 tool fixture 的 fingerprint，而现有 `current.json` 仍指向
   旧 generation。完成 regression/nightly 必须显式运行
   `pytest --xverif-prepare xdebug.stream_differential_tool`，这会重建缓存，与本任务“不要触发缓存
