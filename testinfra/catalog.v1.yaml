@@ -308,13 +308,13 @@ suites:
     intent: [performance]
     domains: [skill, npi, fsdb, protocol]
     runner: {kind: pytest, path: skills/tests/test_x_npi_performance.py}
-    fixtures: [xdebug.axi_vip]
+    fixtures: [xdebug.axi_vip, xcov.large_summary]
     capabilities: [child_process, npi, fsdb]
     hermetic: false
     deterministic: true
-    cost: {class: slow, estimate_sec: 60}
-    resources: {cpu: 1, memory_mb: 2048, tokens: [verdi_npi]}
-    timeouts: {execute_sec: 240, cleanup_sec: 20}
+    cost: {class: slow, estimate_sec: 180}
+    resources: {cpu: 1, memory_mb: 3072, tokens: [verdi_npi]}
+    timeouts: {execute_sec: 900, cleanup_sec: 30}
 
   - id: skills.xwiki
     owner: skills/xwiki

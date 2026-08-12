@@ -20,8 +20,8 @@ wrapper 调用和 handle release 成本很高。更危险的是中间 aggregate 
 
 因此，**不要用 NPI 构造 coverage summary/export**。x-npi 中的 NPI coverage helper 已收缩为
 exclude-only；需要读取时使用 `x_npi.urg` 或直接使用 xcov。NPI 必须遍历的缺陷只在用户明确
-修改 exclusion 时承担，且 resolver 每行重新遍历、要求零/一/多匹配 fail-closed，不长期缓存
-handle。
+修改 exclusion 时承担。内建 resolver 对每个非空 kind 固定执行预检和应用两遍扫描，要求
+零/一/多匹配 fail-closed，不长期缓存 handle，也不按 CSV 行重新遍历。
 
 ## 推荐 URG 命令
 
@@ -177,23 +177,29 @@ validate_directory("coverage_exclusions")
 format_directory("coverage_exclusions", write=True)
 ```
 
-`compile_csv_to_el()` 接受项目 resolver：
+`compile_csv_to_el()` 内建严格 resolver，不依赖项目模块或 xcov：
 
 ```python
 from x_npi.coverage import compile_csv_to_el
 
 published = compile_csv_to_el(
+    db,
     test,
     "coverage_exclusions",
     "compiled_el",
-    resolve_target,
 )
 ```
 
-`resolve_target(kind, source_file, row)` 必须返回 context manager，进入后只 yield 当前 traversal
-唯一匹配的一个 score handle，退出时 release。零匹配或多匹配必须抛错；compiler 不跨行缓存
-handle。转换先保存 baseline EL；任一 resolve/set/save/publish/load 失败都会恢复 native baseline
-和旧文件。成功输出 `code.el/functional.el/assertion.el` 并按该顺序 load。
+compiler 先建立 CSV selector 哈希索引。每个非空 coverage kind 固定执行两遍流式 NPI 扫描：
+第一遍只验证每条 selector 恰好命中一次，第二遍才在目标 handle 存活期间 set 并立即 release。
+它不物化全库 coverage row、不跨遍历保存 handle，也不按 CSV 行重扫 VDB，因此复杂度为
+`O(H×P+R)`，而不是 `O(R×H)`；`H` 为相关 handle 数，`R` 为 CSV 行数，`P` 为 source path
+段数。code/assertion 按 scope 边界和所需 metric 裁剪；functional 因 pynpi 没有按 scope/name
+直达接口，仍从 merged test 的 testbench metric 根扫描该类全树。某类 CSV 为空时不扫描该类。
+
+source file 规范化分隔符后按完整路径段后缀匹配，最终 selector 仍必须唯一；零匹配、多匹配或
+两遍间身份变化均失败。转换先保存 baseline EL；任一 scan/set/save/publish/load 失败都会恢复
+native baseline 和旧文件。成功输出 `code.el/functional.el/assertion.el` 并按该顺序 load。
 
 CSV 的 `reason` 只存在 sidecar，原生 EL 不保存 reason。因此：
 
@@ -202,6 +208,6 @@ CSV 的 `reason` 只存在 sidecar，原生 EL 不保存 reason。因此：
 - **不支持无损 EL → CSV**，也不能为 EL 条目编造 reason；
 - dirty reason 必须先持久化 CSV，单独 save EL 不算 reason 已保存。
 
-可执行模板为 `scripts/examples/csv_to_el.py`。项目通过
-`--resolver MODULE:FACTORY` 提供 `(db,test)->resolver`，避免通用 helper 猜测 vendor/project-specific
-identity 或偷偷 fallback。
+可执行模板为 `scripts/examples/csv_to_el.py`，只需提供 `--vdb`、`--csv-directory`、
+`--output-directory`，需要严格 exclusion 模式时增加 `--strict`。脚本不接受外接 resolver，
+也不 import xcov 私有模块。

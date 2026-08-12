@@ -124,6 +124,68 @@ def test_x_npi_exclusion_helpers_against_real_vdb(
     assert result["after_unload"] is False
 
 
+def test_x_npi_csv_to_el_is_standalone_on_real_vdb(
+    xverif_fixture: Any, tmp_path: Path,
+) -> None:
+    resources = xverif_fixture("xcov.exclusion")
+    csv_root = tmp_path / "csv"
+    csv_root.mkdir()
+    (csv_root / "code_exclusions.csv").write_text(
+        "# schema_version=xcov-code-exclusions.v1\n"
+        "# coverage_kind=code\n"
+        "scope,metric,line,object,bin,reason\n"
+        "# source_file=exclusion_fixture.sv\n"
+        "top,line,72,,,standalone code\n",
+        encoding="utf-8",
+    )
+    (csv_root / "functional_exclusions.csv").write_text(
+        "# schema_version=xcov-functional-exclusions.v1\n"
+        "# coverage_kind=functional\n"
+        "scope,line,covergroup,coverpoint,cross,bin,reason\n"
+        "# source_file=exclusion_fixture.sv\n"
+        "top,57,top::behavior_cg,sel_cp,,other,standalone functional\n",
+        encoding="utf-8",
+    )
+    (csv_root / "assertion_exclusions.csv").write_text(
+        "# schema_version=xcov-assertion-exclusions.v1\n"
+        "# coverage_kind=assertion\n"
+        "scope,line,assertion,assertion_kind,reason\n"
+        "# source_file=exclusion_fixture.sv\n"
+        "top.u_dut,40,a_no_unknown,assertion,standalone assertion\n",
+        encoding="utf-8",
+    )
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(SKILL / "scripts")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(EXAMPLES / "csv_to_el.py"),
+            "--vdb", str(resources / "exclusion.vdb"),
+            "--csv-directory", str(csv_root),
+            "--output-directory", str(tmp_path / "el"),
+        ],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=240,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr[-8000:] + "\n" + proc.stdout[-4000:]
+    document = json.loads(proc.stdout)
+    assert document["ok"] is True
+    assert document["summary"]["resolver"] == "builtin_indexed"
+    assert document["summary"]["npi_usage"] == "exclusion_only"
+    assert document["summary"]["traversal_passes"] == 6
+    assert [row["coverage_kind"] for row in document["data"]["items"]] == [
+        "code", "functional", "assertion",
+    ]
+    assert all(row["matched_count"] == 1 for row in document["data"]["items"])
+    assert all(Path(row["path"]).is_file() for row in document["data"]["items"])
+    assert "--resolver" not in (EXAMPLES / "csv_to_el.py").read_text(encoding="utf-8")
+
+
 def test_x_npi_urg_reads_all_coverage_types_without_npi(
     xverif_fixture: Any, tmp_path: Path,
 ) -> None:

@@ -2050,17 +2050,19 @@ source path、连续 group、selector 唯一性、metric/assertion kind、64 MiB
 完成三文件事务。multiline quote 状态对每个 physical line 只扫描一次，不再发生反复拼接导致的
 O(N²)。
 
-`compile_csv_to_el()` 先保存 native baseline，然后对每个 CSV row 调用项目提供的
-`resolve_target(kind, source_file, row)`；resolver 必须返回只 yield 一个新鲜 traversal handle 的
-context manager，退出时释放，零匹配或多匹配必须失败，compiler 不跨行缓存 handle。任一
-resolve/set/save/publish/load 失败都会恢复 baseline 和旧 EL 文件；成功原子发布并按
+后续独立化优化删除了项目 resolver。`compile_csv_to_el(db, test, csv_dir, output_dir)` 在 x-npi
+内部建立 CSV selector 哈希索引，每个非空 coverage kind 固定执行唯一性预检和应用两遍流式
+NPI 扫描；code/assertion 按 scope+metric 裁剪，functional 因 pynpi 无直达接口扫描该类全树。
+实现不物化全库 coverage rows、不跨遍历缓存 handle，也不按 CSV row 重扫，复杂度为
+`O(H×P+R)` 而非 `O(R×H)`。零匹配、多匹配或两遍间身份变化均 fail-closed。任一
+scan/set/save/publish/load 失败都会恢复 baseline 和旧 EL 文件；成功原子发布并按
 `code.el -> functional.el -> assertion.el` 顺序加载。CSV reason 只存在 sidecar，原生 EL 是 opaque
 native 状态，因此只支持 CSV→EL 与 EL load/save/unload，明确不支持无损 EL→CSV，也不编造 reason。
 原有 `_safe_call`、异常吞并、无参重试和替代签名 fallback 已全部移除。
 
 新增/更新示例为 `coverage_summary.py` 和 `csv_to_el.py`。前者 stdout 明确发布
-`data_source=urg_fixed_summary`、`npi_initialized=false` 和 typed row/count；后者要求显式
-`--resolver MODULE:FACTORY`，不由通用 helper 猜项目 identity。x-npi/xverif 的 SKILL、coverage
+`data_source=urg_fixed_summary`、`npi_initialized=false` 和 typed row/count；后者使用内建严格
+resolver，无 `--resolver MODULE:FACTORY` 或 xcov 私有依赖。x-npi/xverif 的 SKILL、coverage
 reference 和 `agents/openai.yaml` 已同步。
 
 阶段门禁结果：`skills.x_npi` 17 passed、`skills.xverif` 16 passed、`skills.public_docs` 3 passed；

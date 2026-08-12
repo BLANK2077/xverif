@@ -32,7 +32,9 @@ license，受限沙箱内 license 可能不可达。
 `$VCS_HOME/bin/urg -full64 -dir <vdb> -report <staging> -xml_verbose -format text -show summary`，
 已有 exclusion 时只追加 `-elfile <el>`。Python NPI coverage wrapper 没有 bulk summary，必须按
 instance/metric/object/bin 全树遍历且容易重复计入 aggregate/leaf，因此不再用于 coverage read。
-x-npi 的 NPI coverage helper 只保留 exclusion target 遍历和 EL load/set/save/unload；CSV reason
+x-npi 的 NPI coverage helper 只保留 exclusion target 遍历和 EL load/set/save/unload；CSV→EL
+内建 indexed resolver，不依赖项目模块或 xcov。code/assertion 按 scope+metric 裁剪，functional
+受 pynpi 限制扫描该类全树；每个非空 kind 固定预检、应用两遍，不按 CSV 行重扫。CSV reason
 是 sidecar，原生 EL 无法无损转换回带 reason 的 CSV。`+` 仅能用于 URG help 明确声明的 metric
 list（如 `-show brief line+cond`），不能写成 `-show summary+tests` 组合多个信息类别。
 

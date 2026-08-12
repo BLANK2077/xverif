@@ -5,6 +5,9 @@ description: 当 AI agent 需要使用 Synopsys pynpi 编写 Python 脚本，进
 
 # x-npi
 
+> **License 环境优先规则：**如果当前 EDA/NPI 环境存在 license 约束，优先尝试使用
+> `bsub` 提交到 LSF 队列运行。提交失败必须明确报告，不得静默回退到本机执行。
+
 x-npi 用来教 AI agent 编写可复用的 Python `pynpi` 批量分析脚本。交互式会话查询和 active-driver 因果追踪继续使用 xdebug；当任务需要扫描大量信号、时间窗口、事务、coverage database 或设计 handle 时，使用 x-npi。
 
 ## 任务路由
@@ -59,6 +62,10 @@ from x_npi.coverage import load_exclusion_files, open_covdb, compile_csv_to_el
   启动和遍历成本越高，而且容易把 parent aggregate 与 child bin 重复计分。普通 summary、层次、
   test list、code/assert/functional typed 统计和 detail export 一律优先 URG；NPI 在 coverage
   部分只用于 exclusion target 的必要遍历以及 EL load/set/save/unload。
+- `compile_csv_to_el(db, test, csv_dir, output_dir)` 内建 indexed resolver：code/assertion 按精确
+  scope 和所需 metric 裁剪，functional 因 pynpi 缺少直达接口仍需扫描该类全树；每个非空 kind
+  固定两遍（唯一性预检、应用），不按 CSV 行重扫，复杂度为 `O(H×P+R)`。零/多匹配和两遍间
+  身份变化均失败并回滚；不接受外接 resolver。
 - URG summary 百分比使用其 typed subtree ratio；单 metric pct 为 `covered/coverable`，多 metric
   root/scope SCORE 为所选 metric pct 的算术平均。`count` 不是 coverage pct。
 - 不支持从固定 summary 伪造 per-test attribution、source evidence 或 functional bin；需要 gap

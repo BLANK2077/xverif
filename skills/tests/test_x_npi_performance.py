@@ -124,3 +124,36 @@ def test_x_npi_streaming_performance_guard(xverif_fixture: Any) -> None:
         "posedge_cpu_target_met": pos_cpu_ratio <= pos_cpu_target,
     }
     print("X_NPI_PERFORMANCE_TARGETS=" + json.dumps(observations, sort_keys=True))
+
+
+def test_x_npi_large_vdb_exclusion_scans_only_selected_metric(
+    xverif_fixture: Any, tmp_path: Path,
+) -> None:
+    resources = xverif_fixture("xcov.large_summary")
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(SKILL / "scripts")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "skills/tests/x_npi_large_exclusion_probe.py"),
+            "--vdb", str(resources / "large_summary.vdb"),
+            "--output-root", str(tmp_path / "large-exclusion"),
+        ],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=600,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr[-8000:] + "\n" + proc.stdout[-4000:]
+    result = json.loads(proc.stdout)
+    code, functional, assertion = result["items"]
+    assert code["preflight_passes"] == 1
+    assert code["apply_passes"] == 1
+    assert code["matched_count"] == 1
+    assert code["visited_handle_count"] > 0
+    assert functional["visited_handle_count"] == 0
+    assert assertion["visited_handle_count"] == 0
+    assert all(Path(item["path"]).is_file() for item in result["items"])
