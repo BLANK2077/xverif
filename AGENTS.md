@@ -331,3 +331,27 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 - 错误现象：复核 pynpi coverage instance lookup 时使用系统 Python 3.14，`cov.open` 在 `_cov_l0.so` 的 SWIG 字符串转换中触发 SIGSEGV，尚未进入 lookup。
 - 误判原因：执行临时 inline probe 时只设置了 Verdi `PYTHONPATH`，没有遵守仓库已确认的 `.conda-xverif` Python 兼容环境合同。
 - 以后规则：所有 pynpi coverage probe 都使用仓库 `.conda-xverif/bin/python`，启动前同时核对解释器版本和 Verdi Python 路径；系统 Python 的 SWIG 崩溃不作为 NPI coverage 产品结论。
+
+### 2026-08-12 环境错误复盘
+
+- 错误现象：准备在新的临时 build 目录运行 VCS 时，直接把尚未创建的目录设为命令工作目录，进程在 shell 启动前因路径不存在而失败。
+- 误判原因：把命令内部的 `mkdir` 误认为能先于执行器切换工作目录生效。
+- 以后规则：以新目录作为命令工作目录前，必须先从已存在的父目录单独创建并核对目标目录；不能在同一次调用中依赖命令内部创建自身工作目录。
+
+### 2026-08-12 环境错误复盘
+
+- 错误现象：对 `xverif_mcp.real_fullchain` 做 focused 验证时误用 regression gate，被 suite membership 门禁在收集前拒绝。
+- 误判原因：根据全仓 regression 中相邻 MCP/xcov 用例推断了 real-fullchain membership，没有在 focused 启动前查询该 suite 的准确 gate。
+- 以后规则：每次 focused suite 启动前都从当前 catalog plan 核对目标 suite 的 gate；全仓 gate 已包含相邻能力不能替代单 suite membership 核对。
+
+### 2026-08-11 环境错误复盘
+
+- 错误现象：新增大型 fixture catalog 后猜测执行不存在的 `testinfra/tools/validate_catalog.py`，命令未进入校验逻辑。
+- 误判原因：根据目录职责臆测独立校验脚本，没有先从仓库正式 pytest catalog suite 或已有文件中确认入口。
+- 以后规则：fixture/catalog 变更先查询 `pytest --xverif-gate fast --xverif-plan` 与 `testinfra.unit` 正式 suite；不按常见命名猜测校验脚本。
+
+### 2026-08-11 环境错误复盘
+
+- 错误现象：在仓库 `tmp/` 子目录启动大型 URG 基准脚本时使用仓库相对 `.conda-xverif/bin/python`，命令在进入脚本和 EDA 工具前因解释器路径不存在退出。
+- 误判原因：切换工作目录后仍沿用只在仓库根成立的 Python 相对路径，没有在启动前按当前 cwd 解析入口。
+- 以后规则：从仓库任意子目录运行实验脚本时使用已核实的仓库 conda Python 绝对路径；不因相对入口失败切换系统 Python。
