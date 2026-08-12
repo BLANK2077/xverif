@@ -231,8 +231,48 @@ Fixture cache miss 只通过正式 `--xverif-prepare` 补齐，不自动仿真�
 | 3. Container CSV | completed | `a29fa0a` | `xcov.unit` 167 passed；`skills.x_npi` 23 passed | 旧三文件兼容；四 CSV/EL 原子发布；容器定位器接通 |
 | 4. x-npi resolver 与 CLI | completed | `71f3dca` | `skills.x_npi` 24 passed；CLI py_compile | 独立 fixed-URG container CLI；exact `handle_by_name`；locator trie replay |
 | 5. xcov actions 与 MCP | completed | `bbfc108` | `xcov.unit` 169；`xverif_mcp.unit` 163；action smoke 1；fake LSF 3 passed | 四 action 动态发布；atomic ownership；fake LSF only |
-| 6. 正式回归与 skill | completed | 本阶段提交 | exclusion 1；URG 7；large 2；x-npi real 7/perf 2；MCP 17；skills 16+3 passed | xcov CSV 也改为 exact scope 与 group-pruned resolver；四文件文档同步 |
-| 7. 全仓验证与推送 | pending | - | - | - |
+| 6. 正式回归与 skill | completed | `3fd1d23` | exclusion 1；URG 7；large 2；x-npi real 7/perf 2；MCP 17；skills 16+3 passed | xcov CSV 也改为 exact scope 与 group-pruned resolver；四文件文档同步 |
+| 7. 全仓验证与推送 | in_progress | `a9263c0` + 最终记录提交 | fast 532；25 fixtures validated；regression 1118；nightly 1219 passed/2 real-LSF skipped | skills 四处安装 diff 通过；待最终 commit/push |
+
+## 10. 最终验证记录
+
+### 10.1 Skill 安装
+
+- `make install-x-npi-skill` 与 `make install-xverif-skill` 均成功。
+- `skills/x-npi`、`skills/xverif` 分别与 `~/.codex/skills/<name>`、
+  `~/.claude/skills/<name>` 完成 `diff -qr` 内容验收；比较时仅排除安装器专用
+  `.xverif-skill-manifest` 和 Python 运行生成的 `__pycache__`。
+- 安装器将旧版本移动到各 agent home 下带时间戳的可恢复 backup，未删除用户环境内容。
+
+### 10.2 全仓门禁
+
+- fast：`532 passed`，结果目录 `.xverif-test-results/20260812-120355-9cm7eaip`。
+- fixture validation：25 个 fixture 全部 validated；包括 `xcov.exclusion`、
+  `xcov.comprehensive`、`xcov.modinfo_complex` 和 20 万行级 `xcov.large_summary` 缓存。
+- host regression：`1118 passed in 285.48s`，结果目录
+  `.xverif-test-results/20260812-122813-kq6xrgyq`。
+- host nightly：`1219 passed, 2 skipped in 482.92s`，结果目录
+  `.xverif-test-results/20260812-123312-jcbh_4tw`。
+- nightly 两项 skip 都属于 catalog 的 optional `real_lsf` dependency：本机没有
+  `bsub/bjobs/bkill` 且未启用 `XDEBUG_ENABLE_REAL_LSF=1`。仓库 fake LSF focused suite 已
+  `3 passed`，没有 fallback 到 direct backend。
+
+### 10.3 已交付提交
+
+- `1ef17aa`：任务书与实验结论。
+- `830ed38`：URG 真实实例 IR 与 `0/0` null ratio。
+- `a29fa0a`：container CSV 与四 EL 原子发布。
+- `71f3dca`：x-npi exact/lazy resolver 与独立 container CLI。
+- `bbfc108`：xcov 四个容器 action、schema、ownership 与 MCP 动态发布。
+- `3fd1d23`：真实/性能/MCP/skill 门禁及 xcov CSV 线性定位。
+- `a9263c0`：全仓 no-fake 静态政策适配。
+
+### 10.4 最终限制
+
+- 不支持 module-definition exclusion、wildcard 或 regex container selector。
+- 固定 URG summary 结构之外的信息不支持；coverage read 不回退 NPI。
+- 原生 EL 不保存 reason，reason 和 recursive ownership 继续由 CSV/session metadata 持有。
+- 真实 LSF 未在本机运行；仅按用户要求验证 fake LSF 队列合同。
 
 ## 9. Git 与推送约束
 
