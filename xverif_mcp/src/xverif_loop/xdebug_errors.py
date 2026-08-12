@@ -16,7 +16,12 @@ def forbidden_native_session_error(action: str | None, backend: str = "debug") -
     if action == "session.open":
         tool, args = f"{prefix}_session_open", ({"name": "cov_a", "vdb": "<merged.vdb>"} if backend == "cov" else {"name": "case_a", "fsdb": "<waves.fsdb>"})
     elif action in {"session.close", "session.kill"}:
-        tool, args = f"{prefix}_session_{'kill' if action == 'session.kill' else 'close'}", {"session_id": "cov_a" if backend == "cov" else "case_a"}
+        if backend == "cov" and action == "session.kill":
+            tool, args = f"{prefix}_session_kill", {"session_id": "cov_a"}
+        else:
+            tool, args = f"{prefix}_session_close", {"session_id": "cov_a" if backend == "cov" else "case_a"}
+            if backend == "debug" and action == "session.kill":
+                args["mode"] = "force"
     elif action in {"session.doctor", "session.status"}:
         tool, args = f"{prefix}_session_doctor", {"session_id": "cov_a" if backend == "cov" else "case_a"}
     elif action == "session.gc":

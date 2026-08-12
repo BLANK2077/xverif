@@ -148,7 +148,7 @@ native CLI、engine、session、MCP、SDK-free loop、schema、example、XOUT、
 
 ### C03 Session 生命周期与 NPI 串行化
 
-状态：`in_progress`
+状态：`completed`
 
 - 缩小 lifecycle lease；建立单 NPI owner 序列。
 - cooperative deadline checkpoint 和进程外 hard termination。
@@ -309,7 +309,7 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 | 前置评审基线 | completed | `5fe239c` | 三份文档；`git diff --cached --check` |
 | C01 计划书 | completed | `431c615` | 文档检查、`git diff --cached --check` |
 | C02 安全/batch | completed | 本提交 | 安全随机、batch/MCP、XOUT 边界及 focused suites 全绿 |
-| C03 Session | in_progress | - | 实施中 |
+| C03 Session | completed | 本提交 | 生命周期 lease/NPI 串行、deadline/超时终止、list 纯读、close graceful/force 与全 surface 迁移完成 |
 | C04 FSDB identity | pending | - | - |
 | C05 Transport | pending | - | - |
 | C06 Cache | pending | - | - |
@@ -330,6 +330,9 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 | 2026-08-12 | C02 | `xverif_mcp.unit` / `process` / `action_smoke` | host | PASS | 165 / 141 / 1 passed |
 | 2026-08-12 | C02 | `xdebug.native_xout_report` | host | PASS | 8 passed |
 | 2026-08-12 | C02 | request/schema/hint/runtime compatibility/examples | host | PASS | 281 schemas；218 examples；生成一致 |
+| 2026-08-12 | C03 | `make -C xdebug all` / `xdebug.cpp_unit` / `xdebug.static` | host | PASS | 构建通过；1 / 107 passed（组合复验 108 passed） |
+| 2026-08-12 | C03 | `xdebug.contract` / `xdebug.session` | host | PASS | 111 / 40 passed |
+| 2026-08-12 | C03 | `xdebug.mcp_direct` + `xdebug.mcp_fake_lsf` | host | PASS | 7 passed |
 
 ## 11. 偏差与阻塞记录
 

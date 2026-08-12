@@ -80,8 +80,9 @@ def test_phase5_public_chain_reports_exact_ambiguous_rhs(
         cli_runner.run(
             {
                 "api_version": "xdebug.v1",
-                "action": "session.kill",
+                "action": "session.close",
                 "target": {"session_id": session_id},
+                "args": {"mode": "force"},
             },
             timeout_sec=60,
         )

@@ -5,7 +5,9 @@
     "target": {
       "session_id": "case_a"
     },
-    "args": {}
+    "args": {
+      "mode": "graceful"
+    }
   },
   "response": {
     "api_version": "xdebug.v1",

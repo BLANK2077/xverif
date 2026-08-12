@@ -192,7 +192,6 @@ public runtime action 以 `xdebug/src/api/action_registry_init.cpp` 为准。
   - `session.ensure`
   - `session.list`
   - `session.doctor`
-  - `session.kill`
   - `session.close`
   - `session.gc`
 - Design：

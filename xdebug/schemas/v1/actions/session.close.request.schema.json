@@ -41,8 +41,44 @@
     "args": {
       "type": "object",
       "required": [],
-      "properties": {},
-      "additionalProperties": false
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "graceful",
+            "force"
+          ],
+          "default": "graceful",
+          "description": "graceful requests server shutdown and preserves the session record when exit is not confirmed; force may terminate a locally owned process after identity checks."
+        },
+        "ownership_token": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Opaque 256-bit conditional-cleanup token encoded as exactly 64 lowercase hexadecimal characters. A managed wrapper may supply it at session.open and provide it to session.close with args.mode=force as an optional match precondition, not as authorization. When session.open omits it, the frontend binds a fail-closed internally generated token; never log or publish either form."
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "ownership_token"
+            ]
+          },
+          "then": {
+            "properties": {
+              "mode": {
+                "const": "force"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          }
+        }
+      ]
     },
     "limits": {
       "type": "object",
@@ -51,31 +87,56 @@
     }
   },
   "additionalProperties": false,
-  "description": "Close a debug session and release its runtime resources.",
-  "x-purpose": "关闭指定 session。",
-  "x-how_it_works": "释放该 session 的 runtime 资源并从管理器移除。",
-  "x-when_to_use": "结束不再使用的调试上下文。",
-  "x-arg_contract_notes": "required: target.session_id",
-  "x-description-zh": "关闭指定 session。",
+  "description": "Close one or all debug sessions gracefully or forcibly.",
+  "x-purpose": "以 graceful 或 force 模式关闭一个或全部 session。",
+  "x-how_it_works": "graceful 只请求退出且失败时保留诊断记录；force 可在身份校验后终止本机进程；all 返回移除与保留计数。",
+  "x-when_to_use": "结束 session，或显式清理异常残留。",
+  "x-arg_contract_notes": "required: target.session_id；mode 可取 graceful 或 force（默认 graceful）；ownership_token 仅允许 force 且精确单一 session_id",
+  "x-description-zh": "以 graceful 或 force 模式关闭一个或全部 session。",
   "x-agent": {
     "use_when": [
-      "Own a healthy session and need a graceful lifecycle close that releases its runtime resources."
+      "Use the default graceful mode for a healthy session, or explicit force mode for stale or unhealthy state that cannot complete graceful shutdown.",
+      "Use target.session_id=all to close all registered sessions and receive per-session retained failure details."
     ],
     "do_not_use_when": [
-      "Do not use it to forcibly remove stale state or merely inspect session health."
+      "Do not use force mode merely to inspect session health.",
+      "Do not provide args.ownership_token except for force cleanup of one exact session id; it is a managed-wrapper match precondition, not authorization, and is forbidden with target.session_id=all."
     ],
     "alternatives": [
-      {
-        "action": "session.kill",
-        "when": "Force removal when graceful close is impossible."
-      },
       {
         "action": "session.doctor",
         "when": "Diagnose the session without changing it."
       }
     ],
     "constraints": [
-      "required: target.session_id"
+      "required: target.session_id；mode 可取 graceful 或 force（默认 graceful）；ownership_token 仅允许 force 且精确单一 session_id"
     ]
-  }
+  },
+  "allOf": [
+    {
+      "not": {
+        "properties": {
+          "target": {
+            "properties": {
+              "session_id": {
+                "const": "all"
+              }
+            },
+            "required": [
+              "session_id"
+            ]
+          },
+          "args": {
+            "required": [
+              "ownership_token"
+            ]
+          }
+        },
+        "required": [
+          "target",
+          "args"
+        ]
+      }
+    }
+  ]
 }

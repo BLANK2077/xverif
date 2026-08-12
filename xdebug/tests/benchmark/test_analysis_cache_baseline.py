@@ -64,7 +64,7 @@ def _query(
         "action": action,
         "args": args or {},
     }
-    if action not in {"session.open", "session.kill"}:
+    if action not in {"session.open", "session.close"}:
         request["limits"] = {"timeout_ms": int(timeout_sec * 1000)}
     if target is not None:
         request["target"] = target
@@ -140,7 +140,7 @@ def _open_session(
 
 
 def _kill_session(runner: CliRunner, target: dict[str, str]) -> None:
-    _query(runner, "session.kill", target=target, timeout_sec=60.0)
+    _query(runner, "session.close", args={"mode": "force"}, target=target, timeout_sec=60.0)
 
 
 def _rss_bytes(pid: int) -> int:

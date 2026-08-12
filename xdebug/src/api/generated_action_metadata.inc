@@ -1126,16 +1126,15 @@
     spec.handler_kind = "session";
     spec.request_schema = "schemas/v1/actions/session.close.request.schema.json";
     spec.response_schema = "schemas/v1/actions/session.close.response.schema.json";
-    spec.request_examples = {"examples/requests/session.close.basic.json"};
+    spec.request_examples = {"examples/requests/session.close.basic.json", "examples/requests/session.close.force.json", "examples/requests/session.close.managed.json"};
     spec.response_examples = {"examples/responses/session.close.basic.json", "examples/responses/session.close.all.json"};
     spec.args.required = {};
-    spec.description_en = "Close a debug session and release its runtime resources.";
-    spec.description_zh = "关闭指定 session。";
+    spec.description_en = "Close one or all debug sessions gracefully or forcibly.";
+    spec.description_zh = "以 graceful 或 force 模式关闭一个或全部 session。";
     spec.purposes = {"manage"};
-    spec.use_when = {"Own a healthy session and need a graceful lifecycle close that releases its runtime resources."};
-    spec.do_not_use_when = {"Do not use it to forcibly remove stale state or merely inspect session health."};
+    spec.use_when = {"Use the default graceful mode for a healthy session, or explicit force mode for stale or unhealthy state that cannot complete graceful shutdown.", "Use target.session_id=all to close all registered sessions and receive per-session retained failure details."};
+    spec.do_not_use_when = {"Do not use force mode merely to inspect session health.", "Do not provide args.ownership_token except for force cleanup of one exact session id; it is a managed-wrapper match precondition, not authorization, and is forbidden with target.session_id=all."};
     spec.alternatives = Json::array();
-    spec.alternatives.push_back({{"action", "session.kill" }, {"when", "Force removal when graceful close is impossible." }});
     spec.alternatives.push_back({{"action", "session.doctor" }, {"when", "Diagnose the session without changing it." }});
     registry.register_spec(spec);
 }
@@ -1155,7 +1154,7 @@
     spec.description_zh = "诊断当前 session。";
     spec.purposes = {"manage"};
     spec.use_when = {"Know a session identifier and need read-only health, resource, process, and accessibility diagnostics."};
-    spec.do_not_use_when = {"Do not use it to open, close, kill, or garbage-collect sessions."};
+    spec.do_not_use_when = {"Do not use it to open, close, or garbage-collect sessions."};
     spec.alternatives = Json::array();
     spec.alternatives.push_back({{"action", "session.list" }, {"when", "Discover session identifiers." }});
     spec.alternatives.push_back({{"action", "session.close" }, {"when", "Gracefully close one session." }});
@@ -1179,29 +1178,8 @@
     spec.use_when = {"Need policy-driven cleanup of all expired session records rather than mutation of one named active session."};
     spec.do_not_use_when = {"Do not use it to remove a specific active session or diagnose one session."};
     spec.alternatives = Json::array();
-    spec.alternatives.push_back({{"action", "session.kill" }, {"when", "Force removal of one explicit session." }});
+    spec.alternatives.push_back({{"action", "session.close" }, {"when", "Close one explicit session with args.mode=force." }});
     spec.alternatives.push_back({{"action", "session.doctor" }, {"when", "Diagnose one explicit session." }});
-    registry.register_spec(spec);
-}
-{
-    ActionSpec spec;
-    spec.name = "session.kill";
-    spec.category = "session";
-    spec.status = action_status_from_string("stable");
-    spec.resource = resource_requirement_from_string("session");
-    spec.handler_kind = "session";
-    spec.request_schema = "schemas/v1/actions/session.kill.request.schema.json";
-    spec.response_schema = "schemas/v1/actions/session.kill.response.schema.json";
-    spec.request_examples = {"examples/requests/session.kill.basic.json", "examples/requests/session.kill.managed.json"};
-    spec.response_examples = {"examples/responses/session.kill.basic.json", "examples/responses/session.kill.all.json"};
-    spec.args.required = {};
-    spec.description_en = "Force removal of a debug session.";
-    spec.description_zh = "强制移除指定 session。";
-    spec.purposes = {"manage"};
-    spec.use_when = {"Know a stale or unhealthy session that cannot complete the graceful close lifecycle."};
-    spec.do_not_use_when = {"Do not use it for a healthy session that can be closed gracefully.", "Do not treat args.ownership_token as authorization or dynamically require it for explicit administration; a managed wrapper supplies its own opaque key only as an ambiguous-open cleanup match precondition, and the key must never be invented, exposed, or logged."};
-    spec.alternatives = Json::array();
-    spec.alternatives.push_back({{"action", "session.close" }, {"when", "Release a healthy session through its normal lifecycle." }});
     registry.register_spec(spec);
 }
 {
@@ -1214,7 +1192,7 @@
     spec.request_schema = "schemas/v1/actions/session.list.request.schema.json";
     spec.response_schema = "schemas/v1/actions/session.list.response.schema.json";
     spec.request_examples = {"examples/requests/session.list.basic.json"};
-    spec.response_examples = {"examples/responses/session.list.basic.json", "examples/responses/session.list.expired_removed.json"};
+    spec.response_examples = {"examples/responses/session.list.basic.json", "examples/responses/session.list.verbose.json"};
     spec.args.required = {};
     spec.description_en = "List active debug sessions.";
     spec.description_zh = "列出当前 session。";

@@ -183,10 +183,11 @@ bool validate_lifecycle_invariants(
             "generation must be 64 lowercase hexadecimal characters");
     if (session.lifecycle_state != "opening" &&
         session.lifecycle_state != "active" &&
-        session.lifecycle_state != "cleanup_failed") {
+        session.lifecycle_state != "cleanup_failed" &&
+        session.lifecycle_state != "terminated_on_timeout") {
         return fail(
             error,
-            "lifecycle_state must be opening, active, or cleanup_failed");
+            "lifecycle_state must be opening, active, cleanup_failed, or terminated_on_timeout");
     }
     if (session.lifecycle_state == "active" &&
         session.server_pid <= 0) {

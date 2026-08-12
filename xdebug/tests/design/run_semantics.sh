@@ -8,7 +8,7 @@ P3_DB="${P3_DB:-$ROOT_DIR/testdata/design/p3_semantics/out/simv.daidir}"
 TMP_HOME="$(mktemp -d)"
 
 cleanup() {
-  printf '%s\n' '{"api_version":"xdebug.v1","action":"session.kill","target":{"session_id":"all"}}' |
+  printf '%s\n' '{"api_version":"xdebug.v1","action":"session.close","target":{"session_id":"all"},"args":{"mode":"force"}}' |
     HOME="$TMP_HOME" "$XDEBUG" --json - >/dev/null 2>&1 || true
   rm -rf "$TMP_HOME"
 }

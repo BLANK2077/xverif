@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/npi/resource_guard.h"
+#include "core/session/request_deadline.h"
 
 #include <cstddef>
 #include <string>
@@ -33,21 +34,25 @@ public:
 
     npiHandle own_npi(npiHandle handle) {
         if (handle) npi_handles_.push_back(handle);
+        xdebug_core::request_deadline_checkpoint();
         return handle;
     }
 
     npiFsdbScopeIter own_fsdb_scope_iter(npiFsdbScopeIter iter) {
         if (iter) fsdb_scope_iters_.push_back(iter);
+        xdebug_core::request_deadline_checkpoint();
         return iter;
     }
 
     npiFsdbSigIter own_fsdb_sig_iter(npiFsdbSigIter iter) {
         if (iter) fsdb_sig_iters_.push_back(iter);
+        xdebug_core::request_deadline_checkpoint();
         return iter;
     }
 
     npiFsdbVctHandle own_vct(npiFsdbVctHandle vct) {
         if (vct) vcts_.push_back(vct);
+        xdebug_core::request_deadline_checkpoint();
         return vct;
     }
 
@@ -72,6 +77,12 @@ struct EngineActionContext {
     const std::string& session_id;
     const std::string& action;
     ActionResourceScope& resources;
+
+    // Actions should call this between bounded traversal/analysis units.
+    // It never invokes a vendor-private cancellation API.
+    void checkpoint() const {
+        xdebug_core::request_deadline_checkpoint();
+    }
 };
 
 } // namespace xdebug_design

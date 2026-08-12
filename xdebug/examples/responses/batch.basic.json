@@ -28,18 +28,19 @@
         "session": null,
         "summary": {
           "session_count": 1,
-          "expired_removed_count": 0
+          "expired_count": 0,
+          "verbose": false
         },
         "data": {
           "sessions": [
             {
               "session_id": "case_a",
               "mode": "combined",
-              "daidir": "simv.daidir",
-              "fsdb": "waves.fsdb",
-              "socket_path": "session-endpoints/case_a.sock",
-              "server_host": "localhost",
-              "transport": "uds"
+              "transport": "uds",
+              "lifecycle_state": "active",
+              "expired": false,
+              "recommended_action": "session.doctor",
+              "last_active": 1700000000
             }
           ]
         },

@@ -70,10 +70,12 @@ def test_debug_query_rejects_native_session_action_in_batch_before_dispatch(
     assert error["invalid_arg"] == child_path
     assert error["batch_child_path"] == child_path
     expected_tool = {
-        "session.kill": "xverif_debug_session_kill",
+        "session.kill": "xverif_debug_session_close",
         "session.open": "xverif_debug_session_open",
     }
     assert error["correct_example"]["tool"] == expected_tool[forbidden_action]
+    if forbidden_action == "session.kill":
+        assert error["correct_example"]["args"]["mode"] == "force"
     assert debug.calls == []
 
 

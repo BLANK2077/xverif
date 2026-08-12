@@ -200,6 +200,23 @@ int main() {
     assert(current.last_active == 201);
 
     retained = second;
+    retained.lifecycle_state = "terminated_on_timeout";
+    assert(
+        registry
+            .mark_terminal_state(
+                retained, generation_two)
+            .ok());
+    assert(registry.get(alias, current).ok());
+    assert(current.generation == generation_two);
+    assert(current.lifecycle_state == "terminated_on_timeout");
+    assert(
+        registry
+            .mark_terminal_state(
+                retained, generation_one)
+            .status ==
+        xdebug_engine::SessionRegistryStatus::Invalid);
+
+    retained = second;
     retained.lifecycle_state = "cleanup_failed";
     assert(
         registry

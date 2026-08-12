@@ -40,6 +40,7 @@ using xdebug_engine::SessionEnsureResult;
 using xdebug_engine::SessionCleanupPrecondition;
 using xdebug_engine::SessionCleanupResult;
 using xdebug_engine::SessionCleanupStatus;
+using xdebug_engine::SessionCloseMode;
 using xdebug_engine::SessionHealth;
 using xdebug_engine::SessionHealthStatus;
 using xdebug_engine::SessionInfo;
@@ -329,6 +330,16 @@ std::string request_ownership_token(ContractBoundRequest& request) {
     return "";
 }
 
+SessionCloseMode request_session_close_mode(
+    ContractBoundRequest& request) {
+    auto args = request.args();
+    const std::string mode =
+        args.value("mode", std::string("graceful"));
+    return mode == "force"
+        ? SessionCloseMode::Force
+        : SessionCloseMode::Graceful;
+}
+
 bool valid_ownership_token(const std::string& token) {
     if (token.size() != 64) return false;
     for (const char c : token) {
@@ -411,6 +422,8 @@ std::string health_error_code(SessionHealthStatus status) {
         return "REGISTRY_INVALID";
     if (status == SessionHealthStatus::CleanupFailed)
         return "SESSION_CLEANUP_FAILED";
+    if (status == SessionHealthStatus::TerminatedOnTimeout)
+        return "SESSION_TERMINATED_ON_TIMEOUT";
     if (status == SessionHealthStatus::FsdbChanged ||
         status == SessionHealthStatus::DbdirChanged) return "RESOURCE_CHANGED";
     if (status == SessionHealthStatus::FsdbMissing ||
@@ -515,6 +528,8 @@ OrderedJson handle_session_action(
                                           true, session_open_failure_details(result));
         OrderedJson response = make_response(request, action);
         response["session"] = session_to_json(result.info);
+        response["session"]["lifecycle_state"] =
+            result.info.lifecycle_state;
         response["session"]["healthy"] = true;
         response["summary"] = {
             {"session_id", result.session_id},
@@ -547,6 +562,13 @@ OrderedJson handle_session_action(
                 evidence["lifecycle_state"] =
                     "cleanup_failed";
             }
+            if (health.status ==
+                SessionHealthStatus::TerminatedOnTimeout) {
+                evidence["cancel_state"] = "confirmed";
+                evidence["cleanup_succeeded"] = true;
+                evidence["lifecycle_state"] =
+                    "terminated_on_timeout";
+            }
             if (health.status == SessionHealthStatus::FsdbChanged ||
                 health.status == SessionHealthStatus::FsdbMissing) {
                 evidence["resource_path"] = health.info.fsdb_file;
@@ -570,8 +592,10 @@ OrderedJson handle_session_action(
                                {"status", health_status}, {"message", health.message}};
         return response;
     }
-    if (action == "session.kill") {
+    if (action == "session.close") {
         std::string sid = session_id_from_request(request);
+        const SessionCloseMode close_mode =
+            request_session_close_mode(bound_request);
         const std::string ownership_token =
             request_ownership_token(bound_request);
         if (sid == "all") {
@@ -597,30 +621,19 @@ OrderedJson handle_session_action(
                     false,
                     {{"error_layer", "session_manager"}});
             }
-            bool ok = manager.kill_all_sessions();
-            if (!ok) {
-                std::vector<SessionInfo> remaining;
-                const xdebug_engine::SessionRegistryResult relisted =
-                    manager.list_sessions_checked(remaining);
-                if (!relisted.ok()) {
-                    return make_error(
-                        request,
-                        action,
-                        "REGISTRY_INVALID",
-                        relisted.message,
-                        false,
-                        {{"error_layer", "session_manager"}});
+            OrderedJson failed_session_ids = OrderedJson::array();
+            size_t removed_count = 0;
+            for (const auto& session : before) {
+                const SessionCleanupResult cleanup =
+                    manager.close_session(
+                        session.session_id, close_mode);
+                if (cleanup.ok()) {
+                    ++removed_count;
+                } else {
+                    failed_session_ids.push_back(session.session_id);
                 }
-                OrderedJson failed_session_ids =
-                    OrderedJson::array();
-                for (const auto& session : remaining) {
-                    failed_session_ids.push_back(
-                        session.session_id);
-                }
-                const size_t removed_count =
-                    before.size() >= remaining.size()
-                        ? before.size() - remaining.size()
-                        : 0;
+            }
+            if (!failed_session_ids.empty()) {
                 return make_error(
                     request,
                     action,
@@ -630,11 +643,15 @@ OrderedJson handle_session_action(
                     {{"error_layer", "session_manager"},
                      {"requested_count", before.size()},
                      {"removed_count", removed_count},
-                     {"failed_session_ids",
-                      failed_session_ids}});
+                     {"retained_count", failed_session_ids.size()},
+                     {"failed_session_ids", failed_session_ids}});
             }
-            OrderedJson response = make_response(request, action, ok);
-            response["summary"] = {{"target", "all"}, {"killed", ok}};
+            OrderedJson response = make_response(request, action);
+            response["summary"] = {
+                {"requested_count", before.size()},
+                {"removed_count", removed_count},
+                {"retained_count", 0},
+            };
             return response;
         }
         if (sid.empty()) return make_error(request, action, "MISSING_FIELD", "session id string is required");
@@ -656,7 +673,7 @@ OrderedJson handle_session_action(
                 xdebug_core::sha256_text(ownership_token);
         }
         SessionCleanupResult cleanup =
-            manager.kill_session(sid, precondition);
+            manager.close_session(sid, close_mode, precondition);
         if (!cleanup.ok()) {
             OrderedJson evidence =
                 session_error_evidence(cleanup.info);
@@ -706,7 +723,12 @@ OrderedJson handle_session_action(
                 evidence);
         }
         OrderedJson response = make_response(request, action);
-        response["summary"] = {{"session_id", sid}, {"killed", true}};
+        response["summary"] = {
+            {"session_id", sid},
+            {"mode", close_mode == SessionCloseMode::Force
+                         ? "force" : "graceful"},
+            {"removed", true},
+        };
         return response;
     }
     return make_error(request, action, "UNKNOWN_ACTION", "unknown session action: " + action);
@@ -817,6 +839,7 @@ OrderedJson handle_engine_forward(
     std::string status;
     std::string message;
     Json engine_error;
+    Json timeout_containment;
     OrderedJson pending_error;
     bool sent = false;
     const int remaining_timeout_ms =
@@ -824,7 +847,11 @@ OrderedJson handle_engine_forward(
     if (g_query_termination_requested ||
         remaining_timeout_ms == 0) {
         OrderedJson evidence = {
-            {"error_layer", "transport"}
+            {"error_layer", "transport"},
+            {"cancel_state", "confirmed"},
+            {"session_state", "active"},
+            {"cleanup_succeeded", true},
+            {"termination_confirmed", false}
         };
         const OrderedJson limits =
             request.value("limits", OrderedJson::object());
@@ -850,7 +877,8 @@ OrderedJson handle_engine_forward(
             data,
             status,
             message,
-            engine_error);
+            engine_error,
+            timeout_containment);
     }
     if (!sent && pending_error.is_null()) {
         if (!engine_error.is_null()) {
@@ -867,6 +895,12 @@ OrderedJson handle_engine_forward(
                 request.value("limits", OrderedJson::object());
             if (limits.contains("timeout_ms")) {
                 evidence["timeout_ms"] = limits["timeout_ms"];
+            }
+            if (timeout_containment.is_object()) {
+                for (auto it = timeout_containment.begin();
+                     it != timeout_containment.end(); ++it) {
+                    evidence[it.key()] = it.value();
+                }
             }
             pending_error = make_error(
                 request,
@@ -974,7 +1008,7 @@ OrderedJson handle_query(const OrderedJson& request) {
     const std::string action =
         request["action"].get<std::string>();
     if (action == "session.open" ||
-        action == "session.kill" ||
+        action == "session.close" ||
         action == "session.doctor") {
         ContractBoundRequest bound_request(request, action);
         OrderedJson response =

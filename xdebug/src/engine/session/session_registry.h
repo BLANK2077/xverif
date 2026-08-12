@@ -60,6 +60,11 @@ public:
         const SessionInfo& session,
         const std::string& expected_generation);
 
+    // Persist a non-active diagnostic state with generation CAS semantics.
+    SessionRegistryResult mark_terminal_state(
+        const SessionInfo& session,
+        const std::string& expected_generation);
+
     SessionRegistryResult touch_if_generation(
         const std::string& session_id,
         const std::string& expected_generation,

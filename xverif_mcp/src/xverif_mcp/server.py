@@ -542,19 +542,12 @@ def xverif_debug_session_doctor(
 @xverif_tool("debug")
 def xverif_debug_session_close(
     session_id: str,
+    mode: Literal["graceful", "force"] = "graceful",
 ) -> dict:
-    """Close and cleanup an xdebug session."""
-    return debug.session_close(session_id)
-
-
-@xverif_tool("debug")
-def xverif_debug_session_kill(
-    session_id: str,
-) -> dict:
-    """Force cleanup of exactly one managed xdebug session."""
+    """Close one managed xdebug session gracefully or forcibly."""
     if session_id == "all":
         return _tool_error("INVALID_ARGUMENT", "provide one exact session_id; all is not supported")
-    return debug.session_kill(session_id)
+    return debug.session_close(session_id, mode=mode)
 
 
 @xverif_tool("debug")
@@ -1171,10 +1164,7 @@ TOOL_CATALOG = [
      "description": "Read-only diagnosis for one managed xdebug session."},
     {"name": "xverif_debug_session_close", "category": "debug", "backend": "xdebug",
      "stateful": True, "requires_session": True,
-     "description": "Close and cleanup an xdebug session."},
-    {"name": "xverif_debug_session_kill", "category": "debug", "backend": "xdebug",
-     "stateful": True, "requires_session": True,
-     "description": "Force cleanup of exactly one managed xdebug session."},
+     "description": "Close one xdebug session in graceful or force mode."},
     {"name": "xverif_debug_session_gc", "category": "debug", "backend": "xdebug",
      "stateful": True, "requires_session": False,
      "description": "Remove confirmed terminal xdebug tombstones."},

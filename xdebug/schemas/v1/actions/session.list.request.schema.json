@@ -32,7 +32,20 @@
     "args": {
       "type": "object",
       "required": [],
-      "properties": {},
+      "properties": {
+        "output": {
+          "type": "object",
+          "properties": {
+            "verbose": {
+              "type": "boolean",
+              "default": false,
+              "description": "Return verbose session records instead of the default compact representation."
+            }
+          },
+          "additionalProperties": false,
+          "description": "Export destination and rendering controls. path, file_format, and verbose are supported only where this action declares them."
+        }
+      },
       "additionalProperties": false
     },
     "limits": {

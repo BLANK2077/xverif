@@ -96,7 +96,7 @@
           "minLength": 64,
           "maxLength": 64,
           "pattern": "^[0-9a-f]{64}$",
-          "description": "Opaque 256-bit conditional-cleanup token encoded as exactly 64 lowercase hexadecimal characters. A managed wrapper may supply it at session.open and provide it to session.kill as an optional match precondition, not as authorization. When session.open omits it, the frontend binds a fail-closed internally generated token; never log or publish either form."
+          "description": "Opaque 256-bit conditional-cleanup token encoded as exactly 64 lowercase hexadecimal characters. A managed wrapper may supply it at session.open and provide it to session.close with args.mode=force as an optional match precondition, not as authorization. When session.open omits it, the frontend binds a fail-closed internally generated token; never log or publish either form."
         },
         "port": {
           "type": "integer",

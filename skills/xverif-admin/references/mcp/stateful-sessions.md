@@ -9,7 +9,7 @@ MCP 的 xdebug/xcov stateful session 通过同一套 stdio-loop session manager 
 - `xverif_debug_session_list(include_tombstones=False, verbose=False)`
 - `xverif_debug_session_doctor(session_id, verbose=False)`
 - `xverif_debug_session_close(session_id)`
-- `xverif_debug_session_kill(session_id)`
+- `xverif_debug_session_close(session_id, mode="force")`
 - `xverif_debug_session_gc(verbose=False)`
 
 ## xcov

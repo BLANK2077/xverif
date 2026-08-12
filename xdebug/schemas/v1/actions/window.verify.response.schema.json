@@ -380,6 +380,10 @@
             "minLength": 1
           }
         },
+        "did_you_mean": {
+          "type": "string",
+          "minLength": 1
+        },
         "schema_path": {
           "type": "string"
         },
@@ -513,6 +517,21 @@
         "cleanup_succeeded": {
           "type": "boolean"
         },
+        "termination_confirmed": {
+          "type": "boolean"
+        },
+        "cancel_state": {
+          "enum": [
+            "confirmed",
+            "unknown"
+          ]
+        },
+        "session_state": {
+          "enum": [
+            "cleanup_failed",
+            "terminated_on_timeout"
+          ]
+        },
         "lifecycle_state": {
           "enum": [
             "cleanup_failed"
@@ -550,6 +569,10 @@
           "minimum": 0
         },
         "removed_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retained_count": {
           "type": "integer",
           "minimum": 0
         },
@@ -662,6 +685,10 @@
             "minLength": 1
           }
         },
+        "did_you_mean": {
+          "type": "string",
+          "minLength": 1
+        },
         "schema_path": {
           "type": "string"
         },
@@ -795,6 +822,21 @@
         "cleanup_succeeded": {
           "type": "boolean"
         },
+        "termination_confirmed": {
+          "type": "boolean"
+        },
+        "cancel_state": {
+          "enum": [
+            "confirmed",
+            "unknown"
+          ]
+        },
+        "session_state": {
+          "enum": [
+            "cleanup_failed",
+            "terminated_on_timeout"
+          ]
+        },
         "lifecycle_state": {
           "enum": [
             "cleanup_failed"
@@ -832,6 +874,10 @@
           "minimum": 0
         },
         "removed_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retained_count": {
           "type": "integer",
           "minimum": 0
         },

@@ -433,7 +433,6 @@ xverif_debug_session_open
 xverif_debug_session_list
 xverif_debug_session_doctor
 xverif_debug_session_close
-xverif_debug_session_kill
 xverif_debug_session_gc
 ```
 

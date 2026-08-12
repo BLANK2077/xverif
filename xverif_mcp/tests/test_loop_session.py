@@ -252,7 +252,7 @@ class TestLoopSessionOpen:
         assert all(c in "0123456789abcdef" for c in token)
         assert admin_calls == [
             (
-                "session.kill",
+                "session.close",
                 {
                     "session_id": "mismatch_test",
                     "ownership_token": token,
@@ -296,7 +296,7 @@ class TestLoopSessionOpen:
         ),
         [
             (
-                {"ok": True, "action": "session.kill"},
+                {"ok": True, "action": "session.close"},
                 "cleaned",
                 True,
                 "closed",
@@ -385,7 +385,7 @@ class TestLoopSessionOpen:
         token = requests[0]["args"]["ownership_token"]
         assert admin_calls == [
             (
-                "session.kill",
+                "session.close",
                 {
                     "session_id": "rejected_open",
                     "ownership_token": token,

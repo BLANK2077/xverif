@@ -36,7 +36,9 @@ struct SessionInfo {
     // Opaque identity of one incarnation of session_id.  Every registry
     // mutation and artifact cleanup is conditional on this value.
     std::string generation;
-    // Strict registry lifecycle state: opening, active, or cleanup_failed.
+    // Strict registry lifecycle state: opening, active, cleanup_failed, or
+    // terminated_on_timeout.  The latter is a diagnostic tombstone and must
+    // never be reused as a live NPI context.
     std::string lifecycle_state;
     std::string transport;
     std::string socket_path;

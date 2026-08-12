@@ -34,7 +34,7 @@ private:
         const std::string& failure_message);
     Json handle_engine_forward(const Json& request, const ActionSpec& spec,
                                const Json& observability);
-    bool kill_session_record(const Json& request,
+    bool force_close_session_record(const Json& request,
                              const SessionRecord& record,
                              const Json& observability,
                              std::string& backend_code);

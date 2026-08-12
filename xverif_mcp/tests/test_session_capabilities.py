@@ -15,7 +15,7 @@ def test_xdebug_and_xcov_expose_symmetric_managed_lifecycle_with_different_nativ
 
     assert debug.native_open_action == cov.native_open_action == "session.open"
     assert debug.native_close_action == cov.native_close_action == "session.close"
-    assert debug.native_kill_action == "session.kill"
+    assert debug.native_kill_action == "session.close"
     assert debug.native_gc_action == "session.gc"
     assert debug.backend_survives_loop is True
     assert debug.fixed_admin_path is True

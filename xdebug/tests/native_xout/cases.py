@@ -74,7 +74,6 @@ CASES = (
     case("session.close", "W", {}, "disposable_session", "session"),
     case("session.doctor", "W", {}, None, "session"),
     case("session.gc", args={}, error_family="policy"),
-    case("session.kill", "W", {}, "disposable_session", "session"),
     case("session.list", args={}, error_family="catalog"),
     case("session.open", "W", {"name": "primary_session_open"}, "open_action", "resource/session"),
     case("signal.anomaly.inspect", "E", {"signals": ["xif_event_top.xz_data"], "time_range": {"begin": "0ns", "end": "200ns"}, "checks": [{"type": "unknown_xz"}], "line_limit": 4}, error_family="signal/check"),

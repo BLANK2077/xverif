@@ -59,10 +59,9 @@ METHOD_PARAM_CONTRACTS: dict[str, dict[str, Any]] = {
         "any_of": (),
     },
     "debug.session.close": {
-        "required": {"session_id": str}, "optional": {}, "any_of": (),
-    },
-    "debug.session.kill": {
-        "required": {"session_id": str}, "optional": {}, "any_of": (),
+        "required": {"session_id": str},
+        "optional": {"mode": str},
+        "any_of": (),
     },
     "debug.session.gc": {
         "required": {}, "optional": {"verbose": bool}, "any_of": (),
@@ -324,15 +323,23 @@ class LoopWrapperService:
                 verbose=params.get("verbose", False),
             )
         if method == "debug.session.close":
-            return self.debug.close_session(_required_str(params, "session_id"))
-        if method == "debug.session.kill":
             session_id = _required_str(params, "session_id")
             if session_id == "all":
                 return _error(
                     "INVALID_ARGUMENT",
                     "all is not supported; provide one exact session_id",
                 )
-            return self.debug.kill_session(session_id)
+            mode = params.get("mode", "graceful")
+            if mode not in {"graceful", "force"}:
+                return _error(
+                    "INVALID_ARGUMENT",
+                    "mode must be graceful or force",
+                )
+            return (
+                self.debug.kill_session(session_id)
+                if mode == "force"
+                else self.debug.close_session(session_id)
+            )
         if method == "debug.session.gc":
             return self.debug.gc_sessions(
                 verbose=params.get("verbose", False)

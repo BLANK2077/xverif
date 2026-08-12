@@ -10,6 +10,9 @@ namespace xdebug {
 
 struct SessionRecord {
     std::string id;
+    // Canonical registry lifecycle state.  Frontend discovery must preserve
+    // this fact instead of flattening opening/active/cleanup_failed records.
+    std::string lifecycle_state;
     std::string mode;
     std::string daidir;
     std::string fsdb;
@@ -78,5 +81,10 @@ private:
 };
 
 Json session_record_json(const SessionRecord& record);
+Json session_list_record_json(
+    const SessionRecord& record,
+    bool verbose,
+    bool expired,
+    const std::string& recommended_action);
 
 } // namespace xdebug

@@ -1,0 +1,34 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "session.list",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
+  "summary": {
+    "session_count": 1,
+    "expired_count": 1,
+    "verbose": true
+  },
+  "data": {
+    "sessions": [
+      {
+        "session_id": "case_expired",
+        "mode": "waveform",
+        "transport": "uds",
+        "lifecycle_state": "terminated_on_timeout",
+        "expired": true,
+        "recommended_action": "session.gc",
+        "last_active": 1,
+        "fsdb": "waves.fsdb",
+        "socket_path": "session-endpoints/case_expired.sock",
+        "server_host": "localhost",
+        "server_pid": 12345,
+        "created_at": 1
+      }
+    ]
+  },
+  "error": null
+}

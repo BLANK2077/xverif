@@ -204,7 +204,11 @@ Common actions
 
   Session:
       session.open, session.list, session.doctor,
-      session.kill, session.close, session.gc
+      session.close, session.gc
+
+  Session close modes:
+      session.close defaults to args.mode=graceful. Use args.mode=force only
+      for stale or unhealthy state that cannot complete graceful shutdown.
 
   Design:
       trace.driver, trace.load, expr.normalize

@@ -36,7 +36,6 @@ RETIRED_RESPONSE_FIELDS = {"driver_last_change_time"}
 RETIRED_ERROR_SUGGESTION_FIELDS = {
     "allowed_values",
     "candidates",
-    "did_you_mean",
     "suggested_actions",
     "suggestions",
 }
@@ -45,7 +44,6 @@ SESSION_ACTIONS = {
     "session.list",
     "session.doctor",
     "session.close",
-    "session.kill",
     "session.gc",
 }
 LIVE_SESSION_ACTIONS = {"session.open", "session.doctor"}
@@ -56,7 +54,7 @@ SESSION_SUCCESS_SHAPES = {
         {"run_manifest"},
     ),
     "session.list": (
-        {"session_count", "expired_removed_count"},
+        {"session_count", "expired_count", "verbose"},
         {"sessions"},
     ),
     "session.doctor": (
@@ -319,13 +317,14 @@ def _audit_session_success(
                 f"{sorted(allowed_data)} and include "
                 f"{sorted(required_data)}, got {sorted(data_fields)}"
             )
-    elif action in {"session.close", "session.kill"}:
+    elif action == "session.close":
         single = (
             set(summary) == {"removed"}
             and set(data) == {"removed_session"}
         )
         bulk = (
-            set(summary) == {"requested_count", "removed_count"}
+            set(summary)
+            == {"requested_count", "removed_count", "retained_count"}
             and set(data) == {"removed_sessions"}
         )
         if not (single or bulk):
@@ -346,7 +345,6 @@ def _audit_session_success(
             )
     elif action == "session.list":
         sessions = data.get("sessions")
-        removed = data.get("removed", [])
         errors.extend(
             _audit_count_equals_length(
                 path,
@@ -357,32 +355,17 @@ def _audit_session_success(
                 "data.sessions",
             )
         )
-        errors.extend(
-            _audit_count_equals_length(
-                path,
-                action,
-                summary,
-                "expired_removed_count",
-                removed,
-                "data.removed",
-            )
-        )
-        if "removed" in data and removed == []:
+        expired_count = summary.get("expired_count")
+        if not isinstance(expired_count, int) or expired_count < 0:
             errors.append(
-                f"{path}: session.list data.removed must be omitted when no "
-                "expired session was removed"
+                f"{path}: session.list summary.expired_count must be a "
+                "non-negative integer"
             )
-        errors.extend(
-            _audit_unique_disjoint_session_sets(
-                path,
-                action,
-                "data.sessions",
-                _session_ids(sessions),
-                "data.removed",
-                _removed_session_ids(removed),
+        if not isinstance(summary.get("verbose"), bool):
+            errors.append(
+                f"{path}: session.list summary.verbose must be boolean"
             )
-        )
-    elif action in {"session.close", "session.kill"}:
+    elif action == "session.close":
         if set(data) == {"removed_session"}:
             if summary.get("removed") is not True:
                 errors.append(

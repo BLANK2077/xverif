@@ -30,7 +30,7 @@ COMMON_DESCRIPTIONS = {
     "signal": "Final leaf signal path. Aggregate, array, and struct roots are not expanded automatically.",
     "signals": "Signal-path list or alias-to-path/expression map. Expressions must reference aliases rather than nested paths.",
     "output": "Export destination and rendering controls. path, file_format, and verbose are supported only where this action declares them.",
-    "ownership_token": "Optional caller-supplied conditional-cleanup token for a managed wrapper. The frontend binds a fail-closed internally generated token when session.open omits it; when supplied to session.kill it must match, while omission preserves explicit administrative cleanup semantics. It is never a response, error, or logging field.",
+    "ownership_token": "Optional caller-supplied conditional-cleanup token for a managed wrapper. The frontend binds a fail-closed internally generated token when session.open omits it; when supplied to session.close it is allowed only with mode=force and one exact session id, and must match. Omission preserves explicit administrative cleanup semantics. It is never a response, error, or logging field.",
     "name": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs.",
     "mode": "Action processing or return mode. Its legal values, default, and interactions are action-specific.",
     "query": "Closed query selector; use only the index, channel, time, or filter branches declared by this action's schema.",

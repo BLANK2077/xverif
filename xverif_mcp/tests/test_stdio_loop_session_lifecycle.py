@@ -626,7 +626,7 @@ class TestFixedNativeAdminPath:
         requests = _read_ndjson(capture_path)
         assert [request["action"] for request in requests] == [
             "session.doctor",
-            "session.kill",
+            "session.close",
         ]
         assert requests[0] == {
             "api_version": "xdebug.v1",
@@ -635,9 +635,9 @@ class TestFixedNativeAdminPath:
         }
         assert requests[1] == {
             "api_version": "xdebug.v1",
-            "action": "session.kill",
+            "action": "session.close",
             "target": {"session_id": "native-session"},
-            "args": {"ownership_token": token},
+            "args": {"mode": "force", "ownership_token": token},
         }
         assert token not in json.dumps(doctor, sort_keys=True)
         assert token not in json.dumps(killed, sort_keys=True)

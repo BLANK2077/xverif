@@ -57,8 +57,8 @@
     ],
     "alternatives": [
       {
-        "action": "session.kill",
-        "when": "Force removal of one explicit session."
+        "action": "session.close",
+        "when": "Close one explicit session with args.mode=force."
       },
       {
         "action": "session.doctor",

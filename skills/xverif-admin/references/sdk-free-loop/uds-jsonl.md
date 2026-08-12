@@ -41,7 +41,7 @@ tools/xverif-loop-client --socket <repo>/tmp/xverif-loop.sock --json \
 - `debug.session.list`
 - `debug.session.doctor`
 - `debug.session.close`
-- `debug.session.kill`
+- `debug.session.close`（`mode=graceful|force`）
 - `debug.session.gc`
 - `debug.query`
 - `cov.session.open`

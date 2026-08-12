@@ -9,7 +9,6 @@ session 系统用于复用 daidir、fsdb、engine 和 transport 资源。session
 - `session.open`
 - `session.list`
 - `session.close`
-- `session.kill`
 - `session.gc`
 - `session.doctor`
 
@@ -17,7 +16,8 @@ session 系统用于复用 daidir、fsdb、engine 和 transport 资源。session
 
 - `session.open` 的 `args.name` 必填。
 - 后续原生 request 使用 `target.session_id` 选择 session。
-- `session.close` 和 `session.kill` 的公开合同使用 `target.session_id`。
+- `session.close` 使用 `target.session_id`，`args.mode=graceful|force`，默认 graceful。
+- `ownership_token` 只允许 force 且单一精确 session id；`all` 禁止 token。
 - `session.gc` 不接受随意清理参数，按 schema 调用。
 - `session.doctor` 用于诊断当前 session 资源、transport 和 backend 状态。
 
@@ -29,9 +29,8 @@ session 系统用于复用 daidir、fsdb、engine 和 transport 资源。session
 2. frontend session catalog 记录 name/session_id 和资源。
 3. 需要 engine 的资源打开 backend session。
 4. engine transport ready 后，query 可复用 session。
-5. `session.close` 正常释放资源。
-6. `session.kill` 用于异常残留清理。
-7. `session.gc` 清理过期或不可用项。
+5. `session.close` 默认 graceful 释放资源；异常残留显式使用 `mode=force`。
+6. `session.gc` 清理过期或不可用项。
 
 ## Frontend 与 Backend Session
 
@@ -49,7 +48,7 @@ backend session：
 
 - frontend/backend 映射必须可诊断。
 - backend crash 后 frontend 不得假装 session 仍健康。
-- close/kill 必须处理部分失败并保留错误上下文。
+- close graceful/force 必须处理部分失败并保留错误上下文。
 
 ## SESSION_LOST
 
@@ -114,8 +113,7 @@ MCP debug 工具：
 - query：`xverif_debug_query(session_id, action, args=None, ...)`
 - list：`xverif_debug_session_list(include_tombstones=False, verbose=False)`
 - doctor：`xverif_debug_session_doctor(name=..., session_id=..., verbose=False)`
-- close：`xverif_debug_session_close(name=..., session_id=...)`
-- kill：`xverif_debug_session_kill(name=..., session_id=...)`
+- close：`xverif_debug_session_close(session_id=..., mode="graceful|force")`
 - gc：`xverif_debug_session_gc(verbose=False)`
 
 MCP coverage 工具使用对称的 `xverif_cov_session_open/list/doctor/close/kill/gc`，query 参数名为 `session`。
@@ -125,8 +123,8 @@ MCP coverage 工具使用对称的 `xverif_cov_session_open/list/doctor/close/ki
 - MCP 参数名必须映射到原生 `target.session_id`。
 - batch nested args 中，outer args 是 MCP tool 参数，inner args 是 xdebug action 参数。
 - debug/cov query 禁止调用 native `session.*`；coverage 的 `session.status` 使用 `xverif_cov_session_doctor`。
-- doctor 只读，不自动重连、重启或 reopen；kill 只接受一个精确 session，不支持 `all`。
-- SESSION_LOST 后先查看 tombstone 并 doctor；xdebug detached engine 未确认清理前不得同名 reopen，精确 kill 后由 gc 删除 closed tombstone。
+- doctor 只读，不自动重连、重启或 reopen；MCP close 只接受一个精确 session，不支持 `all`。
+- SESSION_LOST 后先查看 tombstone 并 doctor；xdebug detached engine 未确认清理前不得同名 reopen，精确 force close 后由 gc 删除 closed tombstone。
 - xdebug dead loop 使用固定 native admin path；xcov backend 随 loop 退出。能力差异来自 capability 表，不允许失败后改 transport/backend。
 - public record 默认 compact；只有 `verbose=true` 返回 PID、job、完整资源路径和分层清理诊断。
 

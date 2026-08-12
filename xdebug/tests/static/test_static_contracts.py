@@ -128,10 +128,7 @@ def _discover_frontend_runtime_consumers() -> dict[str, str]:
         actual[action] = (
             f"xdebug::Dispatcher::handle_session[action={action}]"
         )
-    assert (
-        'if (action == "session.kill" || action == "session.close")'
-        in dispatcher_session
-    )
+    assert 'if (action == "session.close")' in dispatcher_session
     actual["session.close"] = (
         "xdebug::Dispatcher::handle_session[action=session.close]"
     )
@@ -142,7 +139,7 @@ def _discover_frontend_runtime_consumers() -> dict[str, str]:
         "\nOrderedJson handle_engine_forward(", 1
     )[0]
     assert "ContractBoundRequest& bound_request" in session_consumer
-    for action in ("session.open", "session.doctor", "session.kill"):
+    for action in ("session.open", "session.doctor", "session.close"):
         assert f'if (action == "{action}")' in session_consumer
         actual[action] = (
             "xdebug/src/engine/engine_query.cpp"
@@ -1595,16 +1592,12 @@ def test_session_success_responses_have_one_canonical_fact_owner() -> None:
         ),
         "session.list": (
             "session.list.basic.json",
-            "session.list.expired_removed.json",
+            "session.list.verbose.json",
         ),
         "session.doctor": ("session.doctor.basic.json",),
         "session.close": (
             "session.close.basic.json",
             "session.close.all.json",
-        ),
-        "session.kill": (
-            "session.kill.basic.json",
-            "session.kill.all.json",
         ),
         "session.gc": ("session.gc.basic.json",),
     }
@@ -1630,9 +1623,7 @@ def test_session_success_responses_have_one_canonical_fact_owner() -> None:
             assert response["session"] is None
             false_live_context = json.loads(json.dumps(response))
             if action == "session.list":
-                record = response["data"].get(
-                    "removed", [{"removed_session": None}]
-                )[0]["removed_session"]
+                record = response["data"]["sessions"][0]
             elif action == "session.gc":
                 record = response["data"]["kept_sessions"][0]
             elif "removed_session" in response["data"]:
@@ -1646,7 +1637,7 @@ def test_session_success_responses_have_one_canonical_fact_owner() -> None:
         nested_envelope["data"]["backend"] = {
             "api_version": "xdebug.v1",
             "ok": True,
-            "action": "session.kill",
+            "action": "session.close",
         }
         assert not validator.is_valid(nested_envelope)
 
@@ -1654,7 +1645,6 @@ def test_session_success_responses_have_one_canonical_fact_owner() -> None:
         ("session.open", "session.open.basic.json", "status", "existing"),
         ("session.doctor", "session.doctor.basic.json", "healthy", False),
         ("session.close", "session.close.basic.json", "removed", False),
-        ("session.kill", "session.kill.basic.json", "removed", False),
     )
     for action, name, field, value in outcome_mutations:
         response = _response_example(name)
@@ -1664,18 +1654,18 @@ def test_session_success_responses_have_one_canonical_fact_owner() -> None:
     for action, name, field in (
         ("session.list", "session.list.basic.json", "session_count"),
         ("session.close", "session.close.all.json", "requested_count"),
-        ("session.kill", "session.kill.all.json", "removed_count"),
         ("session.gc", "session.gc.basic.json", "before_count"),
     ):
         response = _response_example(name)
         response["summary"][field] = -1
         assert not validators[action].is_valid(response)
 
-    for action in ("session.close", "session.kill"):
+    for action in ("session.close",):
         response = _response_example(f"{action}.all.json")
         response["summary"] = {
             "requested_count": 0,
             "removed_count": 0,
+            "retained_count": 0,
         }
         response["data"]["removed_sessions"] = []
         validators[action].validate(response)
@@ -1712,12 +1702,7 @@ def test_session_success_responses_have_one_canonical_fact_owner() -> None:
 
     audit = _module("audit_json_responses")
     dynamic_count_mutations = []
-    list_mismatch = _response_example(
-        "session.list.expired_removed.json"
-    )
-    list_mismatch["summary"]["session_count"] = 1
-    dynamic_count_mutations.append(list_mismatch)
-    bulk_mismatch = _response_example("session.kill.all.json")
+    bulk_mismatch = _response_example("session.close.all.json")
     bulk_mismatch["summary"]["requested_count"] = 2
     dynamic_count_mutations.append(bulk_mismatch)
     gc_mismatch = _response_example("session.gc.basic.json")
@@ -1745,7 +1730,6 @@ def test_session_success_contracts_do_not_use_witness_inference() -> None:
         "session.list",
         "session.doctor",
         "session.close",
-        "session.kill",
         "session.gc",
     ):
         generator.response_schema(entries[action])
@@ -2223,7 +2207,7 @@ def test_managed_session_ownership_token_is_sensitive_and_action_scoped() -> Non
     entries = _action_entries()
     managed_examples = {
         "session.open": "examples/requests/session.open.managed.json",
-        "session.kill": "examples/requests/session.kill.managed.json",
+        "session.close": "examples/requests/session.close.managed.json",
     }
     token_shape = {
         "type": "string",

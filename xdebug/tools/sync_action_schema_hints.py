@@ -42,7 +42,7 @@ PARAM_DESCRIPTIONS = {
     "name": "已保存配置、游标、列表或接口配置名称。",
     "op": "游标移动或协议浏览操作。",
     "output": "导出配置对象；路径统一使用 output.path。",
-    "ownership_token": "managed wrapper 可选提供并复用的 64 个小写十六进制字符（256 bit）conditional-cleanup token，不是授权；session.open 省略时 frontend 仍会 fail-closed 地生成内部 token 并绑定 digest；session.kill 提供时必须匹配，省略时不改变既有显式管理语义；禁止记录、回显或人工构造。",
+    "ownership_token": "managed wrapper 可选提供并复用的 64 个小写十六进制字符（256 bit）conditional-cleanup token，不是授权；session.open 省略时 frontend 仍会 fail-closed 地生成内部 token 并绑定 digest；仅允许 session.close 的 mode=force 且精确单一 session_id 提供，提供时必须匹配，对 all 拒绝；禁止记录、回显或人工构造。",
     "query": "stream 查询条件。",
     "ready": "valid-ready 握手中的 ready 信号路径。",
     "requests": "batch action 中按顺序执行的 request 列表。",

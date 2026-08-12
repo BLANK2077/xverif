@@ -520,7 +520,7 @@ def test_active_trace_semantic_branches_and_gates(
         cli_runner.run(
             {
                 "api_version": "xdebug.v1",
-                "action": "session.kill",
+                "action": "session.close", "args": {"mode": "force"},
                 "target": {"session_id": session_id},
             },
             timeout_sec=60,

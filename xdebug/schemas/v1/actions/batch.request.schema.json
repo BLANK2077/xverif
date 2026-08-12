@@ -90,7 +90,14 @@
     },
     "limits": {
       "type": "object",
-      "properties": {},
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647,
+          "description": "Total wall-clock budget for the ordered batch. Remaining time is projected into each engine-forward child and no later child starts after the deadline."
+        }
+      },
       "additionalProperties": false
     }
   },

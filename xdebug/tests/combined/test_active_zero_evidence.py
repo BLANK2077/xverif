@@ -83,7 +83,7 @@ def active_zero_evidence_session(
         cli_runner.run(
             {
                 "api_version": "xdebug.v1",
-                "action": "session.kill",
+                "action": "session.close", "args": {"mode": "force"},
                 "target": {"session_id": session_id},
             },
             timeout_sec=60,

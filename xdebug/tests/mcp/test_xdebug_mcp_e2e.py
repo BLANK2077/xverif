@@ -115,8 +115,9 @@ def _kill_native_sessions(isolated_home: Path) -> None:
         input=json.dumps(
             {
                 "api_version": "xdebug.v1",
-                "action": "session.kill",
+                "action": "session.close",
                 "target": {"session_id": "all"},
+                "args": {"mode": "force"},
             }
         )
         + "\n",

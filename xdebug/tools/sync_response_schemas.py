@@ -375,6 +375,53 @@ def session_record_schema() -> dict[str, Any]:
     return schema
 
 
+def session_list_record_schema() -> dict[str, Any]:
+    """Return the compact-first, read-only session.list record contract."""
+
+    # session.list compact mode deliberately omits resource paths and endpoint
+    # details, so it must not inherit sessionRecord's mode/transport-dependent
+    # required-field conditions. The same closed property set remains available
+    # as optional verbose detail.
+    schema = session_schema()
+    schema["properties"]["session_id"] = {
+        "type": "string",
+        "minLength": 1,
+    }
+    schema["properties"]["mode"] = {
+        "enum": ["design", "waveform", "combined"]
+    }
+    schema["properties"]["transport"] = {
+        "enum": ["uds", "tcp", "file"]
+    }
+    schema["properties"].update(
+        {
+            "lifecycle_state": {
+                "enum": [
+                    "opening",
+                    "active",
+                    "cleanup_failed",
+                    "terminated_on_timeout",
+                ]
+            },
+            "expired": {"type": "boolean"},
+            "recommended_action": {
+                "enum": ["session.doctor", "session.gc"]
+            },
+            "last_active": {"type": "integer", "minimum": 0},
+        }
+    )
+    schema["required"] = [
+        "session_id",
+        "mode",
+        "transport",
+        "lifecycle_state",
+        "expired",
+        "recommended_action",
+        "last_active",
+    ]
+    return schema
+
+
 def run_manifest_resource_schema() -> dict[str, Any]:
     return closed(
         {
@@ -608,6 +655,7 @@ def error_schema(action: str) -> dict[str, Any]:
         "received_type": {"type": "string"},
         "received_redacted": {"type": "boolean"},
         "available_values": array({"type": "string", "minLength": 1}),
+        "did_you_mean": {"type": "string", "minLength": 1},
         "schema_path": {"type": "string"},
         "required_any_of": array({"type": "string"}),
         "missing_name": {"type": "string"},
@@ -653,6 +701,14 @@ def error_schema(action: str) -> dict[str, Any]:
         "idle_sec": {"type": "integer", "minimum": 0},
         "idle_timeout_sec": {"type": "integer", "minimum": 0},
         "cleanup_succeeded": {"type": "boolean"},
+        "termination_confirmed": {"type": "boolean"},
+        "cancel_state": {"enum": ["confirmed", "unknown"]},
+        "session_state": {
+            "enum": [
+                "cleanup_failed",
+                "terminated_on_timeout",
+            ]
+        },
         "lifecycle_state": {"enum": ["cleanup_failed"]},
         "compensation_status": {
             "enum": [
@@ -669,6 +725,7 @@ def error_schema(action: str) -> dict[str, Any]:
         "resource_path": {"type": "string", "minLength": 1},
         "requested_count": {"type": "integer", "minimum": 0},
         "removed_count": {"type": "integer", "minimum": 0},
+        "retained_count": {"type": "integer", "minimum": 0},
         "failed_session_ids": array(
             {"type": "string", "minLength": 1}
         ),
@@ -2428,7 +2485,7 @@ def issue_schema() -> dict[str, Any]:
 def empty_array_item_schema(action: str, pointer: str) -> dict[str, Any]:
     field = pointer.rsplit("/", 1)[-1]
     if action == "session.list" and pointer == DATA_POINTER + "/sessions":
-        return {"$ref": "#/$defs/sessionRecord"}
+        return {"$ref": "#/$defs/sessionListRecord"}
     if action == "actions" and pointer.startswith(DATA_POINTER + "/modes/"):
         return {"type": "string"}
     if field in {"failed_indexes"}:
@@ -2616,7 +2673,7 @@ def explicit_schema(action: str, pointer: str) -> dict[str, Any] | None:
             ]
         }
     if action == "session.list" and pointer == DATA_POINTER + "/sessions/*":
-        return {"$ref": "#/$defs/sessionRecord"}
+        return {"$ref": "#/$defs/sessionListRecord"}
     return None
 
 
@@ -3718,6 +3775,8 @@ def response_schema(
         session_response_contract_definitions(),
         owner=action,
     )
+    if action in {"session.list", "batch"}:
+        definitions["sessionListRecord"] = session_list_record_schema()
     if action in NON_SAMPLING_RESPONSE_ACTIONS:
         external_definitions = {
             "commonBlock": common_block_schema(),

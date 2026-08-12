@@ -26,7 +26,7 @@ SDK-free wrapper 覆盖与 MCP SDK 对称的 stateful xdebug/xcov session：
 - `debug.session.list`
 - `debug.session.doctor`
 - `debug.session.close`
-- `debug.session.kill`
+- `debug.session.close`（`mode=graceful|force`）
 - `debug.session.gc`
 - `debug.query`
 - `cov.session.open/list/doctor/close/kill/gc/query`

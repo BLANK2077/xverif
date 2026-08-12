@@ -163,6 +163,7 @@ def test_event_find_preserves_canonical_json_and_flat_xout(
         _query(
             binary,
             tmp_path,
-            "session.kill",
+            "session.close",
+            args={"mode": "force"},
             target={"session_id": "all"},
         )

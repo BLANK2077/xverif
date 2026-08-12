@@ -9,6 +9,7 @@
 #include "core/logging/action_log.h"
 #include "core/npi/time_contract.h"
 #include "core/session/session_timeout.h"
+#include "core/session/request_deadline.h"
 #include "core/schema/internal_request_contract.h"
 #include "core/schema/runtime_schema_validator.h"
 #include "core/transport/file_exchange.h"
@@ -43,6 +44,7 @@
 #include <thread>
 #include <ctime>
 #include <exception>
+#include <mutex>
 
 #include "npi.h"
 #include "npi_fsdb.h"
@@ -80,6 +82,10 @@ static int g_crash_fd = -1;
 static char g_crash_prefix[512] = {};
 static char g_current_action[128] = {};
 static char g_current_request_id[128] = {};
+// A session process owns exactly one vendor NPI context.  Keep data actions
+// strictly serialized even if a future transport implementation dispatches
+// accepted clients concurrently.
+static std::mutex g_npi_request_mutex;
 
 static void touch_current_generation(
     xdebug_engine::SessionRegistry& registry,
@@ -696,9 +702,10 @@ static bool handle_client(int client_fd, bool& should_quit) {
         request, action, true);
     auto args = bound_request.args();
     auto limits = bound_request.limits();
+    int request_timeout_ms = 0;
     if (limits.contains("timeout_ms")) {
-        limits["timeout_ms"].consume(
-            "engine_transport_timeout");
+        request_timeout_ms = limits["timeout_ms"].get<int>();
+        limits["timeout_ms"].consume("engine_request_deadline");
     }
 
     xdebug_core::TimeRenderOptions time_render_options;
@@ -715,8 +722,6 @@ static bool handle_client(int client_fd, bool& should_quit) {
     }
     xdebug_core::ScopedTimeRenderOptions time_render_scope(time_render_options);
 
-    ActionResourceScope resources;
-    EngineActionContext ctx(g_session_id, action, resources);
     std::string value_format = args.value("value_format", std::string("hex"));
     xdebug_core::ValueRenderFormat render_format =
         xdebug_core::ValueRenderFormat::Hex;
@@ -724,7 +729,29 @@ static bool handle_client(int client_fd, bool& should_quit) {
     xdebug_core::ScopedValueRenderFormat value_render_scope(render_format);
     Json data;
     try {
+        std::lock_guard<std::mutex> execution_guard(
+            g_npi_request_mutex);
+        // The resource scope lives inside the guarded try block so all owned
+        // vendor handles are released before a cooperative timeout is
+        // reported as confirmed to the caller.
+        ActionResourceScope resources;
+        EngineActionContext ctx(g_session_id, action, resources);
+        xdebug_core::ScopedRequestDeadline deadline(
+            request_timeout_ms);
+        xdebug_core::request_deadline_checkpoint();
         data = h->run(bound_request, ctx);
+        xdebug_core::request_deadline_checkpoint();
+    } catch (const xdebug_core::RequestDeadlineExceeded& e) {
+        Json timeout_error =
+            xdebug_core::DiagnosticErrorBuilder::handler(
+                "ENGINE_TIMEOUT", e.what())
+                .to_json();
+        timeout_error["cancel_state"] = "confirmed";
+        timeout_error["session_state"] = "active";
+        timeout_error["cleanup_succeeded"] = true;
+        timeout_error["termination_confirmed"] = false;
+        return send_response(
+            client_fd, error_response(timeout_error));
     } catch (const std::exception& e) {
         return send_response(client_fd, error_response(
             "INTERNAL_ENGINE_EXCEPTION",
@@ -765,6 +792,11 @@ int server_main(int argc, char** argv) {
         fprintf(stderr, "Server mode requires session_id argument\n");
         return 1;
     }
+
+    // A client may leave after its public deadline while the server is still
+    // unwinding cooperatively.  Convert the late response into EPIPE rather
+    // than letting SIGPIPE terminate the engine outside lifecycle accounting.
+    signal(SIGPIPE, SIG_IGN);
 
     int arg_idx = 1;
 

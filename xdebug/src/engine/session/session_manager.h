@@ -21,6 +21,7 @@ enum class SessionHealthStatus {
     RegistryInvalid,
     Opening,
     CleanupFailed,
+    TerminatedOnTimeout,
     ProcessExited,
     SocketMissing,
     ConnectFailed,
@@ -71,6 +72,11 @@ enum class SessionCleanupStatus {
     CleanupFailed
 };
 
+enum class SessionCloseMode {
+    Graceful,
+    Force
+};
+
 struct SessionCleanupResult {
     SessionCleanupStatus status = SessionCleanupStatus::CleanupFailed;
     bool cleanup_succeeded = false;
@@ -81,6 +87,15 @@ struct SessionCleanupResult {
         return status == SessionCleanupStatus::Cleaned &&
                cleanup_succeeded;
     }
+};
+
+struct SessionTimeoutContainmentResult {
+    bool termination_confirmed = false;
+    bool cleanup_succeeded = false;
+    std::string cancel_state = "unknown";
+    std::string session_state = "cleanup_failed";
+    std::string message;
+    SessionInfo info;
 };
 
 struct SessionTransportOptions {
@@ -131,11 +146,28 @@ public:
         const SessionTransportOptions& transport,
         const std::string& ownership_token_hash);
 
-    // Kill a specific session through the unified engine server.
+    // Close a specific session.  Graceful mode never sends a signal and
+    // retains managed evidence unless process exit is proven.  Force mode may
+    // terminate the generation-matched local engine process from outside its
+    // NPI context.
+    SessionCleanupResult close_session(
+        const std::string& session_id,
+        SessionCloseMode mode,
+        const SessionCleanupPrecondition& precondition =
+            SessionCleanupPrecondition());
+
+    // Compatibility wrapper for internal callers that require hard cleanup.
     SessionCleanupResult kill_session(
         const std::string& session_id,
         const SessionCleanupPrecondition& precondition =
             SessionCleanupPrecondition());
+
+    // Stop a generation after its public request deadline without deleting
+    // the canonical record.  A confirmed stop is retained as the
+    // terminated_on_timeout diagnostic tombstone.
+    SessionTimeoutContainmentResult terminate_on_timeout(
+        const std::string& session_id,
+        const std::string& expected_generation);
 
     // Kill all sessions
     bool kill_all_sessions();
@@ -205,7 +237,8 @@ private:
     bool wait_for_session_process_exit(pid_t pid, int timeout_ms);
     bool terminate_spawned_child(pid_t pid, int timeout_ms);
     SessionCleanupResult cleanup_session_locked(
-        SessionInfo session);
+        SessionInfo session,
+        SessionCloseMode mode);
     SessionHealth diagnose_session_locked(
         const SessionInfo& session);
 };

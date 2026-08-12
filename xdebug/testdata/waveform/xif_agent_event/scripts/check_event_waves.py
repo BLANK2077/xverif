@@ -157,7 +157,7 @@ def main():
             counts, len(findings)))
     finally:
         try:
-            query(args.xdebug, home, "session.kill", target={"session_id": "all"})
+            query(args.xdebug, home, "session.close", args={"mode": "force"}, target={"session_id": "all"})
         except Exception:
             pass
         shutil.rmtree(str(home), ignore_errors=True)

@@ -128,7 +128,7 @@ def test_mcp_tools_list(monkeypatch: pytest.MonkeyPatch):
     assert "xverif_debug_session_doctor" in names
     assert "xverif_debug_session_use" not in names
     assert "xverif_debug_session_close" in names
-    assert "xverif_debug_session_kill" in names
+    assert "xverif_debug_session_kill" not in names
     assert "xverif_debug_session_gc" in names
     assert "xverif_cov_session_list" in names
     assert "xverif_cov_session_doctor" in names
@@ -186,7 +186,6 @@ def test_debug_lifecycle_uses_only_required_session_id(
     for name in (
         "xverif_debug_session_doctor",
         "xverif_debug_session_close",
-        "xverif_debug_session_kill",
     ):
         schema = schemas[name]
         assert schema["additionalProperties"] is False

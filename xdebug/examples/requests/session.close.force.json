@@ -1,8 +1,10 @@
 {
   "api_version": "xdebug.v1",
-  "action": "session.kill",
+  "action": "session.close",
   "target": {
     "session_id": "case_a"
   },
-  "args": {}
+  "args": {
+    "mode": "force"
+  }
 }

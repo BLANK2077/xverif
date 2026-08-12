@@ -194,13 +194,9 @@ def test_session_contract_definitions_are_compact_evidence_only() -> None:
 def test_session_success_contracts_are_explicit_correlated_variants() -> None:
     expected = {
         "session.open": {"opened"},
-        "session.list": {
-            "without_expired_cleanup",
-            "with_expired_cleanup",
-        },
+        "session.list": {"listed"},
         "session.doctor": {"healthy"},
         "session.close": {"single", "bulk_empty", "bulk_populated"},
-        "session.kill": {"single", "bulk_empty", "bulk_populated"},
         "session.gc": {
             "empty",
             "kept_only",
@@ -245,7 +241,7 @@ def test_session_cleanup_reason_and_evidence_are_correlated() -> None:
     nested_envelope["result"] = {
         "api_version": "xdebug.v1",
         "ok": True,
-        "action": "session.kill",
+        "action": "session.close",
     }
     assert not validator.is_valid(nested_envelope)
 
@@ -262,17 +258,11 @@ def test_session_generator_pointer_hook_is_explicit() -> None:
     expected = {
         ("session.close", DATA_POINTER + "/removed_session"):
             "#/$defs/sessionRecord",
-        ("session.kill", DATA_POINTER + "/removed_session"):
-            "#/$defs/sessionRecord",
         ("session.close", DATA_POINTER + "/removed_sessions/*"):
-            "#/$defs/sessionRecord",
-        ("session.kill", DATA_POINTER + "/removed_sessions/*"):
             "#/$defs/sessionRecord",
         ("session.gc", DATA_POINTER + "/kept_sessions/*"):
             "#/$defs/sessionRecord",
         ("session.gc", DATA_POINTER + "/removed/*"):
-            "#/$defs/sessionCleanupItem",
-        ("session.list", DATA_POINTER + "/removed/*"):
             "#/$defs/sessionCleanupItem",
     }
     for (action, pointer), reference in expected.items():
@@ -293,10 +283,9 @@ def test_response_audit_rejects_nested_lifecycle_envelopes_and_derived_stability
     response_dir = XDEBUG / "examples" / "responses"
     for name in (
         "session.open.basic.json",
-        "session.list.expired_removed.json",
+        "session.list.verbose.json",
         "session.doctor.basic.json",
         "session.close.basic.json",
-        "session.kill.all.json",
         "session.gc.basic.json",
         "signal.stability.basic.json",
     ):
@@ -313,7 +302,7 @@ def test_response_audit_rejects_nested_lifecycle_envelopes_and_derived_stability
     close["data"]["backend"] = {
         "api_version": "xdebug.v1",
         "ok": True,
-        "action": "session.kill",
+        "action": "session.close",
     }
     assert any(
         "must not embed a public response envelope" in error
@@ -332,15 +321,7 @@ def test_response_audit_rejects_nested_lifecycle_envelopes_and_derived_stability
         for error in AUDIT.audit_response(stability_path, stability)
     )
 
-    list_path = response_dir / "session.list.expired_removed.json"
-    list_response = json.loads(list_path.read_text(encoding="utf-8"))
-    list_response["summary"]["expired_removed_count"] = 2
-    assert any(
-        "does not match data.removed length" in error
-        for error in AUDIT.audit_response(list_path, list_response)
-    )
-
-    bulk_path = response_dir / "session.kill.all.json"
+    bulk_path = response_dir / "session.close.all.json"
     bulk = json.loads(bulk_path.read_text(encoding="utf-8"))
     bulk["summary"]["requested_count"] = 2
     assert any(

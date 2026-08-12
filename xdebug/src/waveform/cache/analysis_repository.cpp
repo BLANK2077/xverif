@@ -2,6 +2,7 @@
 
 #include "analysis_probe.h"
 #include "core/common/sha256.h"
+#include "core/session/request_deadline.h"
 
 #include <cerrno>
 #include <cctype>
@@ -282,6 +283,7 @@ bool AnalysisRepository::make_hard_room(
                    nullptr, nullptr, excluded_stream_ranges_for_full),
                new_charge) >
            config_.hard_max_bytes) {
+        xdebug_core::request_deadline_checkpoint();
         if (evict_cold_index(
                 protected_index, protected_canonical, "hard_limit",
                 preserve_stream_ranges_for_full))
@@ -301,6 +303,7 @@ void AnalysisRepository::enforce_soft_budget(
     const IndexKey* protected_index) {
     if (config_.soft_max_bytes == 0) return;
     while (current_charged_bytes(nullptr, nullptr) > config_.soft_max_bytes) {
+        xdebug_core::request_deadline_checkpoint();
         if (evict_cold_index(protected_index, protected_canonical, "soft_lru"))
             continue;
         if (evict_cold_canonical(protected_canonical, "soft_lru")) continue;
@@ -315,6 +318,7 @@ bool AnalysisRepository::evict_cold_index(
     const AnalysisCacheKey* preserve_stream_ranges_for_full) {
     auto candidate = indexes_.end();
     for (auto it = indexes_.begin(); it != indexes_.end(); ++it) {
+        xdebug_core::request_deadline_checkpoint();
         if (it->second.state != ObjectState::Ready) continue;
         if (protected_index != nullptr && it->first == *protected_index) continue;
         if (preserve_stream_ranges_for_full != nullptr &&
@@ -354,6 +358,7 @@ bool AnalysisRepository::evict_cold_canonical(
     for (CanonicalStore* store : {&apb_entries_, &axi_entries_,
                                   &stream_entries_}) {
         for (auto it = store->begin(); it != store->end(); ++it) {
+            xdebug_core::request_deadline_checkpoint();
             if (it->second.state != ObjectState::Ready) continue;
             if (protected_canonical != nullptr &&
                 it->first == *protected_canonical)
@@ -848,9 +853,12 @@ void AnalysisRepository::invalidate(const AnalysisCacheKey& key,
 
 void AnalysisRepository::clear(const std::string& reason) {
     for (CanonicalStore* store : {&apb_entries_, &axi_entries_,
-                                  &stream_entries_})
-        while (!store->empty())
+                                  &stream_entries_}) {
+        while (!store->empty()) {
+            xdebug_core::request_deadline_checkpoint();
             erase_canonical_internal(store->begin()->first, reason, true);
+        }
+    }
     indexes_.clear();
     cursors_.clear();
     stream_bindings_.clear();
@@ -872,6 +880,7 @@ void AnalysisRepository::notify_stream_config_changes(
         changes) {
     std::set<std::string> old_digests;
     for (const auto& change : changes) {
+        xdebug_core::request_deadline_checkpoint();
         const std::string& name = std::get<0>(change);
         const std::string& old_digest = std::get<1>(change);
         const std::string& new_digest = std::get<2>(change);
@@ -880,6 +889,7 @@ void AnalysisRepository::notify_stream_config_changes(
             old_digests.insert(old_digest);
     }
     for (const std::string& old_digest : old_digests) {
+        xdebug_core::request_deadline_checkpoint();
         bool still_bound = false;
         for (const auto& binding : stream_bindings_[session_id]) {
             if (binding.second == old_digest) {

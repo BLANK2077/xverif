@@ -382,11 +382,23 @@ SessionRegistryResult SessionRegistry::update_opening(
 SessionRegistryResult SessionRegistry::mark_cleanup_failed(
     const SessionInfo& session,
     const std::string& expected_generation) {
-    if (session.lifecycle_state != "cleanup_failed" ||
+    if (session.lifecycle_state != "cleanup_failed") {
+        return {
+            SessionRegistryStatus::Invalid,
+            "cleanup failure must use lifecycle_state=cleanup_failed"};
+    }
+    return mark_terminal_state(session, expected_generation);
+}
+
+SessionRegistryResult SessionRegistry::mark_terminal_state(
+    const SessionInfo& session,
+    const std::string& expected_generation) {
+    if ((session.lifecycle_state != "cleanup_failed" &&
+         session.lifecycle_state != "terminated_on_timeout") ||
         session.generation != expected_generation) {
         return {
             SessionRegistryStatus::Invalid,
-            "cleanup failure must preserve the expected generation"};
+            "terminal session state must preserve the expected generation"};
     }
     int lock_fd = acquire_registry_lock();
     if (lock_fd < 0) {
@@ -407,7 +419,7 @@ SessionRegistryResult SessionRegistry::mark_cleanup_failed(
             release_registry_lock(lock_fd);
             return {
                 SessionRegistryStatus::GenerationMismatch,
-                "cleanup failure generation no longer matches registry"};
+                "terminal state generation no longer matches registry"};
         }
         current = session;
         found = true;
@@ -417,7 +429,7 @@ SessionRegistryResult SessionRegistry::mark_cleanup_failed(
         release_registry_lock(lock_fd);
         return {
             SessionRegistryStatus::NotFound,
-            "cleanup failure generation is not in registry"};
+            "terminal state generation is not in registry"};
     }
     bool saved = save_all_unlocked(sessions);
     if (!saved) {
@@ -440,7 +452,7 @@ SessionRegistryResult SessionRegistry::mark_cleanup_failed(
         ? SessionRegistryResult()
         : SessionRegistryResult(
               SessionRegistryStatus::IoError,
-              "failed to preserve cleanup failure generation");
+              "failed to preserve terminal session generation");
 }
 
 SessionRegistryResult SessionRegistry::touch_if_generation(

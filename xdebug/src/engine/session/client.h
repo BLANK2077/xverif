@@ -12,7 +12,8 @@ bool send_request_capture(const std::string& session_id,
                           Json& data,
                           std::string& status,
                           std::string& message,
-                          Json& engine_error);
+                          Json& engine_error,
+                          Json& timeout_containment);
 bool session_ping(const std::string& session_id);
 
 } // namespace xdebug_engine

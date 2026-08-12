@@ -71,6 +71,19 @@ int main() {
         record("wave", "", "fixtures/waves.fsdb");
     bound_wave["ownership_token_hash"] =
         std::string(64, 'a');
+    xdebug::Json opening_tcp =
+        record("opening_tcp", "fixtures/opening.daidir", "", "tcp");
+    opening_tcp["lifecycle_state"] = "opening";
+    opening_tcp["port"] = 0;
+    opening_tcp["server_pid"] = 0;
+    xdebug::Json cleanup_failed =
+        record("cleanup_failed", "", "fixtures/cleanup.fsdb");
+    cleanup_failed["lifecycle_state"] = "cleanup_failed";
+    cleanup_failed["server_pid"] = 0;
+    xdebug::Json terminated =
+        record("terminated", "", "fixtures/terminated.fsdb");
+    terminated["lifecycle_state"] = "terminated_on_timeout";
+    terminated["server_pid"] = 0;
     write_registry(registry_path, {
         {"version", 2},
         {"sessions", xdebug::Json::array({
@@ -79,6 +92,9 @@ int main() {
             record("combined", "fixtures/simv.daidir", "fixtures/waves.fsdb"),
             record("file_transport", "", "fixtures/file.fsdb", "file"),
             record("tcp_transport", "fixtures/tcp.daidir", "", "tcp"),
+            opening_tcp,
+            cleanup_failed,
+            terminated,
         })}
     });
 
@@ -91,12 +107,13 @@ int main() {
     std::vector<xdebug::SessionRecord> records;
     xdebug::SessionCatalogResult result = catalog.list(records);
     assert(result.ok());
-    assert(records.size() == 5);
+    assert(records.size() == 8);
 
     xdebug::SessionRecord current;
     result = catalog.get("wave", current);
     assert(result.ok());
     assert(current.mode == "waveform");
+    assert(current.lifecycle_state == "active");
     assert(current.fsdb == "fixtures/waves.fsdb");
     assert(current.socket_path == "fixtures/wave.sock");
     assert(current.server_pid == 123);
@@ -109,10 +126,61 @@ int main() {
     assert(!public_record.contains("fsdb_file"));
     assert(!public_record.contains("ownership_token_hash"));
 
+    xdebug::Json compact_list_record =
+        xdebug::session_list_record_json(
+            current, false, true, "session.gc");
+    assert(compact_list_record == xdebug::Json({
+        {"session_id", "wave"},
+        {"mode", "waveform"},
+        {"transport", "uds"},
+        {"lifecycle_state", "active"},
+        {"expired", true},
+        {"recommended_action", "session.gc"},
+        {"last_active", 1200},
+    }));
+    assert(!compact_list_record.contains("fsdb"));
+    assert(!compact_list_record.contains("server_pid"));
+    assert(!compact_list_record.contains("socket_path"));
+
+    xdebug::Json verbose_list_record =
+        xdebug::session_list_record_json(
+            current, true, false, "session.doctor");
+    assert(verbose_list_record["fsdb"] == "fixtures/waves.fsdb");
+    assert(verbose_list_record["server_pid"] == 123);
+    assert(verbose_list_record["socket_path"] == "fixtures/wave.sock");
+    assert(verbose_list_record["lifecycle_state"] == "active");
+    assert(verbose_list_record["expired"] == false);
+    assert(verbose_list_record["recommended_action"] == "session.doctor");
+
     result = catalog.get("design", current);
     assert(result.ok() && current.mode == "design");
     result = catalog.get("combined", current);
     assert(result.ok() && current.mode == "combined");
+    result = catalog.get("opening_tcp", current);
+    assert(result.ok());
+    assert(current.lifecycle_state == "opening");
+    assert(current.port == 0);
+    assert(current.server_pid == 0);
+    xdebug::Json opening_list_record =
+        xdebug::session_list_record_json(
+            current, false, false, "session.doctor");
+    assert(opening_list_record["lifecycle_state"] == "opening");
+
+    result = catalog.get("cleanup_failed", current);
+    assert(result.ok());
+    assert(current.lifecycle_state == "cleanup_failed");
+    xdebug::Json failed_list_record =
+        xdebug::session_list_record_json(
+            current, false, false, "session.gc");
+    assert(failed_list_record["recommended_action"] == "session.gc");
+    result = catalog.get("terminated", current);
+    assert(result.ok());
+    assert(current.lifecycle_state == "terminated_on_timeout");
+    xdebug::Json terminated_list_record =
+        xdebug::session_list_record_json(
+            current, false, false, "session.gc");
+    assert(terminated_list_record["expired"] == false);
+    assert(terminated_list_record["recommended_action"] == "session.gc");
     result = catalog.get("missing", current);
     assert(result.status == xdebug::SessionCatalogStatus::NotFound);
     assert(result.code == "SESSION_NOT_FOUND");

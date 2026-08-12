@@ -878,8 +878,11 @@ class XdebugLoopSession:
             }
             if conditional_token:
                 req["args"] = {
+                    "mode": "force",
                     "ownership_token": conditional_token,
                 }
+            elif self.backend == "xdebug":
+                req["args"] = {"mode": "force"}
             _attach_trace_id(req, self.backend, self.alias)
             _request_native_json(req, self.backend)
             try:
@@ -1038,14 +1041,17 @@ class XdebugLoopSession:
             "target": {"session_id": target_session_id},
         }
         if ownership_token:
-            if action != "session.kill":
+            if action != "session.close":
                 return _error(
                     "INVALID_ADMIN_REQUEST",
-                    "conditional cleanup key is only valid for session.kill",
+                    "conditional cleanup key is only valid for force session.close",
                 )
             request["args"] = {
+                "mode": "force",
                 "ownership_token": ownership_token,
             }
+        elif self.backend == "xdebug" and action == "session.close":
+            request["args"] = {"mode": "force"}
         try:
             proc = subprocess.run(
                 [self.xdebug_bin, "--json", "-"],

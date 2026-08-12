@@ -14,7 +14,7 @@ bool has_string_field(const Json& object, const std::string& field) {
 }
 
 bool is_missing_session_selector(const RequestEnvelope& request) {
-    if (request.action != "session.close" && request.action != "session.kill") return false;
+    if (request.action != "session.close") return false;
     if (has_string_field(request.target, "session_id")) return false;
     return true;
 }

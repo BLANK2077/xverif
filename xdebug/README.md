@@ -242,8 +242,7 @@ MCP client 配置示例（direct 模式）：
 - `xverif_debug_session_open`：打开命名 session。
 - `xverif_debug_session_list`：列出 managed session；可按需包含 tombstone 或展开诊断字段。
 - `xverif_debug_session_doctor`：只读诊断精确 name/session_id，不自动 reopen。
-- `xverif_debug_session_close`：正常关闭并返回分层 cleanup 结果。
-- `xverif_debug_session_kill`：强制清理一个精确 session；不支持 `all`。
+- `xverif_debug_session_close`：以 `mode=graceful|force` 关闭一个精确 session，并返回分层 cleanup 结果；MCP 不支持 `all`。
 - `xverif_debug_session_gc`：删除已确认终止的 tombstone，未确认 orphan 只报告 unresolved。
 - `xverif_debug_query`：通过 loop session 调用 xdebug action。
 - `xverif_debug_list_actions` / `xverif_debug_get_schema`：查询 action catalog 和 schema。

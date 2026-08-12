@@ -28,8 +28,9 @@ if str(TESTS_ROOT) not in sys.path:
 def _kill_all_sessions_for_home(xdebug_bin: Path, home: Path) -> None:
     request = {
         "api_version": "xdebug.v1",
-        "action": "session.kill",
+        "action": "session.close",
         "target": {"session_id": "all"},
+        "args": {"mode": "force"},
     }
     env = dict(os.environ)
     env.update({"HOME": str(home), "XVERIF_HOME": str(REPO_ROOT)})

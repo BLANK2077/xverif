@@ -85,23 +85,48 @@ int connect_session_endpoint(const SessionInfo& session) {
 
 // --- File transport request ---
 
-bool send_file_request_to_endpoint(
+SessionFileExchangeResult exchange_file_request_with_endpoint(
     const SessionInfo& session,
     const Json& request,
     Json& response,
     const xdebug_core::TransportTimeoutOverrideMs&
         timeout_override_ms) {
-    if (!is_file_transport(session) || session.file_dir.empty()) return false;
+    SessionFileExchangeResult exchange;
+    if (!is_file_transport(session) || session.file_dir.empty()) {
+        exchange.detail_status = "invalid_endpoint";
+        exchange.message = "file transport endpoint is invalid";
+        return exchange;
+    }
     const int effective_timeout_ms =
         xdebug_core::effective_file_transport_request_timeout_ms(
             timeout_override_ms);
     xdebug_core::FileExchangeResult result =
         xdebug_core::file_exchange_send_request(
             session.file_dir, request, effective_timeout_ms);
-    if (!(result.status == "ok" || result.status == "action_error" || result.status == "server_error")) return false;
-    if (!result.response.is_object()) return false;
+    exchange.detail_status = result.status;
+    exchange.message = result.message;
+    if (result.status == "timeout") {
+        exchange.status = SessionFileExchangeStatus::Timeout;
+        return exchange;
+    }
+    if (!(result.status == "ok" || result.status == "action_error" ||
+          result.status == "server_error") ||
+        !result.response.is_object()) {
+        return exchange;
+    }
     response = result.response;
-    return true;
+    exchange.status = SessionFileExchangeStatus::Completed;
+    return exchange;
+}
+
+bool send_file_request_to_endpoint(
+    const SessionInfo& session,
+    const Json& request,
+    Json& response,
+    const xdebug_core::TransportTimeoutOverrideMs& timeout_override_ms) {
+    return exchange_file_request_with_endpoint(
+               session, request, response, timeout_override_ms)
+               .status == SessionFileExchangeStatus::Completed;
 }
 
 // --- Simple request/response ---

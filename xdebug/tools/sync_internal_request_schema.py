@@ -31,7 +31,7 @@ HELPER_OUTPUT_DIR = ROOT / "schemas" / "v1" / "internal" / "helper-actions"
 
 INTERNAL_API_VERSION = "xdebug.internal.v1"
 PUBLIC_PAYLOAD_FIELDS = ("target", "args", "limits")
-INTERNAL_SESSION_ACTIONS = {"session.open", "session.kill", "session.doctor"}
+INTERNAL_SESSION_ACTIONS = {"session.open", "session.close", "session.doctor"}
 INTERNAL_CONTROL_ACTIONS = ("server.ping", "server.version", "server.quit")
 PUBLIC_ONLY_ENVELOPE_FIELDS = {
     "id",
@@ -247,7 +247,7 @@ def _public_action_branch(action: dict[str, Any]) -> dict[str, Any]:
                 "properties": {"mode": {"const": "combined"}},
             },
         ]
-    elif name in {"session.kill", "session.doctor"}:
+    elif name in {"session.close", "session.doctor"}:
         if "routing" not in branch["required"]:
             branch["required"].append("routing")
         branch["properties"]["routing"]["required"] = ["session_id"]

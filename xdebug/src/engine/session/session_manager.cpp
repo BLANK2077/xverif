@@ -123,6 +123,8 @@ const char* session_health_status_name(SessionHealthStatus status) {
             return "opening";
         case SessionHealthStatus::CleanupFailed:
             return "cleanup_failed";
+        case SessionHealthStatus::TerminatedOnTimeout:
+            return "terminated_on_timeout";
         case SessionHealthStatus::ProcessExited:
             return "process_exited";
         case SessionHealthStatus::SocketMissing:
@@ -703,7 +705,8 @@ SessionEnsureResult SessionManager::ensure_session(
             result.status = failure_status;
             result.message = failure_message;
             SessionCleanupResult cleanup =
-                cleanup_session_locked(session);
+                cleanup_session_locked(
+                    session, SessionCloseMode::Force);
             result.cleanup_succeeded =
                 cleanup.cleanup_succeeded;
             result.compensation_status =
@@ -849,7 +852,8 @@ SessionEnsureResult SessionManager::create_session(const std::vector<std::string
 }
 
 SessionCleanupResult SessionManager::cleanup_session_locked(
-    SessionInfo session) {
+    SessionInfo session,
+    SessionCloseMode mode) {
     SessionCleanupResult result;
     result.info = session;
 
@@ -883,14 +887,14 @@ SessionCleanupResult SessionManager::cleanup_session_locked(
             // signal an unrelated process; the recorded generation is stale.
             stopped = true;
         }
-        if (!stopped) {
+        if (!stopped && mode == SessionCloseMode::Force) {
             if (kill(session.server_pid, SIGTERM) == 0 ||
                 errno == ESRCH) {
                 stopped = wait_for_session_process_exit(
                     session.server_pid, 1500);
             }
         }
-        if (!stopped) {
+        if (!stopped && mode == SessionCloseMode::Force) {
             if (kill(session.server_pid, SIGKILL) == 0 ||
                 errno == ESRCH) {
                 stopped = wait_for_session_process_exit(
@@ -910,7 +914,9 @@ SessionCleanupResult SessionManager::cleanup_session_locked(
     if (!stopped) {
         result.status = SessionCleanupStatus::CleanupFailed;
         result.message =
-            "session process could not be proven stopped";
+            mode == SessionCloseMode::Graceful
+                ? "session did not exit after graceful quit; managed evidence was retained"
+                : "session process could not be proven stopped";
         return result;
     }
     if (!xdebug_design_remove_session_generation(
@@ -939,8 +945,9 @@ SessionCleanupResult SessionManager::cleanup_session_locked(
     return result;
 }
 
-SessionCleanupResult SessionManager::kill_session(
+SessionCleanupResult SessionManager::close_session(
     const std::string& session_id,
+    SessionCloseMode mode,
     const SessionCleanupPrecondition& precondition) {
     SessionCleanupResult result;
     SessionLifecycleLease lease(session_id);
@@ -995,20 +1002,112 @@ SessionCleanupResult SessionManager::kill_session(
     xdebug_core::log_lifecycle_event(
         "engine",
         session_id,
-        "kill_session.begin",
+        "close_session.begin",
         true,
         {{"pid", session.server_pid},
-         {"lifecycle_state", session.lifecycle_state}});
-    result = cleanup_session_locked(session);
+         {"lifecycle_state", session.lifecycle_state},
+         {"close_mode",
+          mode == SessionCloseMode::Graceful ? "graceful" : "force"}});
+    result = cleanup_session_locked(session, mode);
     xdebug_core::log_lifecycle_event(
         "engine",
         session_id,
-        "kill_session.end",
+        "close_session.end",
         result.ok(),
         {{"pid", session.server_pid},
          {"cleanup_succeeded", result.cleanup_succeeded},
+         {"close_mode",
+          mode == SessionCloseMode::Graceful ? "graceful" : "force"},
          {"lifecycle_state",
           result.ok() ? "removed" : "cleanup_failed"}});
+    return result;
+}
+
+SessionCleanupResult SessionManager::kill_session(
+    const std::string& session_id,
+    const SessionCleanupPrecondition& precondition) {
+    return close_session(
+        session_id, SessionCloseMode::Force, precondition);
+}
+
+SessionTimeoutContainmentResult SessionManager::terminate_on_timeout(
+    const std::string& session_id,
+    const std::string& expected_generation) {
+    SessionTimeoutContainmentResult result;
+    SessionLifecycleLease lease(session_id);
+    if (!lease.locked()) {
+        result.message = "failed to acquire the session lifecycle lease";
+        return result;
+    }
+
+    SessionInfo session;
+    const SessionRegistryResult lookup =
+        registry_->get(session_id, session);
+    if (!lookup.ok() || session.generation != expected_generation) {
+        result.message = lookup.ok()
+                             ? "session generation changed before timeout containment"
+                             : lookup.message;
+        return result;
+    }
+    result.info = session;
+
+    // Block all new requests before attempting out-of-process termination.
+    session.lifecycle_state = "cleanup_failed";
+    const SessionRegistryResult blocked =
+        registry_->mark_terminal_state(session, expected_generation);
+    if (!blocked.ok()) {
+        result.message = blocked.message;
+        return result;
+    }
+
+    const bool has_process = session.server_pid > 0;
+    const bool local_process =
+        has_process && is_local_session_host(session);
+    // The request channel has already failed to regain control.  Do not
+    // enqueue another cooperative RPC behind the blocked NPI call; local
+    // containment must happen from the helper process, while a remote engine
+    // remains explicitly unknown.
+    const bool owned_child =
+        owned_children_.find(session.server_pid) != owned_children_.end();
+    bool stopped = !has_process;
+    if (local_process) {
+        stopped = wait_for_session_process_exit(
+            session.server_pid, 50);
+        if (!stopped && !owned_child && !process_matches_session(session)) {
+            stopped = true;
+        }
+        if (!stopped &&
+            (kill(session.server_pid, SIGTERM) == 0 || errno == ESRCH)) {
+            stopped = wait_for_session_process_exit(session.server_pid, 750);
+        }
+        if (!stopped &&
+            (kill(session.server_pid, SIGKILL) == 0 || errno == ESRCH)) {
+            stopped = wait_for_session_process_exit(session.server_pid, 750);
+        }
+    }
+
+    if (!stopped) {
+        result.message =
+            "request deadline expired but engine termination could not be confirmed";
+        return result;
+    }
+
+    result.termination_confirmed = true;
+    session.lifecycle_state = "terminated_on_timeout";
+    const SessionRegistryResult retained =
+        registry_->mark_terminal_state(session, expected_generation);
+    if (!retained.ok()) {
+        result.message =
+            "engine termination was confirmed but timeout tombstone could not be persisted: " +
+            retained.message;
+        return result;
+    }
+    result.cleanup_succeeded = true;
+    result.cancel_state = "confirmed";
+    result.session_state = "terminated_on_timeout";
+    result.message =
+        "engine termination confirmed; explicit session.gc or force close is required before reopen";
+    result.info = session;
     return result;
 }
 
@@ -1122,6 +1221,12 @@ SessionHealth SessionManager::diagnose_session_locked(
         health.status = SessionHealthStatus::CleanupFailed;
         health.message =
             "Session generation retained evidence after cleanup failure";
+        return health;
+    }
+    if (session.lifecycle_state == "terminated_on_timeout") {
+        health.status = SessionHealthStatus::TerminatedOnTimeout;
+        health.message =
+            "Session engine was terminated after a request deadline; explicit session.gc or force close is required before reopen";
         return health;
     }
     if (session.lifecycle_state != "active" ||

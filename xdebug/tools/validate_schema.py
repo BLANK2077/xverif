@@ -29,7 +29,6 @@ RETIRED_RESPONSE_FIELDS = {
 RETIRED_ERROR_SUGGESTION_FIELDS = {
     "allowed_values",
     "candidates",
-    "did_you_mean",
     "suggested_actions",
     "suggestions",
 }

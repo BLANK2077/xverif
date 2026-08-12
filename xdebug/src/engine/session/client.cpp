@@ -55,72 +55,109 @@ bool send_request_capture(const std::string& session_id,
                           Json& data,
                           std::string& status,
                           std::string& message,
-                          Json& engine_error) {
+                          Json& engine_error,
+                          Json& timeout_containment) {
     engine_error = Json();  // null by default
+    timeout_containment = Json();
     const std::string action =
         request.value("action", std::string());
-    SessionLifecycleLease lease(session_id);
-    if (!lease.locked()) {
-        status = "lifecycle_lock_failed";
-        message =
-            "failed to acquire the session lifecycle lease";
-        return false;
-    }
     SessionManager manager;
     SessionInfo session;
-    SessionRegistryResult lookup =
-        manager.lookup_session(session_id, session);
-    if (!lookup.ok()) {
-        status =
-            lookup.status == SessionRegistryStatus::NotFound
-                ? "session_not_found"
-                : "registry_invalid";
-        message =
-            lookup.status == SessionRegistryStatus::NotFound
-                ? "session not found"
-                : lookup.message;
-        xdebug_core::log_transport_event(
-            "engine", session_id, "send_request.session_not_found", false,
-            {{"action", action}});
-        return false;
-    }
-    if (session.lifecycle_state != "active") {
-        status = session.lifecycle_state;
-        message =
-            session.lifecycle_state == "cleanup_failed"
-                ? "session cleanup failed and retained managed evidence"
-                : "session is not active";
-        return false;
-    }
-    if (!xdebug_design::xdebug_design_generation_matches(
-            session_id, session.generation)) {
-        status = "registry_invalid";
-        message =
-            "session registry and generation marker do not match";
-        return false;
+    {
+        // The lifecycle lease protects only the registry/generation snapshot.
+        // Holding it across a vendor request would prevent a timed-out helper
+        // from terminating the blocked engine process from outside.
+        SessionLifecycleLease lease(session_id);
+        if (!lease.locked()) {
+            status = "lifecycle_lock_failed";
+            message =
+                "failed to acquire the session lifecycle lease";
+            return false;
+        }
+        SessionRegistryResult lookup =
+            manager.lookup_session(session_id, session);
+        if (!lookup.ok()) {
+            status =
+                lookup.status == SessionRegistryStatus::NotFound
+                    ? "session_not_found"
+                    : "registry_invalid";
+            message =
+                lookup.status == SessionRegistryStatus::NotFound
+                    ? "session not found"
+                    : lookup.message;
+            xdebug_core::log_transport_event(
+                "engine", session_id, "send_request.session_not_found", false,
+                {{"action", action}});
+            return false;
+        }
+        if (session.lifecycle_state != "active") {
+            status = session.lifecycle_state;
+            message =
+                session.lifecycle_state == "cleanup_failed"
+                    ? "session cleanup failed and retained managed evidence"
+                    : "session is not active";
+            return false;
+        }
+        if (!xdebug_design::xdebug_design_generation_matches(
+                session_id, session.generation)) {
+            status = "registry_invalid";
+            message =
+                "session registry and generation marker do not match";
+            return false;
+        }
     }
     Json rpc = request;
     const xdebug_core::TransportTimeoutOverrideMs timeout_override_ms =
         xdebug_core::public_request_timeout_override_ms(request);
     if (is_file_transport(session)) {
         Json response;
-        if (!send_file_request_to_endpoint(
-                session,
-                rpc,
-                response,
-                timeout_override_ms)) {
-            status = "transport_failed";
-            message =
-                "failed to exchange file transport request";
+        const SessionFileExchangeResult exchange =
+            exchange_file_request_with_endpoint(
+                session, rpc, response, timeout_override_ms);
+        if (exchange.status !=
+            SessionFileExchangeStatus::Completed) {
+            const bool transport_timeout =
+                exchange.status == SessionFileExchangeStatus::Timeout;
+            status = transport_timeout
+                         ? "transport_timeout"
+                         : "transport_failed";
+            message = transport_timeout
+                          ? "file session transport exceeded its request deadline"
+                          : (exchange.message.empty()
+                                 ? "failed to exchange file transport request"
+                                 : exchange.message);
             xdebug_core::log_transport_event("engine", session_id, "send_request.file_exchange_failed", false,
                                              transport_timeout_log_context(
                                                  {{"action", action},
                                                   {"status", status}, {"message", message},
                                                   {"transport", session.transport},
+                                                  {"exchange_status", exchange.detail_status},
                                                   {"file_dir", session.file_dir},
                                                   {"pid", session.server_pid}},
                                                  session,
                                                  timeout_override_ms));
+            if (transport_timeout) {
+                const SessionTimeoutContainmentResult containment =
+                    manager.terminate_on_timeout(
+                        session_id, session.generation);
+                timeout_containment = {
+                    {"cancel_state", containment.cancel_state},
+                    {"session_state", containment.session_state},
+                    {"cleanup_succeeded", containment.cleanup_succeeded},
+                    {"termination_confirmed",
+                     containment.termination_confirmed}
+                };
+                xdebug_core::log_lifecycle_event(
+                    "engine",
+                    session_id,
+                    "request_timeout.force_close",
+                    containment.termination_confirmed,
+                    {{"action", action},
+                     {"transport", session.transport},
+                     {"cancel_state", containment.cancel_state},
+                     {"session_state", containment.session_state},
+                     {"cleanup_succeeded", containment.cleanup_succeeded}});
+            }
             return false;
         }
         if (!response.value("ok", false)) {
@@ -200,6 +237,28 @@ bool send_request_capture(const std::string& session_id,
                                               {"port", session.port}},
                                              session,
                                              timeout_override_ms));
+        if (public_timeout) {
+            const SessionTimeoutContainmentResult containment =
+                manager.terminate_on_timeout(
+                    session_id, session.generation);
+            timeout_containment = {
+                {"cancel_state", containment.cancel_state},
+                {"session_state", containment.session_state},
+                {"cleanup_succeeded", containment.cleanup_succeeded},
+                {"termination_confirmed",
+                 containment.termination_confirmed}
+            };
+            xdebug_core::log_lifecycle_event(
+                "engine",
+                session_id,
+                "request_timeout.force_close",
+                containment.termination_confirmed,
+                {{"action", action},
+                 {"transport", session.transport},
+                 {"cancel_state", containment.cancel_state},
+                 {"session_state", containment.session_state},
+                 {"cleanup_succeeded", containment.cleanup_succeeded}});
+        }
         return false;
     }
     if (!response.value("ok", false)) {
@@ -234,10 +293,12 @@ bool session_ping(const std::string& session_id) {
     std::string status;
     std::string message;
     Json engine_error;
+    Json timeout_containment;
     return send_request_capture(session_id,
                                 xdebug_core::make_internal_control_request(
                                     "server.ping"),
-                                data, status, message, engine_error) &&
+                                data, status, message, engine_error,
+                                timeout_containment) &&
            data.value("pong", false);
 }
 

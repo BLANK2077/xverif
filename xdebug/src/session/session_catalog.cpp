@@ -41,6 +41,13 @@ void validate_public_session_record(const SessionRecord& record) {
     if (expected_mode.empty() || record.mode != expected_mode)
         throw std::invalid_argument(
             "canonical session record mode does not match its resources");
+    if (record.lifecycle_state != "opening" &&
+        record.lifecycle_state != "active" &&
+        record.lifecycle_state != "cleanup_failed" &&
+        record.lifecycle_state != "terminated_on_timeout") {
+        throw std::invalid_argument(
+            "canonical session record has invalid lifecycle_state");
+    }
     if (record.daidir.empty() &&
         !fingerprint_is_zero(
             record.dbdir_mtime,
@@ -71,9 +78,12 @@ void validate_public_session_record(const SessionRecord& record) {
                 "canonical uds session record has invalid endpoint fields");
         }
     } else if (record.transport == "tcp") {
+        const bool active_port = record.port > 0 && record.port <= 65535;
+        const bool pending_ephemeral_port =
+            record.lifecycle_state != "active" && record.port == 0;
         if (!record.socket_path.empty() || !record.file_dir.empty() ||
             record.host.empty() || record.bind_host.empty() ||
-            record.port <= 0 || record.port > 65535) {
+            (!active_port && !pending_ephemeral_port)) {
             throw std::invalid_argument(
                 "canonical tcp session record has invalid endpoint fields");
         }
@@ -95,6 +105,10 @@ void validate_public_session_record(const SessionRecord& record) {
         record.fsdb_size < 0) {
         throw std::invalid_argument(
             "canonical session record has negative public metadata");
+    }
+    if (record.lifecycle_state == "active" && record.server_pid <= 0) {
+        throw std::invalid_argument(
+            "canonical active session record requires server_pid");
     }
 }
 
@@ -134,6 +148,7 @@ SessionCatalogResult SessionCatalog::read_all(
         for (const auto& session : sessions) {
             SessionRecord record;
             record.id = session.session_id;
+            record.lifecycle_state = session.lifecycle_state;
             record.daidir = session.dbdir_path;
             record.fsdb = session.fsdb_file;
             record.socket_path = session.socket_path;
@@ -220,6 +235,24 @@ Json session_record_json(const SessionRecord& record) {
     if (record.fsdb_size) item["fsdb_size"] = record.fsdb_size;
     if (record.fsdb_dev) item["fsdb_dev"] = record.fsdb_dev;
     if (record.fsdb_inode) item["fsdb_inode"] = record.fsdb_inode;
+    return item;
+}
+
+Json session_list_record_json(
+    const SessionRecord& record,
+    bool verbose,
+    bool expired,
+    const std::string& recommended_action) {
+    validate_public_session_record(record);
+    Json item = verbose ? session_record_json(record) : Json{
+        {"session_id", record.id},
+        {"mode", record.mode},
+        {"transport", record.transport}
+    };
+    item["lifecycle_state"] = record.lifecycle_state;
+    item["expired"] = expired;
+    item["recommended_action"] = recommended_action;
+    item["last_active"] = record.last_active;
     return item;
 }
 

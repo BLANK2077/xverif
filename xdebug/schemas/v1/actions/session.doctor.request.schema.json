@@ -62,7 +62,7 @@
       "Know a session identifier and need read-only health, resource, process, and accessibility diagnostics."
     ],
     "do_not_use_when": [
-      "Do not use it to open, close, kill, or garbage-collect sessions."
+      "Do not use it to open, close, or garbage-collect sessions."
     ],
     "alternatives": [
       {

@@ -202,41 +202,19 @@ def _session_open_contract() -> tuple[SessionSuccessVariant, ...]:
 
 
 def _session_list_contract() -> tuple[SessionSuccessVariant, ...]:
-    sessions = _array(_ref("sessionRecord"))
-    removed = _array(_ref("sessionCleanupItem"))
+    sessions = _array(_ref("sessionListRecord"))
     return (
         SessionSuccessVariant(
-            "without_expired_cleanup",
+            "listed",
             _closed(
                 {
                     "session_count": _non_negative_integer(),
-                    "expired_removed_count": {"const": 0},
+                    "expired_count": _non_negative_integer(),
+                    "verbose": {"type": "boolean"},
                 },
-                ("session_count", "expired_removed_count"),
+                ("session_count", "expired_count", "verbose"),
             ),
             _closed({"sessions": sessions}, ("sessions",)),
-        ),
-        SessionSuccessVariant(
-            "with_expired_cleanup",
-            _closed(
-                {
-                    "session_count": _non_negative_integer(),
-                    "expired_removed_count": _non_negative_integer(
-                        minimum=1
-                    ),
-                },
-                ("session_count", "expired_removed_count"),
-            ),
-            _closed(
-                {
-                    "sessions": sessions,
-                    "removed": _array(
-                        _ref("sessionCleanupItem"),
-                        min_items=1,
-                    ),
-                },
-                ("sessions", "removed"),
-            ),
         ),
     )
 
@@ -275,8 +253,9 @@ def _session_remove_contract() -> tuple[SessionSuccessVariant, ...]:
                 {
                     "requested_count": {"const": 0},
                     "removed_count": {"const": 0},
+                    "retained_count": {"const": 0},
                 },
-                ("requested_count", "removed_count"),
+                ("requested_count", "removed_count", "retained_count"),
             ),
             _closed(
                 {
@@ -294,8 +273,9 @@ def _session_remove_contract() -> tuple[SessionSuccessVariant, ...]:
                 {
                     "requested_count": _non_negative_integer(minimum=1),
                     "removed_count": _non_negative_integer(minimum=1),
+                    "retained_count": {"const": 0},
                 },
-                ("requested_count", "removed_count"),
+                ("requested_count", "removed_count", "retained_count"),
             ),
             _closed(
                 {
@@ -392,7 +372,6 @@ _SESSION_SUCCESS_CONTRACT_FACTORIES = {
     "session.list": _session_list_contract,
     "session.doctor": _session_doctor_contract,
     "session.close": _session_remove_contract,
-    "session.kill": _session_remove_contract,
     "session.gc": _session_gc_contract,
 }
 SESSION_RESPONSE_ACTIONS = frozenset(_SESSION_SUCCESS_CONTRACT_FACTORIES)
@@ -414,17 +393,11 @@ def session_success_response_variants(
 _SESSION_EXPLICIT_DEFINITION = {
     ("session.close", _DATA_POINTER + "/removed_session"):
         "sessionRecord",
-    ("session.kill", _DATA_POINTER + "/removed_session"):
-        "sessionRecord",
     ("session.close", _DATA_POINTER + "/removed_sessions/*"):
-        "sessionRecord",
-    ("session.kill", _DATA_POINTER + "/removed_sessions/*"):
         "sessionRecord",
     ("session.gc", _DATA_POINTER + "/kept_sessions/*"):
         "sessionRecord",
     ("session.gc", _DATA_POINTER + "/removed/*"): "sessionCleanupItem",
-    # session.list runs the same idle-expiry cleanup before returning records.
-    ("session.list", _DATA_POINTER + "/removed/*"): "sessionCleanupItem",
 }
 
 

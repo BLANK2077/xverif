@@ -105,7 +105,7 @@ def cleanup_opened_sessions():
     for session_id in reversed(opened_sessions):
         req = json.dumps({
             "api_version": "xdebug.v1",
-            "action": "session.kill",
+            "action": "session.close", "args": {"mode": "force"},
             "target": {"session_id": session_id},
         })
         try:

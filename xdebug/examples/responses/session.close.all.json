@@ -9,7 +9,8 @@
   "session": null,
   "summary": {
     "requested_count": 1,
-    "removed_count": 1
+    "removed_count": 1,
+    "retained_count": 0
   },
   "data": {
     "removed_sessions": [

@@ -43,7 +43,7 @@ def _registry_session(isolated_home: Path, session_id: str) -> dict:
 
 
 def _kill_all(cli_runner: CliRunner) -> None:
-    cli_runner.run(_request("session.kill", target={"session_id": "all"}))
+    cli_runner.run(_request("session.close", target={"session_id": "all"}, args={"mode": "force"}))
 
 
 def _write_registry_session(isolated_home: Path, record: dict) -> None:
@@ -295,6 +295,67 @@ def test_session_open_list_doctor_close_for_each_resource_mode(
         )
     finally:
         _kill_all(cli_runner)
+
+
+@pytest.mark.session
+def test_session_list_is_read_only_and_projects_compact_or_verbose(
+    cli_runner: CliRunner,
+    isolated_home: Path,
+) -> None:
+    session_id = "expired_discovery"
+    _write_registry_session(
+        isolated_home,
+        {
+            "session_id": session_id,
+            "lifecycle_state": "cleanup_failed",
+            "socket_path": str(isolated_home / "missing.sock"),
+            "fsdb_file": "/private/fixtures/expired.fsdb",
+            "server_pid": 999999999,
+            "created_at": 1,
+            "last_active": 1,
+        },
+    )
+    before = _registry(isolated_home)
+    env = {"XDEBUG_SESSION_IDLE_TIMEOUT_SEC": "1"}
+
+    compact = cli_runner.run(_request("session.list"), env=env)
+    assert compact.ok, compact.response
+    assert compact.response["summary"] == {
+        "session_count": 1,
+        "expired_count": 1,
+        "verbose": False,
+    }
+    assert compact.response["data"]["sessions"] == [
+        {
+            "session_id": session_id,
+            "mode": "waveform",
+            "transport": "uds",
+            "lifecycle_state": "cleanup_failed",
+            "expired": True,
+            "recommended_action": "session.gc",
+            "last_active": 1,
+        }
+    ]
+    assert _registry(isolated_home) == before
+
+    verbose = cli_runner.run(
+        _request(
+            "session.list",
+            args={"output": {"verbose": True}},
+        ),
+        env=env,
+    )
+    assert verbose.ok, verbose.response
+    assert verbose.response["summary"]["verbose"] is True
+    record = verbose.response["data"]["sessions"][0]
+    assert record["session_id"] == session_id
+    assert record["lifecycle_state"] == "cleanup_failed"
+    assert record["expired"] is True
+    assert record["recommended_action"] == "session.gc"
+    assert record["fsdb"] == "/private/fixtures/expired.fsdb"
+    assert record["server_pid"] == 999999999
+    assert record["socket_path"] == str(isolated_home / "missing.sock")
+    assert _registry(isolated_home) == before
 
 
 @pytest.mark.session
@@ -844,6 +905,12 @@ def test_session_uds_query_timeout_uses_single_engine_invocation(
         assert result.response["ok"] is False
         assert result.response["error"]["code"] == "ENGINE_TIMEOUT"
         assert result.response["error"]["timeout_ms"] == 1000
+        assert result.response["error"]["cancel_state"] == "confirmed"
+        assert result.response["error"]["session_state"] == (
+            "terminated_on_timeout"
+        )
+        assert result.response["error"]["cleanup_succeeded"] is True
+        assert result.response["error"]["termination_confirmed"] is True
         assert result.response["summary"] == {
             "status": "error",
             "error_code": "ENGINE_TIMEOUT",
@@ -866,9 +933,60 @@ def test_session_uds_query_timeout_uses_single_engine_invocation(
         assert timeout_event["context"]["socket_path"].startswith("<path:sha256:")
         assert str(socket_path) not in json.dumps(timeout_event)
         assert 0 < timeout_event["context"]["timeout_ms"] <= 1000
+        retained = _registry_session(isolated_home, "hung_uds")
+        assert retained["lifecycle_state"] == "terminated_on_timeout"
     finally:
         stop.set()
         thread.join(timeout=2.0)
+        _kill_all(cli_runner)
+
+
+@pytest.mark.session
+@pytest.mark.waveform
+def test_session_file_query_timeout_retains_terminated_tombstone(
+    resource_targets: dict,
+    cli_runner: CliRunner,
+    isolated_home: Path,
+    tmp_path: Path,
+) -> None:
+    session_id = "hung_file"
+    file_dir = tmp_path / "hung-file-exchange"
+    _write_registry_session(
+        isolated_home,
+        {
+            "session_id": session_id,
+            "transport": "file",
+            "fsdb_file": resource_targets["waveform"]["fsdb"],
+            "file_dir": str(file_dir),
+            "server_pid": os.getpid(),
+        },
+    )
+
+    try:
+        result = cli_runner.run(
+            {
+                **_request(
+                    "value.at",
+                    target={"session_id": session_id},
+                    args=_wave_value_at_args(),
+                ),
+                "limits": {"timeout_ms": 100},
+            },
+            timeout_sec=5.0,
+        )
+
+        assert not result.timed_out
+        assert result.returncode != 0
+        assert result.response["error"]["code"] == "ENGINE_TIMEOUT"
+        assert result.response["error"]["cancel_state"] == "confirmed"
+        assert result.response["error"]["session_state"] == (
+            "terminated_on_timeout"
+        )
+        assert result.response["error"]["cleanup_succeeded"] is True
+        assert result.response["error"]["termination_confirmed"] is True
+        retained = _registry_session(isolated_home, session_id)
+        assert retained["lifecycle_state"] == "terminated_on_timeout"
+    finally:
         _kill_all(cli_runner)
 
 

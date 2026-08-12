@@ -46,10 +46,9 @@
 ## Session Actions
 | action | status | resource | purpose | how it works | objective | args contract |
 | --- | --- | --- | --- | --- | --- | --- |
-| `session.close` | stable | session | 关闭指定 session。 | 释放该 session 的 runtime 资源并从管理器移除。 | 结束不再使用的调试上下文。 | required: target.session_id |
+| `session.close` | stable | session | 以 graceful 或 force 模式关闭一个或全部 session。 | graceful 只请求退出且失败时保留诊断记录；force 可在身份校验后终止本机进程；`all` 返回移除与保留计数。 | 结束 session，或显式清理异常残留。 | required: target.session_id；mode 可取 graceful 或 force（默认 graceful）；ownership_token 仅允许 force 且精确单一 session_id |
 | `session.doctor` | stable | session | 诊断当前 session。 | 检查 session 资源、路径和可访问状态。 | 定位 daidir/fsdb/session 绑定问题。 | none |
 | `session.gc` | stable | none | 清理过期 session。 | 扫描 session 管理状态并回收可释放项。 | 避免长期运行时积累无用资源。 | none |
-| `session.kill` | stable | session | 强制移除指定 session。 | 按 target.session_id 清理记录和关联资源；可选 `ownership_token` 提供时必须匹配，否则不执行，省略时保留既有显式/admin 清理语义。 | 处理异常残留 session。 | required: target.session_id；ownership_token 是 managed wrapper 的可选 conditional-cleanup precondition，不是授权 |
 | `session.list` | stable | session | 列出当前 session。 | 读取 SessionManager 中的活动 session 元数据。 | 确认已有 session_id 和资源类型。 | none |
 | `session.open` | stable | any | 打开 design/waveform session。 | 解析 target 中的 daidir/fsdb；可选 `target.run_manifest` 会在启动前校验 published state、canonical path、size 与 SHA-256；每次 backend open 前 frontend 都绑定 cleanup token，沿用 managed wrapper 提供值或 fail-closed 地内部高熵生成，catalog 只原子保存其 SHA-256 digest。 | 建立后续 design/waveform 查询的资源上下文。 | required: name；ownership_token 仅是 managed wrapper 可选提供的 conditional-cleanup token；普通 CLI caller 省略，但 frontend 仍绑定内部 token，所有输出禁止回显 |
 ## Design Actions

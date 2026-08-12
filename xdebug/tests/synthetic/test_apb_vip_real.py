@@ -493,7 +493,7 @@ def test_apb_vip_real_wait_state_and_error_actions(
         cli_runner.run(
             {
                 "api_version": "xdebug.v1",
-                "action": "session.kill",
+                "action": "session.close", "args": {"mode": "force"},
                 "target": {"session_id": session_id},
             },
             timeout_sec=60,
@@ -599,7 +599,7 @@ def test_apb_vip_real_wait_state_and_error_actions(
         cli_runner.run(
             {
                 "api_version": "xdebug.v1",
-                "action": "session.kill",
+                "action": "session.close", "args": {"mode": "force"},
                 "target": lru_target,
             },
             timeout_sec=60,
@@ -656,7 +656,7 @@ def test_apb_vip_real_wait_state_and_error_actions(
         cli_runner.run(
             {
                 "api_version": "xdebug.v1",
-                "action": "session.kill",
+                "action": "session.close", "args": {"mode": "force"},
                 "target": hard_target,
             },
             timeout_sec=60,

@@ -117,7 +117,8 @@ ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
         "description": (
             "Opaque 256-bit conditional-cleanup token encoded as exactly 64 "
             "lowercase hexadecimal characters. A managed wrapper may supply it "
-            "at session.open and provide it to session.kill as an optional "
+            "at session.open and provide it to session.close with "
+            "args.mode=force as an optional "
             "match precondition, not as authorization. When session.open omits "
             "it, the frontend binds a fail-closed internally generated token; "
             "never log or publish either form."
@@ -343,7 +344,9 @@ RUNTIME_CONSUMER_CONTRACTS_BY_ACTION: dict[
     ),
     "scope.roots": _runtime_consumer_contract("scope.roots", {"source"}),
     "session.close": _named_runtime_consumer_contract(
-        "xdebug::Dispatcher::handle_session[action=session.close]"
+        "xdebug/src/engine/engine_query.cpp"
+        "::handle_session_action[action=session.close](ContractBoundRequest&)",
+        {"mode", "ownership_token"},
     ),
     "session.doctor": _named_runtime_consumer_contract(
         "xdebug/src/engine/engine_query.cpp"
@@ -352,13 +355,9 @@ RUNTIME_CONSUMER_CONTRACTS_BY_ACTION: dict[
     "session.gc": _named_runtime_consumer_contract(
         "xdebug::Dispatcher::handle_session[action=session.gc]"
     ),
-    "session.kill": _named_runtime_consumer_contract(
-        "xdebug/src/engine/engine_query.cpp"
-        "::handle_session_action[action=session.kill](ContractBoundRequest&)",
-        {"ownership_token"},
-    ),
     "session.list": _named_runtime_consumer_contract(
-        "xdebug::Dispatcher::handle_session[action=session.list]"
+        "xdebug::Dispatcher::handle_session[action=session.list]",
+        {"output"},
     ),
     "session.open": _named_runtime_consumer_contract(
         "xdebug/src/engine/engine_query.cpp"
@@ -453,6 +452,20 @@ OUTPUT_SCHEMAS_BY_ACTION: dict[str, dict[str, Any]] = {
                 "type": "boolean",
                 "default": False,
                 "description": "Return full action descriptors instead of the compact action-name list.",
+            },
+        },
+        "additionalProperties": False,
+    },
+    "session.list": {
+        "type": "object",
+        "properties": {
+            "verbose": {
+                "type": "boolean",
+                "default": False,
+                "description": (
+                    "Return verbose session records instead of the default "
+                    "compact representation."
+                ),
             },
         },
         "additionalProperties": False,
@@ -675,7 +688,6 @@ for _action in VALUE_BEARING_ACTIONS:
 
 ARGS_REQUIRED_EXCEPTIONS = {
     "session.close",
-    "session.kill",
 }
 
 
@@ -698,6 +710,18 @@ TARGET_FIELD_SCHEMAS: dict[str, dict[str, Any]] = {
 RUNTIME_SIGNED_INT_MAX = 2_147_483_647
 
 LIMIT_PROPERTIES_BY_ACTION: dict[str, dict[str, dict[str, Any]]] = {
+    "batch": {
+        "timeout_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": RUNTIME_SIGNED_INT_MAX,
+            "description": (
+                "Total wall-clock budget for the ordered batch. Remaining "
+                "time is projected into each engine-forward child and no "
+                "later child starts after the deadline."
+            ),
+        },
+    },
     "scope.list": {
         "max_rows": {
             "type": "integer",
@@ -1385,6 +1409,17 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
                 "stop_on_error stops immediately after the first failed child."
             ),
         }
+    if action == "session.close":
+        selected_props["mode"] = {
+            "type": "string",
+            "enum": ["graceful", "force"],
+            "default": "graceful",
+            "description": (
+                "graceful requests server shutdown and preserves the session "
+                "record when exit is not confirmed; force may terminate a "
+                "locally owned process after identity checks."
+            ),
+        }
     if action == "stream.query":
         selected_props["filter"] = stream_query_filter_schema()
     if action == "axi.analysis" and "analysis" in selected_props:
@@ -1733,6 +1768,18 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
         )
     args["properties"] = selected_props
     args["additionalProperties"] = False
+    if action == "session.close":
+        args["allOf"] = [
+            {
+                "if": {
+                    "required": ["ownership_token"],
+                },
+                "then": {
+                    "properties": {"mode": {"const": "force"}},
+                    "required": ["mode"],
+                },
+            }
+        ]
     groups = spec.get("required_arg_groups", [])
     if groups:
         args["anyOf"] = [{"required": list(group)} for group in groups]
@@ -1762,7 +1809,8 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
             for conditional in conditionals
         ]
     else:
-        args.pop("allOf", None)
+        if action != "session.close":
+            args.pop("allOf", None)
     exclusive_config_sources = {
         "apb.config.load": ("config", "config_path"),
         "axi.config.load": ("config", "config_path"),
@@ -2109,6 +2157,25 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
         ]
     updated.pop("anyOf", None)
     updated.pop("allOf", None)
+    if action == "session.close":
+        updated["allOf"] = [
+            {
+                "not": {
+                    "properties": {
+                        "target": {
+                            "properties": {
+                                "session_id": {"const": "all"}
+                            },
+                            "required": ["session_id"],
+                        },
+                        "args": {
+                            "required": ["ownership_token"]
+                        },
+                    },
+                    "required": ["target", "args"],
+                }
+            }
+        ]
     if action != "expr.normalize":
         updated.pop("oneOf", None)
     updated["additionalProperties"] = False

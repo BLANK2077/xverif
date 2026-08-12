@@ -34,9 +34,7 @@ _SESSION_TOOL_CONTRACTS: dict[str, Json] = {
     }},
     "session.close": {"tool": "xverif_debug_session_close", "required": ["session_id"], "properties": {
         "session_id": {"type": "string", "description": "Managed session identifier to close."},
-    }},
-    "session.kill": {"tool": "xverif_debug_session_kill", "required": ["session_id"], "properties": {
-        "session_id": {"type": "string", "description": "One exact managed session identifier to force-clean."},
+        "mode": {"type": "string", "enum": ["graceful", "force"], "default": "graceful", "description": "Explicit lifecycle close mode."},
     }},
     "session.gc": {"tool": "xverif_debug_session_gc", "properties": {
         "verbose": {"type": "boolean", "default": False, "description": "Include unresolved-session detail in the cleanup report."},

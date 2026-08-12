@@ -1,5 +1,6 @@
 #include "fsdb_scan_utils.h"
 
+#include "core/session/request_deadline.h"
 #include "npi_L1.h"
 
 #include <cctype>
@@ -30,18 +31,21 @@ ClockEdgeCursor::ClockEdgeCursor(npiFsdbSigHandle clk, bool posedge)
       edge_(posedge ? npiFsdbL1PositiveEdge : npiFsdbL1NegativeEdge) {}
 
 bool ClockEdgeCursor::first_at_or_after(npiFsdbTime time, npiFsdbTime& out_time) {
+    xdebug_core::request_deadline_checkpoint();
     if (!vct_.valid()) return false;
     if (!npi_fsdb_goto_time_edge(vct_.get(), time, edge_)) return false;
     return npi_fsdb_vct_time(vct_.get(), &out_time) != 0;
 }
 
 bool ClockEdgeCursor::next(npiFsdbTime& out_time) {
+    xdebug_core::request_deadline_checkpoint();
     if (!vct_.valid()) return false;
     if (!npi_fsdb_goto_next_edge(vct_.get(), edge_)) return false;
     return npi_fsdb_vct_time(vct_.get(), &out_time) != 0;
 }
 
 bool ClockEdgeCursor::prev_before(npiFsdbTime time, npiFsdbTime& out_time) {
+    xdebug_core::request_deadline_checkpoint();
     if (!vct_.valid()) return false;
     if (!npi_fsdb_goto_time_edge(vct_.get(), time, edge_)) return false;
     npiFsdbTime current = 0;
@@ -58,6 +62,7 @@ SignalChangeCursor::SignalChangeCursor(npiFsdbSigHandle sig, npiFsdbValType form
     : vct_(sig), format_(format) {}
 
 bool SignalChangeCursor::read_current(npiFsdbTime& out_time, std::string& out_value) {
+    xdebug_core::request_deadline_checkpoint();
     if (!vct_.valid()) return false;
     npiFsdbValue value;
     value.format = format_;
@@ -70,12 +75,14 @@ bool SignalChangeCursor::read_current(npiFsdbTime& out_time, std::string& out_va
 bool SignalChangeCursor::first_at_or_after(npiFsdbTime time,
                                            npiFsdbTime& out_time,
                                            std::string& out_value) {
+    xdebug_core::request_deadline_checkpoint();
     if (!vct_.valid()) return false;
     if (!npi_fsdb_goto_time(vct_.get(), time)) return false;
     return read_current(out_time, out_value);
 }
 
 bool SignalChangeCursor::next(npiFsdbTime& out_time, std::string& out_value) {
+    xdebug_core::request_deadline_checkpoint();
     if (!vct_.valid()) return false;
     if (!npi_fsdb_goto_next(vct_.get())) return false;
     return read_current(out_time, out_value);
@@ -84,6 +91,7 @@ bool SignalChangeCursor::next(npiFsdbTime& out_time, std::string& out_value) {
 bool SignalChangeCursor::prev_before(npiFsdbTime time,
                                      npiFsdbTime& out_time,
                                      std::string& out_value) {
+    xdebug_core::request_deadline_checkpoint();
     if (!vct_.valid()) return false;
     if (!npi_fsdb_goto_time(vct_.get(), time)) return false;
     npiFsdbTime current = 0;
@@ -98,6 +106,7 @@ TimeBasedVcIterGuard::~TimeBasedVcIterGuard() {
 }
 
 void TimeBasedVcIterGuard::start(npiFsdbTime begin, npiFsdbTime end) {
+    xdebug_core::request_deadline_checkpoint();
     iter_.iter_start(begin, end);
     started_ = true;
 }
@@ -113,6 +122,7 @@ bool SampleCache::read(const std::vector<npiFsdbSigHandle>& handles,
                        npiFsdbTime time,
                        npiFsdbValType format,
                        std::vector<std::string>& out_values) {
+    xdebug_core::request_deadline_checkpoint();
     std::ostringstream key;
     key << time << ':' << static_cast<int>(format);
     for (auto h : handles) key << ':' << h;

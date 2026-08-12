@@ -32,8 +32,7 @@ contract error，不表示存在兼容入口。
 | `session.open` | session | stable | any | dispatcher + backend session managers | regression |
 | `session.list` | session | stable | none | unified engine session registry | partial |
 | `session.doctor` | session | stable | session | dispatcher + backend health | partial |
-| `session.kill` | session | stable | session | dispatcher + backend session managers | partial |
-| `session.close` | session | stable | session | strict `target.session_id` close path | partial |
+| `session.close` | session | stable | session | strict `target.session_id` graceful/force close path | partial |
 | `session.gc` | session | stable | none | dispatcher + waveform gc | partial |
 | `trace.active_driver` | combined | stable | combined | unified engine handler + combined helper | regression |
 | `trace.active_driver_chain` | combined | stable | combined | unified engine handler + combined helper | partial |

@@ -19,6 +19,7 @@ _FAKE_ENGINE = """#!/usr/bin/env python3
 import json
 import os
 import sys
+import time
 
 request = json.load(sys.stdin)
 capture_path = os.environ["XDEBUG_FAKE_ENGINE_CAPTURE"]
@@ -70,8 +71,12 @@ elif mode.startswith("open_") and request["action"] == "session.open":
     session = {
         "session_id": request["args"]["name"],
         "transport": "uds",
-                "socket_path": "fixtures/fake-session.sock",
+        "lifecycle_state": "active",
+        "socket_path": "fixtures/fake-session.sock",
         "server_host": "fake-host",
+        "server_pid": os.getpid(),
+        "created_at": int(time.time()),
+        "last_active": int(time.time()),
     }
     if mode == "open_missing_transport":
         session.pop("transport")
@@ -88,7 +93,7 @@ elif mode.startswith("open_") and request["action"] == "session.open":
         "data": {"session": session},
         "error": None,
     }
-elif mode.startswith("open_") and request["action"] == "session.kill":
+elif mode.startswith("open_") and request["action"] == "session.close":
     if kill_mode == "cleaned":
         response = {
             "api_version": "xdebug.internal.v1",
@@ -393,7 +398,7 @@ def test_expired_session_cleanup_does_not_inherit_query_args_or_limits(
     kill = requests[0]
     assert kill == {
         "api_version": "xdebug.internal.v1",
-        "action": "session.kill",
+        "action": "session.close",
         "observability": {
             "request_id": "expired-query-request",
         },
@@ -403,7 +408,7 @@ def test_expired_session_cleanup_does_not_inherit_query_args_or_limits(
         "target": {
             "session_id": "expired_case",
         },
-        "args": {},
+        "args": {"mode": "force"},
     }
     assert "signal" not in kill["args"]
     assert "time" not in kill["args"]
@@ -436,9 +441,9 @@ def test_conditional_kill_matches_private_open_record_before_forwarding(
         {
             "api_version": "xdebug.v1",
             "request_id": "conditional-mismatch",
-            "action": "session.kill",
+            "action": "session.close",
             "target": {"session_id": "conditional_case"},
-            "args": {"ownership_token": "cd" * 32},
+            "args": {"mode": "force", "ownership_token": "cd" * 32},
         },
         timeout_sec=5,
     )
@@ -454,9 +459,9 @@ def test_conditional_kill_matches_private_open_record_before_forwarding(
         {
             "api_version": "xdebug.v1",
             "request_id": "conditional-match",
-            "action": "session.kill",
+            "action": "session.close",
             "target": {"session_id": "conditional_case"},
-            "args": {"ownership_token": token},
+            "args": {"mode": "force", "ownership_token": token},
         },
         timeout_sec=5,
     )
@@ -466,7 +471,7 @@ def test_conditional_kill_matches_private_open_record_before_forwarding(
     assert requests == [
         {
             "api_version": "xdebug.internal.v1",
-            "action": "session.kill",
+            "action": "session.close",
             "observability": {
                 "request_id": "conditional-match",
             },
@@ -477,6 +482,7 @@ def test_conditional_kill_matches_private_open_record_before_forwarding(
                 "session_id": "conditional_case",
             },
             "args": {
+                "mode": "force",
                 "ownership_token": token,
             },
         }
@@ -592,12 +598,13 @@ def test_managed_open_backend_anomaly_uses_conditional_compensation(
     requests = _captured_requests(capture_path)
     assert [request["action"] for request in requests] == [
         "session.open",
-        "session.kill",
+        "session.close",
     ]
     assert requests[1]["routing"] == {
         "session_id": "compensated_open"
     }
     assert requests[1]["args"] == {
+        "mode": "force",
         "ownership_token": token
     }
     _assert_secret_absent(
@@ -691,7 +698,7 @@ def test_cli_open_anomaly_uses_frontend_generated_conditional_token(
     requests = _captured_requests(capture_path)
     assert [request["action"] for request in requests] == [
         "session.open",
-        "session.kill",
+        "session.close",
     ]
     generated_token = requests[0]["args"]["ownership_token"]
     assert len(generated_token) == 64
@@ -700,6 +707,7 @@ def test_cli_open_anomaly_uses_frontend_generated_conditional_token(
         for character in generated_token
     )
     assert requests[1]["args"] == {
+        "mode": "force",
         "ownership_token": generated_token
     }
     _assert_secret_absent(
@@ -784,10 +792,11 @@ def test_open_error_response_schema_failure_is_conditionally_compensated(
     requests = _captured_requests(capture_path)
     assert [request["action"] for request in requests] == [
         "session.open",
-        "session.kill",
+        "session.close",
     ]
     generated_token = requests[0]["args"]["ownership_token"]
     assert requests[1]["args"] == {
+        "mode": "force",
         "ownership_token": generated_token
     }
     _assert_secret_absent(
@@ -839,9 +848,10 @@ def test_manifest_publish_failure_is_conditionally_compensated(
     requests = _captured_requests(capture_path)
     assert [request["action"] for request in requests] == [
         "session.open",
-        "session.kill",
+        "session.close",
     ]
     assert requests[1]["args"] == {
+        "mode": "force",
         "ownership_token": token
     }
     _assert_secret_absent(

@@ -885,7 +885,7 @@ def test_stream_v1_real_waveform_actions(
         cli_runner.run(
             {
                 "api_version": "xdebug.v1",
-                "action": "session.kill",
+                "action": "session.close", "args": {"mode": "force"},
                 "target": target,
             },
             timeout_sec=60,
@@ -1082,7 +1082,7 @@ def test_stream_v1_cache_scope_repository_contract(
         assert invalid_static.response["error"]["error_layer"] == "schema"
     finally:
         cli_runner.run(
-            {"api_version": "xdebug.v1", "action": "session.kill",
+            {"api_version": "xdebug.v1", "action": "session.close", "args": {"mode": "force"},
              "target": target}, timeout_sec=60,
         )
 
@@ -1158,7 +1158,7 @@ def test_stream_v1_cache_scope_repository_contract(
         assert sum(row["event"] == "invalidate" for row in batch_rows) == 2
     finally:
         cli_runner.run(
-            {"api_version": "xdebug.v1", "action": "session.kill",
+            {"api_version": "xdebug.v1", "action": "session.close", "args": {"mode": "force"},
              "target": batch_target}, timeout_sec=60,
         )
 
@@ -1201,7 +1201,7 @@ def test_stream_v1_cache_scope_repository_contract(
         assert soft_rows[-1]["evictions"] >= 2
     finally:
         cli_runner.run(
-            {"api_version": "xdebug.v1", "action": "session.kill",
+            {"api_version": "xdebug.v1", "action": "session.close", "args": {"mode": "force"},
              "target": soft_target}, timeout_sec=60,
         )
 
@@ -1258,6 +1258,6 @@ def test_stream_v1_cache_scope_repository_contract(
         assert sum(row["event"] == "build_failed" for row in hard_rows) == 2
     finally:
         cli_runner.run(
-            {"api_version": "xdebug.v1", "action": "session.kill",
+            {"api_version": "xdebug.v1", "action": "session.close", "args": {"mode": "force"},
              "target": hard_target}, timeout_sec=60,
         )

@@ -202,7 +202,6 @@ def test_loop_wrapper_reports_bad_requests(tmp_path, monkeypatch):
         for method, params in (
             ("debug.session.doctor", {"session": "d0"}),
             ("debug.session.close", {"name": "d0"}),
-            ("debug.session.kill", {"session": "d0"}),
             ("debug.query", {"session": "d0", "action": "value.at"}),
             ("cov.session.doctor", {"session": "c0"}),
             ("cov.session.close", {"name": "c0"}),

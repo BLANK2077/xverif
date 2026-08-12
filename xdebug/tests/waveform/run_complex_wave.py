@@ -741,7 +741,7 @@ class AiRunner(object):
     def cleanup(self):
         try:
             if self.sid:
-                self.query("session.kill", target={"session_id": self.sid}, expect_ok=True, allow_no_sid=True)
+                self.query("session.close", args={"mode": "force"}, target={"session_id": self.sid}, expect_ok=True, allow_no_sid=True)
             require(not self.duplicate_contract_violations,
                     "summary/data duplicate facts remain: {}".format(self.duplicate_contract_violations))
         finally:

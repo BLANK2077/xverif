@@ -121,14 +121,13 @@ class XverifDebugAdapter:
     def session_list(self, **kwargs: Any) -> Json:
         return self._sessions.list_sessions(**kwargs)
 
-    def session_close(self, session_id: str) -> Json:
+    def session_close(self, session_id: str, mode: str = "graceful") -> Json:
+        if mode == "force":
+            return self._sessions.kill_session(session_id)
         return self._sessions.close_session(session_id)
 
     def session_doctor(self, session_id: str, verbose: bool = False) -> Json:
         return self._sessions.doctor_session(session_id, verbose=verbose)
-
-    def session_kill(self, session_id: str) -> Json:
-        return self._sessions.kill_session(session_id)
 
     def session_gc(self, verbose: bool = False) -> Json:
         return self._sessions.gc_sessions(verbose=verbose)

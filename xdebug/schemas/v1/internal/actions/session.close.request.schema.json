@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "xdebug.internal.engine.request.v1.action.session.kill",
-  "title": "xdebug.internal.v1 session.kill engine request",
+  "$id": "xdebug.internal.engine.request.v1.action.session.close",
+  "title": "xdebug.internal.v1 session.close engine request",
   "description": "Generated strict per-action projection of the private frontend-to-engine request contract.",
   "type": "object",
   "required": [
@@ -37,7 +37,7 @@
         "action": {
           "type": "string",
           "enum": [
-            "session.kill"
+            "session.close"
           ]
         },
         "observability": {
@@ -117,15 +117,43 @@
           "type": "object",
           "required": [],
           "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "graceful",
+                "force"
+              ],
+              "default": "graceful",
+              "description": "graceful requests server shutdown and preserves the session record when exit is not confirmed; force may terminate a locally owned process after identity checks."
+            },
             "ownership_token": {
               "type": "string",
               "minLength": 64,
               "maxLength": 64,
               "pattern": "^[0-9a-f]{64}$",
-              "description": "Opaque 256-bit conditional-cleanup token encoded as exactly 64 lowercase hexadecimal characters. A managed wrapper may supply it at session.open and provide it to session.kill as an optional match precondition, not as authorization. When session.open omits it, the frontend binds a fail-closed internally generated token; never log or publish either form."
+              "description": "Opaque 256-bit conditional-cleanup token encoded as exactly 64 lowercase hexadecimal characters. A managed wrapper may supply it at session.open and provide it to session.close with args.mode=force as an optional match precondition, not as authorization. When session.open omits it, the frontend binds a fail-closed internally generated token; never log or publish either form."
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "ownership_token"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "mode": {
+                    "const": "force"
+                  }
+                },
+                "required": [
+                  "mode"
+                ]
+              }
+            }
+          ]
         },
         "limits": {
           "type": "object",
@@ -133,7 +161,34 @@
           "additionalProperties": false
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "properties": {
+              "target": {
+                "properties": {
+                  "session_id": {
+                    "const": "all"
+                  }
+                },
+                "required": [
+                  "session_id"
+                ]
+              },
+              "args": {
+                "required": [
+                  "ownership_token"
+                ]
+              }
+            },
+            "required": [
+              "target",
+              "args"
+            ]
+          }
+        }
+      ]
     }
   ]
 }

@@ -3,12 +3,14 @@
 #include "npi/time_contract.h"
 #include "protocol/core_protocol.h"
 #include "session/session_endpoint_contract.h"
+#include "session/request_deadline.h"
 #include "session/session_timeout.h"
 #include "session/transport_common.h"
 #include "session/session_types.h"
 #include "test_temp_path.h"
 
 #include <cassert>
+#include <chrono>
 #include <cstdlib>
 #include <string>
 #include <vector>
@@ -43,6 +45,27 @@ ssize_t scripted_secure_random_read(int, void* buffer, size_t size) {
 }  // namespace
 
 int main() {
+    assert(!xdebug_core::request_deadline_expired());
+    {
+        xdebug_core::ScopedRequestDeadline deadline(
+            std::chrono::steady_clock::now() -
+            std::chrono::milliseconds(1));
+        assert(xdebug_core::request_deadline_expired());
+        bool threw = false;
+        try {
+            xdebug_core::request_deadline_checkpoint();
+        } catch (const xdebug_core::RequestDeadlineExceeded&) {
+            threw = true;
+        }
+        assert(threw);
+        {
+            xdebug_core::ScopedRequestDeadline nested(1000);
+            assert(xdebug_core::request_deadline_expired());
+        }
+        assert(xdebug_core::request_deadline_expired());
+    }
+    assert(!xdebug_core::request_deadline_expired());
+
     unsigned char random_bytes[8] = {};
     std::string random_error;
     g_read_steps = {{-1, EINTR}, {2, 0}, {1, 0}, {5, 0}};

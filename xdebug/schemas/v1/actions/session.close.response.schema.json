@@ -2,9 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "xdebug.session.close.response.v1",
   "title": "session.close response",
-  "description": "Close a debug session and release its runtime resources.",
-  "x-description-zh": "关闭指定 session。",
-  "x-output_notes": "session.close 成功响应的 summary 字段为 summary.removed, summary.removed_count, summary.requested_count；data 字段为 data.removed_session, data.removed_sessions。未知字段会被拒绝。",
+  "description": "Close one or all debug sessions gracefully or forcibly.",
+  "x-description-zh": "以 graceful 或 force 模式关闭一个或全部 session。",
+  "x-output_notes": "session.close 成功响应的 summary 字段为 summary.removed, summary.removed_count, summary.requested_count, summary.retained_count；data 字段为 data.removed_session, data.removed_sessions。未知字段会被拒绝。",
   "$defs": {
     "jsonValue": {
       "anyOf": [
@@ -61,12 +61,16 @@
             },
             "removed_count": {
               "const": 0
+            },
+            "retained_count": {
+              "const": 0
             }
           },
           "additionalProperties": false,
           "required": [
             "removed_count",
-            "requested_count"
+            "requested_count",
+            "retained_count"
           ]
         },
         {
@@ -79,12 +83,16 @@
             "removed_count": {
               "type": "integer",
               "minimum": 1
+            },
+            "retained_count": {
+              "const": 0
             }
           },
           "additionalProperties": false,
           "required": [
             "removed_count",
-            "requested_count"
+            "requested_count",
+            "retained_count"
           ]
         }
       ]
@@ -215,6 +223,10 @@
             "minLength": 1
           }
         },
+        "did_you_mean": {
+          "type": "string",
+          "minLength": 1
+        },
         "schema_path": {
           "type": "string"
         },
@@ -348,6 +360,21 @@
         "cleanup_succeeded": {
           "type": "boolean"
         },
+        "termination_confirmed": {
+          "type": "boolean"
+        },
+        "cancel_state": {
+          "enum": [
+            "confirmed",
+            "unknown"
+          ]
+        },
+        "session_state": {
+          "enum": [
+            "cleanup_failed",
+            "terminated_on_timeout"
+          ]
+        },
         "lifecycle_state": {
           "enum": [
             "cleanup_failed"
@@ -385,6 +412,10 @@
           "minimum": 0
         },
         "removed_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retained_count": {
           "type": "integer",
           "minimum": 0
         },
@@ -497,6 +528,10 @@
             "minLength": 1
           }
         },
+        "did_you_mean": {
+          "type": "string",
+          "minLength": 1
+        },
         "schema_path": {
           "type": "string"
         },
@@ -630,6 +665,21 @@
         "cleanup_succeeded": {
           "type": "boolean"
         },
+        "termination_confirmed": {
+          "type": "boolean"
+        },
+        "cancel_state": {
+          "enum": [
+            "confirmed",
+            "unknown"
+          ]
+        },
+        "session_state": {
+          "enum": [
+            "cleanup_failed",
+            "terminated_on_timeout"
+          ]
+        },
         "lifecycle_state": {
           "enum": [
             "cleanup_failed"
@@ -667,6 +717,10 @@
           "minimum": 0
         },
         "removed_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retained_count": {
           "type": "integer",
           "minimum": 0
         },
@@ -1572,12 +1626,16 @@
         },
         "removed_count": {
           "const": 0
+        },
+        "retained_count": {
+          "const": 0
         }
       },
       "additionalProperties": false,
       "required": [
         "removed_count",
-        "requested_count"
+        "requested_count",
+        "retained_count"
       ]
     },
     "successData1": {
@@ -1606,12 +1664,16 @@
         "removed_count": {
           "type": "integer",
           "minimum": 1
+        },
+        "retained_count": {
+          "const": 0
         }
       },
       "additionalProperties": false,
       "required": [
         "removed_count",
-        "requested_count"
+        "requested_count",
+        "retained_count"
       ]
     },
     "successData2": {
