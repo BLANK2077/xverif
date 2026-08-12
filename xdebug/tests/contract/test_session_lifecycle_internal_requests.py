@@ -197,10 +197,24 @@ def _write_registry(
         "fsdb_dev": fsdb_stat.st_dev if fsdb_stat else 0,
         "fsdb_inode": fsdb_stat.st_ino if fsdb_stat else 0,
     }
-    path = home / ".xdebug" / "engine" / "registry.json"
-    path.parent.mkdir(parents=True)
-    path.write_text(
-        json.dumps({"version": 3, "sessions": [record]}, indent=2) + "\n",
+    path_hash = 1469598103934665603
+    for byte in session_id.encode("utf-8"):
+        path_hash ^= byte
+        path_hash = (path_hash * 1099511628211) & ((1 << 64) - 1)
+    session_dir = (
+        home
+        / ".xdebug"
+        / "engine"
+        / "sessions"
+        / f"{session_id[:16]}_{path_hash:016x}"
+    )
+    session_dir.mkdir(parents=True)
+    (session_dir / "state.json").write_text(
+        json.dumps(record, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (session_dir / "generation").write_text(
+        record["generation"] + "\n",
         encoding="utf-8",
     )
 
@@ -536,9 +550,11 @@ def test_conditional_kill_matches_private_open_record_before_forwarding(
         }
     ]
     assert token not in json.dumps(matched.response, sort_keys=True)
-    registry_text = (
-        home / ".xdebug" / "engine" / "registry.json"
-    ).read_text(encoding="utf-8")
+    state_paths = list(
+        (home / ".xdebug" / "engine" / "sessions").glob("*/state.json")
+    )
+    assert len(state_paths) == 1
+    registry_text = state_paths[0].read_text(encoding="utf-8")
     assert token not in registry_text
     assert token_hash in registry_text
     for log_path in (home / ".xdebug").rglob("*.ndjson"):

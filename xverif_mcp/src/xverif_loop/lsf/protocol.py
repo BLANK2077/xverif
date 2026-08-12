@@ -186,6 +186,11 @@ class JsonlProcess:
         deadline = time.time() + timeout_sec
         while time.time() < deadline:
             if self.proc.poll() is not None:
+                # The scheduler may flush its submission record immediately
+                # before exiting. Give the pipe readers a bounded opportunity
+                # to publish that identity before constructing the typed
+                # startup-rejection response and cleanup request.
+                self._join_reader_threads(timeout_sec=0.2)
                 self._log_stdio("ready.process_exited", False,
                                 protocol=protocol, returncode=self.proc.returncode,
                                 stderr_tail=list(self.stderr_tail))
@@ -421,6 +426,16 @@ class JsonlProcess:
                 stream.close()
             except Exception:
                 pass
+
+    def _join_reader_threads(self, *, timeout_sec: float) -> None:
+        deadline = time.monotonic() + timeout_sec
+        for thread in (self._stdout_thread, self._stderr_thread):
+            if thread is None:
+                continue
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            thread.join(timeout=remaining)
 
     @property
     def stderr_text(self) -> str:

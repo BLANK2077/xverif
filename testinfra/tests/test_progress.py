@@ -19,7 +19,12 @@ def test_progress_records_heartbeats_phases_and_slowest_first(tmp_path: Path) ->
     )
     reporter.start()
     reporter.item_start("slow", detail="builder")
-    time.sleep(0.025)
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        events_text = (tmp_path / "progress.jsonl").read_text()
+        if '"event": "heartbeat"' in events_text:
+            break
+        time.sleep(0.01)
     reporter.item_phase("slow", "probe_1_of_1")
     reporter.item_finish("slow")
     reporter.item_start("fast", detail="cache_validation")
