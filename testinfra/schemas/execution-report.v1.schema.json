@@ -9,7 +9,11 @@
     "gate": {"enum": ["fast", "regression", "nightly"]},
     "catalog_version": {"type": "string"},
     "exitstatus": {"type": "integer"},
+    "started_at": {"type": "string", "format": "date-time"},
+    "finished_at": {"type": "string", "format": "date-time"},
+    "duration_sec": {"type": "number", "minimum": 0},
     "counts": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+    "suite_duration_sec": {"type": "object", "additionalProperties": {"type": "number", "minimum": 0}},
     "parent_report": {"type": "string"},
     "items": {
       "type": "array",

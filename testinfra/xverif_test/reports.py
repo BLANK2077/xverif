@@ -13,16 +13,14 @@ from typing import Any
 
 class ResultManager:
     def __init__(self, repo_root: Path, gate: str, catalog_version: str) -> None:
-        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         self.repo_root = repo_root
-        results_root = repo_root / ".xverif-test-results"
-        results_root.mkdir(parents=True, exist_ok=True)
-        _prune_results(results_root)
-        self.run_dir = Path(tempfile.mkdtemp(prefix=f"{stamp}-", dir=results_root))
+        self.run_dir = create_run_dir(repo_root)
         (self.run_dir / "RUNNING").write_text("\n", encoding="utf-8")
         self.gate = gate
         self.catalog_version = catalog_version
         self.items: list[dict[str, Any]] = []
+        self.started_at = datetime.now().astimezone().isoformat()
+        self.started_monotonic = time.monotonic()
 
     @classmethod
     def attach(cls, repo_root: Path, run_dir: Path) -> "ResultManager":
@@ -32,6 +30,8 @@ class ResultManager:
         manager.gate = "worker"
         manager.catalog_version = "worker"
         manager.items = []
+        manager.started_at = ""
+        manager.started_monotonic = time.monotonic()
         return manager
 
     def relative_suite_dir(self, suite_id: str) -> str:
@@ -78,14 +78,20 @@ class ResultManager:
 
     def finish(self, exitstatus: int) -> None:
         counts: dict[str, int] = defaultdict(int)
+        suite_duration: dict[str, float] = defaultdict(float)
         for item in self.items:
             counts[item["outcome"]] += 1
+            suite_duration[item["suite_id"]] += float(item["duration_sec"])
         payload = {
             "schema_version": "xverif-execution-report.v1",
             "gate": self.gate,
             "catalog_version": self.catalog_version,
             "exitstatus": int(exitstatus),
+            "started_at": self.started_at,
+            "finished_at": datetime.now().astimezone().isoformat(),
+            "duration_sec": time.monotonic() - self.started_monotonic,
             "counts": dict(sorted(counts.items())),
+            "suite_duration_sec": dict(sorted(suite_duration.items())),
             "items": self.items,
         }
         parent = os.environ.get("XVERIF_PARENT_REPORT")
@@ -98,6 +104,16 @@ class ResultManager:
         (self.run_dir / "RUNNING").unlink(missing_ok=True)
 
 
+def create_run_dir(repo_root: Path) -> Path:
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    results_root = repo_root / ".xverif-test-results"
+    results_root.mkdir(parents=True, exist_ok=True)
+    _prune_results(results_root)
+    run_dir = Path(tempfile.mkdtemp(prefix=f"{stamp}-", dir=results_root))
+    (run_dir / "RUNNING").write_text("\n", encoding="utf-8")
+    return run_dir
+
+
 def _prune_results(root: Path) -> None:
     now = time.time()
     runs = sorted((path for path in root.iterdir() if path.is_dir()), key=lambda path: path.stat().st_mtime)
@@ -107,14 +123,20 @@ def _prune_results(root: Path) -> None:
         if (path / "RUNNING").exists() or (path / ".pin").exists():
             continue
         report_path = path / "report.json"
+        timing_path = path / "timing.json"
         try:
-            report = json.loads(report_path.read_text(encoding="utf-8"))
+            if report_path.is_file():
+                report = json.loads(report_path.read_text(encoding="utf-8"))
+                success = report.get("exitstatus") == 0
+            else:
+                report = json.loads(timing_path.read_text(encoding="utf-8"))
+                success = report.get("outcome") == "passed"
         except (OSError, json.JSONDecodeError):
             continue
         parent = report.get("parent_report")
         if parent:
             referenced.add(Path(parent).resolve().parent)
-        records.append((path, report.get("exitstatus") == 0, path.stat().st_mtime))
+        records.append((path, success, path.stat().st_mtime))
 
     successful = [record for record in records if record[1]]
     delete: set[Path] = {path for path, _, _ in successful[:-20]}

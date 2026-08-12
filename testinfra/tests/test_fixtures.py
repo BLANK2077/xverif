@@ -62,6 +62,37 @@ def test_prepare_publishes_and_reuses_fixture(tmp_path: Path) -> None:
     assert store.resolve(spec.id) == first
 
 
+def test_prepare_reports_cache_and_rebuild_phases(tmp_path: Path) -> None:
+    store, spec = make_store(tmp_path)
+    rebuild_phases: list[str] = []
+    store.prepare(spec.id, progress=rebuild_phases.append)
+    assert rebuild_phases == [
+        "fingerprint", "lock", "builder", "output_validation", "publish"
+    ]
+
+    cache_phases: list[str] = []
+    store.prepare(spec.id, progress=cache_phases.append)
+    assert cache_phases == ["fingerprint", "lock", "cache_validation"]
+
+
+def test_prepare_cleans_staging_when_builder_is_interrupted(tmp_path: Path, monkeypatch) -> None:
+    store, spec = make_store(tmp_path)
+
+    def interrupt(_spec, _staging) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(store, "_run_builder", interrupt)
+    try:
+        store.prepare(spec.id)
+    except KeyboardInterrupt:
+        pass
+    else:
+        raise AssertionError("expected KeyboardInterrupt")
+
+    staging_root = store.root / spec.id / ".staging"
+    assert list(staging_root.iterdir()) == []
+
+
 def test_rebuild_atomically_switches_to_new_immutable_generation(tmp_path: Path) -> None:
     store, spec = make_store(tmp_path)
     first = store.prepare(spec.id)

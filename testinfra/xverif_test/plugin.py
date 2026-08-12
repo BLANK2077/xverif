@@ -14,7 +14,8 @@ from .catalog import Catalog, CatalogError
 from .gates import ExecutionPlan, build_plan, changed_paths, filter_changed, filter_plan
 from .items import ExternalSuiteItem
 from .fixtures import FixtureError, FixtureStore, load_default_registry
-from .reports import ResultManager
+from .reports import ResultManager, create_run_dir
+from .progress import ProgressReporter
 from .resources import apply_xdist_resource_group
 from .environment import write_snapshot
 from .engine_cleanup import EngineProcessGuard, OWNER_ENV
@@ -30,6 +31,8 @@ DEFAULT_CATALOG = Path("testinfra/catalog.v1.yaml")
 DEFAULT_SCHEMA = Path("testinfra/schemas/catalog.v1.schema.json")
 _RESULT_MANAGER: ResultManager | None = None
 _ENGINE_GUARD: EngineProcessGuard | None = None
+_PROGRESS_REPORTER: ProgressReporter | None = None
+_ITEM_OUTCOMES: dict[str, str] = {}
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -45,6 +48,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption("--rerun-failed", dest="xverif_rerun_failed")
     group.addoption("--xverif-fixture-clean", action="store_true", default=False)
     group.addoption("--xverif-results-clean", action="store_true", default=False)
+    group.addoption(
+        "--xverif-progress-interval",
+        type=float,
+        default=30.0,
+        help="seconds between durable progress heartbeats (default: 30)",
+    )
 
 
 def _repo_root(config: pytest.Config) -> Path:
@@ -138,7 +147,7 @@ def _apply_plan_environment(plan: ExecutionPlan) -> None:
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_configure(config: pytest.Config) -> None:
-    global _RESULT_MANAGER, _ENGINE_GUARD
+    global _RESULT_MANAGER, _ENGINE_GUARD, _PROGRESS_REPORTER
     os.environ["XVERIF_TEST_TMPDIR"] = str(_repo_root(config) / "tmp")
     if hasattr(config, "workerinput"):
         token = config.workerinput.get("xdebug_engine_owner_token")  # type: ignore[attr-defined]
@@ -162,11 +171,25 @@ def pytest_configure(config: pytest.Config) -> None:
     ):
         plan: ExecutionPlan = config._xverif_plan  # type: ignore[attr-defined]
         catalog: Catalog = config._xverif_catalog  # type: ignore[attr-defined]
+        progress_interval = _progress_interval(config)
         _RESULT_MANAGER = ResultManager(_repo_root(config), plan.gate, catalog.version)
         config._xverif_results = _RESULT_MANAGER  # type: ignore[attr-defined]
+        _PROGRESS_REPORTER = ProgressReporter(
+            f"gate:{plan.gate}",
+            _RESULT_MANAGER.run_dir,
+            interval_sec=progress_interval,
+            print_item_events=False,
+            owns_running_marker=False,
+        )
         if getattr(config.option, "xmlpath", None) is None:
             config.option.xmlpath = str(_RESULT_MANAGER.run_dir / "junit.xml")
-        _run_gate_preflight(config)
+        _PROGRESS_REPORTER.start()
+        try:
+            _run_gate_preflight(config)
+        except BaseException:
+            _PROGRESS_REPORTER.finish(outcome="failed")
+            _RESULT_MANAGER.finish(int(pytest.ExitCode.USAGE_ERROR))
+            raise
     elif operation == "gate" and hasattr(config, "workerinput"):
         worker_run_dir = config.workerinput.get("xverif_run_dir")  # type: ignore[attr-defined]
         if worker_run_dir:
@@ -263,6 +286,7 @@ def pytest_cmdline_main(config: pytest.Config) -> int | None:
         return None
     if operation != "gate":
         root = _repo_root(config)
+        progress: ProgressReporter | None = None
         try:
             store = FixtureStore(root, load_default_registry(root))
             if operation == "prepare":
@@ -272,16 +296,36 @@ def pytest_cmdline_main(config: pytest.Config) -> int | None:
                     if requested == ["all-generated"]
                     else requested
                 )
-                for fixture_id in fixture_ids:
-                    _check_fixture_build_dependencies(root, store, fixture_id)
-                    try:
-                        store.resolve(fixture_id)
-                        cache_hit = True
-                    except FixtureError:
-                        cache_hit = False
-                    path = store.prepare(fixture_id)
-                    status = "cache hit" if cache_hit else "prepared"
-                    print(f"{status} {fixture_id}: {path.relative_to(root)}")
+                progress = _operation_progress(
+                    root, "fixture-prepare", len(fixture_ids), config
+                )
+                try:
+                    for fixture_id in fixture_ids:
+                        progress.item_start(fixture_id, detail="dependencies")
+                        try:
+                            _check_fixture_build_dependencies(root, store, fixture_id)
+                            try:
+                                store.resolve(fixture_id)
+                                cache_hit = True
+                            except FixtureError:
+                                cache_hit = False
+                            path = store.prepare(
+                                fixture_id,
+                                progress=lambda phase, item=fixture_id: progress.item_phase(
+                                    item, phase
+                                ),
+                            )
+                        except BaseException:
+                            progress.item_finish(fixture_id, outcome="failed")
+                            raise
+                        progress.item_finish(fixture_id)
+                        status = "cache hit" if cache_hit else "prepared"
+                        print(f"{status} {fixture_id}: {path.relative_to(root)}")
+                except BaseException:
+                    progress.finish(outcome="failed")
+                    raise
+                timing = progress.finish(outcome="passed")
+                _print_operation_summary(root, progress.run_dir, timing)
                 return pytest.ExitCode.OK
             if operation == "fixture-validation":
                 changed = config.getoption("--xverif-changed")
@@ -292,10 +336,31 @@ def pytest_cmdline_main(config: pytest.Config) -> int | None:
                 fixture_ids = [spec.id for spec in store.registry.fixtures]
                 if changed:
                     fixture_ids = list(store.affected_fixture_ids(changed_paths(root, changed)))
-                for fixture_id in fixture_ids:
-                    _check_fixture_build_dependencies(root, store, fixture_id)
-                    path = store.prepare(fixture_id, rebuild=True)
-                    print(f"validated {fixture_id}: {path.relative_to(root)}")
+                progress = _operation_progress(
+                    root, "fixture-validation", len(fixture_ids), config
+                )
+                try:
+                    for fixture_id in fixture_ids:
+                        progress.item_start(fixture_id, detail="dependencies")
+                        try:
+                            _check_fixture_build_dependencies(root, store, fixture_id)
+                            path = store.prepare(
+                                fixture_id,
+                                rebuild=True,
+                                progress=lambda phase, item=fixture_id: progress.item_phase(
+                                    item, phase
+                                ),
+                            )
+                        except BaseException:
+                            progress.item_finish(fixture_id, outcome="failed")
+                            raise
+                        progress.item_finish(fixture_id)
+                        print(f"validated {fixture_id}: {path.relative_to(root)}")
+                except BaseException:
+                    progress.finish(outcome="failed")
+                    raise
+                timing = progress.finish(outcome="passed")
+                _print_operation_summary(root, progress.run_dir, timing)
                 return pytest.ExitCode.OK
             if operation == "fixture-clean":
                 store.clean()
@@ -399,11 +464,29 @@ def pytest_collection_modifyitems(
     items[:] = kept
     if deselected:
         config.hook.pytest_deselected(items=deselected)
+    if _PROGRESS_REPORTER is not None and not hasattr(config, "workerinput"):
+        _PROGRESS_REPORTER.set_total(len(kept))
+
+
+def pytest_runtest_logstart(nodeid: str, location: tuple[str, int | None, str]) -> None:
+    if _PROGRESS_REPORTER is not None:
+        _PROGRESS_REPORTER.item_start(nodeid)
 
 
 def pytest_runtest_logreport(report: pytest.TestReport) -> None:
     if _RESULT_MANAGER is not None:
         _RESULT_MANAGER.record_report(report)
+    if _PROGRESS_REPORTER is not None:
+        previous = _ITEM_OUTCOMES.get(report.nodeid, "passed")
+        if report.failed:
+            _ITEM_OUTCOMES[report.nodeid] = "failed"
+        elif report.skipped and previous != "failed":
+            _ITEM_OUTCOMES[report.nodeid] = "skipped"
+        else:
+            _ITEM_OUTCOMES.setdefault(report.nodeid, "passed")
+    if _PROGRESS_REPORTER is not None and report.when == "teardown":
+        outcome = _ITEM_OUTCOMES.pop(report.nodeid, "passed")
+        _PROGRESS_REPORTER.item_finish(report.nodeid, outcome=outcome)
 
 
 def pytest_configure_node(node: Any) -> None:
@@ -416,12 +499,22 @@ def pytest_configure_node(node: Any) -> None:
         )
 
 
+@pytest.hookimpl(optionalhook=True)
+def pytest_xdist_node_collection_finished(node: Any, ids: list[str]) -> None:
+    if _PROGRESS_REPORTER is not None and _PROGRESS_REPORTER.total is None:
+        _PROGRESS_REPORTER.set_total(len(ids))
+
+
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     if _ENGINE_GUARD is not None and not hasattr(session.config, "workerinput"):
         survivors = _ENGINE_GUARD.cleanup()
         if survivors:
             session.config._xverif_engine_cleanup_survivors = sorted(survivors)  # type: ignore[attr-defined]
             session.exitstatus = pytest.ExitCode.TESTS_FAILED
+    if _PROGRESS_REPORTER is not None and not hasattr(session.config, "workerinput"):
+        _PROGRESS_REPORTER.finish(
+            outcome="passed" if int(session.exitstatus) == 0 else "failed"
+        )
     if _RESULT_MANAGER is not None and not hasattr(session.config, "workerinput"):
         _RESULT_MANAGER.finish(int(session.exitstatus))
 
@@ -434,9 +527,68 @@ def pytest_terminal_summary(
             "xverif results: "
             + _RESULT_MANAGER.run_dir.relative_to(_repo_root(config)).as_posix()
         )
+        timing = json.loads(
+            (_RESULT_MANAGER.run_dir / "timing.json").read_text(encoding="utf-8")
+        )
+        terminalreporter.write_line(
+            f"xverif wall time: {timing['duration_sec']:.1f}s; "
+            + "slowest: "
+            + _slow_items_text(timing.get("items", []))
+        )
     survivors = getattr(config, "_xverif_engine_cleanup_survivors", [])
     if survivors:
         terminalreporter.write_line(
             "ERROR: test-owned xdebug engine cleanup failed for pids: "
             + ", ".join(str(pid) for pid in survivors)
         )
+
+
+def _progress_interval(config: pytest.Config) -> float:
+    value = float(config.getoption("--xverif-progress-interval"))
+    if value <= 0:
+        raise pytest.UsageError("--xverif-progress-interval must be greater than 0")
+    return value
+
+
+def _operation_progress(
+    root: Path,
+    operation: str,
+    total: int,
+    config: pytest.Config,
+) -> ProgressReporter:
+    progress_interval = _progress_interval(config)
+    run_dir = create_run_dir(root)
+    reporter = ProgressReporter(
+        operation,
+        run_dir,
+        total=total,
+        interval_sec=progress_interval,
+    )
+    reporter.start()
+    return reporter
+
+
+def _print_operation_summary(
+    root: Path, run_dir: Path, timing: dict[str, Any]
+) -> None:
+    print(
+        f"xverif {timing['operation']} duration: {timing['duration_sec']:.1f}s; "
+        f"slowest: {_slow_items_text(timing.get('items', []))}"
+    )
+    print(f"xverif results: {run_dir.relative_to(root).as_posix()}")
+
+
+def _slow_items_text(items: list[dict[str, Any]], limit: int = 5) -> str:
+    if not items:
+        return "none"
+    labels: list[str] = []
+    for item in items[:limit]:
+        label = f"{item['id']}={float(item['duration_sec']):.1f}s"
+        phases = list(item.get("phases", []))
+        if phases:
+            slowest = max(phases, key=lambda phase: float(phase["duration_sec"]))
+            label += (
+                f"({slowest['name']}={float(slowest['duration_sec']):.1f}s)"
+            )
+        labels.append(label)
+    return ", ".join(labels)

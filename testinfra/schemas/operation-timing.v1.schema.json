@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "xverif-operation-timing.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "operation", "outcome", "started_at", "finished_at", "duration_sec", "completed", "total", "active", "items"],
+  "properties": {
+    "schema_version": {"const": "xverif-operation-timing.v1"},
+    "operation": {"type": "string", "minLength": 1},
+    "outcome": {"enum": ["passed", "failed", "running"]},
+    "started_at": {"type": "string", "format": "date-time"},
+    "finished_at": {"type": ["string", "null"], "format": "date-time"},
+    "duration_sec": {"type": "number", "minimum": 0},
+    "completed": {"type": "integer", "minimum": 0},
+    "total": {"type": ["integer", "null"], "minimum": 0},
+    "active": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "detail", "duration_sec"],
+        "properties": {
+          "id": {"type": "string"},
+          "detail": {"type": ["string", "null"]},
+          "duration_sec": {"type": "number", "minimum": 0}
+        }
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "outcome", "duration_sec", "phases"],
+        "properties": {
+          "id": {"type": "string"},
+          "outcome": {"enum": ["passed", "failed", "skipped"]},
+          "duration_sec": {"type": "number", "minimum": 0},
+          "phases": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "duration_sec"],
+              "properties": {
+                "name": {"type": "string"},
+                "duration_sec": {"type": "number", "minimum": 0}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

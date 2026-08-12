@@ -183,6 +183,12 @@ pytest --xverif-fixture-clean
 pytest --xverif-results-clean
 ```
 
+正式 gate、fixture prepare 和 fixture validation 默认每 30 秒打印 `[xverif-progress]`，展示累计
+时长、完成数以及当前 test/fixture/phase；可用 `--xverif-progress-interval <seconds>` 调整。
+每次运行在 `.xverif-test-results/<run>/` 持续写入 `progress.jsonl`，结束生成按耗时降序的
+`timing.json`；gate 的 `report.json` 还记录 wall-clock 和 suite 聚合时长。终端汇总直接列出最慢
+5 项，fixture 项同时标出最慢 builder/probe phase。
+
 Dependency checks are isolated by suite. The `fast` gate is hermetic and starts no external EDA process. Gates or fixture operations involving NPI, MCP processes, VCS, or real databases must run in a properly licensed host environment outside the sandbox. `XVERIF_TEST_EXECUTION_ENV=host` records execution evidence; it does not elevate privileges or switch environments. A missing required fixture is an error with an explicit preparation command; tests never silently prepare, skip, or switch backends. Bare `pytest` is a usage error. See [`doc/agents/xdebug/tests.md`](doc/agents/xdebug/tests.md) for the full contract.
 
 ## Documentation

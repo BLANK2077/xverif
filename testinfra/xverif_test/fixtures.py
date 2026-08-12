@@ -11,7 +11,7 @@ import tempfile
 import fnmatch
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 import jsonschema
 import yaml
@@ -148,12 +148,21 @@ class FixtureStore:
         self._validate_published(spec, target, fingerprint)
         return target / "resources"
 
-    def prepare(self, fixture_id: str, *, rebuild: bool = False) -> Path:
+    def prepare(
+        self,
+        fixture_id: str,
+        *,
+        rebuild: bool = False,
+        progress: Callable[[str], None] | None = None,
+    ) -> Path:
+        notify = progress or (lambda _phase: None)
         spec = self.registry.by_id(fixture_id)
+        notify("fingerprint")
         fingerprint, tool_identity = self.fingerprint(spec)
         fixture_root = self.root / spec.id
         fixture_root.mkdir(parents=True, exist_ok=True)
         lock_path = fixture_root / ".prepare.lock"
+        notify("lock")
         with lock_path.open("a+", encoding="utf-8") as lock_stream:
             fcntl.flock(lock_stream.fileno(), fcntl.LOCK_EX)
             if not rebuild:
@@ -162,6 +171,7 @@ class FixtureStore:
                 except FixtureError:
                     target = None
                 if target is not None:
+                    notify("cache_validation")
                     self._validate_published(spec, target, fingerprint)
                     return target / "resources"
             staging_root = fixture_root / ".staging"
@@ -169,9 +179,17 @@ class FixtureStore:
             staging = Path(tempfile.mkdtemp(prefix="prepare-", dir=staging_root))
             (staging / "resources").mkdir(parents=True, exist_ok=True)
             try:
+                notify("builder")
                 self._run_builder(spec, staging)
+                notify("output_validation")
                 self._validate_outputs(spec, staging / "resources")
-                self._run_probes(spec, staging / "resources", staging)
+                self._run_probes(
+                    spec,
+                    staging / "resources",
+                    staging,
+                    progress=notify,
+                )
+                notify("publish")
                 manifest = {
                     "schema_version": "xverif-fixture-manifest.v1",
                     "fixture_id": spec.id,
@@ -193,7 +211,7 @@ class FixtureStore:
                 os.replace(staging, target)
                 self._write_current(fixture_root, fingerprint, version)
                 return target / "resources"
-            except Exception:
+            except BaseException:
                 shutil.rmtree(staging, ignore_errors=True)
                 raise
 
@@ -268,7 +286,15 @@ class FixtureStore:
                 f"fixture builder failed for {spec.id}: rc={result.returncode}\n{tail}"
             )
 
-    def _run_probes(self, spec: FixtureSpec, resources: Path, staging: Path) -> None:
+    def _run_probes(
+        self,
+        spec: FixtureSpec,
+        resources: Path,
+        staging: Path,
+        *,
+        progress: Callable[[str], None] | None = None,
+    ) -> None:
+        notify = progress or (lambda _phase: None)
         values = {
             "repo": str(self.repo_root),
             "source": str((self.repo_root / spec.source_dir).resolve()),
@@ -277,6 +303,7 @@ class FixtureStore:
             "home": str(Path.home()),
         }
         for index, probe in enumerate(spec.probes):
+            notify(f"probe_{index + 1}_of_{len(spec.probes)}")
             argv = [str(value).format(**values) for value in probe["argv"]]
             cwd = Path(str(probe.get("cwd", "{repo}")).format(**values))
             env = os.environ.copy()

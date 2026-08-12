@@ -52,6 +52,15 @@ pytest --xverif-results-clean
 
 Fixture 使用内容指纹、工具兼容 identity、跨进程锁、staging、backend-aware semantic probe、不可变 generation 和原子 `current.json` 切换。builder 与 probe 只在显式 prepare/validation 发布新 generation 时执行；普通 gate 和 cache-hit prepare 只读 manifest/产物，不重新编译或仿真。cache miss、指纹不符或输出不完整会在 suite 启动前形成 required preflight ERROR，并给出 prepare 命令；不会自动生成、SKIP 或换数据源。连续两次 prepare 的第二次必须命中缓存。
 
+所有正式 gate、fixture prepare 和 fixture validation 默认每 30 秒向终端打印一条
+`[xverif-progress]` 心跳，列出累计时长、完成数和当前运行的 test/fixture/phase。可用
+`--xverif-progress-interval <seconds>` 调整间隔，但必须大于 0。进度同时实时追加到本次结果目录的
+`progress.jsonl`；结束后 `timing.json` 按耗时降序记录每个 test/fixture，以及 fixture 的
+fingerprint、lock、builder、output validation、probe、publish 分阶段时长。
+正式 pytest 配置使用官方 `tee-sys` capture，使心跳实时进入终端/CI 日志，同时保留 Python
+stdout/stderr 捕获证据；产品或 EDA 子进程继续由 runner 的 `capture_output`、stdout/stderr log 文件
+负责，不依赖 pytest fd capture。`progress.jsonl` 仍作为独立、持续 flush 的机器可读观察入口。
+
 `xdebug.axi_vip` 一次编译后运行 stress、固定 delay，以及 seed 7/19/73 三组固定
 seed 随机 delay。每组必须发布 FSDB、simulation log 和独立 pin-handshake oracle；
 测试比较 VIP scoreboard、pin oracle 与 xdebug canonical transaction，并检查三种
@@ -104,7 +113,9 @@ range→range→full→range，并以连续 hard-limit 失败证明失败子请�
 
 每次 gate 写入 `.xverif-test-results/<run>/`：
 
-- `report.json`：suite/node、phase、outcome、duration、error layer。
+- `report.json`：suite/node、phase、outcome、duration、error layer、gate wall-clock 和 suite 聚合时长。
+- `progress.jsonl`：执行期间持续落盘的 start/heartbeat/item/finish 事件，可观察仍在运行的任务。
+- `timing.json`：最终 wall-clock、按耗时降序的 test/fixture 和 fixture phase 明细。
 - `junit.xml`：标准 JUnit 报告。
 - `environment.json`：去敏 capability 与 host/sandbox 类别。
 - `suites/<id>/`：external stdout/stderr 与 pytest 捕获日志。

@@ -1,4 +1,5 @@
 from pathlib import Path
+import tomllib
 
 from testinfra.xverif_test.catalog import Catalog
 from testinfra.xverif_test.dependencies import (
@@ -30,3 +31,9 @@ def test_all_suite_dependencies_are_registered() -> None:
         ROOT / "testinfra/schemas/catalog.v1.schema.json",
     )
     validate_suite_dependencies(catalog, load_default_dependency_registry(ROOT))
+
+
+def test_pytest_defaults_to_live_tee_capture_for_progress() -> None:
+    config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    addopts = config["tool"]["pytest"]["ini_options"]["addopts"].split()
+    assert "--capture=tee-sys" in addopts

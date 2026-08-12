@@ -23,7 +23,7 @@ include = ["testinfra*"]
 namespaces = false
 
 [tool.pytest.ini_options]
-addopts = "-ra --strict-markers --dist=loadgroup"
+addopts = "-ra --strict-markers --dist=loadgroup --capture=tee-sys"
 pythonpath = [
   "xbit/src",
   "xentry/src",
