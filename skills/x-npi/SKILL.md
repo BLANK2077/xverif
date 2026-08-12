@@ -30,6 +30,7 @@ from x_npi.wave import open_fsdb, iter_edge_samples
 from x_npi.protocol import axi_summary
 from x_npi.urg import export_summary, parse_summary
 from x_npi.coverage import load_exclusion_files, open_covdb, compile_csv_to_el
+from x_npi.container import plan_container_records, write_csv_set
 ```
 
 公共 helper 按模块分组：
@@ -62,10 +63,13 @@ from x_npi.coverage import load_exclusion_files, open_covdb, compile_csv_to_el
   启动和遍历成本越高，而且容易把 parent aggregate 与 child bin 重复计分。普通 summary、层次、
   test list、code/assert/functional typed 统计和 detail export 一律优先 URG；NPI 在 coverage
   部分只用于 exclusion target 的必要遍历以及 EL load/set/save/unload。
-- `compile_csv_to_el(db, test, csv_dir, output_dir)` 内建 indexed resolver：code/assertion 按精确
-  scope 和所需 metric 裁剪，functional 因 pynpi 缺少直达接口仍需扫描该类全树；每个非空 kind
-  固定两遍（唯一性预检、应用），不按 CSV 行重扫，复杂度为 `O(H×P+R)`。零/多匹配和两遍间
-  身份变化均失败并回滚；不接受外接 resolver。
+- `compile_csv_to_el(db, test, csv_dir, output_dir)` 内建 indexed resolver：code/assertion 对 CSV 中
+  唯一 exact scope 使用 `handle_by_name`，不遍历 instance hierarchy；functional 预检按请求的
+  group/point/cross 前缀剪枝，apply 用短生命周期 locator trie 重放，不做第二次全树扫描。零/多匹配
+  和两遍间身份变化均失败并回滚；不缓存 native handle、不建立全 bin 索引、不接受外接 resolver。
+- `container_exclude.py` 是 x-npi 独立容器入口：从既有 fixed URG report 解析，或使用固定 full64
+  URG 命令新生成 report；递归 instance 只展开 XML 真实节点，然后生成 exact container CSV 并原子
+  发布四份 EL。NPI 在该流程只用于排除定位和 EL 操作。
 - URG summary 百分比使用其 typed subtree ratio；单 metric pct 为 `covered/coverable`，多 metric
   root/scope SCORE 为所选 metric pct 的算术平均。`count` 不是 coverage pct。
 - 不支持从固定 summary 伪造 per-test attribution、source evidence 或 functional bin；需要 gap
@@ -82,4 +86,5 @@ from x_npi.coverage import load_exclusion_files, open_covdb, compile_csv_to_el
 - `scripts/examples/stream_summary.py`
 - `scripts/examples/coverage_summary.py`
 - `scripts/examples/csv_to_el.py`
+- `scripts/examples/container_exclude.py`
 - `scripts/examples/trace_driver_summary.py`

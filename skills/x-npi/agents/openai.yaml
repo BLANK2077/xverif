@@ -1,4 +1,4 @@
 interface:
   display_name: "x-npi"
   short_description: "Python NPI analysis, URG coverage export, and standalone exclusion CSV/EL scripts"
-  default_prompt: "Use $x-npi for Python pynpi waveform/protocol/design analysis; use its URG helpers for coverage reads and its built-in indexed NPI resolver only for exclusion traversal and standalone CSV-to-EL operations. If licenses are constrained, prefer bsub/LSF and never silently fall back to local execution."
+  default_prompt: "Use $x-npi for Python pynpi waveform/protocol/design analysis; use fixed full64 URG summary for coverage reads and XML hierarchy expansion, and use exact handle_by_name plus request-pruned locator replay only for NPI exclusion and standalone four-file CSV-to-EL operations. If licenses are constrained, prefer bsub/LSF and never silently fall back to local execution."

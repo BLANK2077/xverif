@@ -17,6 +17,7 @@ SKILL = ROOT / "skills" / "x-npi"
 sys.path.insert(0, str(SKILL / "scripts"))
 
 from x_npi.cli import require_output, sampling_contract  # noqa: E402
+from x_npi.container import plan_container_records, write_csv_set  # noqa: E402
 from x_npi.coverage import (  # noqa: E402
     CoverageExclusionError,
     compile_csv_to_el,
@@ -39,7 +40,7 @@ from x_npi.protocol import (  # noqa: E402
     stream_summary,
 )
 from x_npi.wave import active, known  # noqa: E402
-from x_npi.urg import export_summary, parse_summary  # noqa: E402
+from x_npi.urg import UrgCoverageError, export_summary, parse_summary  # noqa: E402
 
 
 def test_x_npi_links_and_examples_exist() -> None:
@@ -444,6 +445,32 @@ def test_x_npi_urg_parser_keeps_zero_denominator_exclusion(tmp_path: Path) -> No
     )
     assert group["coverage_pct"] is None
     assert group["excluded"] == 2
+
+
+def test_container_planner_expands_only_real_xml_instances(tmp_path: Path) -> None:
+    report = tmp_path / "urg-report"
+    _write_urg_report(report)
+    summary = parse_summary(report)
+    rows = plan_container_records(
+        summary,
+        recursive_instances=["top"],
+        covergroups=[("top", "cg_mode")],
+        coverpoints=[("top", "cg_mode", "cp_mode")],
+        crosses=[("top", "cg_mode", "cx_mode")],
+        reason="container regression",
+    )
+    instance_rows = [row for row in rows if row["target_kind"] == "instance"]
+    assert [(row["scope"], row["expansion_root"]) for row in instance_rows] == [
+        ("top", "top"), ("top.u0", "top"),
+    ]
+    csv_root = tmp_path / "csv"
+    paths = write_csv_set(csv_root, rows)
+    assert len(paths) == 4
+    assert parse_directory(csv_root)[-1].row_count == 5
+    with pytest.raises(UrgCoverageError, match="real instance"):
+        plan_container_records(
+            summary, recursive_instances=["synthetic"], reason="invalid",
+        )
 
 
 def test_urg_export_uses_only_fixed_full64_command(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

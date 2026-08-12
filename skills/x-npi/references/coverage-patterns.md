@@ -190,16 +190,17 @@ published = compile_csv_to_el(
 )
 ```
 
-compiler 先建立 CSV selector 哈希索引。每个非空 coverage kind 固定执行两遍流式 NPI 扫描：
-第一遍只验证每条 selector 恰好命中一次，第二遍才在目标 handle 存活期间 set 并立即 release。
-它不物化全库 coverage row、不跨遍历保存 handle，也不按 CSV 行重扫 VDB，因此复杂度为
-`O(H×P+R)`，而不是 `O(R×H)`；`H` 为相关 handle 数，`R` 为 CSV 行数，`P` 为 source path
-段数。code/assertion 按 scope 边界和所需 metric 裁剪；functional 因 pynpi 没有按 scope/name
-直达接口，仍从 merged test 的 testbench metric 根扫描该类全树。某类 CSV 为空时不扫描该类。
+compiler 先建立 CSV selector 哈希索引。code/assertion 对唯一 exact scope 使用
+`db.handle_by_name()`，只打开请求 metric，不遍历 instance hierarchy。functional 预检从 merged
+testbench metric 根出发，但按请求 group/point/cross 前缀剪枝；应用阶段重放短生命周期 locator
+trie，共享路径只访问一次，不做第二次全树扫描。实现不物化全库 coverage row、不保存 native handle、
+不建立全 bin 索引，也不按 CSV 行重扫 VDB。某类 CSV 为空时不扫描该类。
 
 source file 规范化分隔符后按完整路径段后缀匹配，最终 selector 仍必须唯一；零匹配、多匹配或
 两遍间身份变化均失败。转换先保存 baseline EL；任一 scan/set/save/publish/load 失败都会恢复
-native baseline 和旧文件。成功输出 `code.el/functional.el/assertion.el` 并按该顺序 load。
+native baseline 和旧文件。成功输出
+`code.el/functional.el/assertion.el/container.el` 并按该顺序 load；缺少可选 container CSV 的旧
+三文件目录仍合法，并生成空 `container.el`。
 
 CSV 的 `reason` 只存在 sidecar，原生 EL 不保存 reason。因此：
 
@@ -211,3 +212,7 @@ CSV 的 `reason` 只存在 sidecar，原生 EL 不保存 reason。因此：
 可执行模板为 `scripts/examples/csv_to_el.py`，只需提供 `--vdb`、`--csv-directory`、
 `--output-directory`，需要严格 exclusion 模式时增加 `--strict`。脚本不接受外接 resolver，
 也不 import xcov 私有模块。
+
+容器级独立入口是 `scripts/examples/container_exclude.py`。它支持 exact/recursive instance 以及
+covergroup、coverpoint、cross。recursive instance 只根据 fixed URG XML 的真实 instance adjacency
+展开，不接受 module selector，也不调用 NPI `instance_handles()` 补扫。
