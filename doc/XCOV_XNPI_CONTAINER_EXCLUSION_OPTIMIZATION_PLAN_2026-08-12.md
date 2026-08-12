@@ -2,7 +2,7 @@
 
 日期：2026-08-12
 
-状态：实施中
+状态：已完成
 
 分支：`master`
 
@@ -232,7 +232,7 @@ Fixture cache miss 只通过正式 `--xverif-prepare` 补齐，不自动仿真�
 | 4. x-npi resolver 与 CLI | completed | `71f3dca` | `skills.x_npi` 24 passed；CLI py_compile | 独立 fixed-URG container CLI；exact `handle_by_name`；locator trie replay |
 | 5. xcov actions 与 MCP | completed | `bbfc108` | `xcov.unit` 169；`xverif_mcp.unit` 163；action smoke 1；fake LSF 3 passed | 四 action 动态发布；atomic ownership；fake LSF only |
 | 6. 正式回归与 skill | completed | `3fd1d23` | exclusion 1；URG 7；large 2；x-npi real 7/perf 2；MCP 17；skills 16+3 passed | xcov CSV 也改为 exact scope 与 group-pruned resolver；四文件文档同步 |
-| 7. 全仓验证与推送 | in_progress | `a9263c0` + 最终记录提交 | fast 532；25 fixtures validated；regression 1118；nightly 1219 passed/2 real-LSF skipped | skills 四处安装 diff 通过；待最终 commit/push |
+| 7. 全仓验证与推送 | completed | `a9263c0`、`5ddb56f`、本状态提交 | fast 532；25 fixtures validated；regression 1118；nightly 1219 passed/2 real-LSF skipped | skills 四处安装 diff 通过；`master` 已成功推送 `origin` |
 
 ## 10. 最终验证记录
 
