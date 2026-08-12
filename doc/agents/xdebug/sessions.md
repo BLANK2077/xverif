@@ -32,6 +32,18 @@ session 系统用于复用 daidir、fsdb、engine 和 transport 资源。session
 5. `session.close` 默认 graceful 释放资源；异常残留显式使用 `mode=force`。
 6. `session.gc` 清理过期或不可用项。
 
+## FSDB 资源身份门禁
+
+- registry v3 在 open 时记录 canonical FSDB path、device、inode、size 和
+  nanosecond mtime；open 完成前再次比较完整指纹。
+- 所有 session-bound query 在进入旧 NPI/FSDB handle 前重新读取该指纹。任一变化、
+  资源缺失、类型变化或旧 v2 指纹不足都返回 `RESOURCE_CHANGED`。
+- `RESOURCE_CHANGED` 不自动 reopen、不清理 session、不切换 transport。先显式
+  `session.close`（默认 graceful），再对当前 FSDB 创建新 session。
+- v2 registry 仅为显式 close/gc 提供受控清理；不能把秒级 mtime 推导为 v3 强指纹。
+- 本轮强门禁只覆盖 FSDB。daidir 顶层目录 stat 仅用于 doctor 弱诊断，不能证明目录内部
+  数据库内容未被原地修改；不实现递归 hash 或 vendor-specific identity marker。
+
 ## Frontend 与 Backend Session
 
 frontend session：

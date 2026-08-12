@@ -25,11 +25,12 @@ const char* database_kind_name(DatabaseKind kind) {
     return "unknown";
 }
 
-bool resource_content_matches(long expected_mtime,
+bool resource_content_matches(long long expected_mtime_ns,
                               long long expected_size,
-                              long current_mtime,
+                              long long current_mtime_ns,
                               long long current_size) {
-    return expected_mtime == current_mtime && expected_size == current_size;
+    return expected_mtime_ns == current_mtime_ns &&
+           expected_size == current_size;
 }
 
 bool resource_identity_differs(unsigned long long expected_dev,

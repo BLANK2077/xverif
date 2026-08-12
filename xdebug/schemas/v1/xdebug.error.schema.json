@@ -299,6 +299,90 @@
           "type": "string",
           "minLength": 1
         },
+        "change_kind": {
+          "enum": [
+            "missing",
+            "type_changed",
+            "path_changed",
+            "fingerprint_upgrade_required",
+            "identity_changed",
+            "metadata_changed",
+            "identity_and_metadata_changed"
+          ]
+        },
+        "expected_resource_identity": {
+          "type": "object",
+          "properties": {
+            "canonical_path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "device": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "inode": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "mtime_ns": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "canonical_path",
+            "device",
+            "inode",
+            "mtime_ns",
+            "size_bytes"
+          ]
+        },
+        "actual_resource_identity": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "canonical_path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "device": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "inode": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "size_bytes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "mtime_ns": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "canonical_path",
+                "device",
+                "inode",
+                "mtime_ns",
+                "size_bytes"
+              ]
+            }
+          ]
+        },
         "requested_count": {
           "type": "integer",
           "minimum": 0

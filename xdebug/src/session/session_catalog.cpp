@@ -20,11 +20,11 @@ std::string canonical_registry_path() {
 }
 
 bool fingerprint_is_zero(
-    long mtime,
+    long long mtime_ns,
     long long size,
     unsigned long long dev,
     unsigned long long inode) {
-    return mtime == 0 && size == 0 && dev == 0 && inode == 0;
+    return mtime_ns == 0 && size == 0 && dev == 0 && inode == 0;
 }
 
 void validate_public_session_record(const SessionRecord& record) {
@@ -50,7 +50,7 @@ void validate_public_session_record(const SessionRecord& record) {
     }
     if (record.daidir.empty() &&
         !fingerprint_is_zero(
-            record.dbdir_mtime,
+            record.dbdir_mtime_ns,
             record.dbdir_size,
             record.dbdir_dev,
             record.dbdir_inode)) {
@@ -59,7 +59,7 @@ void validate_public_session_record(const SessionRecord& record) {
     }
     if (record.fsdb.empty() &&
         !fingerprint_is_zero(
-            record.fsdb_mtime,
+            record.fsdb_mtime_ns,
             record.fsdb_size,
             record.fsdb_dev,
             record.fsdb_inode)) {
@@ -100,8 +100,8 @@ void validate_public_session_record(const SessionRecord& record) {
     }
 
     if (record.server_pid < 0 || record.created_at < 0 ||
-        record.last_active < 0 || record.dbdir_mtime < 0 ||
-        record.dbdir_size < 0 || record.fsdb_mtime < 0 ||
+        record.last_active < 0 || record.dbdir_mtime_ns < 0 ||
+        record.dbdir_size < 0 || record.fsdb_mtime_ns < 0 ||
         record.fsdb_size < 0) {
         throw std::invalid_argument(
             "canonical session record has negative public metadata");
@@ -163,11 +163,11 @@ SessionCatalogResult SessionCatalog::read_all(
             record.server_pid = static_cast<int>(session.server_pid);
             record.created_at = static_cast<long long>(session.created_at);
             record.last_active = static_cast<long long>(session.last_active);
-            record.dbdir_mtime = session.dbdir_mtime;
+            record.dbdir_mtime_ns = session.dbdir_mtime_ns;
             record.dbdir_size = session.dbdir_size;
             record.dbdir_dev = session.dbdir_dev;
             record.dbdir_inode = session.dbdir_inode;
-            record.fsdb_mtime = session.fsdb_mtime;
+            record.fsdb_mtime_ns = session.fsdb_mtime_ns;
             record.fsdb_size = session.fsdb_size;
             record.fsdb_dev = session.fsdb_dev;
             record.fsdb_inode = session.fsdb_inode;
@@ -227,11 +227,13 @@ Json session_record_json(const SessionRecord& record) {
     if (record.server_pid > 0) item["server_pid"] = record.server_pid;
     if (record.created_at > 0) item["created_at"] = record.created_at;
     if (record.last_active > 0) item["last_active"] = record.last_active;
-    if (record.dbdir_mtime) item["daidir_mtime"] = record.dbdir_mtime;
+    if (record.dbdir_mtime_ns)
+        item["daidir_mtime_ns"] = record.dbdir_mtime_ns;
     if (record.dbdir_size) item["daidir_size"] = record.dbdir_size;
     if (record.dbdir_dev) item["daidir_dev"] = record.dbdir_dev;
     if (record.dbdir_inode) item["daidir_inode"] = record.dbdir_inode;
-    if (record.fsdb_mtime) item["fsdb_mtime"] = record.fsdb_mtime;
+    if (record.fsdb_mtime_ns)
+        item["fsdb_mtime_ns"] = record.fsdb_mtime_ns;
     if (record.fsdb_size) item["fsdb_size"] = record.fsdb_size;
     if (record.fsdb_dev) item["fsdb_dev"] = record.fsdb_dev;
     if (record.fsdb_inode) item["fsdb_inode"] = record.fsdb_inode;

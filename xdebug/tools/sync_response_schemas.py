@@ -216,11 +216,11 @@ def session_schema() -> dict[str, Any]:
         "server_pid",
         "created_at",
         "last_active",
-        "daidir_mtime",
+        "daidir_mtime_ns",
         "daidir_size",
         "daidir_dev",
         "daidir_inode",
-        "fsdb_mtime",
+        "fsdb_mtime_ns",
         "fsdb_size",
         "fsdb_dev",
         "fsdb_inode",
@@ -259,11 +259,11 @@ def session_record_schema() -> dict[str, Any]:
         "server_pid",
         "created_at",
         "last_active",
-        "daidir_mtime",
+        "daidir_mtime_ns",
         "daidir_size",
         "daidir_dev",
         "daidir_inode",
-        "fsdb_mtime",
+        "fsdb_mtime_ns",
         "fsdb_size",
         "fsdb_dev",
         "fsdb_inode",
@@ -289,7 +289,7 @@ def session_record_schema() -> dict[str, Any]:
                             {"required": [field]}
                             for field in (
                                 "fsdb",
-                                "fsdb_mtime",
+                                "fsdb_mtime_ns",
                                 "fsdb_size",
                                 "fsdb_dev",
                                 "fsdb_inode",
@@ -305,7 +305,7 @@ def session_record_schema() -> dict[str, Any]:
                             {"required": [field]}
                             for field in (
                                 "daidir",
-                                "daidir_mtime",
+                                "daidir_mtime_ns",
                                 "daidir_size",
                                 "daidir_dev",
                                 "daidir_inode",
@@ -627,6 +627,16 @@ def validation_issue_schema() -> dict[str, Any]:
 
 
 def error_schema(action: str) -> dict[str, Any]:
+    resource_identity = closed(
+        {
+            "canonical_path": {"type": "string", "minLength": 1},
+            "device": {"type": "integer", "minimum": 0},
+            "inode": {"type": "integer", "minimum": 0},
+            "size_bytes": {"type": "integer", "minimum": 0},
+            "mtime_ns": {"type": "integer", "minimum": 0},
+        },
+        ("canonical_path", "device", "inode", "size_bytes", "mtime_ns"),
+    )
     advisory = closed(
         {
             "code": {"type": "string"},
@@ -723,6 +733,21 @@ def error_schema(action: str) -> dict[str, Any]:
         "exit_status": {"type": "integer"},
         "health_status": {"type": "string", "minLength": 1},
         "resource_path": {"type": "string", "minLength": 1},
+        "change_kind": {
+            "enum": [
+                "missing",
+                "type_changed",
+                "path_changed",
+                "fingerprint_upgrade_required",
+                "identity_changed",
+                "metadata_changed",
+                "identity_and_metadata_changed",
+            ]
+        },
+        "expected_resource_identity": resource_identity,
+        "actual_resource_identity": {
+            "anyOf": [{"type": "null"}, resource_identity]
+        },
         "requested_count": {"type": "integer", "minimum": 0},
         "removed_count": {"type": "integer", "minimum": 0},
         "retained_count": {"type": "integer", "minimum": 0},

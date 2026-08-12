@@ -128,6 +128,10 @@ summary:
 tools/xdebug request.json
 ```
 
+持久 FSDB session 会在 open 时绑定 canonical path、device、inode、size 和
+nanosecond mtime。之后任一 session-bound query 若发现身份变化，会在复用旧 handle 前返回
+`RESOURCE_CHANGED`；xdebug 不会自动 reopen、刷新 session 或切换 transport。
+
 ### Shell 命令入口
 
 为了在任意目录和 Claude Code 这类非交互 shell 中稳定调用，建议把仓库 `tools/` 加入 `PATH`。下面示例里的 `<xverif-root>` 表示本仓库根目录，请按本机实际路径替换；文档和 skill 中不固定记录个人机器路径。

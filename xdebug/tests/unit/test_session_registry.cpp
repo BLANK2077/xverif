@@ -254,7 +254,7 @@ int main() {
             std::ios::trunc);
         assert(output.good());
         output
-            << "{\"version\":2,\"sessions\":[]}\n"
+            << "{\"version\":3,\"sessions\":[]}\n"
             << "trailing-data\n";
     }
     assert(

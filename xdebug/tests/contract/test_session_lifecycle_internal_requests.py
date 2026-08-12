@@ -168,6 +168,8 @@ def _write_registry(
     ownership_token_hash: str = "",
 ) -> None:
     now = int(time.time())
+    daidir_stat = Path(daidir).stat() if daidir else None
+    fsdb_stat = Path(fsdb).stat() if fsdb else None
     record = {
         "session_id": session_id,
         "transport": "uds",
@@ -186,19 +188,19 @@ def _write_registry(
         "server_pid": os.getpid(),
         "created_at": now - 10,
         "last_active": now if last_active is None else last_active,
-        "dbdir_mtime": 0,
-        "dbdir_size": 0,
-        "dbdir_dev": 0,
-        "dbdir_inode": 0,
-        "fsdb_mtime": 0,
-        "fsdb_size": 0,
-        "fsdb_dev": 0,
-        "fsdb_inode": 0,
+        "dbdir_mtime_ns": daidir_stat.st_mtime_ns if daidir_stat else 0,
+        "dbdir_size": daidir_stat.st_size if daidir_stat else 0,
+        "dbdir_dev": daidir_stat.st_dev if daidir_stat else 0,
+        "dbdir_inode": daidir_stat.st_ino if daidir_stat else 0,
+        "fsdb_mtime_ns": fsdb_stat.st_mtime_ns if fsdb_stat else 0,
+        "fsdb_size": fsdb_stat.st_size if fsdb_stat else 0,
+        "fsdb_dev": fsdb_stat.st_dev if fsdb_stat else 0,
+        "fsdb_inode": fsdb_stat.st_ino if fsdb_stat else 0,
     }
     path = home / ".xdebug" / "engine" / "registry.json"
     path.parent.mkdir(parents=True)
     path.write_text(
-        json.dumps({"version": 2, "sessions": [record]}, indent=2) + "\n",
+        json.dumps({"version": 3, "sessions": [record]}, indent=2) + "\n",
         encoding="utf-8",
     )
 
@@ -413,6 +415,52 @@ def test_expired_session_cleanup_does_not_inherit_query_args_or_limits(
     assert "signal" not in kill["args"]
     assert "time" not in kill["args"]
     assert "limits" not in kill
+
+
+def test_session_bound_query_rejects_replaced_fsdb_before_engine_dispatch(
+    repo_root: Path,
+    xdebug_root: Path,
+    tmp_path: Path,
+) -> None:
+    runner, home, capture_path = _isolated_frontend(
+        tmp_path,
+        repo_root=repo_root,
+        xdebug_root=xdebug_root,
+        mode="healthy",
+    )
+    fsdb = tmp_path / "waves.fsdb"
+    fsdb.write_bytes(b"old-wave")
+    _write_registry(home, session_id="changed_wave", fsdb=str(fsdb))
+    original = fsdb.stat()
+    replacement = tmp_path / "replacement.fsdb"
+    replacement.write_bytes(b"new-wave")
+    os.utime(
+        replacement,
+        ns=(original.st_atime_ns, original.st_mtime_ns),
+    )
+    os.replace(replacement, fsdb)
+    assert fsdb.stat().st_ino != original.st_ino
+
+    result = runner.run(
+        {
+            "api_version": "xdebug.v1",
+            "action": "value.at",
+            "target": {"session_id": "changed_wave"},
+            "args": {"signal": "top.clk", "time": "10ns"},
+        },
+        timeout_sec=5,
+    )
+
+    assert not result.ok, result.response
+    error = result.response["error"]
+    assert error["code"] == "RESOURCE_CHANGED"
+    assert error["error_layer"] == "session_manager"
+    assert error["resource"] == "fsdb"
+    assert error["resource_path"] == str(fsdb)
+    assert error["change_kind"] == "identity_changed"
+    assert error["recoverable"] is True
+    assert error["correct_example"]["action"] == "session.close"
+    assert not capture_path.exists()
 
 
 def test_conditional_kill_matches_private_open_record_before_forwarding(

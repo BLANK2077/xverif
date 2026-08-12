@@ -32,6 +32,11 @@ using namespace xdebug_design;
 
 namespace {
 
+long long stat_mtime_ns(const struct stat& st) {
+    return static_cast<long long>(st.st_mtim.tv_sec) * 1000000000LL +
+           static_cast<long long>(st.st_mtim.tv_nsec);
+}
+
 std::string default_transport_from_env() {
     return xdebug_core::xdebug_transport();
 }
@@ -255,7 +260,7 @@ bool SessionManager::populate_dbdir_metadata(const std::string& dbdir_path, Sess
     if (stat(dbdir_path.c_str(), &st) != 0) return false;
     if (!S_ISDIR(st.st_mode)) return false;
     session.dbdir_path = dbdir_path;
-    session.dbdir_mtime = static_cast<long>(st.st_mtime);
+    session.dbdir_mtime_ns = stat_mtime_ns(st);
     session.dbdir_size = static_cast<long long>(st.st_size);
     session.dbdir_dev = static_cast<unsigned long long>(st.st_dev);
     session.dbdir_inode = static_cast<unsigned long long>(st.st_ino);
@@ -269,10 +274,16 @@ bool SessionManager::current_dbdir_metadata(const SessionInfo& session, SessionI
 }
 
 bool SessionManager::dbdir_metadata_matches(const SessionInfo& expected, const SessionInfo& current) const {
-    return xdebug_core::resource_content_matches(expected.dbdir_mtime,
-                                                 expected.dbdir_size,
-                                                 current.dbdir_mtime,
-                                                 current.dbdir_size);
+    return xdebug_core::resource_content_matches(
+               expected.dbdir_mtime_ns,
+               expected.dbdir_size,
+               current.dbdir_mtime_ns,
+               current.dbdir_size) &&
+           !xdebug_core::resource_identity_differs(
+               expected.dbdir_dev,
+               expected.dbdir_inode,
+               current.dbdir_dev,
+               current.dbdir_inode);
 }
 
 bool SessionManager::populate_fsdb_metadata(const std::string& fsdb_file, SessionInfo& session) const {
@@ -280,7 +291,7 @@ bool SessionManager::populate_fsdb_metadata(const std::string& fsdb_file, Sessio
     if (stat(fsdb_file.c_str(), &st) != 0) return false;
     if (!S_ISREG(st.st_mode)) return false;
     session.fsdb_file = fsdb_file;
-    session.fsdb_mtime = static_cast<long>(st.st_mtime);
+    session.fsdb_mtime_ns = stat_mtime_ns(st);
     session.fsdb_size = static_cast<long long>(st.st_size);
     session.fsdb_dev = static_cast<unsigned long long>(st.st_dev);
     session.fsdb_inode = static_cast<unsigned long long>(st.st_ino);
@@ -294,10 +305,16 @@ bool SessionManager::current_fsdb_metadata(const SessionInfo& session, SessionIn
 }
 
 bool SessionManager::fsdb_metadata_matches(const SessionInfo& expected, const SessionInfo& current) const {
-    return xdebug_core::resource_content_matches(expected.fsdb_mtime,
-                                                 expected.fsdb_size,
-                                                 current.fsdb_mtime,
-                                                 current.fsdb_size);
+    return xdebug_core::resource_content_matches(
+               expected.fsdb_mtime_ns,
+               expected.fsdb_size,
+               current.fsdb_mtime_ns,
+               current.fsdb_size) &&
+           !xdebug_core::resource_identity_differs(
+               expected.fsdb_dev,
+               expected.fsdb_inode,
+               current.fsdb_dev,
+               current.fsdb_inode);
 }
 
 bool SessionManager::local_process_alive(pid_t pid) const {
@@ -1257,7 +1274,7 @@ SessionHealth SessionManager::diagnose_session_locked(
             health.message = "Daidir metadata changed since session was opened";
             xdebug_core::log_lifecycle_event("engine", session_id, "diagnose.dbdir_changed", false,
                                              {{"dbdir", session.dbdir_path},
-                                              {"old_mtime", session.dbdir_mtime}, {"new_mtime", current.dbdir_mtime},
+                                              {"old_mtime_ns", session.dbdir_mtime_ns}, {"new_mtime_ns", current.dbdir_mtime_ns},
                                               {"old_size", session.dbdir_size}, {"new_size", current.dbdir_size},
                                               {"old_dev", session.dbdir_dev}, {"new_dev", current.dbdir_dev},
                                               {"old_inode", session.dbdir_inode}, {"new_inode", current.dbdir_inode},
@@ -1298,7 +1315,7 @@ SessionHealth SessionManager::diagnose_session_locked(
             health.message = "FSDB metadata changed since session was opened";
             xdebug_core::log_lifecycle_event("engine", session_id, "diagnose.fsdb_changed", false,
                                              {{"fsdb", session.fsdb_file},
-                                              {"old_mtime", session.fsdb_mtime}, {"new_mtime", current.fsdb_mtime},
+                                              {"old_mtime_ns", session.fsdb_mtime_ns}, {"new_mtime_ns", current.fsdb_mtime_ns},
                                               {"old_size", session.fsdb_size}, {"new_size", current.fsdb_size},
                                               {"old_dev", session.fsdb_dev}, {"new_dev", current.fsdb_dev},
                                               {"old_inode", session.fsdb_inode}, {"new_inode", current.fsdb_inode},

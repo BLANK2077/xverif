@@ -159,7 +159,7 @@ native CLI、engine、session、MCP、SDK-free loop、schema、example、XOUT、
 
 ### C04 FSDB 资源身份门禁
 
-状态：`pending`
+状态：`completed`
 
 - 所有 session-bound query dispatch 前比较 canonical path/device/inode/size/mtime-ns。
 - 变化返回 RESOURCE_CHANGED，不 reopen，不进入旧 handle。
@@ -310,7 +310,7 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 | C01 计划书 | completed | `431c615` | 文档检查、`git diff --cached --check` |
 | C02 安全/batch | completed | 本提交 | 安全随机、batch/MCP、XOUT 边界及 focused suites 全绿 |
 | C03 Session | completed | 本提交 | 生命周期 lease/NPI 串行、deadline/超时终止、list 纯读、close graceful/force 与全 surface 迁移完成 |
-| C04 FSDB identity | pending | - | - |
+| C04 FSDB identity | completed | 本提交 | registry v3 纳秒指纹、open 二次校验、query 前 fail-closed gate 与 RESOURCE_CHANGED AI 证据完成 |
 | C05 Transport | pending | - | - |
 | C06 Cache | pending | - | - |
 | C07 Hierarchy | pending | - | - |
@@ -333,6 +333,10 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 | 2026-08-12 | C03 | `make -C xdebug all` / `xdebug.cpp_unit` / `xdebug.static` | host | PASS | 构建通过；1 / 107 passed（组合复验 108 passed） |
 | 2026-08-12 | C03 | `xdebug.contract` / `xdebug.session` | host | PASS | 111 / 40 passed |
 | 2026-08-12 | C03 | `xdebug.mcp_direct` + `xdebug.mcp_fake_lsf` | host | PASS | 7 passed |
+| 2026-08-12 | C04 | response schema generator/check、schema/example validate | host | PASS | 279 schemas；216 examples |
+| 2026-08-12 | C04 | `xdebug.contract` / `xdebug.cpp_unit` / `xdebug.static` | host | PASS | 112 / 1 / 107 passed |
+| 2026-08-12 | C04 | `xdebug.session` | host | PASS | 41 passed；含同 size/mtime-ns 原子替换 inode 回归 |
+| 2026-08-12 | C04 | `xdebug.synthetic_existing` + `xdebug.active_semantics` | host | PASS | 3 passed |
 
 ## 11. 偏差与阻塞记录
 

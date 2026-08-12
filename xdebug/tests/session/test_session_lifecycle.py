@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import signal
+import shutil
 import socket
 import subprocess
 import threading
@@ -67,18 +68,33 @@ def _write_registry_session(isolated_home: Path, record: dict) -> None:
         "server_pid": 0,
         "created_at": int(time.time()),
         "last_active": int(time.time()),
-        "dbdir_mtime": 0,
+        "dbdir_mtime_ns": 0,
         "dbdir_size": 0,
         "dbdir_dev": 0,
         "dbdir_inode": 0,
-        "fsdb_mtime": 0,
+        "fsdb_mtime_ns": 0,
         "fsdb_size": 0,
         "fsdb_dev": 0,
         "fsdb_inode": 0,
     }
     canonical.update(record)
+    for prefix, path_field in (
+        ("dbdir", "dbdir_path"),
+        ("fsdb", "fsdb_file"),
+    ):
+        resource_path = canonical[path_field]
+        if not resource_path or canonical[f"{prefix}_mtime_ns"] != 0:
+            continue
+        path_object = Path(resource_path)
+        if not path_object.exists():
+            continue
+        stat_result = path_object.stat()
+        canonical[f"{prefix}_mtime_ns"] = stat_result.st_mtime_ns
+        canonical[f"{prefix}_size"] = stat_result.st_size
+        canonical[f"{prefix}_dev"] = stat_result.st_dev
+        canonical[f"{prefix}_inode"] = stat_result.st_ino
     path.write_text(
-        json.dumps({"version": 2, "sessions": [canonical]}, indent=2),
+        json.dumps({"version": 3, "sessions": [canonical]}, indent=2),
         encoding="utf-8",
     )
     session_id = canonical["session_id"]
@@ -610,6 +626,65 @@ def test_session_doctor_reports_resource_changed_for_stale_fsdb(
 
 @pytest.mark.session
 @pytest.mark.waveform
+def test_session_query_rejects_atomically_replaced_fsdb(
+    resource_targets: dict,
+    cli_runner: CliRunner,
+    tmp_path: Path,
+) -> None:
+    source = Path(resource_targets["waveform"]["fsdb"])
+    mutable_fsdb = tmp_path / "waves.fsdb"
+    shutil.copy2(source, mutable_fsdb)
+    name = "replaced_fsdb"
+    try:
+        opened = cli_runner.run(
+            _request(
+                "session.open",
+                target={"fsdb": str(mutable_fsdb)},
+                args={"name": name},
+            )
+        )
+        assert opened.ok, opened.response
+        baseline = cli_runner.run(
+            _request(
+                "value.at",
+                target={"session_id": name},
+                args={"signal": "ai_complex_top.sig_a", "time": "10ns"},
+            )
+        )
+        assert baseline.ok, baseline.response
+
+        original = mutable_fsdb.stat()
+        staged = tmp_path / "staged.fsdb"
+        shutil.copy2(source, staged)
+        os.utime(
+            staged,
+            ns=(original.st_atime_ns, original.st_mtime_ns),
+        )
+        os.replace(staged, mutable_fsdb)
+        assert mutable_fsdb.stat().st_ino != original.st_ino
+
+        changed = cli_runner.run(
+            _request(
+                "value.at",
+                target={"session_id": name},
+                args={"signal": "ai_complex_top.sig_a", "time": "10ns"},
+            )
+        )
+        assert not changed.ok, changed.response
+        assert changed.response["error"]["code"] == "RESOURCE_CHANGED"
+        assert changed.response["error"]["change_kind"] == "identity_changed"
+        listed = cli_runner.run(_request("session.list"))
+        assert listed.ok
+        assert any(
+            item["session_id"] == name
+            for item in listed.response["data"]["sessions"]
+        )
+    finally:
+        _kill_all(cli_runner)
+
+
+@pytest.mark.session
+@pytest.mark.waveform
 def test_session_file_transport_open_query_doctor_and_close(
     resource_targets: dict,
     cli_runner: CliRunner,
@@ -795,7 +870,7 @@ def test_direct_resource_timeout_cleans_process_and_registry(
         json.dumps({"version": 1, "sessions": []}),
         json.dumps(
             {
-                "version": 2,
+                "version": 3,
                 "sessions": [
                     {
                         "session_id": "partial",

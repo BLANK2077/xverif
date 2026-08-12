@@ -57,14 +57,14 @@ struct SessionInfo {
 
     // Design resource fields
     std::string dbdir_path;
-    long dbdir_mtime = 0;
+    long long dbdir_mtime_ns = 0;
     long long dbdir_size = 0;
     unsigned long long dbdir_dev = 0;
     unsigned long long dbdir_inode = 0;
 
     // Waveform resource fields
     std::string fsdb_file;
-    long fsdb_mtime = 0;
+    long long fsdb_mtime_ns = 0;
     long long fsdb_size = 0;
     unsigned long long fsdb_dev = 0;
     unsigned long long fsdb_inode = 0;
@@ -76,9 +76,9 @@ struct SessionInfo {
 };
 
 const char* database_kind_name(DatabaseKind kind);
-bool resource_content_matches(long expected_mtime,
+bool resource_content_matches(long long expected_mtime_ns,
                               long long expected_size,
-                              long current_mtime,
+                              long long current_mtime_ns,
                               long long current_size);
 bool resource_identity_differs(unsigned long long expected_dev,
                                unsigned long long expected_inode,

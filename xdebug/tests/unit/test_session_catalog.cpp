@@ -34,11 +34,11 @@ xdebug::Json record(
         {"server_pid", 123},
         {"created_at", 1000},
         {"last_active", 1200},
-        {"dbdir_mtime", daidir.empty() ? 0 : 100},
+        {"dbdir_mtime_ns", daidir.empty() ? 0 : 100},
         {"dbdir_size", daidir.empty() ? 0 : 200},
         {"dbdir_dev", daidir.empty() ? 0 : 3},
         {"dbdir_inode", daidir.empty() ? 0 : 4},
-        {"fsdb_mtime", fsdb.empty() ? 0 : 300},
+        {"fsdb_mtime_ns", fsdb.empty() ? 0 : 300},
         {"fsdb_size", fsdb.empty() ? 0 : 400},
         {"fsdb_dev", fsdb.empty() ? 0 : 5},
         {"fsdb_inode", fsdb.empty() ? 0 : 6}
@@ -85,7 +85,7 @@ int main() {
     terminated["lifecycle_state"] = "terminated_on_timeout";
     terminated["server_pid"] = 0;
     write_registry(registry_path, {
-        {"version", 2},
+        {"version", 3},
         {"sessions", xdebug::Json::array({
             bound_wave,
             record("design", "fixtures/simv.daidir", ""),
@@ -186,7 +186,7 @@ int main() {
     assert(result.code == "SESSION_NOT_FOUND");
 
     std::ofstream corrupt(registry_path.c_str());
-    corrupt << R"JSON({"version":2,"sessions":[)JSON";
+    corrupt << R"JSON({"version":3,"sessions":[)JSON";
     corrupt.close();
     records.clear();
     result = catalog.list(records);
@@ -198,7 +198,7 @@ int main() {
     // by any non-whitespace payload is invalid, not partially accepted.
     {
         xdebug::Json valid = {
-            {"version", 2},
+            {"version", 3},
             {"sessions", xdebug::Json::array({
                 record("trailing", "", "fixtures/trailing.fsdb"),
             })}
@@ -225,7 +225,7 @@ int main() {
     result = catalog.list(records);
     assert(result.status == xdebug::SessionCatalogStatus::Invalid);
     assert(result.code == "REGISTRY_INVALID");
-    assert(result.message.find("schema version 2") != std::string::npos);
+    assert(result.message.find("schema version 2 or 3") != std::string::npos);
     assert(records.empty());
 
     // A single malformed, aliased, unknown, or duplicate record invalidates
@@ -233,7 +233,7 @@ int main() {
     xdebug::Json aliased = record("aliased", "fixtures/a.daidir", "");
     aliased["design_file"] = aliased["dbdir_path"];
     write_registry(registry_path, {
-        {"version", 2},
+        {"version", 3},
         {"sessions", xdebug::Json::array({
             record("valid_before_error", "", "fixtures/ok.fsdb"),
             aliased,
@@ -251,7 +251,7 @@ int main() {
         record("missing_transport", "", "fixtures/missing.fsdb");
     missing_transport.erase("transport");
     write_registry(registry_path, {
-        {"version", 2},
+        {"version", 3},
         {"sessions", xdebug::Json::array({missing_transport})}
     });
     records.clear();
@@ -260,7 +260,7 @@ int main() {
     assert(records.empty());
 
     write_registry(registry_path, {
-        {"version", 2},
+        {"version", 3},
         {"sessions", xdebug::Json::array({
             record("invalid_transport", "", "fixtures/invalid.fsdb", "invalid"),
         })}
@@ -274,7 +274,7 @@ int main() {
         record("missing_server_host", "", "fixtures/missing-host.fsdb");
     missing_server_host["server_host"] = "";
     write_registry(registry_path, {
-        {"version", 2},
+        {"version", 3},
         {"sessions", xdebug::Json::array({missing_server_host})}
     });
     records.clear();
@@ -286,7 +286,7 @@ int main() {
         record("uds_with_file_endpoint", "", "fixtures/uds.fsdb");
     uds_with_file_endpoint["file_dir"] = "fixtures/unexpected.exchange";
     write_registry(registry_path, {
-        {"version", 2},
+        {"version", 3},
         {"sessions", xdebug::Json::array({uds_with_file_endpoint})}
     });
     records.clear();
@@ -298,7 +298,7 @@ int main() {
         record("tcp_with_socket", "fixtures/tcp.daidir", "", "tcp");
     tcp_with_socket["socket_path"] = "fixtures/unexpected.sock";
     write_registry(registry_path, {
-        {"version", 2},
+        {"version", 3},
         {"sessions", xdebug::Json::array({tcp_with_socket})}
     });
     records.clear();
@@ -310,7 +310,7 @@ int main() {
         record("file_with_host", "", "fixtures/file.fsdb", "file");
     file_with_host["host"] = "unexpected-host";
     write_registry(registry_path, {
-        {"version", 2},
+        {"version", 3},
         {"sessions", xdebug::Json::array({file_with_host})}
     });
     records.clear();
@@ -323,7 +323,7 @@ int main() {
     invalid_ownership_hash["ownership_token_hash"] =
         std::string(64, 'A');
     write_registry(registry_path, {
-        {"version", 2},
+        {"version", 3},
         {"sessions", xdebug::Json::array({invalid_ownership_hash})}
     });
     records.clear();
@@ -336,7 +336,7 @@ int main() {
         record("overflow_port", "fixtures/overflow.daidir", "", "tcp");
     overflow_port["port"] = 4294967296ULL;
     write_registry(registry_path, {
-        {"version", 2},
+        {"version", 3},
         {"sessions", xdebug::Json::array({overflow_port})}
     });
     records.clear();
@@ -349,7 +349,7 @@ int main() {
     overflow_pid["server_pid"] =
         18446744073709551615ULL;
     write_registry(registry_path, {
-        {"version", 2},
+        {"version", 3},
         {"sessions", xdebug::Json::array({overflow_pid})}
     });
     records.clear();
@@ -361,7 +361,7 @@ int main() {
         record("invalid_generation", "", "fixtures/generation.fsdb");
     invalid_generation["generation"] = std::string(63, 'a');
     write_registry(registry_path, {
-        {"version", 2},
+        {"version", 3},
         {"sessions", xdebug::Json::array({invalid_generation})}
     });
     records.clear();
@@ -373,7 +373,7 @@ int main() {
         record("invalid_lifecycle", "", "fixtures/lifecycle.fsdb");
     invalid_lifecycle["lifecycle_state"] = "closing";
     write_registry(registry_path, {
-        {"version", 2},
+        {"version", 3},
         {"sessions", xdebug::Json::array({invalid_lifecycle})}
     });
     records.clear();
@@ -385,7 +385,7 @@ int main() {
         record("wave_with_design_fingerprint", "", "fixtures/wave.fsdb");
     waveform_with_design_fingerprint["dbdir_size"] = 1;
     write_registry(registry_path, {
-        {"version", 2},
+        {"version", 3},
         {"sessions", xdebug::Json::array({
             waveform_with_design_fingerprint
         })}
@@ -410,7 +410,7 @@ int main() {
     assert(public_record_rejected);
 
     write_registry(registry_path, {
-        {"version", 2},
+        {"version", 3},
         {"sessions", xdebug::Json::array({
             record("duplicate", "", "fixtures/a.fsdb"),
             record("duplicate", "", "fixtures/b.fsdb"),

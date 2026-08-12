@@ -182,9 +182,14 @@ Json public_envelope_error(const Json& request) {
     return Json();
 }
 
-bool fingerprint_recorded(long mtime, long long size,
+bool fingerprint_recorded(long long mtime_ns, long long size,
                           unsigned long long dev, unsigned long long inode) {
-    return mtime != 0 || size != 0 || dev != 0 || inode != 0;
+    return mtime_ns != 0 || size != 0 || dev != 0 || inode != 0;
+}
+
+long long stat_mtime_ns(const struct stat& st) {
+    return static_cast<long long>(st.st_mtim.tv_sec) * 1000000000LL +
+           static_cast<long long>(st.st_mtim.tv_nsec);
 }
 
 std::string dirname_of(const std::string& path) {
@@ -682,44 +687,105 @@ bool validate_run_manifest(const Json& request, const Json& target, Json& detail
 }
 
 bool resource_changed(const std::string& path,
-                      long expected_mtime,
+                      const std::string& resource_kind,
+                      long long expected_mtime_ns,
                       long long expected_size,
                       unsigned long long expected_dev,
                       unsigned long long expected_inode,
                       std::string& message,
-                      std::string& changed_path) {
-    if (path.empty() ||
-        !fingerprint_recorded(expected_mtime, expected_size, expected_dev, expected_inode)) {
+                      Json& evidence) {
+    if (path.empty()) {
         return false;
     }
     struct stat st;
-    if (stat(path.c_str(), &st) != 0) {
-        message = "resource is missing or cannot be stat'ed: " + path;
-        changed_path = path;
+    evidence = {
+        {"resource", resource_kind},
+        {"resource_path", path},
+        {"expected_resource_identity", {
+            {"canonical_path", path},
+            {"device", expected_dev},
+            {"inode", expected_inode},
+            {"size_bytes", expected_size},
+            {"mtime_ns", expected_mtime_ns},
+        }},
+    };
+    if (!fingerprint_recorded(expected_mtime_ns, expected_size,
+                              expected_dev, expected_inode)) {
+        message = "resource fingerprint must be upgraded before this session can be queried: " + path;
+        evidence["change_kind"] = "fingerprint_upgrade_required";
+        evidence["actual_resource_identity"] = nullptr;
         return true;
     }
+    char resolved[PATH_MAX] = {};
+    if (!realpath(path.c_str(), resolved)) {
+        message = "resource is missing or cannot be canonicalized: " + path;
+        evidence["change_kind"] = "missing";
+        evidence["actual_resource_identity"] = nullptr;
+        return true;
+    }
+    const std::string actual_path(resolved);
+    if (stat(actual_path.c_str(), &st) != 0) {
+        message = "resource is missing or cannot be stat'ed: " + path;
+        evidence["change_kind"] = "missing";
+        evidence["actual_resource_identity"] = nullptr;
+        return true;
+    }
+    const bool expected_regular = resource_kind == "fsdb";
+    if ((expected_regular && !S_ISREG(st.st_mode)) ||
+        (!expected_regular && !S_ISDIR(st.st_mode))) {
+        message = "resource type changed since session was opened: " + path;
+        evidence["change_kind"] = "type_changed";
+        evidence["actual_resource_identity"] = nullptr;
+        return true;
+    }
+    const long long actual_mtime_ns = stat_mtime_ns(st);
+    const long long actual_size = static_cast<long long>(st.st_size);
+    const unsigned long long actual_dev =
+        static_cast<unsigned long long>(st.st_dev);
+    const unsigned long long actual_inode =
+        static_cast<unsigned long long>(st.st_ino);
+    const bool path_changed = actual_path != path;
     bool content_changed = !xdebug_core::resource_content_matches(
-        expected_mtime, expected_size,
-        static_cast<long>(st.st_mtime), static_cast<long long>(st.st_size));
+        expected_mtime_ns, expected_size, actual_mtime_ns, actual_size);
     bool identity_changed = xdebug_core::resource_identity_differs(
-        expected_dev, expected_inode,
-        static_cast<unsigned long long>(st.st_dev),
-        static_cast<unsigned long long>(st.st_ino));
-    if (!content_changed && !identity_changed) return false;
+        expected_dev, expected_inode, actual_dev, actual_inode);
+    if (!path_changed && !content_changed && !identity_changed) return false;
     message = "resource changed since session was opened: " + path;
-    changed_path = path;
+    evidence["change_kind"] = path_changed
+        ? "path_changed"
+        : (content_changed && identity_changed
+            ? "identity_and_metadata_changed"
+            : (identity_changed ? "identity_changed" : "metadata_changed"));
+    evidence["actual_resource_identity"] = {
+        {"canonical_path", actual_path},
+        {"device", actual_dev},
+        {"inode", actual_inode},
+        {"size_bytes", actual_size},
+        {"mtime_ns", actual_mtime_ns},
+    };
     return true;
+}
+
+bool session_fsdb_resource_changed(const SessionRecord& record,
+                                   std::string& message,
+                                   Json& evidence) {
+    return resource_changed(record.fsdb, "fsdb",
+                            record.fsdb_mtime_ns, record.fsdb_size,
+                            record.fsdb_dev, record.fsdb_inode,
+                            message, evidence);
 }
 
 bool session_resource_changed(const SessionRecord& record,
                               std::string& message,
-                              std::string& changed_path) {
-    return resource_changed(record.daidir, record.dbdir_mtime, record.dbdir_size,
+                              Json& evidence) {
+    return resource_changed(record.daidir, "daidir",
+                            record.dbdir_mtime_ns, record.dbdir_size,
                             record.dbdir_dev, record.dbdir_inode,
-                            message, changed_path) ||
-           resource_changed(record.fsdb, record.fsdb_mtime, record.fsdb_size,
+                            message, evidence) ||
+           resource_changed(record.fsdb, "fsdb",
+                            record.fsdb_mtime_ns, record.fsdb_size,
                             record.fsdb_dev, record.fsdb_inode,
-                            message, changed_path);
+                            message, evidence);
 }
 
 bool session_idle_expired(const SessionRecord& record,
@@ -788,6 +854,31 @@ Json session_error(const Json& request,
     error["session_mode"] = record.mode;
     error["session_transport"] = record.transport;
     return make_error(request, action, error);
+}
+
+Json resource_changed_error(const Json& request,
+                            const std::string& action,
+                            const SessionRecord& record,
+                            const std::string& message,
+                            const Json& evidence) {
+    Json response = session_error(
+        request, action, "RESOURCE_CHANGED", message, record);
+    response["error"]["recoverable"] = true;
+    response["error"]["health_status"] = "resource_changed";
+    for (auto it = evidence.begin(); it != evidence.end(); ++it) {
+        response["error"][it.key()] = it.value();
+    }
+    response["error"]["next_actions"] = Json::array({
+        "Close this stale session with session.close mode=graceful.",
+        "Open a new session on the current resource before retrying the query."
+    });
+    response["error"]["correct_example"] = {
+        {"api_version", "xdebug.v1"},
+        {"action", "session.close"},
+        {"target", {{"session_id", record.id}}},
+        {"args", {{"mode", "graceful"}}},
+    };
+    return response;
 }
 
 Json catalog_error(const Json& request,
@@ -1140,6 +1231,14 @@ Json Dispatcher::handle_engine_forward(const Json& request,
                     cleanup_backend_error;
             }
             return make_error(request, spec.name, error);
+        }
+        std::string resource_message;
+        Json resource_evidence;
+        if (session_fsdb_resource_changed(
+                record, resource_message, resource_evidence)) {
+            return resource_changed_error(
+                request, spec.name, record, resource_message,
+                resource_evidence);
         }
     }
 
@@ -1548,16 +1647,16 @@ Json Dispatcher::handle_session(
                 backend_session.value("created_at", 0LL);
             record.last_active =
                 backend_session.value("last_active", 0LL);
-            record.dbdir_mtime =
-                backend_session.value("daidir_mtime", 0L);
+            record.dbdir_mtime_ns =
+                backend_session.value("daidir_mtime_ns", 0LL);
             record.dbdir_size =
                 backend_session.value("daidir_size", 0LL);
             record.dbdir_dev =
                 backend_session.value("daidir_dev", 0ULL);
             record.dbdir_inode =
                 backend_session.value("daidir_inode", 0ULL);
-            record.fsdb_mtime =
-                backend_session.value("fsdb_mtime", 0L);
+            record.fsdb_mtime_ns =
+                backend_session.value("fsdb_mtime_ns", 0LL);
             record.fsdb_size =
                 backend_session.value("fsdb_size", 0LL);
             record.fsdb_dev =
@@ -1696,18 +1795,12 @@ Json Dispatcher::handle_session(
     }
     if (action == "session.doctor") {
         std::string resource_message;
-        std::string changed_path;
+        Json resource_evidence;
         if (session_resource_changed(
-                record, resource_message, changed_path)) {
-            Json response = session_error(
-                request,
-                action,
-                "RESOURCE_CHANGED",
-                resource_message,
-                record);
-            response["error"]["health_status"] = "resource_changed";
-            response["error"]["resource_path"] = changed_path;
-            return response;
+                record, resource_message, resource_evidence)) {
+            return resource_changed_error(
+                request, action, record, resource_message,
+                resource_evidence);
         }
         Json inner =
             session_lifecycle_request(

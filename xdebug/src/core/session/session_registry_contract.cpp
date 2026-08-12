@@ -17,8 +17,8 @@ const std::set<std::string>& record_fields() {
         "bind_host", "port", "server_host", "auth_token",
         "ownership_token_hash", "dbdir_path",
         "fsdb_file", "server_pid", "created_at", "last_active",
-        "dbdir_mtime", "dbdir_size", "dbdir_dev", "dbdir_inode",
-        "fsdb_mtime", "fsdb_size", "fsdb_dev", "fsdb_inode"
+        "dbdir_mtime_ns", "dbdir_size", "dbdir_dev", "dbdir_inode",
+        "fsdb_mtime_ns", "fsdb_size", "fsdb_dev", "fsdb_inode"
     };
     return fields;
 }
@@ -83,11 +83,11 @@ bool valid_optional_sha256(const std::string& digest) {
 }
 
 bool resource_fingerprint_is_zero(
-    long mtime,
+    long long mtime_ns,
     long long size,
     unsigned long long dev,
     unsigned long long inode) {
-    return mtime == 0 && size == 0 && dev == 0 && inode == 0;
+    return mtime_ns == 0 && size == 0 && dev == 0 && inode == 0;
 }
 
 bool validate_resource_invariants(
@@ -97,7 +97,7 @@ bool validate_resource_invariants(
         return fail(error, "session requires dbdir_path or fsdb_file");
     if (session.dbdir_path.empty() &&
         !resource_fingerprint_is_zero(
-            session.dbdir_mtime,
+            session.dbdir_mtime_ns,
             session.dbdir_size,
             session.dbdir_dev,
             session.dbdir_inode)) {
@@ -107,7 +107,7 @@ bool validate_resource_invariants(
     }
     if (session.fsdb_file.empty() &&
         !resource_fingerprint_is_zero(
-            session.fsdb_mtime,
+            session.fsdb_mtime_ns,
             session.fsdb_size,
             session.fsdb_dev,
             session.fsdb_inode)) {
@@ -220,11 +220,11 @@ SessionRegistryJson session_registry_record_to_json(
         {"server_pid", session.server_pid},
         {"created_at", static_cast<long long>(session.created_at)},
         {"last_active", static_cast<long long>(session.last_active)},
-        {"dbdir_mtime", session.dbdir_mtime},
+        {"dbdir_mtime_ns", session.dbdir_mtime_ns},
         {"dbdir_size", session.dbdir_size},
         {"dbdir_dev", session.dbdir_dev},
         {"dbdir_inode", session.dbdir_inode},
-        {"fsdb_mtime", session.fsdb_mtime},
+        {"fsdb_mtime_ns", session.fsdb_mtime_ns},
         {"fsdb_size", session.fsdb_size},
         {"fsdb_dev", session.fsdb_dev},
         {"fsdb_inode", session.fsdb_inode}
@@ -238,7 +238,7 @@ bool session_registry_record_from_json(
     if (!value.is_object())
         return fail(error, "session record must be an object");
     if (value.size() != record_fields().size())
-        return fail(error, "session record fields do not match schema version 2");
+        return fail(error, "session record fields do not match schema version 3");
     for (const auto& field : record_fields()) {
         if (!value.contains(field))
             return fail(error, "session record is missing field: " + field);
@@ -284,8 +284,8 @@ bool session_registry_record_from_json(
             value["last_active"], session.last_active))
         return fail(error, "session last_active is out of range");
     if (!read_bounded_nonnegative(
-            value["dbdir_mtime"], session.dbdir_mtime))
-        return fail(error, "session dbdir_mtime is out of range");
+            value["dbdir_mtime_ns"], session.dbdir_mtime_ns))
+        return fail(error, "session dbdir_mtime_ns is out of range");
     if (!read_bounded_nonnegative(
             value["dbdir_size"], session.dbdir_size))
         return fail(error, "session dbdir_size is out of range");
@@ -296,8 +296,8 @@ bool session_registry_record_from_json(
             value["dbdir_inode"], session.dbdir_inode))
         return fail(error, "session dbdir_inode is out of range");
     if (!read_bounded_nonnegative(
-            value["fsdb_mtime"], session.fsdb_mtime))
-        return fail(error, "session fsdb_mtime is out of range");
+            value["fsdb_mtime_ns"], session.fsdb_mtime_ns))
+        return fail(error, "session fsdb_mtime_ns is out of range");
     if (!read_bounded_nonnegative(
             value["fsdb_size"], session.fsdb_size))
         return fail(error, "session fsdb_size is out of range");
@@ -331,16 +331,27 @@ bool session_registry_document_from_json(
     if (!value.is_object() || value.size() != 2 ||
         !value.contains("version") ||
         !read_nonnegative_u64(value["version"], version) ||
-        version != 2 ||
+        (version != 2 && version != 3) ||
         !value.contains("sessions") || !value["sessions"].is_array()) {
-        return fail(error, "registry must match schema version 2");
+        return fail(error, "registry must match schema version 2 or 3");
     }
     std::set<std::string> ids;
     for (size_t index = 0; index < value["sessions"].size(); ++index) {
         SessionInfo session;
         std::string record_error;
+        SessionRegistryJson record = value["sessions"][index];
+        if (version == 2 && record.is_object()) {
+            if (record.contains("dbdir_mtime")) {
+                record.erase("dbdir_mtime");
+                record["dbdir_mtime_ns"] = 0;
+            }
+            if (record.contains("fsdb_mtime")) {
+                record.erase("fsdb_mtime");
+                record["fsdb_mtime_ns"] = 0;
+            }
+        }
         if (!session_registry_record_from_json(
-                value["sessions"][index], session, record_error)) {
+                record, session, record_error)) {
             return fail(error, "sessions[" + std::to_string(index) +
                 "]: " + record_error);
         }
@@ -356,7 +367,7 @@ bool session_registry_document_to_json(
     const std::vector<SessionInfo>& sessions,
     SessionRegistryJson& value,
     std::string& error) {
-    value = {{"version", 2}, {"sessions", SessionRegistryJson::array()}};
+    value = {{"version", 3}, {"sessions", SessionRegistryJson::array()}};
     std::set<std::string> ids;
     for (const auto& session : sessions) {
         if (!ids.insert(session.session_id).second)

@@ -193,6 +193,8 @@ int main() {
     assert(xdebug_core::resource_identity_differs(10, 20, 10, 21));
     assert(!xdebug_core::resource_content_matches(100, 4096, 101, 4096));
     assert(!xdebug_core::resource_content_matches(100, 4096, 100, 8192));
+    assert(!xdebug_core::resource_content_matches(
+        100000000001LL, 4096, 100000000002LL, 4096));
 
     xdebug_core::SessionEndpointJson endpoint_json;
     std::string endpoint_error;

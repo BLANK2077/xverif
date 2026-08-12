@@ -240,11 +240,13 @@ OrderedJson session_to_json(const SessionInfo& s) {
         item["last_active"] =
             static_cast<long long>(s.last_active);
     }
-    if (s.dbdir_mtime) item["daidir_mtime"] = s.dbdir_mtime;
+    if (s.dbdir_mtime_ns)
+        item["daidir_mtime_ns"] = s.dbdir_mtime_ns;
     if (s.dbdir_size) item["daidir_size"] = s.dbdir_size;
     if (s.dbdir_dev) item["daidir_dev"] = s.dbdir_dev;
     if (s.dbdir_inode) item["daidir_inode"] = s.dbdir_inode;
-    if (s.fsdb_mtime) item["fsdb_mtime"] = s.fsdb_mtime;
+    if (s.fsdb_mtime_ns)
+        item["fsdb_mtime_ns"] = s.fsdb_mtime_ns;
     if (s.fsdb_size) item["fsdb_size"] = s.fsdb_size;
     if (s.fsdb_dev) item["fsdb_dev"] = s.fsdb_dev;
     if (s.fsdb_inode) item["fsdb_inode"] = s.fsdb_inode;
