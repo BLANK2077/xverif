@@ -700,6 +700,13 @@ def test_streaming_parser_keeps_code_assert_and_functional_types(tmp_path):
 
     assert index.tests == ("test_a",)
     assert [row["full_name"] for row in index.scopes] == ["top", "top.u0"]
+    assert index.xml_instances == ("top", "top.u0")
+    assert index.xml_instance_parent == {"top": None, "top.u0": "top"}
+    assert index.xml_instance_children == {
+        "top": ("top.u0",), "top.u0": (),
+    }
+    assert index.expand_xml_instances("top", recursive=False) == ("top",)
+    assert index.expand_xml_instances("top", recursive=True) == ("top", "top.u0")
     assert index.scope_metrics["top"]["line"]["covered"] == 8
     assert index.scope_metrics["top.u0"]["line"]["covered"] == 1
     assert index.scope_metrics["top"]["functional"]["pct"] == 75.0
@@ -721,6 +728,51 @@ def test_streaming_parser_keeps_code_assert_and_functional_types(tmp_path):
     assert assertion["real_successes"] == 9
     assert cover_property["covered"] == 0
     assert cover_property["missing"] == 1
+
+
+def test_xml_instance_index_excludes_synthetic_ancestors(tmp_path):
+    xml = SESSION_XML.replace(
+        '<scope type="instance" name="u0">',
+        '<scope type="instance" name="generated.u0">',
+    ).replace("top.u0", "top.generated.u0")
+    index = parse_urg_summary(_report(tmp_path, xml))
+
+    assert [row["full_name"] for row in index.scopes] == [
+        "top", "top.generated", "top.generated.u0",
+    ]
+    assert index.xml_instances == ("top", "top.generated.u0")
+    assert index.xml_instance_parent == {
+        "top": None, "top.generated.u0": "top",
+    }
+    assert index.expand_xml_instances("top", recursive=True) == (
+        "top", "top.generated.u0",
+    )
+    with pytest.raises(XcovError) as info:
+        index.expand_xml_instances("top.generated", recursive=True)
+    assert info.value.code == "SCOPE_NOT_FOUND"
+
+
+def test_zero_denominator_exclusion_ratio_keeps_null_percentage(tmp_path):
+    xml = SESSION_XML.replace(
+        '<metric name="Line" value="1/2" excl="0" />',
+        '<metric name="Line" value="0/0" excl="2" />',
+    ).replace(
+        '<metric name="Group" value="3/4" excl="0" />',
+        '<metric name="Group" value="0/0" excl="4" />',
+    ).replace('<attr name="Score" value="75%" />', "")
+    index = parse_urg_summary(_report(tmp_path, xml))
+
+    assert index.scope_metrics["top.u0"]["line"] == {
+        "covered": 0, "coverable": 0, "missing": 0,
+        "excluded": 2, "pct": None,
+    }
+    group = next(
+        row for row in index.functional_rows
+        if row["type"] == "npiCovCovergroup"
+    )
+    assert group["coverage_pct"] is None
+    assert group["coverable"] == 0
+    assert index.scope_metrics["top.u0"]["functional"]["pct"] is None
 
 
 def test_scope_aggregation_uses_parent_subtree_once_and_score_average(tmp_path):

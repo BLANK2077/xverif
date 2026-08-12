@@ -1,7 +1,7 @@
 """Strict URG coverage export and typed summary parsing for x-npi."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
 from pathlib import Path
 import re
@@ -48,6 +48,24 @@ class UrgSummary:
     scopes: Tuple[Json, ...]
     functional: Tuple[Json, ...]
     assertions: Tuple[Json, ...]
+    xml_instances: Tuple[str, ...] = ()
+    xml_instance_parent: Dict[str, str | None] = field(default_factory=dict)
+    xml_instance_children: Dict[str, Tuple[str, ...]] = field(default_factory=dict)
+
+    def expand_xml_instances(self, root: str, *, recursive: bool) -> Tuple[str, ...]:
+        if root not in self.xml_instance_parent:
+            raise UrgCoverageError(
+                f"scope is not a real instance in fixed URG XML: {root!r}"
+            )
+        if not recursive:
+            return (root,)
+        result: List[str] = []
+        pending = [root]
+        while pending:
+            current = pending.pop()
+            result.append(current)
+            pending.extend(reversed(self.xml_instance_children.get(current, ())))
+        return tuple(result)
 
     def rows(
         self,
@@ -150,6 +168,9 @@ def export_summary(
         scopes=parsed.scopes,
         functional=parsed.functional,
         assertions=parsed.assertions,
+        xml_instances=parsed.xml_instances,
+        xml_instance_parent=parsed.xml_instance_parent,
+        xml_instance_children=parsed.xml_instance_children,
     )
 
 
@@ -196,7 +217,21 @@ def parse_summary(report_dir: str | os.PathLike[str]) -> UrgSummary:
     if stack or not saw_old_coverage or not scopes:
         raise UrgCoverageError("session.xml does not contain a complete old_coverage tree")
     _attach_functional_scope_metrics(scopes, functional)
-    return UrgSummary(report, tests, tuple(scopes), tuple(functional), tuple(assertions))
+    xml_instances = tuple(sorted(str(row["full_name"]) for row in scopes))
+    xml_instance_parent = {
+        str(row["full_name"]): row.get("parent") for row in scopes
+    }
+    child_lists: Dict[str, List[str]] = {name: [] for name in xml_instances}
+    for name, parent in xml_instance_parent.items():
+        if parent is not None:
+            child_lists.setdefault(str(parent), []).append(name)
+    xml_instance_children = {
+        name: tuple(sorted(children)) for name, children in child_lists.items()
+    }
+    return UrgSummary(
+        report, tests, tuple(scopes), tuple(functional), tuple(assertions),
+        xml_instances, xml_instance_parent, xml_instance_children,
+    )
 
 
 def _scope_context(elem: ET.Element, stack: List[Json]) -> Json:
@@ -343,12 +378,18 @@ def _attach_functional_scope_metrics(scopes: List[Json], rows: List[Json]) -> No
             continue
         covered = sum(int(row["covered"]) for row in values)
         coverable = sum(int(row["coverable"]) for row in values)
-        percentages = [float(row["coverage_pct"]) for row in values]
+        percentages = [
+            float(row["coverage_pct"])
+            for row in values if row["coverage_pct"] is not None
+        ]
         by_name[scope]["metrics"]["functional"] = {
             "covered": covered,
             "coverable": coverable,
             "missing": max(coverable - covered, 0),
-            "coverage_pct": round(sum(percentages) / len(percentages), 4),
+            "coverage_pct": (
+                round(sum(percentages) / len(percentages), 4)
+                if percentages else None
+            ),
         }
 
 
@@ -370,6 +411,7 @@ def _ratio(elem: ET.Element) -> Json:
         "coverage_pct": (
             round(100.0 * covered / coverable, 4) if coverable > 0 else None
         ),
+        "excluded": _nonnegative_int(elem.get("excl", "0"), "excl"),
     }
 
 

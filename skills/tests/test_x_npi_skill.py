@@ -396,6 +396,10 @@ def test_urg_parser_keeps_code_functional_and_assertion_types_separate(tmp_path:
     summary = parse_summary(report)
     assert summary.tests == ("case_a",)
     assert len(summary.scopes) == 2
+    assert summary.xml_instances == ("top", "top.u0")
+    assert summary.xml_instance_parent == {"top": None, "top.u0": "top"}
+    assert summary.xml_instance_children == {"top": ("top.u0",), "top.u0": ()}
+    assert summary.expand_xml_instances("top", recursive=True) == ("top", "top.u0")
     root = next(row for row in summary.scopes if row["full_name"] == "top")
     assert root["metrics"]["line"]["coverage_pct"] == 75.0
     assert {row["node_kind"] for row in summary.functional} == {
@@ -407,6 +411,33 @@ def test_urg_parser_keeps_code_functional_and_assertion_types_separate(tmp_path:
     assert summary.assertions[0]["attempts"] == 3
     assert summary.assertions[1]["coverage_pct"] == 0.0
     assert not any(row["coverage_kind"] == "code" for row in summary.functional)
+
+
+def test_x_npi_urg_parser_keeps_zero_denominator_exclusion(tmp_path: Path) -> None:
+    report = tmp_path / "urg-report"
+    _write_urg_report(report)
+    xml = report / "session.xml"
+    text = xml.read_text(encoding="utf-8").replace(
+        '<metric name="Line" value="1/2" />',
+        '<metric name="Line" value="0/0" excl="2" />',
+    ).replace(
+        '<metric name="Group" value="1/2" />',
+        '<metric name="Group" value="0/0" excl="2" />',
+    )
+    xml.write_text(text, encoding="utf-8")
+
+    summary = parse_summary(report)
+    child = next(row for row in summary.scopes if row["full_name"] == "top.u0")
+    assert child["metrics"]["line"] == {
+        "covered": 0, "coverable": 0, "missing": 0,
+        "coverage_pct": None, "excluded": 2,
+    }
+    group = next(
+        row for row in summary.functional
+        if row["node_kind"] == "Coverage Instance"
+    )
+    assert group["coverage_pct"] is None
+    assert group["excluded"] == 2
 
 
 def test_urg_export_uses_only_fixed_full64_command(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

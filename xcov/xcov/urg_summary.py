@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -61,10 +61,32 @@ class UrgSummaryIndex:
     scope_metrics: Dict[str, Json]
     functional_rows: Tuple[Json, ...]
     assertion_rows: Tuple[Json, ...]
+    xml_instances: Tuple[str, ...] = ()
+    xml_instance_parent: Dict[str, Optional[str]] = field(default_factory=dict)
+    xml_instance_children: Dict[str, Tuple[str, ...]] = field(default_factory=dict)
 
     @property
     def top_scopes(self) -> Tuple[Json, ...]:
         return tuple(row for row in self.scopes if row["depth"] == 0)
+
+    def expand_xml_instances(self, root: str, *, recursive: bool) -> Tuple[str, ...]:
+        """Return one exact XML instance or its real XML subtree."""
+
+        if root not in self.xml_instance_parent:
+            raise XcovError(
+                "SCOPE_NOT_FOUND",
+                "scope is not a real instance in the fixed URG XML hierarchy",
+                scope=root,
+            )
+        if not recursive:
+            return (root,)
+        result: List[str] = []
+        pending = [root]
+        while pending:
+            current = pending.pop()
+            result.append(current)
+            pending.extend(reversed(self.xml_instance_children.get(current, ())))
+        return tuple(result)
 
 
 def validate_summary_artifacts(report_dir: str | Path) -> Dict[str, Path]:
@@ -217,6 +239,20 @@ def _parse_xml(xml_path: Path, tests: Tuple[str, ...]) -> UrgSummaryIndex:
     if not metric_names:
         raise _xml_error(xml_path, "session.xml contains no builtin metric definitions")
 
+    xml_instances = tuple(sorted(scope_rows))
+    xml_instance_parent = {
+        name: row["parent"] for name, row in scope_rows.items()
+    }
+    xml_instance_children_lists: Dict[str, List[str]] = {
+        name: [] for name in xml_instances
+    }
+    for name, parent in xml_instance_parent.items():
+        if parent is not None:
+            xml_instance_children_lists.setdefault(parent, []).append(name)
+    xml_instance_children = {
+        name: tuple(sorted(children))
+        for name, children in xml_instance_children_lists.items()
+    }
     _add_synthetic_hierarchy_scopes(scope_rows)
     scopes = tuple(
         {
@@ -245,6 +281,9 @@ def _parse_xml(xml_path: Path, tests: Tuple[str, ...]) -> UrgSummaryIndex:
         scope_metrics=scope_metrics,
         functional_rows=tuple(selected_functional),
         assertion_rows=tuple(assertion_rows),
+        xml_instances=xml_instances,
+        xml_instance_parent=xml_instance_parent,
+        xml_instance_children=xml_instance_children,
     )
 
 
@@ -425,7 +464,7 @@ def _groups_summary_row(ctx: Json, xml_path: Path) -> Json:
         "covered": covered,
         "coverable": coverable,
         "missing": coverable - covered,
-        "coverage_pct": round(100.0 * covered / coverable, 4) if coverable else 0.0,
+        "coverage_pct": round(100.0 * covered / coverable, 4) if coverable else None,
     }
 
 
@@ -476,18 +515,22 @@ def _attach_functional_scope_metrics(
                     "coverable": int(row["coverable"]),
                     "missing": int(row["missing"]),
                     "excluded": 0,
-                    "pct": float(row["coverage_pct"]),
+                    "pct": (
+                        float(row["coverage_pct"])
+                        if row["coverage_pct"] is not None else None
+                    ),
                 }
             continue
         if row["type"] != "npiCovCovergroup" or not row.get("scope"):
             continue
         scope = str(row["scope"])
-        by_scope.setdefault(scope, []).append(float(row["coverage_pct"]))
+        if row["coverage_pct"] is not None:
+            by_scope.setdefault(scope, []).append(float(row["coverage_pct"]))
         ratio_by_scope.setdefault(scope, []).append(row)
-    for scope, percentages in by_scope.items():
+    for scope, ratios in ratio_by_scope.items():
         if scope not in scope_metrics:
             continue
-        ratios = ratio_by_scope[scope]
+        percentages = by_scope.get(scope, [])
         covered = sum(int(row["covered"]) for row in ratios)
         coverable = sum(int(row["coverable"]) for row in ratios)
         scope_metrics[scope]["functional"] = {
@@ -495,7 +538,10 @@ def _attach_functional_scope_metrics(
             "coverable": coverable,
             "missing": coverable - covered,
             "excluded": 0,
-            "pct": round(sum(percentages) / len(percentages), 4),
+            "pct": (
+                round(sum(percentages) / len(percentages), 4)
+                if percentages else None
+            ),
         }
 
 
@@ -542,7 +588,7 @@ def _ratio(elem: ET.Element, xml_path: Path) -> Json:
             value=value,
         )
     excluded = _nonnegative_int(elem.get("excl", "0"), "excl", xml_path)
-    pct = round(100.0 * covered / coverable, 4) if coverable else 0.0
+    pct = round(100.0 * covered / coverable, 4) if coverable else None
     return {
         "covered": covered,
         "coverable": coverable,
@@ -554,9 +600,9 @@ def _ratio(elem: ET.Element, xml_path: Path) -> Json:
 
 def _percent_attr(
     value: Optional[str],
-    default: float,
+    default: Optional[float],
     xml_path: Path,
-) -> float:
+) -> Optional[float]:
     if value is None:
         return default
     match = re.fullmatch(r"(\d+(?:\.\d+)?)%?", value)
