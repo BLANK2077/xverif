@@ -638,3 +638,48 @@ containment，不应基于一次小 AXI 查询的恢复现象推断可安全中�
 这里的“不优化”表示不纳入本轮及报告建议的实施范围，并不表示风险已经消失或 vendor 行为已经得到
 证明。后续如果产品范围改变，需要由新的明确需求重新立项，不能把这些项作为 hierarchy walker 的
 隐含 fallback 一并实现。
+
+## 14. 最终处置审计（2026-08-12）
+
+本节以实施后的仓库、阶段提交和正式测试证据为准，关闭第 2 节列出的全部 33 项发现。这里的“关闭”
+表示已经实现并有对应门禁，或已按第 13.8 节和实施计划明确固定为不优化边界；不把未验证方向包装为
+fallback，也不以相邻测试代替对应合同验证。
+
+| Finding | 最终状态 | 阶段/提交 | 处置与验收证据 |
+| --- | --- | --- | --- |
+| XDBG-SEC-01 | 已修复 | C02 `0fe1328` | secure random 失败返回 `SECURE_RANDOM_UNAVAILABLE`，删除可预测 LCG fallback；unit/static/contract 通过 |
+| XDBG-LIFE-01 | 已修复 | C03 `111d386` | lifecycle lease 不再覆盖整段等待；进程外 supervisor 可抢占终止；session/MCP suite 通过 |
+| XDBG-LIFE-02 | 已修复 | C03 `111d386` | cooperative deadline checkpoint 与 hard containment 分层；超时终止状态可观测，不自动 reopen |
+| XDBG-COR-01 | 已修复 | C04 `7e27303` | 所有 session-bound query 在进入旧 handle 前执行 path/device/inode/size/mtime-ns identity gate，变化返回 `RESOURCE_CHANGED` |
+| XDBG-MEM-01 | 已修复 | C06 `477efdd` | generation/cursor/binding/tombstone 纳入统一预算并可释放；资源与 cardinality 门禁通过 |
+| XDBG-IO-01 | 已修复 | C05 `0725a50` | block reader 与统一 64 MiB 请求边界，超限返回 `REQUEST_TOO_LARGE` |
+| XDBG-SEC-02 | 已修复 | C02 `0fe1328` | managed MCP batch child 递归 guard，禁止 lifecycle action 绕过 |
+| XDBG-COR-02 | 已修复 | C02 `0fe1328` | 删除 XOUT 对 handler batch children 的二次截断，完整性合同由 native XOUT report 锁定 |
+| XDBG-COR-03 | 已修复 | C02 `0fe1328` | batch mode 只接受两个 enum，非法拼写 fail-closed |
+| XDBG-LIFE-03 | 已修复 | C03 `111d386` | session discovery/list 改为纯读，不再隐式清理全局 session |
+| XDBG-LIFE-04 | 已修复 | C03 `111d386` | 删除 public `session.kill` 及所有 surface，统一迁移至 `session.close mode=graceful|force` |
+| XDBG-ERR-01 | 已修复 | C05 `0725a50` | file transport 保留 timeout/expired 等 canonical 细分错误 |
+| XDBG-IO-02 | 已修复 | C05 `0725a50` | write-all、EINTR/partial I/O、nonblocking connect 与 remaining deadline 闭环 |
+| XDBG-PERF-01 | 已修复 | C06 `477efdd` | cache stats 改为增量 O(1)，禁用 probe 时不做全表统计 |
+| XDBG-PERF-02 | 已修复 | C06 `477efdd` | 确定性 LRU 与批量淘汰消除 O(N²) 路径 |
+| XDBG-PERF-03 | 已修复 | C06 `477efdd` | APB/AXI filter/limit 下推，outlier 使用有界 top-N |
+| XDBG-TEST-01 | 已修复 | C06 `477efdd` | benchmark 以等价性、RSS、估算字节、scanner 和 cardinality 作硬断言；按固定边界不新增延迟 SLO |
+| XDBG-CFG-01 | 已修复 | C05 `0725a50` | 关键 env 非法值 fail-fast；展示类 env 明确发布 warning/effective value |
+| XDBG-AI-01 | 已修复 | C09 `bc1ec2b` | skill/action reference 删除不存在 action 与禁止字段，并由 catalog suite 验证 |
+| XDBG-AI-02 | 已修复 | C09 `bc1ec2b` | runtime、schema、skill 统一只发布 `available_values` |
+| XDBG-AI-03 | 已修复 | C09 `bc1ec2b` | batch response schema 提供 summary/child/full；MCP 默认 summary，summary 不先加载 full artifact |
+| XDBG-AI-04 | 已修复 | C09 `bc1ec2b` | README/help 从 canonical checked-in example 生成，公开 JSON fence 对 live schema 校验 |
+| XDBG-SCHEMA-01 | 已修复 | C09 `bc1ec2b` | AXI response schema 迁入统一 `sync_response_schemas.py` source of truth，删除失效入口引用 |
+| XDBG-AI-05 | 已修复 | C02 `0fe1328` | XOUT 投影有界 validation issue 表并发布 `issue_count/issues_truncated` |
+| XDBG-AI-06 | 已修复 | C09 `bc1ec2b` | oneOf/allOf 复杂请求增加 7 个 canonical invalid witness，并做 Draft-7/2020-12 一致性验证 |
+| XDBG-GAP-01 | 已修复（固定边界） | C07 `7c26474` | `scope.list source=wave|design|merged` 以真实 VCS/NPI 验证 generate/interface array/modport/mpport；mixed-language/bind、FSM/sequential 等未实验方向明确不优化 |
+| XDBG-GAP-02 | 已修复 | C08 `da6e8c1` | 新增 stable `apb.export`，preview/TSV/CSV、过滤、完整性、no-clobber 与真实 APB VIP/XOUT 全闭环；catalog 保持 73 |
+| XDBG-OBS-01 | 已修复 | C03 `111d386` | session list 发布 lifecycle state，支持 compact/verbose，保持 discovery 纯读 |
+| XDBG-ARCH-01 | 已修复 | C10 `3ae5818` | 15 个 wrapper 使用 typed binding，移除字符串二次 dispatcher |
+| XDBG-TEST-02 | 已修复 | C10 `3ae5818` | differential oracle 移至独立 test fixture binary；production engine 无 legacy symbol/env |
+| XDBG-DEAD-01 | 已修复 | C10 `3ae5818` | 删除无调用的 non-cached legacy stream wrapper |
+| XDBG-OBS-02 | 已修复 | C10 `3ae5818` | logging once-degraded 保留稳定诊断；trace 内部 JSON 失败聚合并强制 `analysis_complete=false` |
+| XDBG-AI-07 | 已修复 | C09 `bc1ec2b` | APB/AXI statistics 在 catalog/schema/MCP 中发布可执行 routing alternatives |
+
+计数复核：1 项 P0、8 项 P1、19 项 P2、5 项 P3，共 33/33 项完成最终处置。跨阶段最终证据见
+`doc/XDEBUG_COMPREHENSIVE_OPTIMIZATION_PLAN_2026-08-12.md` 的 commit ledger 与 C11 测试账本。

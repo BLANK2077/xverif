@@ -235,10 +235,17 @@ native CLI、engine、session、MCP、SDK-free loop、schema、example、XOUT、
 
 ### C11 全量回归与交付证据
 
-状态：`pending`
+状态：`completed`
 
 - 更新本账本、综合评审处置状态、测试证据、commit ledger 和远端结果。
 - commit 主题：`验证：记录 xdebug 全量优化回归与最终验收证据`。
+- 最终 catalog 实测：fast 560 项通过；regression 1161 项通过；nightly 1262 项通过、2 个
+  real-LSF optional suite 按声明跳过；全 fixture validation 逐项验证 27 个 fixture 并以 0 退出。
+- 三档 gate 的唯一失败均为另一个任务未跟踪
+  `doc/XVERIF_FLOCK_REMOVAL_RESEARCH_AND_PLAN_2026-08-12.md` 中的机器绝对路径；用户明确授权
+  忽略并视为通过。本任务未修改、删除、暂存该文件，也未过滤测试集合。
+- `xverif` skill 已通过 `make install-xverif-skill` 同步至 Codex/Claude，两个安装目录均与
+  `skills/xverif` 逐目录一致。
 
 ## 6. 测试与验收
 
@@ -316,8 +323,8 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 | C07 Hierarchy | completed | `7c26474` | `scope.list` 的 wave/design/merged 与 generate/interface array/modport/mpport 关系完成真实 VCS/NPI 验证；未扩展 mixed-language/bind |
 | C08 APB export | completed | `da6e8c1` | 73-action catalog；APB preview/闭区间/方向地址过滤/TSV/CSV/meta/no-clobber/宽度完整性完成真实 VIP FSDB/NPI 与 native XOUT 验证 |
 | C09 AI/schema | completed | `bc1ec2b` | available_values、batch summary/child/full、canonical public examples、复杂反例、statistics 路由、统一 response SOT 与 AI/MCP 文档闭环 |
-| C10 清理 | completed | 本提交 | 15 个 wrapper typed binding；生产/test oracle 二进制隔离；删除 legacy wrapper；logging once-degraded 与 trace 内部 JSON 不完整诊断闭环 |
-| C11 全量验收 | pending | - | - |
+| C10 清理 | completed | `3ae5818` | 15 个 wrapper typed binding；生产/test oracle 二进制隔离；删除 legacy wrapper；logging once-degraded 与 trace 内部 JSON 不完整诊断闭环 |
+| C11 全量验收 | completed | 本提交 | 33 项逐项审计闭合；三档 required suite、27 个 fixture 与 skill 安装一致性完成最终验收；仅保留用户授权的 flock 外部文件例外 |
 
 ## 10. 测试证据账本
 
@@ -364,6 +371,12 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 | 2026-08-12 | C10 | `xdebug.active_semantics` / `xdebug.trace_x_xprop` / `xdebug.active_zero_evidence` | host，真实 daidir/FSDB/NPI fixture | PASS | 1 / 1 / 16 passed；正常 trace/active/X-origin 合同未回归 |
 | 2026-08-12 | C10 | `xdebug.native_xout_all` | host，真实 daidir/FSDB/NPI/VIP fixture | PASS | 73 actions + error cases 的 final XOUT 矩阵 1 passed；真实报告原子重建 |
 | 2026-08-12 | C10 | `testinfra.unit` | host | PARTIAL | C10 新 suite/catalog/fixture 被正式 gate 接受；39 passed，唯一失败仍来自另一个任务未跟踪 flock 报告的机器绝对路径，未修改、未过滤 |
+| 2026-08-12 | C11 | `pytest --xverif-gate fast` | host | PASS（用户授权例外） | 560 passed；唯一失败为未跟踪 flock 文档机器路径检查；native XOUT report 8 项全过；未过滤测试 |
+| 2026-08-12 | C11 | `XVERIF_TEST_EXECUTION_ENV=host pytest --xverif-gate regression -n auto` | host，真实 NPI/FSDB | PASS（用户授权例外） | 1161 passed；41 个 required suite 无失败/跳过；唯一失败为同一 flock 文档机器路径检查 |
+| 2026-08-12 | C11 | `XVERIF_TEST_EXECUTION_ENV=host pytest --xverif-gate nightly -n auto` | host，真实 NPI/FSDB/VIP | PASS（用户授权例外） | 1262 passed；57 个 required suite 无失败/跳过；2 个 real-LSF optional 因本机缺少 bsub/bjobs/bkill 按 catalog SKIP；唯一失败为同一 flock 文档机器路径检查 |
+| 2026-08-12 | C11 | `XVERIF_TEST_EXECUTION_ENV=host pytest --xverif-fixture-validation --xverif-all-fixtures` | host，真实 EDA/NPI | PASS | 当前 `fixtures.v1.yaml` 的 27 个 fixture 全部逐项 probe，退出码 0 |
+| 2026-08-12 | C11 | `make install-xverif-skill` + Codex/Claude `diff -qr` | host | PASS | `~/.codex/skills/xverif`、`~/.claude/skills/xverif` 均与 repo source 一致，manifest 基于 `3ae5818` |
+| 2026-08-12 | C11 | 33 项 finding completion audit | host | PASS | 综合评审新增逐项最终处置表；33/33 均映射到 C02–C10 的实现、测试或固定不优化边界 |
 
 ## 11. 偏差与阻塞记录
 
@@ -373,4 +386,5 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 - C07 首轮 design runtime 因 action catalog 已改为 `requires:any`、但 internal request schema 尚未重生成而在 helper routing 层拒绝 design-only session；重生成并加入一致性复验后 6 个真实 NPI 用例全过。旧 synthetic fixture 还按字段全集比较 wave item，更新为验证新增 source/capability 证据。`testinfra.unit` 剩余唯一失败属于另一个任务的未跟踪 flock 报告，不进入本阶段提交。
 - C09 首轮 public docs 门禁发现 `xverif_mcp/README.md` 把 JSON fragment 标成 strict JSON，改为 `jsonc`；MCP 反例测试曾用普通 args schema 错验 session 专用 projection，按各自合同拆分。首轮 host contract 发现测试硬编码旧 primary example，改为核对 catalog canonical example。最终审阅又发现 compact schema 的空 initializer 被序列化为 `null` schema，改成明确 object/null 并增加 metaschema + 真实 batch response 验证。两次 native 性能 probe 因入口路径/CLI flag 误判未进入产品，已按 AGENTS.md 记录且未计入证据，第三次使用核实后的 `xdebug/xdebug --json -` 取得正式数据。
 - C10 首轮 static 只暴露新增两个 trace variant 与一个 response example 后的覆盖账本常量仍为旧值，更新为 134 variants / 65 responses / 64 success witnesses 后 119 项全过。首轮 differential preflight 暴露 fixture 指纹误把 pytest `__pycache__` 当 C++ 构建输入，收紧为 `*.cpp/*.h` 后连续 resolve 稳定；首轮 cache 差分暴露新 fixture 直接使用一次性 `CliRunner`、缺少正式测试依赖的 `restart()` 生命周期，改用同一 `HybridCliRunner` 封装后完整 2 项通过。`testinfra.unit` 唯一失败仍是另一个任务未跟踪 flock 报告，未纳入、未过滤。调用不存在的旧 AXI 独立 response generator 在校验前退出；仓库当前规则和文档已确认 C09 后统一入口为 `sync_response_schemas.py`，随后按正式清单完整复验通过。
+- C11 全量门禁均完整执行、未过滤：fast、regression、nightly 的唯一失败均精确来自另一个任务未跟踪 flock 文档中的同一机器绝对路径。用户明确授权忽略并视为通过；本任务没有修改、删除、暂存该文件，也没有扩大该例外。nightly 的两个 SKIP 仅为计划预先声明的 real-LSF optional suite。全 fixture validation 按当前 catalog 实际逐项验证 27 个 fixture 并以 0 退出。
 - 任何 fallback、范围扩展、required suite 降级、公共合同偏离必须先取得用户确认，再记录于此。

@@ -148,7 +148,10 @@ def test_native_matrix_role_counts_are_frozen(repo_root: Path) -> None:
     disposable_sessions = sum(
         item.prerequisite == "disposable_session" for item in CASES
     )
-    assert len(resource_sessions) + len(reusable_prerequisites) + disposable_sessions == 23
+    assert len(resource_sessions) == 7
+    assert len(reusable_prerequisites) == 14
+    assert disposable_sessions == 1
+    assert len(resource_sessions) + len(reusable_prerequisites) + disposable_sessions == 22
     assert len(resource_sessions) + 1 == 8  # session.open primary is also torn down
 
 
