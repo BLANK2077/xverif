@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import sys
@@ -26,6 +25,21 @@ HEAVY_KEYS = {
 
 _FAILURE_LOCK = threading.Lock()
 _FAILURES: Dict[str, Json] = {}
+_WRITE_LOCK = threading.Lock()
+_OWNER_LOCK = threading.Lock()
+_OWNER_PID = -1
+_OWNER_ID = ""
+_EVENT_LOCK = threading.Lock()
+
+
+def _owner_id() -> str:
+    global _OWNER_PID, _OWNER_ID
+    pid = os.getpid()
+    with _OWNER_LOCK:
+        if _OWNER_PID != pid:
+            _OWNER_PID = pid
+            _OWNER_ID = f"{pid}-{time.monotonic_ns()}"
+        return _OWNER_ID
 
 
 def enabled() -> bool:
@@ -55,7 +69,7 @@ def _safe_session_id(session_id: str | None) -> str:
 def public_session_dir(session_id: str | None) -> Path:
     return (
         log_root() / "sessions" / _safe_session_id(session_id) /
-        "owners" / str(os.getpid())
+        "owners" / _owner_id()
     )
 
 
@@ -66,7 +80,7 @@ def public_action_log_path(session_id: str | None) -> Path:
 def backend_log_path(session_id: str | None, log_name: str) -> Path:
     return (
         log_root() / "backend" / "sessions" / _safe_session_id(session_id) /
-        "owners" / str(os.getpid()) / "logs" / f"{log_name}.ndjson"
+        "owners" / _owner_id() / "logs" / f"{log_name}.ndjson"
     )
 
 
@@ -116,8 +130,9 @@ def _now_iso8601() -> str:
 
 
 def _event_id() -> str:
-    counter = getattr(_event_id, "_counter", 0)
-    setattr(_event_id, "_counter", counter + 1)
+    with _EVENT_LOCK:
+        counter = getattr(_event_id, "_counter", 0)
+        setattr(_event_id, "_counter", counter + 1)
     return f"{int(time.time() * 1000000):x}-{os.getpid()}-{counter:x}"
 
 
@@ -206,42 +221,39 @@ def update_session_manifest(session_id: str, session: Json) -> None:
     try:
         path = public_session_dir(session_id) / "session.json"
         path.parent.mkdir(parents=True, exist_ok=True)
-        lock_path = path.with_name(".session.lock")
-        with lock_path.open("a+b") as lock:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-            old: Json = {}
-            if path.exists():
-                old = json.loads(path.read_text(encoding="utf-8"))
-            now = _now_iso8601()
-            manifest = {
-                "session_id": session_id or "adhoc",
-                "vdb": session.get("vdb"),
-                "state": session.get("state"),
-                "worker": session.get("worker"),
-                "test_count": session.get("test_count"),
-                "top_scope_count": session.get("top_scope_count"),
-                "created_at": old.get("created_at", now),
-                "last_log_at": now,
-                "log_path": str(public_action_log_path(session_id)),
-            }
-            descriptor, temporary = tempfile.mkstemp(
-                prefix=".session.", suffix=".tmp", dir=str(path.parent),
-            )
+        old: Json = {}
+        if path.exists():
+            old = json.loads(path.read_text(encoding="utf-8"))
+        now = _now_iso8601()
+        manifest = {
+            "session_id": session_id or "adhoc",
+            "vdb": session.get("vdb"),
+            "state": session.get("state"),
+            "worker": session.get("worker"),
+            "test_count": session.get("test_count"),
+            "top_scope_count": session.get("top_scope_count"),
+            "created_at": old.get("created_at", now),
+            "last_log_at": now,
+            "log_path": str(public_action_log_path(session_id)),
+        }
+        descriptor, temporary = tempfile.mkstemp(
+            prefix=".session.", suffix=".tmp", dir=str(path.parent),
+        )
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                stream.write(
+                    json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True)
+                    + "\n"
+                )
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, path)
+            _fsync_directory(path.parent)
+        finally:
             try:
-                with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                    stream.write(
-                        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True)
-                        + "\n"
-                    )
-                    stream.flush()
-                    os.fsync(stream.fileno())
-                os.replace(temporary, path)
-                _fsync_directory(path.parent)
-            finally:
-                try:
-                    os.unlink(temporary)
-                except FileNotFoundError:
-                    pass
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
     except Exception as exc:
         _record_failure(session_id, "session_manifest", exc)
 
@@ -298,16 +310,16 @@ def _append_event(path: Path, event: Json) -> None:
             }
             line = json.dumps(event, ensure_ascii=False, sort_keys=True)
         payload = (line + "\n").encode("utf-8")
-        descriptor = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
-        try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX)
-            offset = 0
-            while offset < len(payload):
-                written = os.write(descriptor, payload[offset:])
-                if written <= 0:
-                    raise OSError("zero-byte NDJSON append")
-                offset += written
-        finally:
-            os.close(descriptor)
+        with _WRITE_LOCK:
+            descriptor = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
+            try:
+                offset = 0
+                while offset < len(payload):
+                    written = os.write(descriptor, payload[offset:])
+                    if written <= 0:
+                        raise OSError("zero-byte NDJSON append")
+                    offset += written
+            finally:
+                os.close(descriptor)
     except Exception as exc:
         _record_failure(event.get("session_id"), "ndjson_append", exc)

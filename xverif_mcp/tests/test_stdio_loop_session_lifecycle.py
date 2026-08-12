@@ -237,7 +237,13 @@ def _read_ndjson(path: Path) -> list[dict]:
 
 
 def _session_events(tmp_path: Path, alias: str, name: str = "session") -> list[dict]:
-    return _read_ndjson(tmp_path / "mcp_logs" / "sessions" / alias / f"{name}.ndjson")
+    paths = sorted(
+        (tmp_path / "mcp_logs" / "sessions" / alias).glob(
+            f"owners/*/{name}.ndjson"
+        )
+    )
+    assert paths
+    return [event for path in paths for event in _read_ndjson(path)]
 
 
 # ---------------------------------------------------------------------------

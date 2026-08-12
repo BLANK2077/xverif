@@ -136,7 +136,11 @@ def _read_ndjson(path: Path) -> list[dict]:
 
 
 def _session_log(root: Path, alias: str, name: str) -> list[dict]:
-    return _read_ndjson(root / "sessions" / alias / f"{name}.ndjson")
+    paths = sorted(
+        (root / "sessions" / alias).glob(f"owners/*/{name}.ndjson")
+    )
+    assert paths
+    return [event for path in paths for event in _read_ndjson(path)]
 
 
 @pytest.mark.parametrize("kind", ("file", "symlink"))
@@ -396,8 +400,18 @@ def test_loop_wrapper_logs_invalid_json_and_redacts_paths(tmp_path, monkeypatch)
         server.shutdown()
         thread.join(timeout=5)
 
-    uds_text = (log_root / "logs" / "uds.ndjson").read_text(encoding="utf-8")
-    session_text = (log_root / "sessions" / "redact" / "session.ndjson").read_text(encoding="utf-8")
+    uds_text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted(log_root.glob("owners/*/logs/uds.ndjson"))
+    )
+    session_text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted(
+            (log_root / "sessions" / "redact").glob(
+                "owners/*/session.ndjson"
+            )
+        )
+    )
     assert "uds.request.invalid_json" in uds_text
     assert "private-invalid-json" not in uds_text
     assert "private-request-id" not in uds_text

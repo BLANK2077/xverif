@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import fcntl
 import hashlib
 import json
 import os
@@ -90,6 +89,23 @@ class _OwnerEventSequence:
     def next(self) -> int:
         with self._lock:
             self._value += 1
+            return self._value
+
+
+class _OwnerInstanceIdentity:
+    """Fork-safe identity for one concrete writer process instance."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._pid = -1
+        self._value = ""
+
+    def get(self) -> str:
+        pid = os.getpid()
+        with self._lock:
+            if self._pid != pid:
+                self._pid = pid
+                self._value = f"{pid}-{time.monotonic_ns()}"
             return self._value
 
 
@@ -231,6 +247,11 @@ class StructuredLogger:
         repr=False,
         compare=False,
     )
+    _identity: _OwnerInstanceIdentity = field(
+        default_factory=_OwnerInstanceIdentity,
+        repr=False,
+        compare=False,
+    )
     _write_lock: threading.Lock = field(
         default_factory=threading.Lock,
         repr=False,
@@ -256,13 +277,18 @@ class StructuredLogger:
         return self.root
 
     def server_log_path(self) -> Path:
-        return self.root / "logs" / "server.ndjson"
+        return (
+            self.root / "owners" / self._identity.get() /
+            "logs" / "server.ndjson"
+        )
 
     def session_log_path(self, alias: Optional[str], name: str) -> Path:
         return (
             self.root
             / "sessions"
             / _safe_name(alias)
+            / "owners"
+            / self._identity.get()
             / f"{name}.ndjson"
         )
 
@@ -366,10 +392,8 @@ class StructuredLogger:
             with self._write_lock:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 with path.open("a", encoding="utf-8") as stream:
-                    fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
                     stream.write(encoded + "\n")
                     stream.flush()
-                    fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
         except OSError as exc:
             error = StructuredLoggingError(
                 operation="append",
@@ -441,7 +465,8 @@ class StructuredLogger:
 
     def uds(self, phase: str, ok: bool = True, **fields: Any) -> None:
         self._append(
-            self.root / "logs" / "uds.ndjson",
+            self.root / "owners" / self._identity.get() /
+            "logs" / "uds.ndjson",
             self._base(phase, ok, **fields),
         )
 

@@ -164,13 +164,13 @@ def test_mcp_and_loop_wrapper_loggers_remain_owner_bound_when_interleaved(
 
     mcp_events = [
         json.loads(line)
-        for line in (mcp_root / "logs" / "server.ndjson")
+        for line in mcp_logger.server_log_path()
         .read_text(encoding="utf-8")
         .splitlines()
     ]
     wrapper_events = [
         json.loads(line)
-        for line in (wrapper_root / "logs" / "server.ndjson")
+        for line in wrapper_logger.server_log_path()
         .read_text(encoding="utf-8")
         .splitlines()
     ]
