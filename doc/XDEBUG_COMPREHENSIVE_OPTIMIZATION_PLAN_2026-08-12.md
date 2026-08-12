@@ -1,0 +1,330 @@
+# xdebug 全量优化实施计划与进度账本
+
+日期：2026-08-12
+
+启动基线：`5fe239c`（包含综合评审、真实 NPI/FSDB 实验、最新 Native XOUT 证据和环境复盘）
+
+目标分支：`master`；最终直接 fast-forward 推送 `origin/master`，不创建 PR，不使用 worktree。
+
+## 1. 目标与完成定义
+
+本任务基于 `doc/xdebug-comprehensive-code-review-2026-08-11.md`，一次性关闭其中 33 项评审
+发现，实现经过真实 NPI 实验确认的 design-aware `scope.list` 和明确缺失的 `apb.export`，同步完成
+native CLI、engine、session、MCP、SDK-free loop、schema、example、XOUT、skill、维护文档和测试闭环。
+
+任务只有同时满足以下条件才算完成：
+
+1. 1 项 P0、8 项 P1、19 项 P2、5 项 P3 均有实现、测试或按本计划明确的不优化处置。
+2. `session.kill` 从 public catalog 删除，所有仓库内调用迁移到
+   `session.close args.mode=force`；新增 `apb.export` 后 action catalog 仍为 73 项。
+3. 同一 engine/session 的 NPI context 严格串行，禁止同 handle 并发进入 vendor API。
+4. FSDB 被替换后，任一 session-bound query 在进入旧 handle 前返回 `RESOURCE_CHANGED`。
+5. `scope.list source=design|merged` 正确覆盖 generate scope、interface array、modport 和 mpport。
+6. 所有生成检查、schema/example/runtime compatibility 检查通过。
+7. 全仓 fast、regression、nightly 的全部 required suite 通过，全 fixture validation 通过。
+8. 两个依赖真实 LSF 的 optional suite 因本机未安装 LSF 不作为阻塞，但必须如实记录。
+9. 受影响 skill 安装到 Codex/Claude 后逐目录 `diff -qr` 一致。
+10. 工作树干净、commit ledger 完整、本地 HEAD 与远端 `origin/master` SHA/tree 一致。
+
+## 2. 固定范围与明确不优化项
+
+### 2.1 本轮范围
+
+- 安全随机、session lifecycle、timeout/cancellation、NPI 串行化和 FSDB identity。
+- batch/MCP 管理边界、XOUT 完整性、transport I/O、错误分类和严格配置。
+- analysis cache 元数据边界、热路径统计、LRU 和 APB/AXI 有界算法。
+- design-aware hierarchy、APB artifact export。
+- schema payload、错误字段、文档/example、MCP negative example 和 generator 单源化。
+- 重复 dispatcher、生产 test hook、死代码和静默 evidence 丢失清理。
+
+### 2.2 明确不优化
+
+- 不设计 daidir 强 identity marker、递归 hash 或 vendor-specific fingerprint。
+- 不研究或调用 vendor 私有 NPI cancel API。
+- 不新增 AXI/cache 延迟 SLO；只建立功能、资源边界、cardinality 和等价性门禁。
+- 不实现 VHDL/mixed-language 或 bind instance traversal。
+- 不实现 automatic reopen；资源变化后必须由用户显式 reopen。
+- 不实现未经实验确认的 hierarchy child fallback。
+- 不实现双 FSDB diff、assertion/log 自动入口、progress action、clock/reset 自动猜测、FSM 或
+  sequential 新 action。
+
+## 3. 公共接口与兼容决策
+
+### 3.1 Session 生命周期破坏性迁移
+
+本轮直接删除 public `session.kill`，不保留 alias。`session.close` request 新增：
+
+```json
+{
+  "args": {
+    "mode": "graceful|force",
+    "ownership_token": "<force 且单一 session 时可选>"
+  }
+}
+```
+
+- `mode` 默认 `graceful`。
+- graceful 只发送 quit 并有界等待；失败时保留 session record 和诊断状态。
+- force 允许进程外 SIGTERM/SIGKILL；成功后移除记录，无法确认清理时保留
+  `cleanup_failed` tombstone。
+- `ownership_token` 只允许 `mode=force` 且 `target.session_id` 是单一精确值；对 `all` 拒绝。
+- `target.session_id=all` 逐 session 执行，返回成功、失败、保留记录的计数和明细。
+- 旧请求返回 `UNKNOWN_ACTION`，并通过 `did_you_mean=session.close` 和 force example 指路。
+- 删除 `xverif_debug_session_kill`、`debug.session.kill`；managed wrapper 条件清理迁到 force close。
+- xcov 自身 session API 不在删除范围，共享 loop 层不得破坏 xcov 公共合同。
+
+### 3.2 Design-aware `scope.list`
+
+扩展为 `scope.list source=wave|design|merged`：
+
+- 默认 `wave`，保持现有 waveform 调用兼容；action `requires` 改为 `any`。
+- wave 要求 FSDB，design 要求 daidir，merged 要求两者。
+- 保留 `level`，不新增同义 `max_depth`。
+- `kind` 扩展为 all/module/interface/interface_array/gen_scope/internal_scope/modport/mpport/port/signal。
+- design hierarchy 固定走 `npiInstance -> npiInternalScope`；`npiGenScope` 继续递归。
+- interface array child 是展开后的 `npiInterface`；通过元素的 `npiInstanceArray` 取得并去重容器。
+- interface 侧向遍历 `npiModport -> npiMpPort`；direction 只取 mpport。
+- modport canonical path 由 interface path 与 modport name 组合，不依赖可能为空的 full name。
+- hierarchy depth 与 object budget 分离；modport/mpport 不增加 hierarchy depth但计入 visited budget。
+- response 发布 visited/returned count、truncated、truncation_scope、sources、queryable、traceable。
+
+### 3.3 `apb.export`
+
+- 新增 stable action，复用 canonical APB repository 与 `apb.query` 的 direction/address filter。
+- required：name 和非空 time_range。
+- optional：direction、address、render_time_unit、value_format、output。
+- `output.file_format=tsv|csv`；指定 format 时必须提供 path。
+- 无 path 返回有界 preview；有 path 写完整 artifact。
+- response 分开发布扫描总数、匹配数、preview 行数、artifact path/format/bytes 和完整性。
+- 禁止静默降级为 stream/list export。
+
+### 3.4 其他公共合同
+
+- 错误候选字段统一为 `available_values`，不发布双字段。
+- `batch.args.mode` 只允许 continue_on_error/stop_on_error。
+- `schema.args.view=full|summary`，默认 full；MCP 对 batch response 默认请求 summary。
+- batch summary 是独立紧凑 artifact，不能先加载 4.8 MiB full schema再裁剪。
+- XOUT validation issue 最多渲染 20 条，同时发布 issue_count/issues_truncated。
+- XOUT 不对 handler 已返回的 batch children 再做隐式截断。
+
+## 4. Finding 到阶段映射
+
+| 阶段 | Finding |
+| --- | --- |
+| 安全与 batch | SEC-01、SEC-02、COR-02、COR-03、AI-05 |
+| Session | LIFE-01、LIFE-02、LIFE-03、LIFE-04、OBS-01 |
+| FSDB identity | COR-01 |
+| Transport | IO-01、IO-02、ERR-01、CFG-01 |
+| Cache/算法 | MEM-01、PERF-01、PERF-02、PERF-03、TEST-01 |
+| Hierarchy | GAP-01 中已确认的 design hierarchy 缺口 |
+| APB export | GAP-02 |
+| AI/schema | AI-01、AI-02、AI-03、AI-04、AI-06、AI-07、SCHEMA-01 |
+| 清理 | ARCH-01、TEST-02、DEAD-01、OBS-02 |
+
+## 5. 分阶段 Commit
+
+每阶段开始和结束都更新本文件状态；提交前必须验证 staged 文件精确属于该阶段。
+
+### C01 计划与 Goal 基线
+
+状态：`in_progress`
+
+- 提交本计划书。
+- 提交后按第 8 节创建 Goal。
+- 验证：Markdown、链接、`git diff --cached --check`。
+- commit：待填。
+
+### C02 安全随机与 batch/MCP 边界
+
+状态：`pending`
+
+- 安全随机循环读取，失败 `SECURE_RANDOM_UNAVAILABLE`。
+- 递归阻止 managed MCP batch lifecycle child。
+- batch mode enum fail-closed。
+- 删除 XOUT batch 二次截断，补有界 validation issue 表。
+- focused：xdebug.static、cpp_unit、contract、xverif_mcp.unit/process/action_smoke、native_xout_report。
+- commit 主题：`安全：加固 xdebug 随机认证与 batch 管理边界`。
+
+### C03 Session 生命周期与 NPI 串行化
+
+状态：`pending`
+
+- 缩小 lifecycle lease；建立单 NPI owner 序列。
+- cooperative deadline checkpoint 和进程外 hard termination。
+- list 纯读、compact/verbose、lifecycle state。
+- 删除 session.kill，迁移 session.close graceful/force 及所有调用者。
+- focused：cpp_unit、contract、session、MCP direct/fake LSF、xverif_mcp 全部非真实 LSF suite。
+- commit 主题：`会话：重构可抢占生命周期并统一强制关闭语义`。
+
+### C04 FSDB 资源身份门禁
+
+状态：`pending`
+
+- 所有 session-bound query dispatch 前比较 canonical path/device/inode/size/mtime-ns。
+- 变化返回 RESOURCE_CHANGED，不 reopen，不进入旧 handle。
+- focused：contract、session、synthetic_existing、combined suites。
+- commit 主题：`正确性：为会话查询增加 FSDB 资源身份门禁`。
+
+### C05 Transport 与严格配置
+
+状态：`pending`
+
+- block reader、统一 request size、REQUEST_TOO_LARGE。
+- write-all/EINTR/partial I/O/nonblocking connect/remaining deadline。
+- file transport 保留细分状态。
+- 关键 env fail-fast，展示 env 发布 warning/effective value。
+- focused：cpp_unit、contract、session、MCP process/direct/fake LSF。
+- commit 主题：`传输：统一请求边界、截止时间与结构化错误`。
+
+### C06 Cache 内存与算法
+
+状态：`pending`
+
+- generation/cursor/binding/tombstone 纳入预算并可释放。
+- 增量 stats，禁用 probe 时无全表统计。
+- 确定性 LRU 与批量淘汰。
+- APB/AXI filter/limit 下推，outlier 有界 top-N。
+- benchmark 改为资源/等价性硬门禁，不设新延迟 SLO。
+- focused：cpp_unit、counter、stream、APB/AXI VIP、analysis_cache_benchmark。
+- commit 主题：`性能：收紧分析缓存预算并消除全表热路径`。
+
+### C07 Design-aware hierarchy
+
+状态：`pending`
+
+- 共享 relationship walker 和 scope.list source/kind 扩展。
+- 将临时 generate/interface array/modport fixture 正式化。
+- 删除未实现 design action 宣称。
+- focused：static、cpp_unit、contract、design_semantics、synthetic_existing、skills.xverif。
+- commit 主题：`功能：扩展 scope.list 支持设计层级与接口关系`。
+
+### C08 APB export
+
+状态：`pending`
+
+- handler、catalog、schema、example、XOUT、MCP/skill 全闭环。
+- action catalog 保持 73。
+- focused：static、action_runtime_catalog、contract、apb_vip、native_xout_all、skills.xverif。
+- commit 主题：`功能：新增 APB 标准事务导出能力`。
+
+### C09 AI/schema/docs 单源化
+
+状态：`pending`
+
+- available_values 全链路统一。
+- batch compact schema 和 MCP summary。
+- canonical examples 生成 README/help，并检查所有 public fenced JSON/action token。
+- oneOf/allOf negative example。
+- statistics alternatives。
+- 恢复或迁移 AXI response generator，只保留一个真实 source of truth。
+- 更新 skill、action reference、agents/openai.yaml 和维护文档。
+- focused：static、action_runtime_catalog、skills.xverif、skills.public_docs、xverif_mcp.unit。
+- commit 主题：`合同：统一 xdebug schema、错误提示与 AI 使用指南`。
+
+### C10 架构、测试钩子和死代码清理
+
+状态：`pending`
+
+- typed adapter 取代重复字符串 dispatcher。
+- differential oracle 移到 test build/binary。
+- 删除 non-cached legacy wrapper。
+- logging once-degraded，trace parse failure 标记 analysis incomplete。
+- focused：cpp_unit、contract、stream、active trace、trace_x、native_xout_all。
+- commit 主题：`重构：清理重复分发、测试钩子与静默异常路径`。
+
+### C11 全量回归与交付证据
+
+状态：`pending`
+
+- 更新本账本、综合评审处置状态、测试证据、commit ledger 和远端结果。
+- commit 主题：`验证：记录 xdebug 全量优化回归与最终验收证据`。
+
+## 6. 测试与验收
+
+### 6.1 生成与静态检查
+
+schema 相关变更至少执行：
+
+```bash
+.conda-xverif/bin/python xdebug/tools/sync_runtime_request_schemas.py --check
+.conda-xverif/bin/python xdebug/tools/sync_response_schemas.py --check
+.conda-xverif/bin/python xdebug/tools/sync_action_schema_hints.py --check
+.conda-xverif/bin/python xdebug/tools/audit_runtime_schema_compatibility.py
+.conda-xverif/bin/python xdebug/tools/validate_schema.py
+.conda-xverif/bin/python xdebug/tools/validate_examples.py
+```
+
+若恢复独立 AXI generator，则将其 `--check` 加入正式 static suite；若迁入现有 response generator，
+必须同步删除所有失效命令引用。
+
+### 6.2 最终全仓回归
+
+源码冻结并统一构建后，禁止在真实回归期间并发链接 xdebug。依次执行：
+
+```bash
+.conda-xverif/bin/pytest --xverif-gate fast
+XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest --xverif-gate regression -n auto
+XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest --xverif-gate nightly -n auto
+XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
+  --xverif-fixture-validation --xverif-all-fixtures
+```
+
+- fast 当前 12 suites 必须全过。
+- regression 当前 41 required suites 必须全过。
+- nightly 当前 57 required suites 必须全过。
+- `xverif_mcp.real_lsf_jobid`、`xdebug.mcp_real_lsf` 因本机无 LSF 不阻塞，但必须记录真实状态。
+- required suite 不允许 SKIP/XFAIL/过滤失败。
+- fixture validation 必须全过。
+- 安装受影响 skill 后，对 Codex/Claude 安装目录逐项 `diff -qr`。
+
+## 7. Git 与远端交付
+
+- 每次 commit 前执行 `git status --short` 和 `git diff --cached --name-only`。
+- 显式 `git add` 文件，不使用 `git add .`。
+- commit 使用详细中文信息，写明动机、范围、验证。
+- 最终在 host 执行 `git fetch origin`。
+- 若远端仍为任务基线后的本地祖先，直接 `git push origin master`。
+- 若远端前进，禁止 force push；rebase 最新 `origin/master` 后重跑全部 required regression、nightly
+  和 fixture validation。
+- 推送后验证远端 SHA、tree 和全部阶段 commit。
+- 远端验证成功后才将 Goal 标记 complete。
+
+## 8. Goal 任务书
+
+计划书提交后创建无 token budget Goal：
+
+> 依据本计划书完成 xdebug 综合优化：关闭评审报告中的 33 项发现，实现经过真实 NPI 实验确认的
+> design-aware scope.list 和 apb.export，将 session.kill 迁移并删除，保持同一 session 内 NPI
+> 严格串行，完成 schema/example/MCP/XOUT/skill/文档闭环；按阶段形成边界清楚的中文提交，最终使
+> 全仓 fast、regression、nightly 的全部 required suites 和全 fixture validation 通过，并以
+> fast-forward 方式推送 origin/master。明确不实现计划书列出的 daidir 强 identity、vendor 私有
+> 取消、性能 SLO、mixed-language/bind、automatic reopen 和探索性新 action。验收以本计划书
+> commit ledger、测试证据、干净工作树、远端 commit/tree 校验为准。
+
+## 9. Commit Ledger
+
+| 阶段 | 状态 | Commit | 验证摘要 |
+| --- | --- | --- | --- |
+| 前置评审基线 | completed | `5fe239c` | 三份文档；`git diff --cached --check` |
+| C01 计划书 | in_progress | 待填 | 待提交 |
+| C02 安全/batch | pending | - | - |
+| C03 Session | pending | - | - |
+| C04 FSDB identity | pending | - | - |
+| C05 Transport | pending | - | - |
+| C06 Cache | pending | - | - |
+| C07 Hierarchy | pending | - | - |
+| C08 APB export | pending | - | - |
+| C09 AI/schema | pending | - | - |
+| C10 清理 | pending | - | - |
+| C11 全量验收 | pending | - | - |
+
+## 10. 测试证据账本
+
+| 时间 | 阶段 | 命令/检查 | 环境 | 结果 | 日志/备注 |
+| --- | --- | --- | --- | --- | --- |
+| 2026-08-12 | 前置 | `git diff --cached --check` | host | PASS | commit `5fe239c` |
+
+## 11. 偏差与阻塞记录
+
+- 当前无偏差。
+- 任何 fallback、范围扩展、required suite 降级、公共合同偏离必须先取得用户确认，再记录于此。
