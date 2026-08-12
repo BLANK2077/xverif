@@ -101,8 +101,6 @@ public:
     ContractJsonView args();
     ContractJsonView target();
     ContractJsonView limits();
-    ContractJson consume_args_request(
-        const std::string& consumer_id);
     void consume_target(
         const std::string& consumer_id);
 

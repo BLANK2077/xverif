@@ -178,7 +178,7 @@ modport/mpport 是侧向关系，计入 visited/object budget，但不增加 hie
 - `src/waveform/cache/analysis_probe.*`
 - `src/waveform/cache/analysis_repository.*`
 - `src/waveform/cache/analysis_size_estimator.*`
-- `src/waveform/stream/legacy_stream_analyzer_adapter.*`
+- `tests/stream_differential/legacy_stream_oracle.*`（仅 differential test build）
 
 职责与要求：
 
@@ -209,11 +209,11 @@ modport/mpport 是侧向关系，计入 visited/object budget，但不增加 hie
   control/data X/Z 计数；完整 beat/stable field value 仅保存在 transfer-aligned columns。
   `StreamQueryView` 按请求窗口临时重建 row、stall 和 packet，并按 query kind 只保留所需
   packet body；summary、matched count、首末 evidence 与完整性仍遍历完整窗口。
-- legacy adapter 是 stream 列式重构的 test-only 差分 seam；设置
-  `XDEBUG_TEST_STREAM_DIFFERENTIAL=1` 时，同一 FSDB/config/options 额外执行冻结的
-  `analyze_legacy`，逐字段比较 summary、transfer、stall、当前 query 所需 packet 与 filter
-  evidence。默认生产路径只执行新 analyzer，不注册 public bypass，也不把 oracle 扫描
-  计入 probe。
+- legacy oracle 是 stream 列式重构的 test-only 差分 seam，只编入
+  `stream-differential-test-dist` 生成的独立 frontend/engine。该 test build 对同一
+  FSDB/config/options 始终额外执行冻结的 `analyze_legacy`，逐字段比较 summary、transfer、
+  stall、当前 query 所需 packet 与 filter evidence。正式 engine 不包含 legacy analyzer
+  符号、不读取 differential 环境变量、不注册 public bypass，也不把 oracle 扫描计入 probe。
 - stream 配置保存使用同目录 temp、完整 write、file `fsync`、atomic rename 和
   directory `fsync`；只有成功后才按语义 fingerprint 通知 repository。description-only
   或同语义 replace 复用，写入/rename 失败保留旧文件与旧 cache。

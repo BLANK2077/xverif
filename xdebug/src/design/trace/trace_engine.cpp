@@ -31,13 +31,58 @@ static bool is_select_type(int type, const char* name) {
     return type == npiPartSelect || type == npiBitSelect || (name && strchr(name, '['));
 }
 
-static json parse_json_or_object(const std::string& text) {
-    if (text.empty()) return json::object();
+static void record_internal_json_failure(TraceResult& result,
+                                         const std::string& stage,
+                                         const std::string& artifact_kind,
+                                         size_t index) {
+    result.internal_json_parse_failed = true;
+    for (auto& diagnostic : result.diagnostics) {
+        if (diagnostic.stage == stage &&
+            diagnostic.artifact_kind == artifact_kind) {
+            diagnostic.failure_count++;
+            return;
+        }
+    }
+    TraceDiagnostic diagnostic;
+    diagnostic.stage = stage;
+    diagnostic.artifact_kind = artifact_kind;
+    diagnostic.first_index = index;
+    diagnostic.failure_count = 1;
+    result.diagnostics.push_back(diagnostic);
+}
+
+static json parse_internal_json(const std::string& text,
+                                TraceResult& result,
+                                const std::string& stage,
+                                const std::string& artifact_kind,
+                                size_t index) {
+    if (text.empty()) {
+        record_internal_json_failure(
+            result, stage, artifact_kind, index);
+        return json::object();
+    }
     try {
         return json::parse(text);
     } catch (...) {
+        record_internal_json_failure(
+            result, stage, artifact_kind, index);
         return json::object();
     }
+}
+
+static json trace_diagnostics_json(const TraceResult& result) {
+    json diagnostics = json::array();
+    for (const auto& diagnostic : result.diagnostics) {
+        diagnostics.push_back({
+            {"code", diagnostic.code},
+            {"stage", diagnostic.stage},
+            {"artifact_kind", diagnostic.artifact_kind},
+            {"first_index", diagnostic.first_index},
+            {"failure_count", diagnostic.failure_count},
+            {"message", diagnostic.message},
+        });
+    }
+    return diagnostics;
 }
 
 static void add_unique_string(std::vector<std::string>& values, const std::string& value) {
@@ -362,8 +407,10 @@ void TraceEngine::finalize_ai_metadata(TraceResult& result) const {
         if (record.resolution == "statement_only") has_statement_only = true;
         if (!record.evidence_complete) result.has_incomplete_evidence = true;
     }
-    for (const auto& text : result.assignments_json) {
-        json assignment = parse_json_or_object(text);
+    for (size_t index = 0; index < result.assignments_json.size(); ++index) {
+        json assignment = parse_internal_json(
+            result.assignments_json[index], result,
+            "finalize_assignment", "assignment", index);
         if (assignment.value("kind", "") == "statement_only") has_statement_only = true;
         if (contains_unknown_expression(assignment)) {
             has_unknown_expr = true;
@@ -377,11 +424,16 @@ void TraceEngine::finalize_ai_metadata(TraceResult& result) const {
         result.truncated,
         result.has_statement_only,
         result.has_unknown_expr,
-        result.has_incomplete_evidence
+        result.has_incomplete_evidence,
+        result.internal_json_parse_failed
     });
     if (!result.ok || !result.error.empty()) {
         result.confidence = "unknown";
         result.confidence_reason = "trace failed";
+    } else if (result.internal_json_parse_failed) {
+        result.confidence = "low";
+        result.confidence_reason =
+            "internal trace evidence could not be decoded";
     } else if (has_statement_only) {
         result.confidence = "low";
         result.confidence_reason = "trace contains unresolved statement_only records";
@@ -664,12 +716,20 @@ std::string TraceEngine::render_json(const TraceResult& result) const {
     payload["result_count"] = result.results.size();
     payload["scan_complete"] = result.ok && result.error.empty();
     payload["analysis_complete"] = result.analysis_complete;
-    payload["truncation_scopes"] = result.analysis_complete
-        ? json::array()
-        : json::array({"analysis_trace_resolution"});
+    payload["truncation_scopes"] = json::array();
+    if (result.internal_json_parse_failed) {
+        payload["truncation_scopes"].push_back("analysis_internal_json");
+    }
+    if (!result.analysis_complete &&
+        (result.has_statement_only || result.has_unknown_expr ||
+         result.has_incomplete_evidence || !result.ok || !result.error.empty())) {
+        payload["truncation_scopes"].push_back(
+            "analysis_trace_resolution");
+    }
     payload["has_statement_only"] = result.has_statement_only;
     payload["has_unknown_expr"] = result.has_unknown_expr;
     payload["has_incomplete_evidence"] = result.has_incomplete_evidence;
+    payload["diagnostics"] = trace_diagnostics_json(result);
 
     std::set<std::string> roles;
     std::set<std::string> files;
@@ -693,15 +753,17 @@ std::string TraceEngine::render_json(const TraceResult& result) const {
     return payload.dump(2) + "\n";
 }
 
-std::string TraceEngine::render_ai_json(const TraceResult& result) const {
+std::string TraceEngine::render_ai_json(TraceResult& result) const {
     json payload = json::parse(render_json(result));
     payload["rhs_signals"] = json::array();
     for (const auto& name : result.rhs_signals) {
         payload["rhs_signals"].push_back(name);
     }
     payload["assignments"] = json::array();
-    for (const auto& text : result.assignments_json) {
-        json assignment = parse_json_or_object(text);
+    for (size_t index = 0; index < result.assignments_json.size(); ++index) {
+        json assignment = parse_internal_json(
+            result.assignments_json[index], result,
+            "render_assignment", "assignment", index);
         if (!assignment.empty()) payload["assignments"].push_back(assignment);
     }
     if (!payload["assignments"].empty()) {
@@ -709,8 +771,10 @@ std::string TraceEngine::render_ai_json(const TraceResult& result) const {
     }
     payload["dependency_edges"] = json::array();
     std::set<std::string> seen_edges;
-    for (const auto& text : result.dependency_edges_json) {
-        json edge = parse_json_or_object(text);
+    for (size_t index = 0; index < result.dependency_edges_json.size(); ++index) {
+        json edge = parse_internal_json(
+            result.dependency_edges_json[index], result,
+            "render_dependency_edge", "dependency_edge", index);
         if (edge.empty()) continue;
         std::string key = edge.dump();
         if (seen_edges.insert(key).second) {
@@ -718,6 +782,20 @@ std::string TraceEngine::render_ai_json(const TraceResult& result) const {
         }
     }
     payload["resolution"] = result.resolution;
+    if (result.internal_json_parse_failed) {
+        result.analysis_complete = false;
+        result.confidence = "low";
+        result.confidence_reason =
+            "internal trace evidence could not be decoded";
+        payload["analysis_complete"] = false;
+        json scopes = payload.value("truncation_scopes", json::array());
+        if (std::find(scopes.begin(), scopes.end(),
+                      json("analysis_internal_json")) == scopes.end()) {
+            scopes.push_back("analysis_internal_json");
+        }
+        payload["truncation_scopes"] = scopes;
+        payload["diagnostics"] = trace_diagnostics_json(result);
+    }
     payload["confidence"] = result.confidence;
     payload["confidence_reason"] = result.confidence_reason;
     return payload.dump(2) + "\n";

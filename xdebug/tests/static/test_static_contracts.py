@@ -184,6 +184,28 @@ def _discover_engine_runtime_consumers(
 
     for source in sorted(handler_root.rglob("*.cpp")):
         text = source.read_text(encoding="utf-8")
+        typed_factory = re.search(
+            r"std::unique_ptr<EngineActionHandler>\s+"
+            r"(make_[A-Za-z0-9_]+_handler)\(\)\s*\{.*?"
+            r"return\s+make_typed_waveform_action_handler\(\s*"
+            r'"([^"]+)"',
+            text,
+            re.DOTALL,
+        )
+        if typed_factory is not None:
+            factory, action = typed_factory.groups()
+            assert factory in registered_factories, source
+            assert action in engine_actions, source
+            assert action not in actual, action
+            actual[action] = (
+                f"EngineActionRegistry[action={action}]"
+                "::run(ContractBoundRequest)"
+            )
+            continue
+        if source.name == "typed_waveform_action_adapter.cpp":
+            assert "class TypedWaveformActionHandler" in text
+            assert "implementation_(args, error)" in text
+            continue
         if not re.search(r"\bJson\s+run\s*\(", text):
             continue
 
@@ -254,6 +276,80 @@ def _discover_engine_runtime_consumers(
     assert set(actual) == engine_actions
     assert len(registered_factories) == len(engine_actions)
     return actual
+
+
+def test_typed_waveform_actions_bind_directly_without_legacy_dispatch() -> None:
+    source_root = XDEBUG / "src"
+    all_source = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted(source_root.rglob("*"))
+        if path.is_file() and path.suffix in {".cpp", ".h"}
+    )
+    assert "ai_dispatch_query" not in all_source
+    assert "consume_args_request" not in all_source
+
+    expected = {
+        "apb_transfer_window.cpp": (
+            "apb.transfer_window", "ai_apb_transfer_window"
+        ),
+        "axi_channel_stall.cpp": (
+            "axi.channel_stall", "ai_axi_channel_stall"
+        ),
+        "axi_latency_outlier.cpp": (
+            "axi.latency_outlier", "ai_axi_latency_outlier"
+        ),
+        "axi_outstanding_timeline.cpp": (
+            "axi.outstanding_timeline", "ai_axi_outstanding_timeline"
+        ),
+        "axi_request_response_pair.cpp": (
+            "axi.request_response_pair", "ai_axi_transactions_window"
+        ),
+        "counter_statistics.cpp": (
+            "counter.statistics", "ai_counter_statistics"
+        ),
+        "expr_eval_at.cpp": ("expr.eval_at", "ai_expr_eval_at"),
+        "protocol_handshake_inspect.cpp": (
+            "protocol.handshake.inspect", "ai_protocol_handshake_inspect"
+        ),
+        "signal_anomaly_inspect.cpp": (
+            "signal.anomaly.inspect", "ai_signal_anomaly_inspect"
+        ),
+        "signal_changes.cpp": ("signal.changes", "ai_signal_changes"),
+        "signal_sampled_pulse_inspect.cpp": (
+            "signal.sampled_pulse.inspect",
+            "ai_signal_sampled_pulse_inspect",
+        ),
+        "signal_stability.cpp": (
+            "signal.stability", "ai_signal_stability"
+        ),
+        "signal_statistics.cpp": (
+            "signal.statistics", "ai_signal_statistics"
+        ),
+        "signal_xz_verify.cpp": (
+            "signal.xz_verify", "ai_signal_xz_verify"
+        ),
+        "window_verify.cpp": ("window.verify", "ai_window_verify"),
+    }
+    wrapper_root = (
+        source_root / "engine" / "service" / "actions" / "waveform"
+    )
+    for filename, (action, implementation) in expected.items():
+        text = (wrapper_root / filename).read_text(encoding="utf-8")
+        assert "class AiActionHandler" not in text, filename
+        assert re.search(
+            r"make_typed_waveform_action_handler\(\s*"
+            rf'"{re.escape(action)}"\s*,\s*'
+            rf"xdebug_waveform::{re.escape(implementation)}\b",
+            text,
+            re.DOTALL,
+        ), filename
+
+    adapter = (
+        wrapper_root / "typed_waveform_action_adapter.cpp"
+    ).read_text(encoding="utf-8")
+    assert "merge_typed_waveform_action_args" in adapter
+    assert "last_cache_error()" in adapter
+    assert "normalize_requested_end" in adapter
 
 
 def test_schema_files() -> None:
@@ -1928,8 +2024,21 @@ def test_trace_resolution_never_substitutes_noncanonical_source_evidence() -> No
         XDEBUG / "src" / "design" / "trace" / "trace_engine.cpp"
     ).read_text(encoding="utf-8")
     assert '"analysis_trace_resolution"' in trace_source
+    assert '"analysis_internal_json"' in trace_source
+    assert "record_internal_json_failure" in trace_source
+    assert "parse_json_or_object" not in trace_source
     assert "fallback AST" not in trace_source
     assert "fallback records" not in trace_source
+
+    formatter_source = (
+        XDEBUG
+        / "src"
+        / "engine"
+        / "service"
+        / "trace_source_path_formatter.cpp"
+    ).read_text(encoding="utf-8")
+    assert 'raw.value("diagnostics", Json::array())' in formatter_source
+    assert 'out["diagnostics"] = diagnostics' in formatter_source
 
 
 def test_action_schema_coverage_is_complete() -> None:

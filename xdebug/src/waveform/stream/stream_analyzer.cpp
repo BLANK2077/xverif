@@ -1094,6 +1094,7 @@ bool StreamAnalyzer::analyze_cached(
     return view.materialize(analysis, error);
 }
 
+#ifdef XDEBUG_STREAM_DIFFERENTIAL_TEST_BUILD
 bool StreamAnalyzer::analyze_legacy(npiFsdbFileHandle file,
                                     const StreamConfig& config,
                                     const StreamQueryOptions& options,
@@ -1523,6 +1524,7 @@ bool StreamAnalyzer::analyze_legacy(npiFsdbFileHandle file,
     }
     return true;
 }
+#endif
 
 Json stream_row_json(const StreamRow& row) {
     Json j;

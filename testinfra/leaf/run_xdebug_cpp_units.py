@@ -26,6 +26,7 @@ BINARIES = (
     "test_trace_x_chain_identity",
     "test_common_blocks",
     "test_contract_bound_request",
+    "test_typed_waveform_action_adapter",
     "test_logic_value",
     "test_event_expr",
     "test_expression",

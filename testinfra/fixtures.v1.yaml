@@ -165,6 +165,21 @@ fixtures:
       - argv: [python3, "{repo}/testinfra/leaf/probe_fixture.py", --resources, "{resources}", --xdebug, "{repo}/tools/xdebug", --fsdb-glob, out/waves.fsdb, --daidir-glob, out/simv.daidir, --json-glob, out/stream_expected.json]
     tool_env: [VERDI_HOME]
 
+  - id: xdebug.stream_differential_tool
+    build_capabilities: [make, gxx, npi]
+    source_dir: xdebug
+    inputs: [Makefile, help.txt, "specs/actions/actions.yaml", "src/**/*", "tests/stream_differential/**/*.cpp", "tests/stream_differential/**/*.h", "third_party/**/*", "tools/sync_action_metadata.py", "tools/sync_help_text.py"]
+    builder:
+      argv: [make, stream-differential-test-dist, "STREAM_DIFFERENTIAL_DIST={resources}/out"]
+      cwd: "{source}"
+      timeout_sec: 900
+    outputs:
+      - {name: frontend, path: out/xdebug, kind: file, min_bytes: 1024}
+      - {name: engine, path: out/libexec/xdebug-engine, kind: file, min_bytes: 1024}
+    probes:
+      - argv: [python3, "{repo}/testinfra/leaf/probe_fixture.py", --resources, "{resources}", --executable-glob, out/xdebug, --executable-glob, out/libexec/xdebug-engine, --min-count, "1"]
+    tool_env: [VERDI_HOME]
+
   - id: xdebug.npi_fsdb_sva
     build_capabilities: [make, gxx, vcs, npi]
     source_dir: xdebug/testdata/waveform/sva_fsdb_npi

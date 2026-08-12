@@ -549,6 +549,21 @@ suites:
     deterministic: true
     cost: {class: medium, estimate_sec: 20}
 
+  - id: xdebug.stream_differential
+    owner: xdebug
+    level: integration
+    intent: [contract, semantics]
+    domains: [waveform, stream]
+    runner: {kind: pytest, path: xdebug/tests/stream_differential/test_stream_differential.py}
+    fixtures: [xdebug.stream_v1, xdebug.stream_differential_tool]
+    capabilities: [child_process, npi, fsdb]
+    hermetic: false
+    deterministic: true
+    gates: [regression, nightly]
+    cost: {class: medium, estimate_sec: 40}
+    resources: {cpu: 1, memory_mb: 2048, tokens: [verdi_npi]}
+    timeouts: {execute_sec: 240, cleanup_sec: 20}
+
   - id: xdebug.npi_fsdb_sva
     owner: xdebug
     level: integration

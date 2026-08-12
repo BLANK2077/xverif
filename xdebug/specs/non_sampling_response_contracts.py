@@ -771,6 +771,33 @@ def _source_path_schema() -> Schema:
     )
 
 
+def _trace_diagnostic_schema() -> Schema:
+    return _closed(
+        {
+            "code": {"const": "TRACE_INTERNAL_JSON_PARSE_FAILED"},
+            "stage": {
+                "enum": [
+                    "finalize_assignment",
+                    "render_assignment",
+                    "render_dependency_edge",
+                ]
+            },
+            "artifact_kind": {"enum": ["assignment", "dependency_edge"]},
+            "first_index": _integer(),
+            "failure_count": _integer(minimum=1),
+            "message": {"const": "internal trace evidence could not be decoded"},
+        },
+        (
+            "code",
+            "stage",
+            "artifact_kind",
+            "first_index",
+            "failure_count",
+            "message",
+        ),
+    )
+
+
 def _trace_hop_schema() -> Schema:
     return _closed(
         {
@@ -1208,6 +1235,7 @@ def _definitions() -> dict[str, Schema]:
         "nonSamplingNpiExprAst": _npi_expr_ast_schema(),
         "nonSamplingSourceLine": _source_line_schema(),
         "nonSamplingSourcePath": _source_path_schema(),
+        "nonSamplingTraceDiagnostic": _trace_diagnostic_schema(),
         "nonSamplingTraceHop": _trace_hop_schema(),
         "nonSamplingActiveChainDepthFrontier": (
             _active_chain_depth_frontier_schema()
@@ -3659,7 +3687,7 @@ def _with_optional_common_blocks(properties: Mapping[str, Schema]) -> dict[str, 
 
 
 def _trace_static_contract(mode: str) -> tuple[NonSamplingSuccessVariant, ...]:
-    summary = _summary(
+    regular_summary = _summary(
         {
             "signal": _string(),
             "mode": {"const": mode},
@@ -3668,15 +3696,63 @@ def _trace_static_contract(mode: str) -> tuple[NonSamplingSuccessVariant, ...]:
         ("signal", "mode"),
         complete=True,
     )
+    regular_summary["allOf"] = [
+        {
+            "not": {
+                "properties": {
+                    "truncation_scopes": {
+                        "contains": {"const": "analysis_internal_json"}
+                    }
+                },
+                "required": ["truncation_scopes"],
+            }
+        }
+    ]
+    parse_summary = _summary(
+        {
+            "signal": _string(),
+            "mode": {"const": mode},
+            "limit_hint": _string(),
+        },
+        ("signal", "mode"),
+        complete=True,
+    )
+    parse_summary["properties"]["scan_complete"] = {"const": True}
+    parse_summary["properties"]["analysis_complete"] = {"const": False}
+    parse_summary["properties"]["truncation_scopes"] = {
+        "type": "array",
+        "items": {
+            "enum": [
+                "analysis_internal_json",
+                "analysis_trace_resolution",
+                "response_paths",
+            ]
+        },
+        "contains": {"const": "analysis_internal_json"},
+        "uniqueItems": True,
+    }
+    path_data = _with_optional_common_blocks(
+        {"paths": _array(_ref("nonSamplingSourcePath"))}
+    )
     return (
         _variant(
             "paths",
-            summary,
+            regular_summary,
+            _closed(path_data, ("paths",)),
+        ),
+        _variant(
+            "internal_json_incomplete",
+            parse_summary,
             _closed(
-                _with_optional_common_blocks(
-                    {"paths": _array(_ref("nonSamplingSourcePath"))}
-                ),
-                ("paths",),
+                {
+                    **path_data,
+                    "diagnostics": _array(
+                        _ref("nonSamplingTraceDiagnostic"),
+                        min_items=1,
+                        max_items=3,
+                    ),
+                },
+                ("paths", "diagnostics"),
             ),
         ),
     )

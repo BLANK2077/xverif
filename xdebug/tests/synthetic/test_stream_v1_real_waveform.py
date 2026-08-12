@@ -137,7 +137,6 @@ def test_stream_v1_real_waveform_actions(
     assert fsdb.is_file() and fsdb.stat().st_size > 0
     assert expected_path.is_file()
     expected = json.loads(expected_path.read_text(encoding="utf-8"))["streams"]
-    cli_runner.base_env["XDEBUG_TEST_STREAM_DIFFERENTIAL"] = "1"
     probe_path = tmp_path / "stream-analysis-probe.jsonl"
     cli_runner.base_env["XDEBUG_TEST_ANALYSIS_PROBE_PATH"] = str(probe_path)
 
@@ -917,7 +916,6 @@ def test_stream_v1_cache_scope_repository_contract(
 
     probe_path = tmp_path / "stream-cache-scope-probe.jsonl"
     cli_runner.base_env["XDEBUG_TEST_ANALYSIS_PROBE_PATH"] = str(probe_path)
-    cli_runner.base_env["XDEBUG_TEST_STREAM_DIFFERENTIAL"] = "1"
     opened = _query(
         cli_runner,
         {"api_version": "xdebug.v1", "action": "session.open",

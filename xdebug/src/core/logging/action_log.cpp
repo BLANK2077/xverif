@@ -6,6 +6,8 @@
 #include "core/diagnostic_error.h"
 
 #include <chrono>
+#include <atomic>
+#include <algorithm>
 #include <cstdlib>
 #include <cerrno>
 #include <cstdio>
@@ -28,6 +30,85 @@ const size_t kMaxArray = 64;
 const size_t kMaxObject = 128;
 const int kMaxDepth = 8;
 const size_t kMaxLine = 256 * 1024;
+
+enum class LogDegradedCode {
+    None = 0,
+    DirectoryCreateFailed,
+    SidecarWriteFailed,
+    EventWriteFailed,
+    HealthWriteFailed,
+    LogException,
+    RotationFailed,
+    ManifestParseFailed,
+    ManifestWriteFailed,
+};
+
+enum class LogDegradedOperation {
+    None = 0,
+    AppendEvent,
+    AppendHealthEvent,
+    WriteSidecar,
+    UpdateManifest,
+};
+
+std::atomic<unsigned long long> g_log_failure_count(0);
+std::atomic<bool> g_log_first_claimed(false);
+std::atomic<bool> g_log_degraded(false);
+std::atomic<int> g_log_first_code(static_cast<int>(LogDegradedCode::None));
+std::atomic<int> g_log_first_operation(
+    static_cast<int>(LogDegradedOperation::None));
+
+const char* log_degraded_code_name(LogDegradedCode code) {
+    switch (code) {
+    case LogDegradedCode::DirectoryCreateFailed: return "LOG_DIRECTORY_CREATE_FAILED";
+    case LogDegradedCode::SidecarWriteFailed: return "LOG_SIDECAR_WRITE_FAILED";
+    case LogDegradedCode::EventWriteFailed: return "LOG_EVENT_WRITE_FAILED";
+    case LogDegradedCode::HealthWriteFailed: return "LOG_HEALTH_WRITE_FAILED";
+    case LogDegradedCode::LogException: return "LOG_EXCEPTION";
+    case LogDegradedCode::RotationFailed: return "LOG_ROTATION_FAILED";
+    case LogDegradedCode::ManifestParseFailed: return "LOG_MANIFEST_PARSE_FAILED";
+    case LogDegradedCode::ManifestWriteFailed: return "LOG_MANIFEST_WRITE_FAILED";
+    case LogDegradedCode::None: return "NONE";
+    }
+    return "UNKNOWN";
+}
+
+const char* log_degraded_operation_name(LogDegradedOperation operation) {
+    switch (operation) {
+    case LogDegradedOperation::AppendEvent: return "append_event";
+    case LogDegradedOperation::AppendHealthEvent: return "append_health_event";
+    case LogDegradedOperation::WriteSidecar: return "write_sidecar";
+    case LogDegradedOperation::UpdateManifest: return "update_manifest";
+    case LogDegradedOperation::None: return "none";
+    }
+    return "unknown";
+}
+
+void mark_logging_degraded(LogDegradedCode code,
+                           LogDegradedOperation operation) noexcept {
+    g_log_failure_count.fetch_add(1, std::memory_order_relaxed);
+    bool expected = false;
+    if (!g_log_first_claimed.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel)) {
+        return;
+    }
+    g_log_first_code.store(static_cast<int>(code), std::memory_order_relaxed);
+    g_log_first_operation.store(
+        static_cast<int>(operation), std::memory_order_relaxed);
+    g_log_degraded.store(true, std::memory_order_release);
+    char line[384];
+    const int length = snprintf(
+        line, sizeof(line),
+        "xdebug: structured logging degraded code=%s operation=%s; "
+        "later log events may be incomplete\n",
+        log_degraded_code_name(code),
+        log_degraded_operation_name(operation));
+    if (length > 0) {
+        const size_t bytes = std::min(
+            static_cast<size_t>(length), sizeof(line) - 1);
+        (void)write(STDERR_FILENO, line, bytes);
+    }
+}
 
 bool ensure_dir(const std::string& path) {
     if (path.empty()) return false;
@@ -112,7 +193,10 @@ std::string strip_ndjson_suffix(const std::string& name) {
 bool write_file_atomic_append(const std::string& path, const std::string& payload, int mode = 0600) {
     int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, mode);
     if (fd < 0) return false;
-    flock(fd, LOCK_EX);
+    if (flock(fd, LOCK_EX) != 0) {
+        close(fd);
+        return false;
+    }
     const char* data = payload.data();
     size_t left = payload.size();
     bool ok = true;
@@ -125,8 +209,8 @@ bool write_file_atomic_append(const std::string& path, const std::string& payloa
         data += n;
         left -= static_cast<size_t>(n);
     }
-    flock(fd, LOCK_UN);
-    close(fd);
+    if (flock(fd, LOCK_UN) != 0) ok = false;
+    if (close(fd) != 0) ok = false;
     return ok;
 }
 
@@ -137,7 +221,11 @@ void append_health_event(const std::string& log_path,
     try {
         std::string dir = dirname_of(log_path);
         if (!ensure_dir_recursive(dir)) dir = xdebug_home() + "/logs";
-        if (!ensure_dir_recursive(dir)) return;
+        if (!ensure_dir_recursive(dir)) {
+            mark_logging_degraded(LogDegradedCode::DirectoryCreateFailed,
+                                  LogDegradedOperation::AppendHealthEvent);
+            return;
+        }
         Json event;
         event["ts"] = now_iso8601();
         event["event_id"] = event_id();
@@ -153,20 +241,45 @@ void append_health_event(const std::string& log_path,
         event = sanitize_for_log(event);
         std::string line = event.dump();
         line.push_back('\n');
-        write_file_atomic_append(dir + "/log_health.ndjson", line);
+        if (!write_file_atomic_append(dir + "/log_health.ndjson", line)) {
+            mark_logging_degraded(LogDegradedCode::HealthWriteFailed,
+                                  LogDegradedOperation::AppendHealthEvent);
+        }
     } catch (...) {
+        mark_logging_degraded(LogDegradedCode::LogException,
+                              LogDegradedOperation::AppendHealthEvent);
     }
 }
 
 bool write_sidecar(const std::string& path, const Json& payload, Json& sidecars, const std::string& key) {
     try {
         std::string dir = dirname_of(path);
-        if (!ensure_dir_recursive(dir)) return false;
+        if (!ensure_dir_recursive(dir)) {
+            mark_logging_degraded(LogDegradedCode::DirectoryCreateFailed,
+                                  LogDegradedOperation::WriteSidecar);
+            return false;
+        }
         const Json sanitized_payload = sanitize_for_log(payload);
         std::string text = sanitized_payload.dump(2);
         std::ofstream out(path.c_str(), std::ios::trunc);
-        if (!out) return false;
+        if (!out) {
+            mark_logging_degraded(LogDegradedCode::SidecarWriteFailed,
+                                  LogDegradedOperation::WriteSidecar);
+            return false;
+        }
         out << text << "\n";
+        out.flush();
+        if (!out.good()) {
+            mark_logging_degraded(LogDegradedCode::SidecarWriteFailed,
+                                  LogDegradedOperation::WriteSidecar);
+            return false;
+        }
+        out.close();
+        if (!out.good()) {
+            mark_logging_degraded(LogDegradedCode::SidecarWriteFailed,
+                                  LogDegradedOperation::WriteSidecar);
+            return false;
+        }
         sidecars[key] = {
             {"path", path},
             {"bytes", text.size()},
@@ -174,6 +287,8 @@ bool write_sidecar(const std::string& path, const Json& payload, Json& sidecars,
         };
         return true;
     } catch (...) {
+        mark_logging_degraded(LogDegradedCode::LogException,
+                              LogDegradedOperation::WriteSidecar);
         return false;
     }
 }
@@ -223,11 +338,25 @@ void rotate_if_needed(const std::string& path, size_t incoming_bytes) {
     for (long long i = max_files - 1; i >= 1; --i) {
         std::string from = path + "." + std::to_string(i);
         std::string to = path + "." + std::to_string(i + 1);
-        rename(from.c_str(), to.c_str());
+        struct stat rotated;
+        if (stat(from.c_str(), &rotated) == 0 &&
+            rename(from.c_str(), to.c_str()) != 0) {
+            const int rotation_errno = errno;
+            mark_logging_degraded(LogDegradedCode::RotationFailed,
+                                  LogDegradedOperation::AppendEvent);
+            append_health_event(
+                path, "ROTATION_FAILED", "failed to rotate log file",
+                {{"errno", rotation_errno},
+                 {"message", strerror(rotation_errno)}});
+        }
     }
     if (rename(path.c_str(), (path + ".1").c_str()) != 0) {
+        const int rotation_errno = errno;
+        mark_logging_degraded(LogDegradedCode::RotationFailed,
+                              LogDegradedOperation::AppendEvent);
         append_health_event(path, "ROTATION_FAILED", "failed to rotate log file",
-                            {{"errno", errno}, {"message", strerror(errno)}});
+                            {{"errno", rotation_errno},
+                             {"message", strerror(rotation_errno)}});
     }
 }
 
@@ -375,6 +504,8 @@ void append_event(const std::string& path, Json event) {
     try {
         size_t slash = path.rfind('/');
         if (slash != std::string::npos && !ensure_dir_recursive(path.substr(0, slash))) {
+            mark_logging_degraded(LogDegradedCode::DirectoryCreateFailed,
+                                  LogDegradedOperation::AppendEvent);
             append_health_event(path, "DIR_CREATE_FAILED", "failed to create log directory");
             return;
         }
@@ -396,10 +527,14 @@ void append_event(const std::string& path, Json event) {
         line.push_back('\n');
         rotate_if_needed(path, line.size());
         if (!write_file_atomic_append(path, line)) {
+            mark_logging_degraded(LogDegradedCode::EventWriteFailed,
+                                  LogDegradedOperation::AppendEvent);
             append_health_event(path, "WRITE_FAILED", "failed to append log event",
                                 {{"errno", errno}, {"message", strerror(errno)}});
         }
     } catch (...) {
+        mark_logging_degraded(LogDegradedCode::LogException,
+                              LogDegradedOperation::AppendEvent);
     }
 }
 
@@ -508,6 +643,22 @@ Json sanitize_for_log(const Json& value) {
     return out;
 }
 
+LoggingHealthSnapshot logging_health_snapshot() {
+    LoggingHealthSnapshot snapshot;
+    snapshot.degraded = g_log_degraded.load(std::memory_order_acquire);
+    snapshot.failure_count =
+        g_log_failure_count.load(std::memory_order_relaxed);
+    if (snapshot.degraded) {
+        snapshot.first_code = log_degraded_code_name(
+            static_cast<LogDegradedCode>(
+                g_log_first_code.load(std::memory_order_relaxed)));
+        snapshot.first_operation = log_degraded_operation_name(
+            static_cast<LogDegradedOperation>(
+                g_log_first_operation.load(std::memory_order_relaxed)));
+    }
+    return snapshot;
+}
+
 Json request_summary_for_log(const Json& request) {
     Json target =
         request.is_object() && request.contains("target") &&
@@ -606,7 +757,11 @@ bool update_public_session_manifest(const std::string& session_id,
                                     const std::string& fsdb) {
     try {
         std::string dir = public_session_dir(session_id);
-        if (!ensure_dir_recursive(dir)) return false;
+        if (!ensure_dir_recursive(dir)) {
+            mark_logging_degraded(LogDegradedCode::DirectoryCreateFailed,
+                                  LogDegradedOperation::UpdateManifest);
+            return false;
+        }
         Json manifest;
         manifest["session_id"] = session_id.empty() ? "adhoc" : session_id;
         if (!mode.empty()) manifest["mode"] = mode;
@@ -617,7 +772,17 @@ bool update_public_session_manifest(const std::string& session_id,
         Json old;
         std::ifstream in(path.c_str());
         if (in) {
-            try { in >> old; } catch (...) {}
+            try {
+                in >> old;
+            } catch (...) {
+                mark_logging_degraded(LogDegradedCode::ManifestParseFailed,
+                                      LogDegradedOperation::UpdateManifest);
+                append_health_event(
+                    public_action_log_path(session_id),
+                    "MANIFEST_PARSE_FAILED",
+                    "existing public session manifest is not valid JSON");
+                return false;
+            }
         }
         if (old.is_object() && old.contains("created_at")) manifest["created_at"] = old["created_at"];
         else manifest["created_at"] = manifest["last_log_at"];
@@ -628,11 +793,28 @@ bool update_public_session_manifest(const std::string& session_id,
         logs["public_stdio"] = public_stdio_log_path(session_id);
         manifest["logs"] = logs;
         std::ofstream out(path.c_str(), std::ios::trunc);
-        if (!out) return false;
+        if (!out) {
+            mark_logging_degraded(LogDegradedCode::ManifestWriteFailed,
+                                  LogDegradedOperation::UpdateManifest);
+            return false;
+        }
         out << manifest.dump(2) << "\n";
         out.flush();
-        return out.good();
+        if (!out.good()) {
+            mark_logging_degraded(LogDegradedCode::ManifestWriteFailed,
+                                  LogDegradedOperation::UpdateManifest);
+            return false;
+        }
+        out.close();
+        if (!out.good()) {
+            mark_logging_degraded(LogDegradedCode::ManifestWriteFailed,
+                                  LogDegradedOperation::UpdateManifest);
+            return false;
+        }
+        return true;
     } catch (...) {
+        mark_logging_degraded(LogDegradedCode::LogException,
+                              LogDegradedOperation::UpdateManifest);
         return false;
     }
 }

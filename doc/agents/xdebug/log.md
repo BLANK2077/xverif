@@ -5,6 +5,10 @@
 - 新增 `apb.export` 公开合同：完整 time range、顶层 direction/address、固定 8 行 preview
   或单 TSV/CSV data artifact + meta；响应分别发布扫描/范围内/匹配/预览/artifact bytes
   与 canonical completeness，不提供 query/stream fallback。
+- logging 降级改为进程内累计并仅首次向 stderr 输出无敏感上下文的稳定告警；公开
+  session manifest 解析失败时保留原文件。`trace.driver/load` 内部 evidence JSON 解码
+  失败改为聚合 diagnostic，并以 `analysis_complete:false` 和
+  `analysis_internal_json` 完整性范围显式发布，JSON/XOUT 均透传。
 
 ## 2026-07-28
 

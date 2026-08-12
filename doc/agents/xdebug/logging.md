@@ -5,9 +5,14 @@ xdebug 的 log 是工具可观测性合同的一部分。任何 session、transp
 ## 日志原则
 
 - stdout 保留给 JSON/XOUT 结果。
-- stderr 可用于人类可读错误，但不能成为机器合同。
+- stderr 可用于人类可读错误，但不能成为机器合同。结构化日志首次降级时只输出一条
+  低依赖、无路径和无原始异常内容的告警；后续失败只累计进程内健康计数，避免刷屏。
 - 结构化日志使用 ndjson，便于 grep、jq、agent 读取。
 - error response 应给出 error code，log 应给出 phase、context、路径和底层错误。
+- `logging_health_snapshot()` 提供进程内 degraded 状态、累计失败数和首次失败的稳定
+  code/operation，供诊断与单元测试读取；它不改变 action response。
+- 已存在的 public `session.json` 无法解析时必须保留原文件并返回失败，禁止用新 manifest
+  覆盖损坏证据；可写时在该 session 的 `logs/log_health.ndjson` 记录健康事件。
 
 ## 常见日志类型
 

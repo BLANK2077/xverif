@@ -255,14 +255,15 @@ std::vector<std::string> trace_analysis_truncation_scopes(const Json& raw,
         }
         append_unique(out, scope.get<std::string>());
     }
-    const bool has_resolution_scope =
-        std::find(out.begin(), out.end(), "analysis_trace_resolution") != out.end();
+    const bool has_analysis_scope =
+        std::find(out.begin(), out.end(), "analysis_trace_resolution") != out.end() ||
+        std::find(out.begin(), out.end(), "analysis_internal_json") != out.end();
     if (analysis_complete && !out.empty()) {
         throw std::logic_error("complete trace analysis cannot declare a truncation scope");
     }
-    if (!analysis_complete && !has_resolution_scope) {
+    if (!analysis_complete && !has_analysis_scope) {
         throw std::logic_error(
-            "incomplete trace analysis must declare analysis_trace_resolution");
+            "incomplete trace analysis must declare an analysis truncation scope");
     }
     return out;
 }
@@ -647,6 +648,11 @@ Json simplify_trace_driver_load_payload(const Json& raw,
         truncation_scopes);
     add_limit_hint(out["summary"], response_truncated, max_results);
     out["paths"] = paths;
+    const Json diagnostics = raw.value("diagnostics", Json::array());
+    if (!diagnostics.is_array()) {
+        throw std::logic_error("trace diagnostics must be an array");
+    }
+    if (!diagnostics.empty()) out["diagnostics"] = diagnostics;
     (void)action;
     return out;
 }
@@ -833,6 +839,31 @@ std::string render_source_path_xout(const std::string& action, const Json& respo
         text += "\n\n" + query_out.str();
     }
     const Json paths = data.value("paths", Json::array());
+    const Json diagnostics = data.value("diagnostics", Json::array());
+    if (diagnostics.is_array() && !diagnostics.empty()) {
+        xdebug::TextResponseBuilder diagnostic_out("xdebug");
+        diagnostic_out.emit_section("diagnostics");
+        diagnostic_out.emit_table(
+            {"code", "stage", "artifact_kind", "first_index",
+             "failure_count", "message"},
+            [&]() {
+                std::vector<std::vector<std::string> > rows;
+                for (const auto& diagnostic : diagnostics) {
+                    if (!diagnostic.is_object()) continue;
+                    rows.push_back({
+                        diagnostic.value("code", std::string()),
+                        diagnostic.value("stage", std::string()),
+                        diagnostic.value("artifact_kind", std::string()),
+                        std::to_string(diagnostic.value("first_index", 0U)),
+                        std::to_string(diagnostic.value("failure_count", 0U)),
+                        diagnostic.value("message", std::string()),
+                    });
+                }
+                return rows;
+            }());
+        while (!text.empty() && text.back() == '\n') text.pop_back();
+        text += "\n\n" + diagnostic_out.str();
+    }
     int context_lines = xdebug_core::xdebug_trace_source_context_lines();
     int merge_threshold_lines = xdebug_core::xdebug_trace_source_merge_threshold_lines();
     if (paths.is_array()) {

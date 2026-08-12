@@ -50,6 +50,11 @@ contract error，不表示存在兼容入口。
 
 ## Waveform Actions
 
+其中 `expr.eval_at`、`window.verify`、signal/counter 分析、handshake/APB/AXI
+window 类共 15 个 action，由 engine wrapper 通过共享 typed adapter 直接绑定唯一
+`ai_*` 实现；catalog action 名到实现函数的映射受静态测试约束，不经过第二层字符串
+dispatcher。
+
 | action | category | status | resource | implementation | test |
 | --- | --- | --- | --- | --- | --- |
 | `waveform.cursor.set` | waveform | stable | waveform | waveform engine forward | partial |

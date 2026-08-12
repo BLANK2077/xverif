@@ -54,8 +54,6 @@ bool read_sig_vec_value_at_with_status(npiFsdbFileHandle file,
 // Forward declarations for waveform helpers used by handlers.
 bool parse_user_time(const char* text, bool allow_max,
                      npiFsdbTime& out_time, std::string& error);
-nlohmann::ordered_json ai_dispatch_query(const nlohmann::ordered_json& req,
-                                          std::string& error);
 nlohmann::ordered_json ai_cursor_action(const std::string& action,
                                          const nlohmann::ordered_json& args,
                                          std::string& error);

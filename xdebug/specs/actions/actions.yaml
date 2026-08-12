@@ -2756,7 +2756,8 @@
           "examples/requests/trace.driver.basic.json"
         ],
         "response": [
-          "examples/responses/trace.driver.basic.json"
+          "examples/responses/trace.driver.basic.json",
+          "examples/responses/trace.driver.internal_parse_incomplete.json"
         ]
       },
       "required_args": [

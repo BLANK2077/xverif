@@ -23,6 +23,10 @@ LIBEXEC  = libexec
 EXE      = xdebug
 PYTHON  ?= python3
 
+ifeq ($(XDEBUG_STREAM_DIFFERENTIAL_TEST_BUILD),1)
+CXXFLAGS += -DXDEBUG_STREAM_DIFFERENTIAL_TEST_BUILD -Itests
+endif
+
 CORE_SRCS = src/core/common/tool_config.cpp \
             src/core/common/env_config.cpp \
             src/core/common/path_utils.cpp \
@@ -150,6 +154,7 @@ ENGINE_SRCS = src/engine/main.cpp \
               src/engine/service/actions/waveform/signal_stability.cpp \
               src/engine/service/actions/waveform/signal_xz_verify.cpp \
               src/engine/service/actions/waveform/signal_statistics.cpp \
+              src/engine/service/actions/waveform/typed_waveform_action_adapter.cpp \
               src/engine/service/actions/waveform/value_at.cpp \
               src/engine/service/actions/waveform/verify_conditions.cpp \
               src/engine/service/actions/waveform/window_verify.cpp \
@@ -214,8 +219,11 @@ WAVEFORM_SRCS = src/waveform/service/action_support.cpp \
                 src/waveform/stream/stream_expr.cpp \
                 src/waveform/stream/stream_signal_values.cpp \
                 src/waveform/stream/stream_analyzer.cpp \
-                src/waveform/stream/legacy_stream_analyzer_adapter.cpp \
                 src/waveform/stream/stream_exporter.cpp
+
+ifeq ($(XDEBUG_STREAM_DIFFERENTIAL_TEST_BUILD),1)
+WAVEFORM_SRCS += tests/stream_differential/legacy_stream_oracle.cpp
+endif
 
 CORE_OBJS = $(CORE_SRCS:%.cpp=$(BUILD)/%.o)
 API_SUPPORT_OBJS = $(API_SUPPORT_SRCS:%.cpp=$(BUILD)/%.o)
@@ -230,7 +238,7 @@ DEPS = $(sort $(CORE_OBJS:.o=.d) \
        $(DESIGN_OBJS:.o=.d) \
        $(WAVEFORM_OBJS:.o=.d))
 
-.PHONY: all internal-engines cpp-unit-binaries clean FORCE
+.PHONY: all internal-engines stream-differential-test-dist cpp-unit-binaries clean FORCE
 
 FORCE:
 
@@ -256,6 +264,16 @@ $(BUILD_INFO): FORCE specs/actions/actions.yaml
 all: $(EXE) internal-engines
 
 internal-engines: $(LIBEXEC)/xdebug-engine
+
+# Test-only distribution with the legacy stream differential oracle compiled
+# into an isolated frontend/engine layout. The production targets above never
+# enable or link the oracle.
+STREAM_DIFFERENTIAL_DIST ?= $(abspath build/tests/stream-differential-dist)
+stream-differential-test-dist:
+	$(MAKE) BUILD=$(STREAM_DIFFERENTIAL_DIST)/obj \
+		LIBEXEC=$(STREAM_DIFFERENTIAL_DIST)/libexec \
+		EXE=$(STREAM_DIFFERENTIAL_DIST)/xdebug \
+		XDEBUG_STREAM_DIFFERENTIAL_TEST_BUILD=1 all
 
 # Unified engine: engine + design helper + waveform helper objects.
 UNIFIED_OBJS = $(ENGINE_OBJS) $(DESIGN_OBJS) $(WAVEFORM_OBJS)
@@ -301,6 +319,7 @@ $(eval $(call CPP_UNIT_BINARY,test_trace_x_chain_identity,,))
 $(eval $(call CPP_UNIT_BINARY,test_relationship_traversal,,))
 $(eval $(call CPP_UNIT_BINARY,test_common_blocks,$(CORE_OBJS) $(BUILD)/src/api/text_response_builder.o $(BUILD)/src/api/xout_renderer.o,$(LDFLAGS)))
 $(eval $(call CPP_UNIT_BINARY,test_contract_bound_request,$(BUILD)/src/engine/service/contract_bound_request.o,))
+$(eval $(call CPP_UNIT_BINARY,test_typed_waveform_action_adapter,,))
 $(eval $(call CPP_UNIT_BINARY,test_logic_value,$(BUILD)/src/core/value/logic_value.o,))
 $(eval $(call CPP_UNIT_BINARY,test_event_expr,$(BUILD)/src/waveform/event/event_expr.o $(BUILD)/src/waveform/common/expression.o $(BUILD)/src/waveform/stream/stream_expr.o $(BUILD)/src/core/value/logic_value.o,))
 $(eval $(call CPP_UNIT_BINARY,test_expression,$(BUILD)/src/waveform/common/expression.o $(BUILD)/src/waveform/stream/stream_expr.o $(BUILD)/src/core/value/logic_value.o,))

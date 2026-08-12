@@ -73,6 +73,62 @@ int main() {
     unsetenv("XDEBUG_LOG_PATH_MODE");
     unsetenv("XDEBUG_LOG_REDACT");
 
+    std::vector<char> degraded_home_storage =
+        test_temp_template("xdebug_action_log_degraded_XXXXXX");
+    char* degraded_home_dir = mkdtemp(degraded_home_storage.data());
+    assert(degraded_home_dir != nullptr);
+    const std::string degraded_home = degraded_home_dir;
+    {
+        std::ofstream blocker(degraded_home + "/.xdebug");
+        assert(blocker.good());
+        blocker << "block logging root\n";
+    }
+    int degraded_stderr[2];
+    assert(pipe(degraded_stderr) == 0);
+    pid_t degraded_child = fork();
+    assert(degraded_child >= 0);
+    if (degraded_child == 0) {
+        close(degraded_stderr[0]);
+        assert(dup2(degraded_stderr[1], STDERR_FILENO) >= 0);
+        close(degraded_stderr[1]);
+        setenv("HOME", degraded_home.c_str(), 1);
+        xdebug_core::log_action_event(
+            "public", "xdebug", "degraded_case", "actions", "begin",
+            true, 0, Json::object());
+        xdebug_core::log_action_event(
+            "public", "xdebug", "degraded_case", "actions", "end",
+            true, 1, Json::object());
+        const xdebug_core::LoggingHealthSnapshot health =
+            xdebug_core::logging_health_snapshot();
+        if (!health.degraded || health.failure_count < 2 ||
+            health.first_code != "LOG_DIRECTORY_CREATE_FAILED" ||
+            health.first_operation != "append_event") {
+            _exit(2);
+        }
+        _exit(0);
+    }
+    close(degraded_stderr[1]);
+    std::string degraded_text;
+    char degraded_buffer[512];
+    ssize_t degraded_bytes = 0;
+    while ((degraded_bytes = read(
+                degraded_stderr[0], degraded_buffer,
+                sizeof(degraded_buffer))) > 0) {
+        degraded_text.append(
+            degraded_buffer, static_cast<size_t>(degraded_bytes));
+    }
+    close(degraded_stderr[0]);
+    int degraded_status = 0;
+    assert(waitpid(degraded_child, &degraded_status, 0) == degraded_child);
+    assert(WIFEXITED(degraded_status) && WEXITSTATUS(degraded_status) == 0);
+    const std::string degraded_prefix =
+        "xdebug: structured logging degraded code=";
+    const size_t first_degraded = degraded_text.find(degraded_prefix);
+    assert(first_degraded != std::string::npos);
+    assert(degraded_text.find(degraded_prefix, first_degraded + 1) ==
+           std::string::npos);
+    assert(degraded_text.find(degraded_home) == std::string::npos);
+
     Json request = {
         {"api_version", "xdebug.v1"},
         {"request_id", "case-a-1"},
@@ -115,6 +171,20 @@ int main() {
     assert(manifest["daidir"] == "fixtures/foo.daidir");
     assert(manifest["logs"]["public_actions"] == xdebug_core::public_action_log_path("case_a"));
     assert(manifest["logs"]["public_stdio"] == xdebug_core::public_stdio_log_path("case_a"));
+
+    assert(xdebug_core::update_public_session_manifest(
+        "corrupt_case", "design", "fixtures/foo.daidir", ""));
+    const std::string corrupt_manifest_path =
+        xdebug_core::public_session_dir("corrupt_case") + "/session.json";
+    const std::string corrupt_manifest = "{not-valid-json\n";
+    {
+        std::ofstream corrupt(corrupt_manifest_path.c_str(), std::ios::trunc);
+        assert(corrupt.good());
+        corrupt << corrupt_manifest;
+    }
+    assert(!xdebug_core::update_public_session_manifest(
+        "corrupt_case", "design", "fixtures/foo.daidir", ""));
+    assert(read_file(corrupt_manifest_path) == corrupt_manifest);
 
     Json summary = xdebug_core::request_summary_for_log(request);
     assert(summary["request_id"] == "case-a-1");

@@ -151,6 +151,12 @@ frontend 不直接承载 NPI 重逻辑；NPI/FSDB/engine 能力集中在内部 e
 - action handler 读取已校验 args，调用 design/waveform/combined helper。
 - 返回稳定 JSON summary/data/errors。
 
+其中 15 个 waveform 查询/分析 action 通过
+`actions/waveform/typed_waveform_action_adapter.*` 直接绑定
+`waveform/service/typed_query_actions.h` 声明的具体 `ai_*` 函数。adapter 只负责
+tracked `args`/`limits` 合并、结构化 cache error、历史 `end` 归一化和表达式别名
+错误转换；action 选择不得再进入按字符串二次分发的 waveform dispatcher。
+
 修改要求：
 
 ### AXI canonical transaction reconstruction
@@ -171,6 +177,8 @@ frontend 不直接承载 NPI 重逻辑；NPI/FSDB/engine 能力集中在内部 e
 
 - 新 action 应进入对应 `actions/<domain>/` 子目录，并在对应 `register_*_handlers.cpp` 注册。
 - handler 不应重新发明 schema 校验；只做业务语义检查。
+- 新增 typed waveform action 时，wrapper 必须把 public action 名直接绑定到唯一
+  `ai_*` 实现，并同步静态映射测试；不得恢复通用 JSON envelope dispatcher。
 
 ### APB canonical transaction reconstruction
 

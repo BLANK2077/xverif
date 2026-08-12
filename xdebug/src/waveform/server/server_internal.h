@@ -143,19 +143,7 @@ bool read_signal_changes(const std::string& signal, npiFsdbTime begin, npiFsdbTi
 bool build_signal_alias_handles(const Json& signals, std::vector<std::string>& aliases,
                                 std::vector<std::string>& paths, fsdbSigVec_t& handles,
                                 std::string& error);
-Json ai_signal_changes(const Json& args, std::string& error);
-Json ai_signal_stability(const Json& args, std::string& error);
-Json ai_signal_xz_verify(const Json& args, std::string& error);
-Json ai_expr_eval_at(const Json& args, std::string& error);
-Json ai_window_verify(const Json& args, std::string& error);
-Json ai_signal_statistics(const Json& args, std::string& error);
-Json ai_counter_statistics(const Json& args, std::string& error);
-Json ai_signal_sampled_pulse_inspect(const Json& args, std::string& error);
-Json ai_protocol_handshake_inspect(const Json& args, std::string& error);
-Json ai_signal_anomaly_inspect(const Json& args, std::string& error);
 Json resolved_time_json(const std::string& spec, npiFsdbTime time);
-Json ai_dispatch_query(const Json& req, std::string& error);
-
 void handle_axi_rw(int client_fd, const char* name, bool is_write, const char* addr_str,
                    const char* id_str, int num, bool last_flag, bool json);
 void handle_axi_transaction_cursor(int client_fd, const char* name,

@@ -79,6 +79,9 @@ int main() {
         xdebug_design::TraceCompletenessFacts(true, true, false, false, false)));
     assert(!xdebug_design::trace_analysis_complete(
         xdebug_design::TraceCompletenessFacts(false, false, false, false, false)));
+    assert(!xdebug_design::trace_analysis_complete(
+        xdebug_design::TraceCompletenessFacts(
+            true, false, false, false, false, true)));
 
     Json response = {
         {"summary", Json{{"signal", "top.out"}, {"mode", "load"}, {"path_count", 4}}},
@@ -326,6 +329,43 @@ int main() {
     assert(incomplete["summary"]["response_truncated"] == false);
     assert(incomplete["summary"]["truncation_scopes"] ==
            Json::array({"analysis_trace_resolution"}));
+
+    Json parse_incomplete_raw = trace_raw_with_edges(file, 1);
+    parse_incomplete_raw["analysis_complete"] = false;
+    parse_incomplete_raw["truncation_scopes"] =
+        Json::array({"analysis_internal_json"});
+    parse_incomplete_raw["diagnostics"] = Json::array({Json{
+        {"code", "TRACE_INTERNAL_JSON_PARSE_FAILED"},
+        {"stage", "render_dependency_edge"},
+        {"artifact_kind", "dependency_edge"},
+        {"first_index", 0},
+        {"failure_count", 2},
+        {"message", "internal trace evidence could not be decoded"},
+    }});
+    Json parse_incomplete =
+        xdebug_design::simplify_trace_driver_load_payload(
+            parse_incomplete_raw, "trace.driver", "top.out", "driver");
+    assert(parse_incomplete["summary"]["scan_complete"] == true);
+    assert(parse_incomplete["summary"]["analysis_complete"] == false);
+    assert(parse_incomplete["summary"]["truncation_scopes"] ==
+           Json::array({"analysis_internal_json"}));
+    assert(parse_incomplete["diagnostics"].size() == 1);
+    assert(parse_incomplete["diagnostics"][0]["failure_count"] == 2);
+    Json parse_incomplete_response = {
+        {"summary", parse_incomplete["summary"]},
+        {"data", Json{
+            {"paths", parse_incomplete["paths"]},
+            {"diagnostics", parse_incomplete["diagnostics"]},
+        }},
+    };
+    const std::string parse_incomplete_text =
+        xdebug_design::render_source_path_xout(
+            "trace.driver", parse_incomplete_response);
+    assert(parse_incomplete_text.find("diagnostics") != std::string::npos);
+    assert(parse_incomplete_text.find(
+               "TRACE_INTERNAL_JSON_PARSE_FAILED") != std::string::npos);
+    assert(parse_incomplete_text.find(
+               "render_dependency_edge") != std::string::npos);
 
     Json limited_response = {
         {"summary", default_limited["summary"]},

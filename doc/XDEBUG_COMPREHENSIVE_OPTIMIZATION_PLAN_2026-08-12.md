@@ -224,7 +224,7 @@ native CLI、engine、session、MCP、SDK-free loop、schema、example、XOUT、
 
 ### C10 架构、测试钩子和死代码清理
 
-状态：`pending`
+状态：`completed`
 
 - typed adapter 取代重复字符串 dispatcher。
 - differential oracle 移到 test build/binary。
@@ -315,8 +315,8 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 | C06 Cache | completed | `477efdd` | 全元数据预算、O(1) stats、批量 LRU、有界 APB/AXI selection 与资源/等价性门禁完成 |
 | C07 Hierarchy | completed | `7c26474` | `scope.list` 的 wave/design/merged 与 generate/interface array/modport/mpport 关系完成真实 VCS/NPI 验证；未扩展 mixed-language/bind |
 | C08 APB export | completed | `da6e8c1` | 73-action catalog；APB preview/闭区间/方向地址过滤/TSV/CSV/meta/no-clobber/宽度完整性完成真实 VIP FSDB/NPI 与 native XOUT 验证 |
-| C09 AI/schema | completed | 本提交 | available_values、batch summary/child/full、canonical public examples、复杂反例、statistics 路由、统一 response SOT 与 AI/MCP 文档闭环 |
-| C10 清理 | pending | - | - |
+| C09 AI/schema | completed | `bc1ec2b` | available_values、batch summary/child/full、canonical public examples、复杂反例、statistics 路由、统一 response SOT 与 AI/MCP 文档闭环 |
+| C10 清理 | completed | 本提交 | 15 个 wrapper typed binding；生产/test oracle 二进制隔离；删除 legacy wrapper；logging once-degraded 与 trace 内部 JSON 不完整诊断闭环 |
 | C11 全量验收 | pending | - | - |
 
 ## 10. 测试证据账本
@@ -357,6 +357,13 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 | 2026-08-12 | C09 | `xdebug.static` / `xdebug.action_runtime_catalog` / `xdebug.cpp_unit` / `xdebug.contract` | host | PASS | 116 / 1 / 1 / 114 passed；contract 包含 compact schema metaschema 与真实 batch success response 验证 |
 | 2026-08-12 | C09 | `skills.xverif` / `skills.public_docs` / `xverif_mcp.unit` | host | PASS | 16 / 4 / 178 passed；公开 strict JSON fence 对 live native/MCP schema 校验 |
 | 2026-08-12 | C09 | native `schema(batch,response)` summary/child/full 与非法组合 probe | host | PASS | summary 7,708 bytes、72 non-batch child、无 recursive child defs；default full 5,570,443 bytes；child 148,773 bytes；非法组合 schema-rejected |
+| 2026-08-12 | C10 | build / request、response、hint、metadata 生成检查 / schema / examples / runtime compatibility | host | PASS | 生产构建通过；283 schemas；229 正例 + 7 canonical 反例；全部生成产物一致；Draft-7 compatible |
+| 2026-08-12 | C10 | production/test stream binary symbol and string audit | host | PASS | 生产 engine 无 legacy analyzer/oracle/旧 env；独立 fixture engine 同时包含 `analyze_legacy` 与 cached differential oracle |
+| 2026-08-12 | C10 | `xdebug.static` / `xdebug.cpp_unit` / `xdebug.contract` | host | PASS | 119 / 1 / 114 passed；覆盖 typed adapter、logging once-degraded、损坏 manifest 保留和 trace diagnostic 配对 |
+| 2026-08-12 | C10 | `xdebug.stream` / `xdebug.stream_differential` | host，真实 FSDB/NPI fixture | PASS | 2 / 2 passed；生产矩阵与独立 test-only legacy oracle 的 action/cache/batch 差分全部通过 |
+| 2026-08-12 | C10 | `xdebug.active_semantics` / `xdebug.trace_x_xprop` / `xdebug.active_zero_evidence` | host，真实 daidir/FSDB/NPI fixture | PASS | 1 / 1 / 16 passed；正常 trace/active/X-origin 合同未回归 |
+| 2026-08-12 | C10 | `xdebug.native_xout_all` | host，真实 daidir/FSDB/NPI/VIP fixture | PASS | 73 actions + error cases 的 final XOUT 矩阵 1 passed；真实报告原子重建 |
+| 2026-08-12 | C10 | `testinfra.unit` | host | PARTIAL | C10 新 suite/catalog/fixture 被正式 gate 接受；39 passed，唯一失败仍来自另一个任务未跟踪 flock 报告的机器绝对路径，未修改、未过滤 |
 
 ## 11. 偏差与阻塞记录
 
@@ -365,4 +372,5 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 - C08 首轮 static 暴露测试函数边界误置与 C 风格地址字面量，修正测试后通过；首轮 contract 暴露新 action primary example 未遵守 runtime `.basic.json` 约定，统一 primary 命名并让 MCP 从 catalog 读取后通过。真实 APB VIP 进一步确认默认时间输出必须将 `1us` canonicalize 为 `1000ns`，以及 artifact-only 分支必须主动发布宽度完整性；按统一时间/宽度合同修正后完整通过。
 - C07 首轮 design runtime 因 action catalog 已改为 `requires:any`、但 internal request schema 尚未重生成而在 helper routing 层拒绝 design-only session；重生成并加入一致性复验后 6 个真实 NPI 用例全过。旧 synthetic fixture 还按字段全集比较 wave item，更新为验证新增 source/capability 证据。`testinfra.unit` 剩余唯一失败属于另一个任务的未跟踪 flock 报告，不进入本阶段提交。
 - C09 首轮 public docs 门禁发现 `xverif_mcp/README.md` 把 JSON fragment 标成 strict JSON，改为 `jsonc`；MCP 反例测试曾用普通 args schema 错验 session 专用 projection，按各自合同拆分。首轮 host contract 发现测试硬编码旧 primary example，改为核对 catalog canonical example。最终审阅又发现 compact schema 的空 initializer 被序列化为 `null` schema，改成明确 object/null 并增加 metaschema + 真实 batch response 验证。两次 native 性能 probe 因入口路径/CLI flag 误判未进入产品，已按 AGENTS.md 记录且未计入证据，第三次使用核实后的 `xdebug/xdebug --json -` 取得正式数据。
+- C10 首轮 static 只暴露新增两个 trace variant 与一个 response example 后的覆盖账本常量仍为旧值，更新为 134 variants / 65 responses / 64 success witnesses 后 119 项全过。首轮 differential preflight 暴露 fixture 指纹误把 pytest `__pycache__` 当 C++ 构建输入，收紧为 `*.cpp/*.h` 后连续 resolve 稳定；首轮 cache 差分暴露新 fixture 直接使用一次性 `CliRunner`、缺少正式测试依赖的 `restart()` 生命周期，改用同一 `HybridCliRunner` 封装后完整 2 项通过。`testinfra.unit` 唯一失败仍是另一个任务未跟踪 flock 报告，未纳入、未过滤。调用不存在的旧 AXI 独立 response generator 在校验前退出；仓库当前规则和文档已确认 C09 后统一入口为 `sync_response_schemas.py`，随后按正式清单完整复验通过。
 - 任何 fallback、范围扩展、required suite 降级、公共合同偏离必须先取得用户确认，再记录于此。

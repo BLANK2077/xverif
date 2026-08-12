@@ -222,12 +222,6 @@ ContractJsonView ContractBoundRequest::limits() {
         "limits");
 }
 
-ContractJson ContractBoundRequest::consume_args_request(
-    const std::string& consumer_id) {
-    args().consume_subtree(consumer_id);
-    return request_;
-}
-
 void ContractBoundRequest::consume_target(
     const std::string& consumer_id) {
     ContractJsonView view = target();

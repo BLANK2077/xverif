@@ -305,7 +305,9 @@ def test_all_reachable_variants_have_valid_minimal_witnesses() -> None:
                 f"{action}/{variant.name}: "
                 + "; ".join(error.message for error in errors)
             )
-    assert variant_count == 132
+    # C10 adds one strictly paired internal-JSON-incomplete variant to each
+    # of trace.driver and trace.load.
+    assert variant_count == 134
 
 
 def test_all_registered_success_examples_match_a_correlated_variant() -> None:
@@ -340,8 +342,9 @@ def test_all_registered_success_examples_match_a_correlated_variant() -> None:
                     f"{action}: {errors[0].json_path}: "
                     f"{errors[0].message}"
                 )
-    assert response_count == 64
-    assert witness_count == 63
+    # C10 registers one canonical trace.driver incomplete-analysis witness.
+    assert response_count == 65
+    assert witness_count == 64
     assert not failures, "\n".join(failures)
 
 
@@ -639,6 +642,40 @@ def test_trace_continuation_advice_is_data_not_summary() -> None:
     ]
     assert "suggested_next_actions" not in summary
     _assert_pair_valid("trace.x_origin", summary, data)
+
+
+@pytest.mark.parametrize("action", ["trace.driver", "trace.load"])
+def test_trace_internal_json_failure_is_correlated_and_diagnostic(
+    action: str,
+) -> None:
+    assert [
+        variant.name
+        for variant in non_sampling_success_response_variants(action)
+    ] == ["paths", "internal_json_incomplete"]
+
+    regular_summary, regular_data = _variant(action, "paths")
+    incomplete_summary, incomplete_data = _variant(
+        action, "internal_json_incomplete"
+    )
+    _assert_pair_valid(action, regular_summary, regular_data)
+    _assert_pair_valid(action, incomplete_summary, incomplete_data)
+
+    _assert_pair_invalid(action, regular_summary, incomplete_data)
+    _assert_pair_invalid(action, incomplete_summary, regular_data)
+
+    missing_diagnostic = copy.deepcopy(incomplete_data)
+    missing_diagnostic.pop("diagnostics")
+    _assert_pair_invalid(action, incomplete_summary, missing_diagnostic)
+
+    unknown_scope = copy.deepcopy(incomplete_summary)
+    unknown_scope["truncation_scopes"].append("unknown_internal_scope")
+    _assert_pair_invalid(action, unknown_scope, incomplete_data)
+
+    unknown_diagnostic_field = copy.deepcopy(incomplete_data)
+    unknown_diagnostic_field["diagnostics"][0]["raw_payload"] = "secret"
+    _assert_pair_invalid(
+        action, incomplete_summary, unknown_diagnostic_field
+    )
 
 
 def test_axi_export_preview_shape_is_not_reachable() -> None:

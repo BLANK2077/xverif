@@ -5,9 +5,11 @@
 #include "api/text_response_builder.h"
 
 #include "waveform/common/xdebug_waveform_paths.h"
-#include "waveform/stream/legacy_stream_analyzer_adapter.h"
 #include "waveform/stream/stream_exporter.h"
 #include "waveform/stream/stream_manager.h"
+#ifdef XDEBUG_STREAM_DIFFERENTIAL_TEST_BUILD
+#include "stream_differential/legacy_stream_oracle.h"
+#endif
 #include "waveform/filter/value_filter.h"
 #include "core/output/completeness.h"
 #include "core/npi/time_contract.h"
@@ -26,7 +28,6 @@ namespace {
 
 using xdebug_waveform::Json;
 using xdebug_waveform::StreamAnalysis;
-using xdebug_waveform::analyze_stream_cached_with_legacy_differential;
 using xdebug_waveform::AnalysisCacheScope;
 using xdebug_waveform::StreamConfig;
 using xdebug_waveform::StreamExporter;
@@ -403,12 +404,21 @@ public:
             }
         }
         StreamAnalysis analysis;
-        if (!analyze_stream_cached_with_legacy_differential(
+#ifdef XDEBUG_STREAM_DIFFERENTIAL_TEST_BUILD
+        if (!xdebug_stream_differential::
+                analyze_stream_cached_and_compare_legacy(
                 xdebug_waveform::g_stream_analyzer, g_fsdb_file, config,
                 options,
                 cache_scope == "range" ? AnalysisCacheScope::Range
                                        : AnalysisCacheScope::Full,
                 analysis, error)) {
+#else
+        if (!xdebug_waveform::g_stream_analyzer.analyze_cached(
+                g_fsdb_file, config, options,
+                cache_scope == "range" ? AnalysisCacheScope::Range
+                                       : AnalysisCacheScope::Full,
+                analysis, error)) {
+#endif
             if (!xdebug_waveform::g_stream_analyzer.last_cache_error().empty())
                 return make_analysis_cache_error(
                     xdebug_waveform::g_stream_analyzer.last_cache_error());

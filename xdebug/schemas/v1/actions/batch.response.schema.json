@@ -166759,75 +166759,187 @@
       "description": "显式动态键 JSON 对象；每个 value 仍受 jsonValue 递归合同约束。"
     },
     "batchChild_trace_driver_5aba40f52e__successSummary": {
-      "type": "object",
-      "properties": {
-        "signal": {
-          "type": "string",
-          "minLength": 1
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "signal": {
+              "type": "string",
+              "minLength": 1
+            },
+            "mode": {
+              "const": "driver"
+            },
+            "limit_hint": {
+              "type": "string",
+              "minLength": 1
+            },
+            "scan_complete": {
+              "type": "boolean"
+            },
+            "analysis_complete": {
+              "type": "boolean"
+            },
+            "response_truncated": {
+              "type": "boolean"
+            },
+            "total_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "returned_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "truncation_scopes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "analysis_complete",
+            "mode",
+            "response_truncated",
+            "returned_count",
+            "scan_complete",
+            "signal",
+            "total_count",
+            "truncation_scopes"
+          ],
+          "allOf": [
+            {
+              "not": {
+                "properties": {
+                  "truncation_scopes": {
+                    "contains": {
+                      "const": "analysis_internal_json"
+                    }
+                  }
+                },
+                "required": [
+                  "truncation_scopes"
+                ]
+              }
+            }
+          ]
         },
-        "mode": {
-          "const": "driver"
-        },
-        "limit_hint": {
-          "type": "string",
-          "minLength": 1
-        },
-        "scan_complete": {
-          "type": "boolean"
-        },
-        "analysis_complete": {
-          "type": "boolean"
-        },
-        "response_truncated": {
-          "type": "boolean"
-        },
-        "total_count": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "returned_count": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "truncation_scopes": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
+        {
+          "type": "object",
+          "properties": {
+            "signal": {
+              "type": "string",
+              "minLength": 1
+            },
+            "mode": {
+              "const": "driver"
+            },
+            "limit_hint": {
+              "type": "string",
+              "minLength": 1
+            },
+            "scan_complete": {
+              "const": true
+            },
+            "analysis_complete": {
+              "const": false
+            },
+            "response_truncated": {
+              "type": "boolean"
+            },
+            "total_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "returned_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "truncation_scopes": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "analysis_internal_json",
+                  "analysis_trace_resolution",
+                  "response_paths"
+                ]
+              },
+              "contains": {
+                "const": "analysis_internal_json"
+              },
+              "uniqueItems": true
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "analysis_complete",
+            "mode",
+            "response_truncated",
+            "returned_count",
+            "scan_complete",
+            "signal",
+            "total_count",
+            "truncation_scopes"
+          ]
         }
-      },
-      "additionalProperties": false,
-      "required": [
-        "analysis_complete",
-        "mode",
-        "response_truncated",
-        "returned_count",
-        "scan_complete",
-        "signal",
-        "total_count",
-        "truncation_scopes"
       ]
     },
     "batchChild_trace_driver_5aba40f52e__successData": {
-      "type": "object",
-      "properties": {
-        "paths": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/batchChild_trace_driver_5aba40f52e__nonSamplingSourcePath"
-          }
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "paths": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/batchChild_trace_driver_5aba40f52e__nonSamplingSourcePath"
+              }
+            },
+            "common_blocks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/batchChild_trace_driver_5aba40f52e__commonBlock"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "paths"
+          ]
         },
-        "common_blocks": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/batchChild_trace_driver_5aba40f52e__commonBlock"
-          }
+        {
+          "type": "object",
+          "properties": {
+            "paths": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/batchChild_trace_driver_5aba40f52e__nonSamplingSourcePath"
+              }
+            },
+            "common_blocks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/batchChild_trace_driver_5aba40f52e__commonBlock"
+              }
+            },
+            "diagnostics": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/batchChild_trace_driver_5aba40f52e__nonSamplingTraceDiagnostic"
+              },
+              "minItems": 1,
+              "maxItems": 3
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "diagnostics",
+            "paths"
+          ]
         }
-      },
-      "additionalProperties": false,
-      "required": [
-        "paths"
       ]
     },
     "batchChild_trace_driver_5aba40f52e__errorSummary": {
@@ -168281,6 +168393,47 @@
         "source_context"
       ]
     },
+    "batchChild_trace_driver_5aba40f52e__nonSamplingTraceDiagnostic": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "const": "TRACE_INTERNAL_JSON_PARSE_FAILED"
+        },
+        "stage": {
+          "enum": [
+            "finalize_assignment",
+            "render_assignment",
+            "render_dependency_edge"
+          ]
+        },
+        "artifact_kind": {
+          "enum": [
+            "assignment",
+            "dependency_edge"
+          ]
+        },
+        "first_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failure_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "message": {
+          "const": "internal trace evidence could not be decoded"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "artifact_kind",
+        "code",
+        "failure_count",
+        "first_index",
+        "message",
+        "stage"
+      ]
+    },
     "batchChild_trace_driver_5aba40f52e__successSummary0": {
       "type": "object",
       "properties": {
@@ -168330,6 +168483,22 @@
         "signal",
         "total_count",
         "truncation_scopes"
+      ],
+      "allOf": [
+        {
+          "not": {
+            "properties": {
+              "truncation_scopes": {
+                "contains": {
+                  "const": "analysis_internal_json"
+                }
+              }
+            },
+            "required": [
+              "truncation_scopes"
+            ]
+          }
+        }
       ]
     },
     "batchChild_trace_driver_5aba40f52e__successData0": {
@@ -168353,11 +168522,99 @@
         "paths"
       ]
     },
+    "batchChild_trace_driver_5aba40f52e__successSummary1": {
+      "type": "object",
+      "properties": {
+        "signal": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "const": "driver"
+        },
+        "limit_hint": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scan_complete": {
+          "const": true
+        },
+        "analysis_complete": {
+          "const": false
+        },
+        "response_truncated": {
+          "type": "boolean"
+        },
+        "total_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "returned_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncation_scopes": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "analysis_internal_json",
+              "analysis_trace_resolution",
+              "response_paths"
+            ]
+          },
+          "contains": {
+            "const": "analysis_internal_json"
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "analysis_complete",
+        "mode",
+        "response_truncated",
+        "returned_count",
+        "scan_complete",
+        "signal",
+        "total_count",
+        "truncation_scopes"
+      ]
+    },
+    "batchChild_trace_driver_5aba40f52e__successData1": {
+      "type": "object",
+      "properties": {
+        "paths": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/batchChild_trace_driver_5aba40f52e__nonSamplingSourcePath"
+          }
+        },
+        "common_blocks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/batchChild_trace_driver_5aba40f52e__commonBlock"
+          }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/batchChild_trace_driver_5aba40f52e__nonSamplingTraceDiagnostic"
+          },
+          "minItems": 1,
+          "maxItems": 3
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "diagnostics",
+        "paths"
+      ]
+    },
     "batchChild_trace_driver_5aba40f52e__response": {
       "title": "trace.driver response",
       "description": "Find static drivers of a design signal.",
       "x-description-zh": "查找信号直接 driver。",
-      "x-output_notes": "trace.driver 成功响应的 summary 字段为 summary.analysis_complete, summary.limit_hint, summary.mode, summary.response_truncated, summary.returned_count, summary.scan_complete, summary.signal, summary.total_count, summary.truncation_scopes；data 字段为 data.common_blocks, data.paths。未知字段会被拒绝。完整性和裁剪事实使用 summary.scan_complete, summary.analysis_complete, summary.response_truncated, summary.total_count, summary.returned_count, summary.truncation_scopes。",
+      "x-output_notes": "trace.driver 成功响应的 summary 字段为 summary.analysis_complete, summary.limit_hint, summary.mode, summary.response_truncated, summary.returned_count, summary.scan_complete, summary.signal, summary.total_count, summary.truncation_scopes；data 字段为 data.common_blocks, data.diagnostics, data.paths。未知字段会被拒绝。完整性和裁剪事实使用 summary.scan_complete, summary.analysis_complete, summary.response_truncated, summary.total_count, summary.returned_count, summary.truncation_scopes。",
       "type": "object",
       "properties": {
         "api_version": {
@@ -168455,12 +168712,6 @@
             },
             "error": {
               "type": "null"
-            },
-            "summary": {
-              "$ref": "#/$defs/batchChild_trace_driver_5aba40f52e__successSummary0"
-            },
-            "data": {
-              "$ref": "#/$defs/batchChild_trace_driver_5aba40f52e__successData0"
             }
           },
           "required": [
@@ -168472,6 +168723,36 @@
             "summary",
             "data",
             "error"
+          ],
+          "oneOf": [
+            {
+              "properties": {
+                "summary": {
+                  "$ref": "#/$defs/batchChild_trace_driver_5aba40f52e__successSummary0"
+                },
+                "data": {
+                  "$ref": "#/$defs/batchChild_trace_driver_5aba40f52e__successData0"
+                }
+              },
+              "required": [
+                "summary",
+                "data"
+              ]
+            },
+            {
+              "properties": {
+                "summary": {
+                  "$ref": "#/$defs/batchChild_trace_driver_5aba40f52e__successSummary1"
+                },
+                "data": {
+                  "$ref": "#/$defs/batchChild_trace_driver_5aba40f52e__successData1"
+                }
+              },
+              "required": [
+                "summary",
+                "data"
+              ]
+            }
           ]
         },
         {
@@ -168540,75 +168821,187 @@
       "description": "显式动态键 JSON 对象；每个 value 仍受 jsonValue 递归合同约束。"
     },
     "batchChild_trace_load_bce1dc9a6d__successSummary": {
-      "type": "object",
-      "properties": {
-        "signal": {
-          "type": "string",
-          "minLength": 1
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "signal": {
+              "type": "string",
+              "minLength": 1
+            },
+            "mode": {
+              "const": "load"
+            },
+            "limit_hint": {
+              "type": "string",
+              "minLength": 1
+            },
+            "scan_complete": {
+              "type": "boolean"
+            },
+            "analysis_complete": {
+              "type": "boolean"
+            },
+            "response_truncated": {
+              "type": "boolean"
+            },
+            "total_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "returned_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "truncation_scopes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "analysis_complete",
+            "mode",
+            "response_truncated",
+            "returned_count",
+            "scan_complete",
+            "signal",
+            "total_count",
+            "truncation_scopes"
+          ],
+          "allOf": [
+            {
+              "not": {
+                "properties": {
+                  "truncation_scopes": {
+                    "contains": {
+                      "const": "analysis_internal_json"
+                    }
+                  }
+                },
+                "required": [
+                  "truncation_scopes"
+                ]
+              }
+            }
+          ]
         },
-        "mode": {
-          "const": "load"
-        },
-        "limit_hint": {
-          "type": "string",
-          "minLength": 1
-        },
-        "scan_complete": {
-          "type": "boolean"
-        },
-        "analysis_complete": {
-          "type": "boolean"
-        },
-        "response_truncated": {
-          "type": "boolean"
-        },
-        "total_count": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "returned_count": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "truncation_scopes": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
+        {
+          "type": "object",
+          "properties": {
+            "signal": {
+              "type": "string",
+              "minLength": 1
+            },
+            "mode": {
+              "const": "load"
+            },
+            "limit_hint": {
+              "type": "string",
+              "minLength": 1
+            },
+            "scan_complete": {
+              "const": true
+            },
+            "analysis_complete": {
+              "const": false
+            },
+            "response_truncated": {
+              "type": "boolean"
+            },
+            "total_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "returned_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "truncation_scopes": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "analysis_internal_json",
+                  "analysis_trace_resolution",
+                  "response_paths"
+                ]
+              },
+              "contains": {
+                "const": "analysis_internal_json"
+              },
+              "uniqueItems": true
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "analysis_complete",
+            "mode",
+            "response_truncated",
+            "returned_count",
+            "scan_complete",
+            "signal",
+            "total_count",
+            "truncation_scopes"
+          ]
         }
-      },
-      "additionalProperties": false,
-      "required": [
-        "analysis_complete",
-        "mode",
-        "response_truncated",
-        "returned_count",
-        "scan_complete",
-        "signal",
-        "total_count",
-        "truncation_scopes"
       ]
     },
     "batchChild_trace_load_bce1dc9a6d__successData": {
-      "type": "object",
-      "properties": {
-        "paths": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/batchChild_trace_load_bce1dc9a6d__nonSamplingSourcePath"
-          }
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "paths": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/batchChild_trace_load_bce1dc9a6d__nonSamplingSourcePath"
+              }
+            },
+            "common_blocks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/batchChild_trace_load_bce1dc9a6d__commonBlock"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "paths"
+          ]
         },
-        "common_blocks": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/batchChild_trace_load_bce1dc9a6d__commonBlock"
-          }
+        {
+          "type": "object",
+          "properties": {
+            "paths": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/batchChild_trace_load_bce1dc9a6d__nonSamplingSourcePath"
+              }
+            },
+            "common_blocks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/batchChild_trace_load_bce1dc9a6d__commonBlock"
+              }
+            },
+            "diagnostics": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/batchChild_trace_load_bce1dc9a6d__nonSamplingTraceDiagnostic"
+              },
+              "minItems": 1,
+              "maxItems": 3
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "diagnostics",
+            "paths"
+          ]
         }
-      },
-      "additionalProperties": false,
-      "required": [
-        "paths"
       ]
     },
     "batchChild_trace_load_bce1dc9a6d__errorSummary": {
@@ -170062,6 +170455,47 @@
         "source_context"
       ]
     },
+    "batchChild_trace_load_bce1dc9a6d__nonSamplingTraceDiagnostic": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "const": "TRACE_INTERNAL_JSON_PARSE_FAILED"
+        },
+        "stage": {
+          "enum": [
+            "finalize_assignment",
+            "render_assignment",
+            "render_dependency_edge"
+          ]
+        },
+        "artifact_kind": {
+          "enum": [
+            "assignment",
+            "dependency_edge"
+          ]
+        },
+        "first_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failure_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "message": {
+          "const": "internal trace evidence could not be decoded"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "artifact_kind",
+        "code",
+        "failure_count",
+        "first_index",
+        "message",
+        "stage"
+      ]
+    },
     "batchChild_trace_load_bce1dc9a6d__successSummary0": {
       "type": "object",
       "properties": {
@@ -170111,6 +170545,22 @@
         "signal",
         "total_count",
         "truncation_scopes"
+      ],
+      "allOf": [
+        {
+          "not": {
+            "properties": {
+              "truncation_scopes": {
+                "contains": {
+                  "const": "analysis_internal_json"
+                }
+              }
+            },
+            "required": [
+              "truncation_scopes"
+            ]
+          }
+        }
       ]
     },
     "batchChild_trace_load_bce1dc9a6d__successData0": {
@@ -170134,11 +170584,99 @@
         "paths"
       ]
     },
+    "batchChild_trace_load_bce1dc9a6d__successSummary1": {
+      "type": "object",
+      "properties": {
+        "signal": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "const": "load"
+        },
+        "limit_hint": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scan_complete": {
+          "const": true
+        },
+        "analysis_complete": {
+          "const": false
+        },
+        "response_truncated": {
+          "type": "boolean"
+        },
+        "total_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "returned_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncation_scopes": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "analysis_internal_json",
+              "analysis_trace_resolution",
+              "response_paths"
+            ]
+          },
+          "contains": {
+            "const": "analysis_internal_json"
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "analysis_complete",
+        "mode",
+        "response_truncated",
+        "returned_count",
+        "scan_complete",
+        "signal",
+        "total_count",
+        "truncation_scopes"
+      ]
+    },
+    "batchChild_trace_load_bce1dc9a6d__successData1": {
+      "type": "object",
+      "properties": {
+        "paths": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/batchChild_trace_load_bce1dc9a6d__nonSamplingSourcePath"
+          }
+        },
+        "common_blocks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/batchChild_trace_load_bce1dc9a6d__commonBlock"
+          }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/batchChild_trace_load_bce1dc9a6d__nonSamplingTraceDiagnostic"
+          },
+          "minItems": 1,
+          "maxItems": 3
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "diagnostics",
+        "paths"
+      ]
+    },
     "batchChild_trace_load_bce1dc9a6d__response": {
       "title": "trace.load response",
       "description": "Find static loads of a design signal.",
       "x-description-zh": "查找信号 load。",
-      "x-output_notes": "trace.load 成功响应的 summary 字段为 summary.analysis_complete, summary.limit_hint, summary.mode, summary.response_truncated, summary.returned_count, summary.scan_complete, summary.signal, summary.total_count, summary.truncation_scopes；data 字段为 data.common_blocks, data.paths。未知字段会被拒绝。完整性和裁剪事实使用 summary.scan_complete, summary.analysis_complete, summary.response_truncated, summary.total_count, summary.returned_count, summary.truncation_scopes。",
+      "x-output_notes": "trace.load 成功响应的 summary 字段为 summary.analysis_complete, summary.limit_hint, summary.mode, summary.response_truncated, summary.returned_count, summary.scan_complete, summary.signal, summary.total_count, summary.truncation_scopes；data 字段为 data.common_blocks, data.diagnostics, data.paths。未知字段会被拒绝。完整性和裁剪事实使用 summary.scan_complete, summary.analysis_complete, summary.response_truncated, summary.total_count, summary.returned_count, summary.truncation_scopes。",
       "type": "object",
       "properties": {
         "api_version": {
@@ -170236,12 +170774,6 @@
             },
             "error": {
               "type": "null"
-            },
-            "summary": {
-              "$ref": "#/$defs/batchChild_trace_load_bce1dc9a6d__successSummary0"
-            },
-            "data": {
-              "$ref": "#/$defs/batchChild_trace_load_bce1dc9a6d__successData0"
             }
           },
           "required": [
@@ -170253,6 +170785,36 @@
             "summary",
             "data",
             "error"
+          ],
+          "oneOf": [
+            {
+              "properties": {
+                "summary": {
+                  "$ref": "#/$defs/batchChild_trace_load_bce1dc9a6d__successSummary0"
+                },
+                "data": {
+                  "$ref": "#/$defs/batchChild_trace_load_bce1dc9a6d__successData0"
+                }
+              },
+              "required": [
+                "summary",
+                "data"
+              ]
+            },
+            {
+              "properties": {
+                "summary": {
+                  "$ref": "#/$defs/batchChild_trace_load_bce1dc9a6d__successSummary1"
+                },
+                "data": {
+                  "$ref": "#/$defs/batchChild_trace_load_bce1dc9a6d__successData1"
+                }
+              },
+              "required": [
+                "summary",
+                "data"
+              ]
+            }
           ]
         },
         {

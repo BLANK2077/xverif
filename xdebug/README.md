@@ -936,7 +936,10 @@ compact payload 优先返回 evidence，而不是大段源码：
 
 ## 日志与排障
 
-xdebug 默认静默记录结构化日志。日志只写文件，不打印到 stdout/stderr，不改变 JSON API 响应；日志写入失败也不会影响 action 执行。
+xdebug 默认静默记录结构化日志，不改变 JSON API 响应；日志首次写入、sidecar、轮转或
+session manifest 维护失败时，会向 stderr 输出一条不含路径和原始异常的降级告警，后续
+失败只累计进程内健康计数，不重复刷屏。日志失败不会改变 action 执行结果；损坏的既有
+`session.json` 会原样保留，不会被新 manifest 覆盖。
 
 主要位置：
 

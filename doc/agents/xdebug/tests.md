@@ -89,15 +89,16 @@ peek、generation cursor，以及 stream full 成功替换同语义 ranges、ful
 `test_stream_base_analysis` 构造 1000-transfer legacy/columnar 形状，检查所有 field column
 与 transfer ordinal 对齐，并要求 base estimator 小于 legacy estimator。
 
-`xdebug.stream` 设置 `XDEBUG_TEST_STREAM_DIFFERENTIAL=1`，对真实 stream v1
-fixture 的 config/query/export/dynamic validate 矩阵同时执行新 QueryView 与 legacy
-oracle。差分只比较各 action 实际消费的 packet projection，同时总是覆盖完整 summary、
-transfer/stall、matched count 和首末 evidence；不暴露 public legacy action。Phase 4B
-同时检查跨 action 热命中、两个独立 range、full 事务性替换 ranges、range 复用 full、
-同语义 replace 复用、语义变更失效、soft LRU 重建、hard-limit 预扫描拒绝，以及静态
-validate 不创建 cache entry。builtin `batch` 用同一 engine 覆盖
-query→export→dynamic validate、range→range→full→range，并以连续 hard-limit 失败证明
-失败子请求不留下 building entry。
+`xdebug.stream` 使用正式 engine 验证真实 stream v1 fixture 的公开行为和 cache 合同。
+legacy 差分由 `make -C xdebug stream-differential-test-dist` 生成的独立 test frontend/engine
+承担；test engine 在 config/query/export/dynamic validate 矩阵中始终同时执行新 QueryView
+与 legacy oracle，不依赖运行时环境变量。差分只比较各 action 实际消费的 packet
+projection，同时总是覆盖完整 summary、transfer/stall、matched count 和首末 evidence；
+正式 engine 不包含 oracle，也不暴露 public legacy action。Phase 4B 同时检查跨 action
+热命中、两个独立 range、full 事务性替换 ranges、range 复用 full、同语义 replace 复用、
+语义变更失效、soft LRU 重建、hard-limit 预扫描拒绝，以及静态 validate 不创建 cache
+entry。builtin `batch` 用同一 engine 覆盖 query→export→dynamic validate、
+range→range→full→range，并以连续 hard-limit 失败证明失败子请求不留下 building entry。
 
 ## 结果与诊断
 

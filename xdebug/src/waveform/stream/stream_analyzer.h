@@ -217,10 +217,12 @@ public:
                         const StreamQueryOptions& options,
                         AnalysisCacheScope cache_scope,
                         StreamAnalysis& analysis, std::string& error);
+#ifdef XDEBUG_STREAM_DIFFERENTIAL_TEST_BUILD
     bool analyze_legacy(npiFsdbFileHandle file, const StreamConfig& config,
                         const StreamQueryOptions& options,
                         StreamAnalysis& analysis, std::string& error,
                         bool record_probe = false);
+#endif
     const AnalysisCacheError& last_cache_error() const {
         return last_cache_error_;
     }

@@ -607,48 +607,4 @@ Json ai_cursor_action(const std::string& action, const Json& args, std::string& 
     return Json();
 }
 
-Json ai_dispatch_query(const Json& req, std::string& error) {
-    std::string action = req.value("action", std::string());
-    Json args = req.value("args", Json::object());
-    xdebug_core::TimeRenderOptions time_render_options;
-    if (args.contains("render_time_unit")) {
-        if (!args["render_time_unit"].is_string()) {
-            error = "TIME_UNIT_INVALID: args.render_time_unit must be ns, ps, us, or auto";
-            return Json();
-        }
-        if (!xdebug_core::parse_time_render_unit(args["render_time_unit"].get<std::string>(),
-                                                 time_render_options.unit,
-                                                 error)) {
-            return Json();
-        }
-    }
-    xdebug_core::ScopedTimeRenderOptions time_render_scope(time_render_options);
-    Json limits = req.value("limits", Json::object());
-    for (auto it = limits.begin(); it != limits.end(); ++it) {
-        if (!args.contains(it.key())) args[it.key()] = it.value();
-    }
-    if (action == "expr.eval_at") return ai_expr_eval_at(args, error);
-    if (action == "window.verify") return ai_window_verify(args, error);
-    if (action == "signal.changes") return ai_signal_changes(args, error);
-    if (action == "signal.stability") return ai_signal_stability(args, error);
-    if (action == "signal.xz_verify") return ai_signal_xz_verify(args, error);
-    if (action == "signal.statistics") return ai_signal_statistics(args, error);
-    if (action == "counter.statistics") return ai_counter_statistics(args, error);
-    if (action == "signal.sampled_pulse.inspect")
-        return ai_signal_sampled_pulse_inspect(args, error);
-    if (action == "signal.anomaly.inspect") return ai_signal_anomaly_inspect(args, error);
-    if (action == "protocol.handshake.inspect")
-        return ai_protocol_handshake_inspect(args, error);
-    if (action == "apb.transfer_window") return ai_apb_transfer_window(args, error);
-    if (action == "axi.request_response_pair") return ai_axi_transactions_window(args, error);
-    if (action == "axi.latency_outlier") return ai_axi_latency_outlier(args, error);
-    if (action == "axi.outstanding_timeline") return ai_axi_outstanding_timeline(args, error);
-    if (action == "axi.channel_stall") return ai_axi_channel_stall(args, error);
-    if (action.compare(0, 16, "waveform.cursor.") == 0)
-        return ai_cursor_action(action, args, error);
-    error = "Unsupported AI action in server: " + action;
-    return Json();
-}
-
-
 }  // namespace xdebug_waveform

@@ -1,0 +1,52 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "trace.driver",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
+  "summary": {
+    "signal": "top.u.ready",
+    "mode": "driver",
+    "scan_complete": true,
+    "analysis_complete": false,
+    "response_truncated": false,
+    "total_count": 1,
+    "returned_count": 1,
+    "truncation_scopes": [
+      "analysis_internal_json"
+    ]
+  },
+  "data": {
+    "paths": [
+      {
+        "file": "rtl/fifo.sv",
+        "line": 42,
+        "source_context": [
+          {
+            "line": 42,
+            "text": "    ready_n = valid_i;",
+            "active": true
+          }
+        ],
+        "signal_path": [
+          "top.u.valid_i",
+          "top.u.ready"
+        ]
+      }
+    ],
+    "diagnostics": [
+      {
+        "code": "TRACE_INTERNAL_JSON_PARSE_FAILED",
+        "stage": "render_dependency_edge",
+        "artifact_kind": "dependency_edge",
+        "first_index": 0,
+        "failure_count": 1,
+        "message": "internal trace evidence could not be decoded"
+      }
+    ]
+  },
+  "error": null
+}

@@ -1468,7 +1468,7 @@
     spec.request_schema = "schemas/v1/actions/trace.driver.request.schema.json";
     spec.response_schema = "schemas/v1/actions/trace.driver.response.schema.json";
     spec.request_examples = {"examples/requests/trace.driver.basic.json"};
-    spec.response_examples = {"examples/responses/trace.driver.basic.json"};
+    spec.response_examples = {"examples/responses/trace.driver.basic.json", "examples/responses/trace.driver.internal_parse_incomplete.json"};
     spec.args.required = {"signal"};
     spec.description_en = "Find static drivers of a design signal.";
     spec.description_zh = "查找信号直接 driver。";

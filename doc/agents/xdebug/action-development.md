@@ -98,6 +98,9 @@
 
 - 新 action 文件放到对应 domain 子目录。
 - 在对应 `register_*_handlers.cpp` 注册。
+- 采用 `waveform/service/typed_query_actions.h` 的 waveform action 必须在独立 wrapper
+  中把 action 名直接绑定到具体 `ai_*` 函数，并通过共享
+  `typed_waveform_action_adapter` 接管 args/limits 与错误适配；不增加字符串二次分发。
 - handler 接收已校验 request，但仍要检查业务语义，例如 signal 不存在、时间窗口为空、资源不匹配。
 - 错误返回使用稳定 error code，不用自由文本当机器合同。
 - 大数据默认摘要化，详细数据通过 action-specific `line_limit`、schema 明确声明的 `args.output` 参数或 export action 控制；AXI transaction 使用 `output.include_data`，其它 action 不得照抄该参数或新增裸 `limit`。
