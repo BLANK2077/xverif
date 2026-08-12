@@ -30,7 +30,7 @@ Action 协议由 `ActionSpec` / `ActionRegistry` 约束。`actions` 输出来自
                                          v
         +--------------------------------+--------------------------------+
         |                         session catalog                         |
-        |       ~/.xdebug/engine/registry.json + session manifests        |
+        |   ~/.xdebug/engine/sessions/<hash>/state.json + history/        |
         +----------------+--------------------------------+---------------+
                          |                                |
                          | spawn / reuse                  | direct request
@@ -939,21 +939,24 @@ compact payload 优先返回 evidence，而不是大段源码：
 xdebug 默认静默记录结构化日志，不改变 JSON API 响应；日志首次写入、sidecar、轮转或
 session manifest 维护失败时，会向 stderr 输出一条不含路径和原始异常的降级告警，后续
 失败只累计进程内健康计数，不重复刷屏。日志失败不会改变 action 执行结果；损坏的既有
-`session.json` 会原样保留，不会被新 manifest 覆盖。
+owner `manifest.json` 会原样保留，不会被新 manifest 覆盖。
 
 主要位置：
 
-- public action：`~/.xdebug/sessions/<session_id>/logs/actions.ndjson`
-- stdio-loop 协议：`~/.xdebug/sessions/<session_id>/logs/stdio.ndjson`
-- 无 session 或解析失败：`~/.xdebug/sessions/adhoc/logs/actions.ndjson`
-- engine lifecycle：`~/.xdebug/engine/sessions/<hashed-session>/logs/lifecycle.ndjson`
-- engine transport：`~/.xdebug/engine/sessions/<hashed-session>/logs/transport.ndjson`
-- engine crash marker：`~/.xdebug/engine/sessions/<hashed-session>/logs/crash_marker.ndjson`
-- NPI startup diagnostic：`~/.xdebug/engine/sessions/<hashed-session>/logs/npi_startup.log`
+- public action：`~/.xdebug/sessions/<session_id>/owners/<owner>/logs/actions.ndjson`
+- stdio-loop 协议：`~/.xdebug/sessions/<session_id>/owners/<owner>/logs/stdio.ndjson`
+- 无 session 或解析失败：`~/.xdebug/sessions/adhoc/owners/<owner>/logs/actions.ndjson`
+- engine lifecycle：`~/.xdebug/engine/sessions/<hashed-session>/owners/<owner>/logs/lifecycle.ndjson`
+- engine transport：`~/.xdebug/engine/sessions/<hashed-session>/owners/<owner>/logs/transport.ndjson`
+- engine crash marker：`~/.xdebug/engine/sessions/<hashed-session>/owners/<owner>/logs/crash_marker.ndjson`
+- NPI startup diagnostic：`~/.xdebug/engine/sessions/<hashed-session>/owners/<owner>/logs/npi_startup.log`
 - log health：各 `logs/` 目录下的 `log_health.ndjson`
-- MCP session：`~/.xverif/mcp/sessions/<alias>/session.ndjson`
-- MCP stdio：`~/.xverif/mcp/sessions/<alias>/stdio.ndjson`
-- MCP LSF：`~/.xverif/mcp/sessions/<alias>/lsf.ndjson`
+- MCP session：`~/.xverif/mcp/sessions/<alias>/owners/<owner>/session.ndjson`
+- MCP stdio：`~/.xverif/mcp/sessions/<alias>/owners/<owner>/stdio.ndjson`
+- MCP LSF：`~/.xverif/mcp/sessions/<alias>/owners/<owner>/lsf.ndjson`
+
+`owner` 是 `pid-start_nonce`。每个实际 writer 只写自己的 shard；doctor、tail 和 bundle 会遍历
+聚合全部 owner，因此普通日志写入不需要跨进程锁。
 
 每行都是一个 JSON event，常见字段包括 `ts`、`event_id`、`trace_id`、`request_id`、`layer`、`component`、`session_id`、`action`、`phase`、`elapsed_ms`、`ok`、`context`。成功 action 默认只记录摘要、路由、耗时和 `summary/meta`；失败 action 会额外记录裁剪后的 request/response。超大 compact payload 会写入 `logs/*_payload/` sidecar，主日志保留路径和 hash。
 

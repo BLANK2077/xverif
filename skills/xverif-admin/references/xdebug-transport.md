@@ -86,10 +86,10 @@ file transport directory:
 ## 排障流程
 
 1. 先跑 `session.doctor`。
-2. 看 public action log：`~/.xdebug/sessions/<session_id>/logs/actions.ndjson`。
-3. 看 stdio-loop log：`~/.xdebug/sessions/<session_id>/logs/stdio.ndjson`。
-4. 看 engine lifecycle：`~/.xdebug/engine/sessions/<hashed-session>/logs/lifecycle.ndjson`。
-5. 看 transport log：`~/.xdebug/engine/sessions/<hashed-session>/logs/transport.ndjson`。
+2. 看 public action log：`~/.xdebug/sessions/<session_id>/owners/*/logs/actions.ndjson`。
+3. 看 stdio-loop log：`~/.xdebug/sessions/<session_id>/owners/*/logs/stdio.ndjson`。
+4. 看 engine lifecycle：`~/.xdebug/engine/sessions/<hashed-session>/owners/*/logs/lifecycle.ndjson`。
+5. 看 transport log：`~/.xdebug/engine/sessions/<hashed-session>/owners/*/logs/transport.ndjson`。
 6. 可用 `xdebug log doctor --session <id> --json` 找实际 hashed 路径。
 7. 对 file transport，检查 `done/` 和 `failed/`，确认 request 是 `client_timeout`、`expired`、`stale_claim` 还是 `invalid_request`。
 

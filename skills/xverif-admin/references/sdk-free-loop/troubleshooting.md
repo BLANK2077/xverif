@@ -6,7 +6,7 @@
 
 - UDS protocol：`logs/uds.ndjson`
 - server：`logs/server.ndjson`
-- session lifecycle：`sessions/<session_id>/session.ndjson`
+- session lifecycle：`sessions/<session_id>/owners/*/session.ndjson`
 - stdio-loop：`sessions/<session_id>/stdio.ndjson`
 - LSF：`sessions/<session_id>/lsf.ndjson`
 

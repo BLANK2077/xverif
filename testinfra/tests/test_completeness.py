@@ -152,6 +152,32 @@ def test_product_test_consumers_do_not_prepare_fixtures() -> None:
     assert violations == []
 
 
+def test_cross_process_flock_is_limited_to_session_lifecycle_lease() -> None:
+    allowed = Path(
+        "xdebug/src/engine/session/session_lifecycle_lease.h"
+    )
+    product_roots = (
+        ROOT / "xdebug/src",
+        ROOT / "xcov/xcov",
+        ROOT / "xverif_mcp/src",
+        ROOT / "testinfra/xverif_test",
+    )
+    call = re.compile(r"\b" + "flo" + r"ck\s*\(")
+    python_call = "fcn" + "tl." + "flo" + "ck"
+    violations: list[str] = []
+    for product_root in product_roots:
+        for path in _walk_files(product_root, frozenset(SOURCE_TREE_PRUNES)):
+            if path.suffix not in {".c", ".cc", ".cpp", ".h", ".hpp", ".py"}:
+                continue
+            relative = path.relative_to(ROOT)
+            text = path.read_text(encoding="utf-8", errors="replace")
+            if relative == allowed:
+                continue
+            if call.search(text) or python_call in text:
+                violations.append(relative.as_posix())
+    assert violations == []
+
+
 def test_cpp_unit_runner_matches_every_cpp_test_binary() -> None:
     from testinfra.leaf.run_xdebug_cpp_units import BINARIES
 

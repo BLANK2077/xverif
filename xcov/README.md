@@ -425,15 +425,16 @@ framing 字段，header 仍保留 action 合同标识。
 xcov 日志默认写入：
 
 ```text
-~/.xverif/xcov/sessions/<session_id>/owners/<pid>/session.json
-~/.xverif/xcov/sessions/<session_id>/owners/<pid>/logs/actions.ndjson
-~/.xverif/xcov/backend/sessions/<session_id>/owners/<pid>/logs/lifecycle.ndjson
-~/.xverif/xcov/backend/sessions/<session_id>/owners/<pid>/logs/transport.ndjson
+~/.xverif/xcov/sessions/<session_id>/owners/<pid-start_nonce>/session.json
+~/.xverif/xcov/sessions/<session_id>/owners/<pid-start_nonce>/logs/actions.ndjson
+~/.xverif/xcov/backend/sessions/<session_id>/owners/<pid-start_nonce>/logs/lifecycle.ndjson
+~/.xverif/xcov/backend/sessions/<session_id>/owners/<pid-start_nonce>/logs/transport.ndjson
 ```
 
 日志事件包含 `ts/event_id/pid/layer/component/session_id/action/phase/ok/context`，
-不会记录完整大型 `items` payload。manifest 使用锁、同目录临时文件、fsync 和原子替换；
-NDJSON 使用 `O_APPEND + flock` 单记录写入。日志或 manifest 写入失败不会伪装成功，
+不会记录完整大型 `items` payload。每个进程实例只写自己的 owner shard；manifest 使用同目录
+唯一临时文件、fsync 和原子替换，NDJSON 使用进程内 mutex 与 `O_APPEND` 单记录写入。日志或
+manifest 写入失败不会伪装成功，
 `session.status/session.list/session.doctor` 的 `observability` 会报告 failure count 和最近错误，
 stderr 只输出 operation/error type，不泄露路径或 payload。
 

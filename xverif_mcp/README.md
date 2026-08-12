@@ -409,22 +409,23 @@ cache、report 与临时 hier 必须位于登录节点和计算节点共同可�
 
 xdebug/xcov stateful session 会写结构化 MCP 日志：
 
-- server：`~/.xverif/mcp/logs/server.ndjson`
-- session lifecycle：`~/.xverif/mcp/sessions/<alias>/session.ndjson`
-- stdio-loop protocol：`~/.xverif/mcp/sessions/<alias>/stdio.ndjson`
-- LSF launcher / job / cleanup：`~/.xverif/mcp/sessions/<alias>/lsf.ndjson`
+- server：`~/.xverif/mcp/owners/<owner>/logs/server.ndjson`
+- session lifecycle：`~/.xverif/mcp/sessions/<alias>/owners/<owner>/session.ndjson`
+- stdio-loop protocol：`~/.xverif/mcp/sessions/<alias>/owners/<owner>/stdio.ndjson`
+- LSF launcher / job / cleanup：`~/.xverif/mcp/sessions/<alias>/owners/<owner>/lsf.ndjson`
 
 当 open/query 返回 `SESSION_LOST`、ready timeout、stdout pollution、fake/real LSF
 启动失败或 cleanup 失败时，优先读这些日志；事件会包含 alias、backend、launcher、
 pid、job_id/job_name、request_id、stderr_tail 和 cleanup 结果。
+`owner` 是 fork-safe 的 `pid-start_nonce`，每个 runtime 进程实例只写自己的 shard。
 
 非 MCP UDS wrapper 会写结构化日志：
 
-- server：`~/.xverif/loop-wrapper/logs/server.ndjson`
-- UDS protocol：`~/.xverif/loop-wrapper/logs/uds.ndjson`
-- session lifecycle：`~/.xverif/loop-wrapper/sessions/<alias>/session.ndjson`
-- stdio-loop protocol：`~/.xverif/loop-wrapper/sessions/<alias>/stdio.ndjson`
-- LSF launcher / job / cleanup：`~/.xverif/loop-wrapper/sessions/<alias>/lsf.ndjson`
+- server：`~/.xverif/loop-wrapper/owners/<owner>/logs/server.ndjson`
+- UDS protocol：`~/.xverif/loop-wrapper/owners/<owner>/logs/uds.ndjson`
+- session lifecycle：`~/.xverif/loop-wrapper/sessions/<alias>/owners/<owner>/session.ndjson`
+- stdio-loop protocol：`~/.xverif/loop-wrapper/sessions/<alias>/owners/<owner>/stdio.ndjson`
+- LSF launcher / job / cleanup：`~/.xverif/loop-wrapper/sessions/<alias>/owners/<owner>/lsf.ndjson`
 
 xdebug session 工具使用明确前缀：
 

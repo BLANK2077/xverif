@@ -546,7 +546,7 @@ session 单 engine、engine 串行请求、NPI mutex、MCP session lock、genera
 | F02 | xdebug config 与 owner-sharded logging | completed | 本提交 |
 | F03 | xcov 与 MCP owner logging | completed | 本提交 |
 | F04 | URG cache 与 fixture atomic claim | completed | 本提交 |
-| F05 | 静态/strace 门禁、文档与 skill | pending | pending |
+| F05 | 静态/strace 门禁、文档与 skill | completed | 本提交 |
 | F06 | clean build、三档全量回归与最终证据 | pending | pending |
 
 最终必须满足：产品和 testinfra 源码中只有 session lifecycle lease 实现可以引用 `flock`；普通
@@ -599,3 +599,19 @@ query、list、doctor、config、log 与 xcov cache hit 的 `strace -f -e trace=
   清理验证。
 - `testinfra.unit`：52 passed，包含两个并发 prepare 只执行一次 builder；本轮没有调用任何正式
   `--xverif-prepare`，没有重建 fixture cache。
+
+### 2026-08-12 F05 验证
+
+- `testinfra.unit` 新增跨产品源码静态 allowlist：只有
+  `xdebug/src/engine/session/session_lifecycle_lease.h` 可以调用 `flock`；xdebug、xcov、MCP 与
+  fixture 产品源码的其它位置出现调用会使门禁失败。
+- 使用独立临时 HOME 执行 `strace -f -e trace=flock`：`actions`、`session.list`、不存在 session
+  的 `session.doctor`、`stream.config.list`、`axi.config.list` 均为 0 次 `flock`。后 3 个请求按
+  合同返回资源/session 错误，没有 fallback；trace 证据位于
+  `/tmp/xverif-flock-strace.5tr0ya`。
+- 同步更新 xdebug embedded help、README、xdebug agent 说明、xcov/MCP README、xverif 与
+  xverif-admin references，明确 per-session registry、owner shard 和 cache claim/容量合同。
+- `testinfra.unit`：53 passed；`xdebug.static`：119 passed；`skills.xverif`：16 passed；
+  `skills.xverif_admin`：1 passed。
+- 已通过 Makefile 安装并逐目录验收 `xverif`、`xverif-admin` 到 `~/.codex/skills` 与
+  `~/.claude/skills`。

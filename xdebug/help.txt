@@ -316,25 +316,25 @@ Logs and troubleshooting
   and do not change JSON responses.
 
   Public action logs:
-      ~/.xdebug/sessions/<session_prefix>_<hash>/logs/actions.ndjson
-      ~/.xdebug/sessions/<session_prefix>_<hash>/logs/stdio.ndjson
+      ~/.xdebug/sessions/<session_prefix>_<hash>/owners/<owner>/logs/actions.ndjson
+      ~/.xdebug/sessions/<session_prefix>_<hash>/owners/<owner>/logs/stdio.ndjson
 
   Engine logs:
-      ~/.xdebug/engine/sessions/<hashed-session>/logs/lifecycle.ndjson
-      ~/.xdebug/engine/sessions/<hashed-session>/logs/transport.ndjson
-      ~/.xdebug/engine/sessions/<hashed-session>/logs/crash_marker.ndjson
+      ~/.xdebug/engine/sessions/<hashed-session>/owners/<owner>/logs/lifecycle.ndjson
+      ~/.xdebug/engine/sessions/<hashed-session>/owners/<owner>/logs/transport.ndjson
+      ~/.xdebug/engine/sessions/<hashed-session>/owners/<owner>/logs/crash_marker.ndjson
       log_health.ndjson in each logs/ directory
 
   MCP direct/LSF logs:
-      ~/.xverif/mcp/sessions/<alias>/session.ndjson
-      ~/.xverif/mcp/sessions/<alias>/stdio.ndjson
-      ~/.xverif/mcp/sessions/<alias>/lsf.ndjson
+      ~/.xverif/mcp/sessions/<alias>/owners/<owner>/session.ndjson
+      ~/.xverif/mcp/sessions/<alias>/owners/<owner>/stdio.ndjson
+      ~/.xverif/mcp/sessions/<alias>/owners/<owner>/lsf.ndjson
 
   SDK-free loop wrapper logs:
-      ~/.xverif/loop-wrapper/logs/uds.ndjson
-      ~/.xverif/loop-wrapper/sessions/<alias>/session.ndjson
-      ~/.xverif/loop-wrapper/sessions/<alias>/stdio.ndjson
-      ~/.xverif/loop-wrapper/sessions/<alias>/lsf.ndjson
+      ~/.xverif/loop-wrapper/owners/<owner>/logs/uds.ndjson
+      ~/.xverif/loop-wrapper/sessions/<alias>/owners/<owner>/session.ndjson
+      ~/.xverif/loop-wrapper/sessions/<alias>/owners/<owner>/stdio.ndjson
+      ~/.xverif/loop-wrapper/sessions/<alias>/owners/<owner>/lsf.ndjson
 
   Helpers:
       xdebug log doctor --session <id> --json

@@ -11,8 +11,10 @@ xdebug 的 log 是工具可观测性合同的一部分。任何 session、transp
 - error response 应给出 error code，log 应给出 phase、context、路径和底层错误。
 - `logging_health_snapshot()` 提供进程内 degraded 状态、累计失败数和首次失败的稳定
   code/operation，供诊断与单元测试读取；它不改变 action response。
-- 已存在的 public `session.json` 无法解析时必须保留原文件并返回失败，禁止用新 manifest
-  覆盖损坏证据；可写时在该 session 的 `logs/log_health.ndjson` 记录健康事件。
+- 已存在的 owner `manifest.json` 无法解析时必须保留原文件并返回失败，禁止用新 manifest
+  覆盖损坏证据；可写时在该 owner 的 `logs/log_health.ndjson` 记录健康事件。
+- 日志以 `owners/<pid-start_nonce>/` 分片；每个进程实例是单 writer，进程内 mutex 保证线程
+  完整追加，读取、doctor、tail 和 bundle 聚合全部 owner shard。
 
 ## 常见日志类型
 
@@ -24,8 +26,8 @@ xdebug 的 log 是工具可观测性合同的一部分。任何 session、transp
 
 常见位置：
 
-- 有 session：`~/.xdebug/sessions/<session_id>/logs/actions.ndjson`
-- 无 session 或解析失败：`~/.xdebug/sessions/adhoc/logs/actions.ndjson`
+- 有 session：`~/.xdebug/sessions/<session_id>/owners/<owner>/logs/actions.ndjson`
+- 无 session 或解析失败：`~/.xdebug/sessions/adhoc/owners/<owner>/logs/actions.ndjson`
 
 使用场景：
 
@@ -41,7 +43,7 @@ xdebug 的 log 是工具可观测性合同的一部分。任何 session、transp
 
 常见位置：
 
-- `~/.xdebug/engine/sessions/<hashed-session>/logs/lifecycle.ndjson`
+- `~/.xdebug/engine/sessions/<hashed-session>/owners/<owner>/logs/lifecycle.ndjson`
 
 使用场景：
 
@@ -58,7 +60,7 @@ xdebug 的 log 是工具可观测性合同的一部分。任何 session、transp
 
 常见位置：
 
-- `~/.xdebug/engine/sessions/<hashed-session>/logs/transport.ndjson`
+- `~/.xdebug/engine/sessions/<hashed-session>/owners/<owner>/logs/transport.ndjson`
 
 使用场景：
 
@@ -87,7 +89,7 @@ xdebug 的 log 是工具可观测性合同的一部分。任何 session、transp
 用途：保存 `npi_init()`、`npi_load_design()` 和 `npi_fsdb_open()` 启动窗口内的
 stdout/stderr，包括 NPI、license 和 FSDB compatibility diagnostic。
 
-位置：`~/.xdebug/engine/sessions/<hashed-session>/logs/npi_startup.log`。
+位置：`~/.xdebug/engine/sessions/<hashed-session>/owners/<owner>/logs/npi_startup.log`。
 
 - 文件权限固定为 `0600`，成功和失败 session 都保留。
 - `env.snapshot` 只记录 `SNPSLMD_LICENSE_FILE`、`LM_LICENSE_FILE` 是否存在，不记录值。

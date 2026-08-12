@@ -32,15 +32,22 @@ session 系统用于复用 daidir、fsdb、engine 和 transport 资源。session
 5. `session.close` 默认 graceful 释放资源；异常残留显式使用 `mode=force`。
 6. `session.gc` 清理过期或不可用项。
 
+registry 不再是全局 JSON。每个 session 使用
+`~/.xdebug/engine/sessions/<session_hash>/state.json`，query 按规范化 id 直接定位，只有 list/gc
+遍历 session 目录；terminal generation 归档到 `history/`，默认 list 跳过。open/close/kill/gc 和
+timeout containment 在该 session 的 lifecycle lease 内更新状态，普通 query/list/doctor 不取得
+lease，也不为同步 `last_active` 写入阻塞返回。
+
 ## FSDB 资源身份门禁
 
-- registry v3 在 open 时记录 canonical FSDB path、device、inode、size 和
+- per-session registry v4 在 open 时记录 canonical FSDB path、device、inode、size 和
   nanosecond mtime；open 完成前再次比较完整指纹。
 - 所有 session-bound query 在进入旧 NPI/FSDB handle 前重新读取该指纹。任一变化、
   资源缺失、类型变化或旧 v2 指纹不足都返回 `RESOURCE_CHANGED`。
 - `RESOURCE_CHANGED` 不自动 reopen、不清理 session、不切换 transport。先显式
   `session.close`（默认 graceful），再对当前 FSDB 创建新 session。
-- v2 registry 仅为显式 close/gc 提供受控清理；不能把秒级 mtime 推导为 v3 强指纹。
+- 旧的非空全局 registry 必须停机后显式迁移；运行时返回 `REGISTRY_MIGRATION_REQUIRED`，不会
+  与 v4 混跑或静默读取旧状态。
 - 本轮强门禁只覆盖 FSDB。daidir 顶层目录 stat 仅用于 doctor 弱诊断，不能证明目录内部
   数据库内容未被原地修改；不实现递归 hash 或 vendor-specific identity marker。
 
@@ -99,7 +106,7 @@ backend session：
 - `NPI_FSDB_OPEN_FAILED` / `failure_phase=npi_fsdb_open`
 
 三类错误都返回 `diagnostic_log=engine_npi_startup`，对应 engine session 的
-`logs/npi_startup.log`。若 `npi_init` 失败且 `SNPSLMD_LICENSE_FILE`、
+`owners/<owner>/logs/npi_startup.log`。若 `npi_init` 失败且 `SNPSLMD_LICENSE_FILE`、
 `LM_LICENSE_FILE` 均未显式设置，`error.advisories` 包含
 `LICENSE_ENV_NOT_EXPLICIT`；该 advisory 不替代 NPI 结果，也不会提前 hard fail。
 

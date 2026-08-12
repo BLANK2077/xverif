@@ -2,9 +2,9 @@
 
 ## 日志位置
 
-- public actions：`~/.xdebug/sessions/<session_prefix>_<hash>/logs/actions.ndjson`
+- public actions：`~/.xdebug/sessions/<session_prefix>_<hash>/owners/*/logs/actions.ndjson`
 - stdio-loop：同目录 `stdio.ndjson`
-- engine lifecycle/transport/crash：`~/.xdebug/engine/sessions/<hashed-session>/logs/`
+- engine lifecycle/transport/crash：`~/.xdebug/engine/sessions/<hashed-session>/owners/*/logs/`
 - NPI startup：同目录 `npi_startup.log`，保存 init/load/open 阶段的原始 diagnostic
 - health：各 logs 目录下的 `log_health.ndjson`
 
