@@ -57,6 +57,13 @@ class _TestBackend(_CoverageBackend):
         return rows
     def load_exclusions(self,paths,test="merged"): return [{"path":p,"status":"loaded"} for p in paths]
     def set_exclusion(self,ref,excluded,test="merged"): return {"coverage_ref":ref,"status":"changed","before":False,"after":excluded}
+    def expand_xml_instances(self,root,recursive):
+        if root != "top": raise XcovError("SCOPE_NOT_FOUND", "not a real XML instance")
+        return ["top", "top.u_dut"] if recursive else ["top"]
+    def resolve_container_records(self,records,test="merged"):
+        return [{"coverage_kind":"container","source_file":"","csv_line":row["_line_no"],"status":"matched","validity":"still_valid","match_count":1,"reason":row["reason"],"coverage_refs":[],"locators":[{"root":"instance" if row["target_kind"] == "instance" else "functional","scope":row["scope"],"path":[],"type":"npiCovInstance" if row["target_kind"] == "instance" else "npiCovCovergroup","name":row["scope"] if row["target_kind"] == "instance" else row["covergroup"]}]} for row in records]
+    def set_exclusion_locator(self,locator,excluded=True,test="merged"):
+        return {"status":"changed","before":not excluded,"after":excluded}
     def save_exclusions(self,path,test="merged"): pass
     def unload_exclusions(self,test="merged"): pass
     def scope_functional_from_urg(self): return []
@@ -147,6 +154,48 @@ def _fake_dispatcher() -> Dispatcher:
             backend_factory=lambda vdb, **_kwargs: _TestBackend(vdb),
         )
     )
+
+
+def test_container_actions_expand_exact_targets_and_remove_recorded_ownership():
+    dispatcher = _fake_dispatcher()
+    opened = dispatcher.dispatch({
+        "api_version": "xcov.v1", "action": "session.open",
+        "target": {"vdb": "fixture.vdb"}, "args": {"name": "cov"},
+    })
+    assert opened["ok"] is True
+    added = dispatcher.dispatch({
+        "api_version": "xcov.v1", "action": "exclude.instance.add",
+        "target": {"session_id": "cov"}, "args": {"items": [{
+            "scope": "top", "recursive": True, "reason": "unused subtree",
+        }]},
+    })
+    assert added["ok"] is True, added
+    assert added["summary"]["expanded_target_count"] == 2
+    session = dispatcher.sessions.get("cov")
+    assert len(session.exclusion_records) == 2
+
+    removed = dispatcher.dispatch({
+        "api_version": "xcov.v1", "action": "exclude.instance.remove",
+        "target": {"session_id": "cov"}, "args": {"items": [{
+            "scope": "top", "recursive": True,
+        }]},
+    })
+    assert removed["ok"] is True, removed
+    assert removed["summary"]["expanded_target_count"] == 2
+    assert session.exclusion_records == {}
+
+
+def test_functional_container_schema_rejects_module_and_unknown_fields():
+    dispatcher = _fake_dispatcher()
+    response = dispatcher.dispatch({
+        "api_version": "xcov.v1", "action": "exclude.functional.add",
+        "target": {"session_id": "cov"}, "args": {"items": [{
+            "target_kind": "module", "scope": "top", "covergroup": "cg",
+            "module": "dut", "reason": "invalid",
+        }]},
+    })
+    assert response["ok"] is False
+    assert response["error"]["code"] == "SCHEMA_INVALID"
 
 
 def _stdio_exchange(

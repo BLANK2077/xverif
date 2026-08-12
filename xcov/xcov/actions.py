@@ -179,6 +179,26 @@ ACTION_REGISTRY: Dict[str, ActionContract] = {
         "Clear report-time exclusion state for exact coverage references.",
         "Do not use to remove immutable compile-time exclusions.",
     ),
+    "exclude.instance.add": ActionContract(
+        "exclude.instance.add", "_exclude_container", True,
+        "Atomically exclude exact or URG-XML-expanded instance targets.",
+        "Do not use module definitions, wildcards, regex, or synthetic hierarchy scopes.",
+    ),
+    "exclude.instance.remove": ActionContract(
+        "exclude.instance.remove", "_exclude_container", True,
+        "Atomically remove owned exact instance exclusions.",
+        "Recursive removal uses recorded exact ownership and never re-expands current XML.",
+    ),
+    "exclude.functional.add": ActionContract(
+        "exclude.functional.add", "_exclude_container", True,
+        "Atomically exclude exact covergroup, coverpoint, or cross containers.",
+        "Do not use this action for functional bins.",
+    ),
+    "exclude.functional.remove": ActionContract(
+        "exclude.functional.remove", "_exclude_container", True,
+        "Atomically remove owned covergroup, coverpoint, or cross exclusions.",
+        "Do not use this action for functional bins.",
+    ),
     "export.exclude": ActionContract(
         "export.exclude", "_export_exclude", True,
         'Export current merged-test exclusions with save_exclude_file(path, "w").',
@@ -924,6 +944,133 @@ class Dispatcher:
             completeness_summary(len(rows), len(rows)),
             {"items": rows},
         )
+
+    def _exclude_container(self, req: Json, sess) -> Json:
+        args = action_args(req)
+        _require_merged(args)
+        action = req["action"]
+        adding = action.endswith(".add")
+        instance_action = ".instance." in action
+        requested = args["items"]
+        exact_rows: List[Json] = []
+        if instance_action:
+            if adding:
+                for item in requested:
+                    reason = _required_reason(item["reason"])
+                    for scope in sess.backend.expand_xml_instances(
+                        item["scope"], bool(item.get("recursive", False)),
+                    ):
+                        exact_rows.append({
+                            "target_kind": "instance", "scope": scope,
+                            "covergroup": "", "item": "",
+                            "expansion_root": item["scope"], "reason": reason,
+                        })
+            else:
+                roots = {item["scope"] for item in requested}
+                for key, record in sess.exclusion_records.items():
+                    row = record.get("csv_row") or {}
+                    if (
+                        row.get("coverage_kind") == "container"
+                        and row.get("target_kind") == "instance"
+                        and row.get("expansion_root") in roots
+                    ):
+                        exact_rows.append({**row, "reason": record["reason"], "_owner_key": key})
+        else:
+            for item in requested:
+                exact_rows.append({
+                    "target_kind": item["target_kind"], "scope": item["scope"],
+                    "covergroup": item["covergroup"], "item": item.get("item", ""),
+                    "expansion_root": "", "reason": (
+                        _required_reason(item["reason"]) if adding else "remove"
+                    ),
+                })
+        if not exact_rows:
+            raise XcovError("EXCLUSION_NOT_OWNED", "没有匹配的已记录容器排除目标")
+        unique: Dict[tuple, Json] = {}
+        for row in exact_rows:
+            identity = _container_identity(row)
+            previous = unique.get(identity)
+            if previous is not None and (
+                previous["reason"] != row["reason"]
+                or previous["expansion_root"] != row["expansion_root"]
+            ):
+                raise XcovError("TARGET_OWNERSHIP_CONFLICT", "同一 exact target 存在不同 owner 或 reason")
+            unique[identity] = row
+        exact_rows = [unique[key] for key in sorted(unique)]
+        if adding:
+            for row in exact_rows:
+                csv_row = {key: row[key] for key in (
+                    "target_kind", "scope", "covergroup", "item", "expansion_root",
+                )}
+                csv_row.update({"coverage_kind": "container", "source_file": ""})
+                ownership_key = "csv:" + json.dumps(
+                    csv_row, sort_keys=True, separators=(",", ":"),
+                )
+                previous = sess.exclusion_records.get(ownership_key)
+                candidate = {"reason": row["reason"], "csv_row": csv_row}
+                if previous is not None and previous != candidate:
+                    raise XcovError(
+                        "TARGET_OWNERSHIP_CONFLICT",
+                        "target 已由不同 reason 或 expansion root 持有",
+                    )
+        for line, row in enumerate(exact_rows, 1):
+            row["_line_no"] = line
+        resolutions = sess.backend.resolve_container_records(exact_rows, test="merged")
+        failures = [row for row in resolutions if row["status"] != "matched"]
+        if failures:
+            raise XcovError(
+                "EXCLUSION_RESOLVE_FAILED", "容器目标未全部唯一解析，本次请求未修改数据库",
+                atomic_result="none_applied", failed_count=len(failures),
+            )
+        baseline_metadata = dict(sess.exclusion_records)
+        staged_metadata = dict(baseline_metadata)
+        outcomes: List[Json] = []
+        with tempfile.TemporaryDirectory(prefix=".xcov-container-") as temporary:
+            baseline = Path(temporary) / "baseline.el"
+            sess.backend.save_exclusions(str(baseline), test="merged")
+            try:
+                for row, resolution in zip(exact_rows, resolutions):
+                    result = sess.backend.set_exclusion_locator(
+                        resolution["locators"][0], adding, test="merged",
+                    )
+                    if result.get("status") not in {"changed", "already_in_state"}:
+                        raise XcovError("EXCLUSION_APPLY_FAILED", "容器 setter 失败")
+                    public = {
+                        "coverage_ref": "container:" + ":".join(_container_identity(row)),
+                        **result,
+                    }
+                    csv_row = {key: row[key] for key in (
+                        "target_kind", "scope", "covergroup", "item", "expansion_root",
+                    )}
+                    csv_row.update({"coverage_kind": "container", "source_file": ""})
+                    key = "csv:" + json.dumps(csv_row, sort_keys=True, separators=(",", ":"))
+                    if adding:
+                        previous = staged_metadata.get(key)
+                        record = {"reason": row["reason"], "csv_row": csv_row}
+                        if previous is not None and previous != record:
+                            raise XcovError("TARGET_OWNERSHIP_CONFLICT", "target 已由不同 reason 或 root 持有")
+                        staged_metadata[key] = record
+                        public["reason"] = row["reason"]
+                    else:
+                        staged_metadata.pop(row.get("_owner_key", key), None)
+                    outcomes.append(public)
+            except Exception:
+                sess.backend.unload_exclusions(test="merged")
+                sess.backend.load_exclusions([str(baseline)], test="merged")
+                sess.exclusion_records = baseline_metadata
+                raise
+        sess.exclusion_records = staged_metadata
+        sess.mark_exclusion_dirty()
+        if staged_metadata != baseline_metadata:
+            sess.mark_reason_mutation()
+        summary = completeness_summary(len(outcomes), len(outcomes))
+        summary.update({
+            "atomic": True, "transaction_committed": True,
+            "requested_count": len(requested), "expanded_target_count": len(exact_rows),
+            "changed_count": sum(row["status"] == "changed" for row in outcomes),
+            "already_in_state_count": sum(row["status"] == "already_in_state" for row in outcomes),
+        })
+        return ok_response(req, summary, {"items": outcomes})
 
     def _exclude_export_gaps(self, req: Json, sess, exports: List[Json]) -> Json:
         requested: List[Json] = []
@@ -1816,11 +1963,19 @@ def _record_csv_documents(sess, documents: List[Any]) -> None:
     sess.mark_reasons_persisted()
 
 
+def _container_identity(row: Json) -> tuple[str, str, str, str]:
+    return (
+        str(row["target_kind"]), str(row["scope"]),
+        str(row.get("covergroup") or ""), str(row.get("item") or ""),
+    )
+
+
 def _csv_row_identity(kind: str, source_file: str, row: Json) -> tuple:
     fields = {
         "code": ("scope", "metric", "line", "object", "bin"),
         "functional": ("scope", "line", "covergroup", "coverpoint", "cross", "bin"),
         "assertion": ("scope", "line", "assertion", "assertion_kind"),
+        "container": ("target_kind", "scope", "covergroup", "item", "expansion_root"),
     }[kind]
     return (kind, source_file, *(str(row.get(field, "")) for field in fields))
 

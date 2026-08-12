@@ -532,6 +532,9 @@ class CoverageBackend:
         """Resolve exact instance/functional container selectors into NPI locators."""
         raise NotImplementedError
 
+    def expand_xml_instances(self, root: str, recursive: bool) -> List[str]:
+        raise NotImplementedError
+
 
 def _canonical_scope_metric(scope: str, metric: Any, values: Any) -> Json:
     operation = "scope_metrics.canonicalize"
@@ -787,6 +790,9 @@ class CanonicalCoverageBackend(CoverageBackend):
 
     def resolve_container_records(self, records: List[Json], test: str = "merged") -> List[Json]:
         return self._delegate.resolve_container_records(records, test=test)
+
+    def expand_xml_instances(self, root: str, recursive: bool) -> List[str]:
+        return self._delegate.expand_xml_instances(root, recursive)
 
     def set_summary_exclusion(self, el_path: str | None) -> None:
         setter = getattr(self._delegate, "set_summary_exclusion", None)
@@ -1558,6 +1564,11 @@ class NpiCoverageBackend(CoverageBackend):
             })
         return results
 
+    def expand_xml_instances(self, root: str, recursive: bool) -> List[str]:
+        self._ensure_urg()
+        assert self._urg_index is not None
+        return list(self._urg_index.expand_xml_instances(root, recursive=recursive))
+
     def resolve_gap_payload(self, payload: Json, test: str = "merged") -> Json:
         """Resolve an URG-only artifact after the user requests exclusion.
 
@@ -2242,6 +2253,9 @@ class UrgCoverageBackend(CoverageBackend):
 
     def resolve_container_records(self, records: List[Json], test: str = "merged") -> List[Json]:
         return self._exclude_backend().resolve_container_records(records, test=test)
+
+    def expand_xml_instances(self, root: str, recursive: bool) -> List[str]:
+        return list(self._summary_index().expand_xml_instances(root, recursive=recursive))
 
     def set_exclusion_locator(self, locator: Json, excluded: bool = True,
                               test: str = "merged") -> Json:

@@ -815,6 +815,33 @@ EXCLUSION_SET_ITEM = _object({
     "metadata_status": _string(enum=["created", "updated", "unchanged"]),
 }, required=["coverage_ref", "status"])
 
+CONTAINER_SET_ITEM = deepcopy(EXCLUSION_SET_ITEM)
+
+
+def _container_action_args(action: str) -> Json:
+    adding = action.endswith(".add")
+    if ".instance." in action:
+        item_props: Json = {
+            "scope": _string(min_length=1),
+            "recursive": _bool(),
+        }
+        required = ["scope"]
+    else:
+        item_props = {
+            "target_kind": _string(enum=["covergroup", "coverpoint", "cross"]),
+            "scope": _string(min_length=1),
+            "covergroup": _string(min_length=1),
+            "item": _string(),
+        }
+        required = ["target_kind", "scope", "covergroup"]
+    if adding:
+        item_props["reason"] = _string(min_length=1)
+        required.append("reason")
+    return _args({
+        "items": _array(_object(item_props, required=required), min_items=1, max_items=10_000),
+        "test": {"const": "merged"},
+    }, required=["items"])
+
 EXCLUSION_UNLOAD_ITEM = _object({
     "before_count": _integer(0),
     "after_count": _integer(0),
@@ -1325,6 +1352,25 @@ SCHEMAS: Dict[str, Json] = {
         _completeness_summary(),
         _items_data(EXCLUSION_SET_ITEM),
     ),
+    **{
+        action: _schema_entry(
+            action,
+            _request(
+                action, target=SESSION_TARGET, args=_container_action_args(action),
+                require_target=True, require_args=True,
+            ),
+            _completeness_summary({
+                "atomic": _bool(), "transaction_committed": _bool(),
+                "requested_count": _integer(0), "expanded_target_count": _integer(0),
+                "changed_count": _integer(0), "already_in_state_count": _integer(0),
+            }),
+            _items_data(CONTAINER_SET_ITEM),
+        )
+        for action in (
+            "exclude.instance.add", "exclude.instance.remove",
+            "exclude.functional.add", "exclude.functional.remove",
+        )
+    },
     "export.exclude": _schema_entry(
         "export.exclude",
         _request(
@@ -1705,6 +1751,18 @@ def validate_request(req: Json) -> None:
         raise XcovError("UNKNOWN_ACTION", "unknown action", action=action)
     try:
         _validate(req, entry["request"])
+        if action in {"exclude.functional.add", "exclude.functional.remove"}:
+            for index, item in enumerate(req["args"]["items"]):
+                kind = item["target_kind"]
+                selected = item.get("item", "")
+                if kind == "covergroup" and selected:
+                    raise SchemaValidationError(
+                        f"$.args.items[{index}].item", "covergroup item must be empty",
+                    )
+                if kind in {"coverpoint", "cross"} and not selected:
+                    raise SchemaValidationError(
+                        f"$.args.items[{index}].item", f"{kind} item is required",
+                    )
     except SchemaValidationError as exc:
         raise XcovError("SCHEMA_INVALID", exc.message, path=exc.path) from exc
 
