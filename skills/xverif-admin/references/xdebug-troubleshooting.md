@@ -32,6 +32,8 @@ xdebug log bundle --session <id> --out debug_bundle.redacted.tgz --redact
 - `INTERNAL_ENGINE_FAILED`：看 lifecycle 是否 NPI init、design load、FSDB open 或 daemon ready 失败。
 - `socket.connect.failed`：确认 socket_path、transport、namespace、文件是否存在。
 - `socket.read.timeout`：检查查询是否过大、daemon 是否卡住、timeout 是否过短。
+- `REQUEST_TOO_LARGE`：根据 `received_bytes/max_bytes` 确认边界，并结合 `transport/phase` 定位拒绝位置；按 `next_actions` 拆分 batch、减少内联配置或使用有界 export。不要通过提高环境上限、截断 JSON 或切换 transport 绕过门禁。
+- `INVALID_CONFIG`：根据 `config_key/config_source/expected` 修正配置后启动新进程；不要在当前进程重试或静默采用默认值。`received_redacted=true` 只表示敏感原值已隐藏，不影响配置键和来源的诊断。
 - invalid JSON / stdout pollution：看 `stdio.ndjson` 的 `stdout.pollution`、`ready.stdout_non_json`。
 - license/NPI 连接失败：在沙箱外复跑，确认 Verdi/NPI 环境和 license server。
 - `LICENSE_ENV_NOT_EXPLICIT`：`SNPSLMD_LICENSE_FILE` 和 `LM_LICENSE_FILE` 都没有显式

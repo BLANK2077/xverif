@@ -2,6 +2,7 @@
 
 #include "../../design/protocol/protocol.h"
 #include "core/schema/internal_request_contract.h"
+#include "core/diagnostic_error.h"
 #include "json_line_reader.h"
 #include "session_lifecycle_lease.h"
 #include "session_manager.h"
@@ -16,21 +17,33 @@
 
 namespace xdebug_engine {
 
-static bool write_json_line(int fd, const Json& request) {
-    std::string wire = request.dump() + "\n";
-    return write(fd, wire.c_str(), wire.size()) == static_cast<ssize_t>(wire.size());
+static Json request_too_large_error(std::size_t received_bytes,
+                                    const std::string& transport) {
+    const std::string message =
+        "JSON request exceeds the session transport limit";
+    Json error = xdebug_core::DiagnosticErrorBuilder::transport(
+                     "REQUEST_TOO_LARGE", message)
+                     .recoverable(false)
+                     .to_json();
+    error["limit_name"] = "request_bytes";
+    error["received_bytes"] = received_bytes;
+    error["max_bytes"] = xdebug_core::kMaxSessionJsonBytes;
+    error["transport"] = transport;
+    error["phase"] = "transport_request";
+    error["next_actions"] = Json::array({
+        "Split the batch into smaller requests or use a bounded export action."
+    });
+    return error;
 }
 
-static void set_public_socket_timeout_override(
-    int fd,
-    const xdebug_core::TransportTimeoutOverrideMs& timeout_override_ms) {
-    if (!timeout_override_ms.present) return;
-    const int timeout_ms = timeout_override_ms.value_ms;
-    struct timeval tv;
-    tv.tv_sec = timeout_ms / 1000;
-    tv.tv_usec = (timeout_ms % 1000) * 1000;
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+static xdebug_core::TransportIoStatus write_json_line(
+    int fd, const Json& request,
+    const xdebug_core::TransportDeadline& deadline) {
+    std::string wire = request.dump() + "\n";
+    if (wire.size() - 1 > xdebug_core::kMaxSessionJsonBytes)
+        return xdebug_core::TransportIoStatus::TooLarge;
+    return xdebug_core::write_all_deadline(
+        fd, wire.c_str(), wire.size(), deadline);
 }
 
 static Json transport_timeout_log_context(
@@ -114,6 +127,15 @@ bool send_request_capture(const std::string& session_id,
         const SessionFileExchangeResult exchange =
             exchange_file_request_with_endpoint(
                 session, rpc, response, timeout_override_ms);
+        if (exchange.detail_status == "request_too_large") {
+            status = "request_too_large";
+            message = exchange.message.empty()
+                          ? "JSON request exceeds the session transport limit"
+                          : exchange.message;
+            engine_error = request_too_large_error(
+                rpc.dump().size(), session.transport);
+            return false;
+        }
         if (exchange.status !=
             SessionFileExchangeStatus::Completed) {
             const bool transport_timeout =
@@ -187,11 +209,16 @@ bool send_request_capture(const std::string& session_id,
                                           {"transport", session.transport}, {"file_dir", session.file_dir}});
         return true;
     }
-    int fd = connect_session_endpoint(session);
+    const xdebug_core::TransportDeadline socket_deadline(
+        timeout_override_ms.present ? timeout_override_ms.value_ms : 0);
+    int fd = connect_session_endpoint(session, socket_deadline);
     if (fd < 0) {
-        status = "connect_failed";
-        message =
-            "server endpoint cannot be connected";
+        const bool connect_timeout =
+            timeout_override_ms.present && errno == ETIMEDOUT;
+        status = connect_timeout ? "transport_timeout" : "connect_failed";
+        message = connect_timeout
+                      ? "session transport exceeded limits.timeout_ms while connecting"
+                      : "server endpoint cannot be connected";
         xdebug_core::log_transport_event("engine", session_id, "send_request.connect_failed", false,
                                          transport_timeout_log_context(
                                              {{"action", action},
@@ -205,8 +232,6 @@ bool send_request_capture(const std::string& session_id,
                                              timeout_override_ms));
         return false;
     }
-    set_public_socket_timeout_override(fd, timeout_override_ms);
-
     if (is_tcp_transport(session)) {
         rpc = xdebug_core::with_internal_transport_auth(
             rpc,
@@ -214,14 +239,39 @@ bool send_request_capture(const std::string& session_id,
     }
     Json response;
     errno = 0;
+    const xdebug_core::TransportIoStatus write_status =
+        write_json_line(fd, rpc, socket_deadline);
+    JsonLineReadStatus read_status = JsonLineReadStatus::IoError;
+    if (write_status == xdebug_core::TransportIoStatus::Ok) {
+        read_status = read_bounded_json_line_status(
+            fd, response, kMaxSessionJsonResponseBytes, socket_deadline);
+    }
     const bool received =
-        write_json_line(fd, rpc) && read_bounded_json_line(fd, response);
+        write_status == xdebug_core::TransportIoStatus::Ok &&
+        read_status == JsonLineReadStatus::Ok;
     const int exchange_errno = errno;
     close(fd);
     if (!received) {
-        const bool public_timeout =
-            timeout_override_ms.present &&
-            (exchange_errno == EAGAIN || exchange_errno == EWOULDBLOCK);
+        const bool request_too_large =
+            write_status == xdebug_core::TransportIoStatus::TooLarge;
+        const bool response_too_large =
+            read_status == JsonLineReadStatus::TooLarge;
+        const bool public_timeout = timeout_override_ms.present &&
+            (write_status == xdebug_core::TransportIoStatus::Timeout ||
+             read_status == JsonLineReadStatus::Timeout ||
+             exchange_errno == ETIMEDOUT);
+        if (request_too_large) {
+            status = "request_too_large";
+            message = "JSON request exceeds the session transport limit";
+            engine_error = request_too_large_error(
+                rpc.dump().size(), session.transport);
+            return false;
+        }
+        if (response_too_large) {
+            status = "transport_failed";
+            message = "JSON response exceeds the session transport limit";
+            return false;
+        }
         status = public_timeout
                      ? "transport_timeout"
                      : "transport_failed";

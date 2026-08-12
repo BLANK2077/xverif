@@ -677,6 +677,22 @@ def error_schema(action: str) -> dict[str, Any]:
         "validation": JSON_VALUE_REF,
         "current_estimated_bytes": {"type": "integer", "minimum": 0},
         "hard_max_bytes": {"type": "integer", "minimum": 0},
+        "limit_name": {"enum": ["request_bytes"]},
+        "received_bytes": {"type": "integer", "minimum": 0},
+        "max_bytes": {"type": "integer", "minimum": 1},
+        "transport": {"enum": ["stdio", "uds", "tcp", "file"]},
+        "phase": {
+            "enum": [
+                "public_request",
+                "internal_request",
+                "transport_request",
+                "transport_response",
+            ]
+        },
+        "config_key": {"type": "string", "minLength": 1},
+        "config_source": {
+            "enum": ["environment", "default", "request"]
+        },
         "protocol": {"enum": ["apb", "axi", "stream"]},
         "key_summary": {"type": "string"},
         "manifest_path": {"type": "string", "minLength": 1},
@@ -779,6 +795,41 @@ def error_schema(action: str) -> dict[str, Any]:
         properties,
         ("code", "message", "recoverable", "error_layer"),
     )
+    operational_contracts = [
+        {
+            "if": {
+                "properties": {"code": {"const": "REQUEST_TOO_LARGE"}},
+                "required": ["code"],
+            },
+            "then": {
+                "properties": {"recoverable": {"const": False}},
+                "required": [
+                    "limit_name",
+                    "received_bytes",
+                    "max_bytes",
+                    "transport",
+                    "phase",
+                    "next_actions",
+                ],
+            },
+        },
+        {
+            "if": {
+                "properties": {"code": {"const": "INVALID_CONFIG"}},
+                "required": ["code"],
+            },
+            "then": {
+                "properties": {"recoverable": {"const": False}},
+                "required": [
+                    "config_key",
+                    "config_source",
+                    "expected",
+                    "next_actions",
+                ],
+            },
+        },
+    ]
+    schema["allOf"] = operational_contracts
     if action == "signal.canonicalize":
         signal_candidate = closed(
             {
@@ -810,7 +861,7 @@ def error_schema(action: str) -> dict[str, Any]:
                 },
             }
         )
-        schema["allOf"] = [
+        schema.setdefault("allOf", []).extend([
             {
                 "if": {
                     "properties": {"code": {"const": "AMBIGUOUS_SIGNAL"}},
@@ -867,7 +918,7 @@ def error_schema(action: str) -> dict[str, Any]:
                     }
                 },
             },
-        ]
+        ])
     return schema
 
 
@@ -3786,7 +3837,6 @@ def response_schema(
             "errorSummary": error_summary,
             "validationIssue": validation_issue_schema(),
             "error": strict_error,
-            "genericError": error_schema("__generic__"),
             "tool": tool_schema(),
             "sessionRecord": session_record_schema(),
             "suggestedNextAction": suggested_next_action_schema(),
@@ -3795,6 +3845,11 @@ def response_schema(
             "logicValue": logic_value_schema(),
         }
     )
+    if action == "batch":
+        # The batch envelope can fail before a child action is selected.  Only
+        # that envelope references the action-agnostic error definition; child
+        # action schemas use their own strict ``error`` definition.
+        definitions["genericError"] = error_schema("__generic__")
     merge_definitions(
         definitions,
         session_response_contract_definitions(),

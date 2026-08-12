@@ -14,6 +14,7 @@
 #include <fstream>
 #include <iomanip>
 #include <sstream>
+#include <stdexcept>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -209,10 +210,13 @@ void spill_large_context_to_sidecars(const std::string& path, Json& event) {
 }
 
 void rotate_if_needed(const std::string& path, size_t incoming_bytes) {
-    long long max_bytes = xdebug_log_max_bytes();
+    LogEnvConfig config;
+    std::string config_error;
+    if (!xdebug_log_env_config(config, config_error))
+        throw std::invalid_argument(config_error);
+    const long long max_bytes = config.max_bytes;
     if (max_bytes <= 0) return;
-    long long max_files = xdebug_log_max_files();
-    if (max_files <= 0) max_files = 1;
+    const long long max_files = config.max_files;
     struct stat st;
     if (stat(path.c_str(), &st) != 0) return;
     if (st.st_size + static_cast<long long>(incoming_bytes) <= max_bytes) return;
@@ -265,12 +269,17 @@ bool path_key(const std::string& key) {
 }
 
 std::string path_log_mode() {
-    std::string mode = xdebug_log_path_mode();
-    if (xdebug_log_redact_enabled()) return "hash";
+    LogEnvConfig config;
+    std::string config_error;
+    if (!xdebug_log_env_config(config, config_error))
+        throw std::invalid_argument(config_error);
+    const std::string& mode = config.path_mode;
+    if (config.redact) return "hash";
     if (mode.empty()) return "hash";
     if (mode == "full" || mode == "basename" || mode == "hash")
         return mode;
-    return "hash";
+    throw std::invalid_argument(
+        "XDEBUG_LOG_PATH_MODE must be full, basename, or hash");
 }
 
 std::string redact_path_for_log(const std::string& value) {

@@ -1,0 +1,29 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": false,
+  "action": "batch",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
+  "summary": {
+    "status": "error",
+    "error_code": "REQUEST_TOO_LARGE"
+  },
+  "data": null,
+  "error": {
+    "code": "REQUEST_TOO_LARGE",
+    "message": "request exceeds the bounded transport payload",
+    "recoverable": false,
+    "error_layer": "transport",
+    "limit_name": "request_bytes",
+    "received_bytes": 1048577,
+    "max_bytes": 1048576,
+    "transport": "uds",
+    "phase": "transport_request",
+    "next_actions": [
+      "Split the batch into smaller requests or use a bounded export action."
+    ]
+  }
+}

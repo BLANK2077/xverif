@@ -1,4 +1,5 @@
 #include "transport/file_exchange.h"
+#include "session/transport_common.h"
 #include "test_temp_path.h"
 
 #include <cassert>
@@ -170,18 +171,15 @@ int main() {
     assert(waitpid(child2, &status, 0) == child2);
     assert(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 
-    setenv("XDEBUG_FILE_MAX_JSON_BYTES", "16", 1);
-    std::string too_big_id = "too_big";
-    assert(xdebug_core::atomic_write_json_file_ex(
-        join_path(join_path(dir, "requests"), too_big_id + ".json"),
-        request_wrapper(too_big_id, xdebug_core::file_exchange_now_us() + 1000000),
-        xdebug_core::AtomicWriteMode::CreateNew,
-        join_path(dir, "tmp")).ok);
-    xdebug_core::FileClaimResult too_big = xdebug_core::file_exchange_claim_one(dir, "agent_a");
-    assert(too_big.claimed);
-    assert(!too_big.ready);
-    assert(too_big.status == "invalid_request");
-    assert(exists(join_path(join_path(dir, "failed"), too_big_id + ".invalid_request.json")));
+    Json oversized_request = {
+        {"payload", std::string(xdebug_core::kMaxSessionJsonBytes, 'x')},
+    };
+    xdebug_core::FileExchangeResult too_big =
+        xdebug_core::file_exchange_send_request(
+            dir, oversized_request, 1500);
+    assert(!too_big.ok);
+    assert(too_big.status == "request_too_large");
+    assert(too_big.message.find("transport limit") != std::string::npos);
 
     return 0;
 }

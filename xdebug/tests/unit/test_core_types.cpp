@@ -12,6 +12,7 @@
 #include <cassert>
 #include <chrono>
 #include <cstdlib>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -288,5 +289,129 @@ int main() {
     assert(timeout_error.find("XDEBUG_SESSION_START_TIMEOUT_SEC") != std::string::npos);
     unsetenv("XDEBUG_SESSION_IDLE_TIMEOUT_SEC");
     unsetenv("XDEBUG_SESSION_START_TIMEOUT_SEC");
+
+    const char* strict_env_names[] = {
+        "XDEBUG_FILE_TRANSPORT_TIMEOUT_MS",
+        "XDEBUG_FILE_TRANSPORT_PING_TIMEOUT_MS",
+        "XDEBUG_FILE_POLL_INTERVAL_MS",
+        "XDEBUG_FILE_MAX_JSON_BYTES",
+        "XDEBUG_FILE_CLAIM_TIMEOUT_MS",
+        "XDEBUG_FILE_KEEP_HISTORY",
+        "XDEBUG_FILE_DONE_TTL_SEC",
+        "XDEBUG_FILE_FAILED_TTL_SEC",
+        "XDEBUG_LOG_MAX_BYTES",
+        "XDEBUG_LOG_MAX_FILES",
+        "XDEBUG_LOG_PATH_MODE",
+        "XDEBUG_LOG_REDACT",
+    };
+    for (const char* name : strict_env_names) unsetenv(name);
+
+    xdebug_core::FileTransportEnvConfig file_config;
+    std::string config_error;
+    assert(xdebug_core::xdebug_file_transport_env_config(
+        file_config, config_error));
+    assert(file_config.request_timeout_ms == 300000);
+    assert(file_config.ping_timeout_ms == 2000);
+    assert(file_config.poll_interval_ms == 20);
+    assert(file_config.max_json_bytes == 67108864);
+    assert(file_config.claim_timeout_ms == 600000);
+    assert(file_config.keep_history);
+    assert(file_config.done_ttl_sec == 7LL * 24LL * 60LL * 60LL);
+    assert(file_config.failed_ttl_sec == 30LL * 24LL * 60LL * 60LL);
+
+    assert(setenv("XDEBUG_FILE_TRANSPORT_TIMEOUT_MS", "700000", 1) == 0);
+    assert(setenv("XDEBUG_FILE_TRANSPORT_PING_TIMEOUT_MS", "17", 1) == 0);
+    assert(setenv("XDEBUG_FILE_POLL_INTERVAL_MS", "9", 1) == 0);
+    assert(setenv("XDEBUG_FILE_MAX_JSON_BYTES", "4096", 1) == 0);
+    assert(setenv("XDEBUG_FILE_KEEP_HISTORY", "false", 1) == 0);
+    assert(setenv("XDEBUG_FILE_DONE_TTL_SEC", "0", 1) == 0);
+    assert(setenv("XDEBUG_FILE_FAILED_TTL_SEC", "11", 1) == 0);
+    assert(xdebug_core::xdebug_file_transport_env_config(
+        file_config, config_error));
+    assert(file_config.request_timeout_ms == 700000);
+    assert(file_config.ping_timeout_ms == 17);
+    assert(file_config.poll_interval_ms == 9);
+    assert(file_config.max_json_bytes == 4096);
+    assert(file_config.claim_timeout_ms == 1400000);
+    assert(!file_config.keep_history);
+    assert(file_config.done_ttl_sec == 0);
+    assert(file_config.failed_ttl_sec == 11);
+
+    for (const char* name : strict_env_names) unsetenv(name);
+    const char* invalid_file_env_names[] = {
+        "XDEBUG_FILE_TRANSPORT_TIMEOUT_MS",
+        "XDEBUG_FILE_TRANSPORT_PING_TIMEOUT_MS",
+        "XDEBUG_FILE_POLL_INTERVAL_MS",
+        "XDEBUG_FILE_MAX_JSON_BYTES",
+        "XDEBUG_FILE_CLAIM_TIMEOUT_MS",
+        "XDEBUG_FILE_DONE_TTL_SEC",
+        "XDEBUG_FILE_FAILED_TTL_SEC",
+    };
+    for (const char* name : invalid_file_env_names) {
+        assert(setenv(name, "bad", 1) == 0);
+        config_error.clear();
+        assert(!xdebug_core::xdebug_file_transport_env_config(
+            file_config, config_error));
+        assert(config_error.find(name) != std::string::npos);
+        unsetenv(name);
+    }
+    for (const char* value : {"", "20ms", "0", "10001"}) {
+        assert(setenv("XDEBUG_FILE_POLL_INTERVAL_MS", value, 1) == 0);
+        config_error.clear();
+        assert(!xdebug_core::xdebug_file_transport_env_config(
+            file_config, config_error));
+        assert(config_error.find("XDEBUG_FILE_POLL_INTERVAL_MS") !=
+               std::string::npos);
+    }
+    unsetenv("XDEBUG_FILE_POLL_INTERVAL_MS");
+    for (const char* value : {"", "maybe"}) {
+        assert(setenv("XDEBUG_FILE_KEEP_HISTORY", value, 1) == 0);
+        config_error.clear();
+        assert(!xdebug_core::xdebug_file_transport_env_config(
+            file_config, config_error));
+        assert(config_error.find("XDEBUG_FILE_KEEP_HISTORY") !=
+               std::string::npos);
+    }
+    unsetenv("XDEBUG_FILE_KEEP_HISTORY");
+
+    xdebug_core::LogEnvConfig log_config;
+    assert(xdebug_core::xdebug_log_env_config(log_config, config_error));
+    assert(log_config.max_bytes == 0);
+    assert(log_config.max_files == 3);
+    assert(log_config.path_mode.empty());
+    assert(!log_config.redact);
+    assert(setenv("XDEBUG_LOG_MAX_BYTES", "1024", 1) == 0);
+    assert(setenv("XDEBUG_LOG_MAX_FILES", "5", 1) == 0);
+    assert(setenv("XDEBUG_LOG_PATH_MODE", "basename", 1) == 0);
+    assert(setenv("XDEBUG_LOG_REDACT", "true", 1) == 0);
+    assert(xdebug_core::xdebug_log_env_config(log_config, config_error));
+    assert(log_config.max_bytes == 1024);
+    assert(log_config.max_files == 5);
+    assert(log_config.path_mode == "basename");
+    assert(log_config.redact);
+
+    for (const char* name : strict_env_names) unsetenv(name);
+    for (const char* name : {
+             "XDEBUG_LOG_MAX_BYTES", "XDEBUG_LOG_MAX_FILES",
+             "XDEBUG_LOG_PATH_MODE", "XDEBUG_LOG_REDACT"}) {
+        assert(setenv(name, "invalid", 1) == 0);
+        config_error.clear();
+        assert(!xdebug_core::xdebug_log_env_config(
+            log_config, config_error));
+        assert(config_error.find(name) != std::string::npos);
+        unsetenv(name);
+    }
+    assert(setenv("XDEBUG_FILE_POLL_INTERVAL_MS", "0", 1) == 0);
+    bool strict_getter_threw = false;
+    try {
+        (void)xdebug_core::xdebug_file_poll_interval_ms();
+    } catch (const std::invalid_argument& exc) {
+        strict_getter_threw =
+            std::string(exc.what()).find(
+                "XDEBUG_FILE_POLL_INTERVAL_MS") != std::string::npos;
+    }
+    assert(strict_getter_threw);
+    unsetenv("XDEBUG_FILE_POLL_INTERVAL_MS");
+    assert(xdebug_core::xdebug_file_and_log_env_config_valid(config_error));
     return 0;
 }

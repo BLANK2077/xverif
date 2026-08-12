@@ -2071,10 +2071,9 @@ def test_session_transport_does_not_invent_a_public_timeout() -> None:
 
     assert "return 30000;" not in client
     assert "public_request_timeout_override_ms(request)" in client
-    assert (
-        "set_public_socket_timeout_override(fd, timeout_override_ms)"
-        in client
-    )
+    assert "TransportDeadline socket_deadline" in client
+    assert "socket_deadline" in client
+    assert "set_public_socket_timeout_override" not in client
     assert "TransportTimeoutOverrideMs" in transport_header
     assert "std::optional" not in transport_header
     assert (
@@ -2086,9 +2085,10 @@ def test_session_transport_does_not_invent_a_public_timeout() -> None:
         in timeout_contract
     )
     assert (
-        'env_int_or_default("XDEBUG_FILE_TRANSPORT_TIMEOUT_MS", 300000'
+        '"XDEBUG_FILE_TRANSPORT_TIMEOUT_MS", 300000, 1, INT_MAX'
         in env_config
     )
+    assert "strict_env_ll(" in env_config
 
 
 def test_static_trace_result_limit_has_one_public_owner() -> None:

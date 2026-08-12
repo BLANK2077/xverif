@@ -1,46 +1,41 @@
 #include "json_line_reader.h"
 
-#include <cerrno>
-#include <cstring>
 #include <string>
 
-#include <unistd.h>
-
 namespace xdebug_engine {
+
+JsonLineReadStatus read_bounded_json_line_status(
+    int fd, nlohmann::json& response, std::size_t max_bytes,
+    const xdebug_core::TransportDeadline& deadline) {
+    std::string line;
+    const xdebug_core::TransportIoStatus io_status =
+        xdebug_core::read_bounded_line_deadline(
+            fd, line, max_bytes, deadline);
+    switch (io_status) {
+    case xdebug_core::TransportIoStatus::EndOfFile:
+        return JsonLineReadStatus::EndOfFile;
+    case xdebug_core::TransportIoStatus::Timeout:
+        return JsonLineReadStatus::Timeout;
+    case xdebug_core::TransportIoStatus::TooLarge:
+        return JsonLineReadStatus::TooLarge;
+    case xdebug_core::TransportIoStatus::IoError:
+        return JsonLineReadStatus::IoError;
+    case xdebug_core::TransportIoStatus::Ok:
+        break;
+    }
+    try {
+        response = nlohmann::json::parse(line);
+        return JsonLineReadStatus::Ok;
+    } catch (...) {
+        return JsonLineReadStatus::InvalidJson;
+    }
+}
 
 bool read_bounded_json_line(int fd,
                             nlohmann::json& response,
                             std::size_t max_bytes) {
-    constexpr std::size_t kReadBlockBytes = 64U * 1024U;
-    char buffer[kReadBlockBytes];
-    std::string line;
-
-    while (true) {
-        const ssize_t n = read(fd, buffer, sizeof(buffer));
-        if (n < 0 && errno == EINTR) continue;
-        if (n <= 0) return false;
-
-        const std::size_t bytes_read = static_cast<std::size_t>(n);
-        const void* newline = std::memchr(buffer, '\n', bytes_read);
-        const std::size_t payload_bytes =
-            newline == nullptr
-                ? bytes_read
-                : static_cast<const char*>(newline) - buffer;
-        if (line.size() > max_bytes ||
-            payload_bytes > max_bytes - line.size()) {
-            return false;
-        }
-        line.append(buffer, payload_bytes);
-
-        if (newline != nullptr) {
-            try {
-                response = nlohmann::json::parse(line);
-                return true;
-            } catch (...) {
-                return false;
-            }
-        }
-    }
+    return read_bounded_json_line_status(fd, response, max_bytes) ==
+           JsonLineReadStatus::Ok;
 }
 
 }  // namespace xdebug_engine

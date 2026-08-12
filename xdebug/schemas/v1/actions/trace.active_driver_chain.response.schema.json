@@ -536,394 +536,45 @@
           "type": "integer",
           "minimum": 0
         },
-        "protocol": {
+        "limit_name": {
           "enum": [
-            "apb",
-            "axi",
-            "stream"
+            "request_bytes"
           ]
         },
-        "key_summary": {
-          "type": "string"
-        },
-        "manifest_path": {
-          "type": "string",
-          "minLength": 1
-        },
-        "resource": {
-          "enum": [
-            "daidir",
-            "fsdb"
-          ]
-        },
-        "expected_path": {
-          "type": "string",
-          "minLength": 1
-        },
-        "actual_path": {
-          "type": "string",
-          "minLength": 1
-        },
-        "expected_size_bytes": {
+        "received_bytes": {
           "type": "integer",
           "minimum": 0
         },
-        "actual_size_bytes": {
-          "type": [
-            "null",
-            "integer"
-          ],
-          "minimum": 0
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1
         },
-        "expected_sha256": {
-          "type": "string",
-          "pattern": "^[0-9a-fA-F]{64}$"
-        },
-        "actual_sha256": {
-          "anyOf": [
-            {
-              "type": "null"
-            },
-            {
-              "type": "string",
-              "pattern": "^[0-9a-fA-F]{64}$"
-            }
-          ]
-        },
-        "manifest_schema_version": {
-          "type": "string",
-          "minLength": 1
-        },
-        "manifest_state": {
-          "type": "string",
-          "minLength": 1
-        },
-        "session_id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "session_mode": {
+        "transport": {
           "enum": [
-            "design",
-            "waveform",
-            "combined"
-          ]
-        },
-        "session_transport": {
-          "enum": [
+            "stdio",
             "uds",
             "tcp",
             "file"
           ]
         },
-        "idle_sec": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "idle_timeout_sec": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "cleanup_succeeded": {
-          "type": "boolean"
-        },
-        "termination_confirmed": {
-          "type": "boolean"
-        },
-        "cancel_state": {
+        "phase": {
           "enum": [
-            "confirmed",
-            "unknown"
+            "public_request",
+            "internal_request",
+            "transport_request",
+            "transport_response"
           ]
         },
-        "session_state": {
-          "enum": [
-            "cleanup_failed",
-            "terminated_on_timeout"
-          ]
-        },
-        "lifecycle_state": {
-          "enum": [
-            "cleanup_failed"
-          ]
-        },
-        "compensation_status": {
-          "enum": [
-            "cleaned",
-            "not_created",
-            "token_mismatch",
-            "cleanup_failed"
-          ]
-        },
-        "backend_error_code": {
+        "config_key": {
           "type": "string",
           "minLength": 1
         },
-        "timeout_ms": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "exit_status": {
-          "type": "integer"
-        },
-        "health_status": {
-          "type": "string",
-          "minLength": 1
-        },
-        "resource_path": {
-          "type": "string",
-          "minLength": 1
-        },
-        "change_kind": {
+        "config_source": {
           "enum": [
-            "missing",
-            "type_changed",
-            "path_changed",
-            "fingerprint_upgrade_required",
-            "identity_changed",
-            "metadata_changed",
-            "identity_and_metadata_changed"
+            "environment",
+            "default",
+            "request"
           ]
-        },
-        "expected_resource_identity": {
-          "type": "object",
-          "properties": {
-            "canonical_path": {
-              "type": "string",
-              "minLength": 1
-            },
-            "device": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "inode": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "size_bytes": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "mtime_ns": {
-              "type": "integer",
-              "minimum": 0
-            }
-          },
-          "additionalProperties": false,
-          "required": [
-            "canonical_path",
-            "device",
-            "inode",
-            "mtime_ns",
-            "size_bytes"
-          ]
-        },
-        "actual_resource_identity": {
-          "anyOf": [
-            {
-              "type": "null"
-            },
-            {
-              "type": "object",
-              "properties": {
-                "canonical_path": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "device": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "inode": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "size_bytes": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "mtime_ns": {
-                  "type": "integer",
-                  "minimum": 0
-                }
-              },
-              "additionalProperties": false,
-              "required": [
-                "canonical_path",
-                "device",
-                "inode",
-                "mtime_ns",
-                "size_bytes"
-              ]
-            }
-          ]
-        },
-        "requested_count": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "removed_count": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "retained_count": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "failed_session_ids": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "failure_kind": {
-          "type": "string"
-        },
-        "failure_phase": {
-          "enum": [
-            "npi_init",
-            "npi_load_design",
-            "npi_fsdb_open"
-          ]
-        },
-        "startup_reason": {
-          "type": "string"
-        },
-        "native_error_summary": {
-          "type": "string"
-        },
-        "diagnostic_log": {
-          "type": "string"
-        },
-        "advisories": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "code": {
-                "type": "string"
-              },
-              "severity": {
-                "type": "string"
-              },
-              "message": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": false,
-            "required": [
-              "code",
-              "message",
-              "severity"
-            ]
-          }
-        },
-        "validation_issues": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/validationIssue"
-          },
-          "minItems": 1
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "code",
-        "error_layer",
-        "message",
-        "recoverable"
-      ]
-    },
-    "genericError": {
-      "type": "object",
-      "properties": {
-        "code": {
-          "type": "string"
-        },
-        "message": {
-          "type": "string"
-        },
-        "recoverable": {
-          "type": "boolean"
-        },
-        "error_layer": {
-          "enum": [
-            "schema",
-            "handler",
-            "wrapper",
-            "session_manager",
-            "transport",
-            "internal"
-          ]
-        },
-        "invalid_arg": {
-          "type": "string"
-        },
-        "expected": {
-          "type": "string"
-        },
-        "received": {
-          "$ref": "#/$defs/jsonValue"
-        },
-        "received_type": {
-          "type": "string"
-        },
-        "received_redacted": {
-          "type": "boolean"
-        },
-        "available_values": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "did_you_mean": {
-          "type": "string",
-          "minLength": 1
-        },
-        "schema_path": {
-          "type": "string"
-        },
-        "required_any_of": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "missing_name": {
-          "type": "string"
-        },
-        "missing_resource": {
-          "type": "string"
-        },
-        "next_actions": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "example_note": {
-          "type": "string"
-        },
-        "correct_example": {
-          "$ref": "#/$defs/jsonValue"
-        },
-        "cause_code": {
-          "type": "string"
-        },
-        "validation": {
-          "$ref": "#/$defs/jsonValue"
-        },
-        "current_estimated_bytes": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "hard_max_bytes": {
-          "type": "integer",
-          "minimum": 0
         },
         "protocol": {
           "enum": [
@@ -1222,6 +873,60 @@
         "error_layer",
         "message",
         "recoverable"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "REQUEST_TOO_LARGE"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "recoverable": {
+                "const": false
+              }
+            },
+            "required": [
+              "limit_name",
+              "received_bytes",
+              "max_bytes",
+              "transport",
+              "phase",
+              "next_actions"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "INVALID_CONFIG"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "recoverable": {
+                "const": false
+              }
+            },
+            "required": [
+              "config_key",
+              "config_source",
+              "expected",
+              "next_actions"
+            ]
+          }
+        }
       ]
     },
     "tool": {

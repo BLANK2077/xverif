@@ -135,12 +135,13 @@ int main() {
     Json hash_summary = xdebug_core::request_summary_for_log(request);
     assert(hash_summary["target"]["daidir"].get<std::string>().find("<path:sha256:") == 0);
     setenv("XDEBUG_LOG_PATH_MODE", "invalid-mode", 1);
-    Json invalid_mode_summary =
-        xdebug_core::request_summary_for_log(request);
-    assert(
-        invalid_mode_summary["target"]["daidir"]
-            .get<std::string>()
-            .find("<path:sha256:") == 0);
+    bool invalid_mode_rejected = false;
+    try {
+        (void)xdebug_core::request_summary_for_log(request);
+    } catch (const std::invalid_argument&) {
+        invalid_mode_rejected = true;
+    }
+    assert(invalid_mode_rejected);
     unsetenv("XDEBUG_LOG_PATH_MODE");
 
     const std::string sensitive_value =

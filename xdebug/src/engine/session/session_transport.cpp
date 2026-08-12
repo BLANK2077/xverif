@@ -7,6 +7,7 @@
 #include "transport/file_exchange.h"
 #include "session/transport_timeout.h"
 #include "session/transport_common.h"
+#include "json_line_reader.h"
 
 #include <cstdio>
 #include <cstring>
@@ -74,13 +75,15 @@ bool read_endpoint_file(const std::string& session_id, SessionInfo& endpoint) {
 
 // --- Connection management (uses shared socket helpers) ---
 
-int connect_session_endpoint(const SessionInfo& session) {
+int connect_session_endpoint(
+    const SessionInfo& session,
+    const xdebug_core::TransportDeadline& deadline) {
     if (is_file_transport(session)) return -1;
     if (is_tcp_transport(session)) {
-        return xdebug_core::connect_tcp(session.host, session.port);
+        return xdebug_core::connect_tcp(session.host, session.port, deadline);
     }
     if (session.transport != "uds" || session.socket_path.empty()) return -1;
-    return xdebug_core::connect_uds(session.socket_path);
+    return xdebug_core::connect_uds(session.socket_path, deadline);
 }
 
 // --- File transport request ---
@@ -147,7 +150,8 @@ static bool request_simple(const SessionInfo& session, const std::string& action
         data = response.value("data", Json::object());
         return ok;
     }
-    int fd = connect_session_endpoint(session);
+    const xdebug_core::TransportDeadline deadline(2000);
+    int fd = connect_session_endpoint(session, deadline);
     if (fd < 0) return false;
     Json request =
         xdebug_core::make_internal_control_request(action);
@@ -157,18 +161,17 @@ static bool request_simple(const SessionInfo& session, const std::string& action
             session.auth_token);
     }
     std::string msg = request.dump() + "\n";
-    bool ok = write(fd, msg.c_str(), msg.size()) == static_cast<ssize_t>(msg.size());
-    std::string line;
+    bool ok = xdebug_core::write_all_deadline(
+                  fd, msg.c_str(), msg.size(), deadline) ==
+              xdebug_core::TransportIoStatus::Ok;
     if (ok) {
-        ok = xdebug_core::read_line_timeout(fd, line);
+        Json response;
+        ok = read_bounded_json_line_status(
+                 fd, response, kMaxSessionJsonResponseBytes, deadline) ==
+             JsonLineReadStatus::Ok;
         if (ok) {
-            try {
-                Json response = Json::parse(line);
-                ok = response.value("ok", false);
-                data = response.value("data", Json::object());
-            } catch (...) {
-                ok = false;
-            }
+            ok = response.value("ok", false);
+            data = response.value("data", Json::object());
         }
     }
     close(fd);

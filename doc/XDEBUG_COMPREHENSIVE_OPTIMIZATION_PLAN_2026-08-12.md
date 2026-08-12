@@ -168,7 +168,7 @@ native CLI、engine、session、MCP、SDK-free loop、schema、example、XOUT、
 
 ### C05 Transport 与严格配置
 
-状态：`pending`
+状态：`completed`
 
 - block reader、统一 request size、REQUEST_TOO_LARGE。
 - write-all/EINTR/partial I/O/nonblocking connect/remaining deadline。
@@ -308,10 +308,10 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 | --- | --- | --- | --- |
 | 前置评审基线 | completed | `5fe239c` | 三份文档；`git diff --cached --check` |
 | C01 计划书 | completed | `431c615` | 文档检查、`git diff --cached --check` |
-| C02 安全/batch | completed | 本提交 | 安全随机、batch/MCP、XOUT 边界及 focused suites 全绿 |
-| C03 Session | completed | 本提交 | 生命周期 lease/NPI 串行、deadline/超时终止、list 纯读、close graceful/force 与全 surface 迁移完成 |
-| C04 FSDB identity | completed | 本提交 | registry v3 纳秒指纹、open 二次校验、query 前 fail-closed gate 与 RESOURCE_CHANGED AI 证据完成 |
-| C05 Transport | pending | - | - |
+| C02 安全/batch | completed | `0fe1328` | 安全随机、batch/MCP、XOUT 边界及 focused suites 全绿 |
+| C03 Session | completed | `111d386` | 生命周期 lease/NPI 串行、deadline/超时终止、list 纯读、close graceful/force 与全 surface 迁移完成 |
+| C04 FSDB identity | completed | `7e27303` | registry v3 纳秒指纹、open 二次校验、query 前 fail-closed gate 与 RESOURCE_CHANGED AI 证据完成 |
+| C05 Transport | completed | 本提交 | 64 MiB 统一边界、block I/O、单调 deadline、严格 env 与结构化错误完成 |
 | C06 Cache | pending | - | - |
 | C07 Hierarchy | pending | - | - |
 | C08 APB export | pending | - | - |
@@ -337,6 +337,10 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 | 2026-08-12 | C04 | `xdebug.contract` / `xdebug.cpp_unit` / `xdebug.static` | host | PASS | 112 / 1 / 107 passed |
 | 2026-08-12 | C04 | `xdebug.session` | host | PASS | 41 passed；含同 size/mtime-ns 原子替换 inode 回归 |
 | 2026-08-12 | C04 | `xdebug.synthetic_existing` + `xdebug.active_semantics` | host | PASS | 3 passed |
+| 2026-08-12 | C05 | `make -C xdebug all` / response schema 生成检查 / schema / examples | host | PASS | 构建通过；279 schemas；218 examples；生成一致 |
+| 2026-08-12 | C05 | `xdebug.cpp_unit` / `xdebug.static` / `xdebug.contract` | host | PASS | 1 / 108 / 112 passed |
+| 2026-08-12 | C05 | `xdebug.session` / MCP direct / MCP fake LSF | host | PASS | 41 / 4 / 3 passed |
+| 2026-08-12 | C05 | `skills.xverif` / `skills.xverif_admin` | host | PASS | 16 / 1 passed |
 
 ## 11. 偏差与阻塞记录
 

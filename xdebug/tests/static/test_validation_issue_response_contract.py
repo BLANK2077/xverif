@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import functools
 import importlib.util
+import json
 import re
 import sys
 from pathlib import Path
@@ -196,7 +197,7 @@ def test_generic_and_every_action_error_accept_only_strict_issues() -> None:
     expected = generator.validation_issue_schema()
     for action, schema in schemas.items():
         assert schema["$defs"]["validationIssue"] == expected, action
-        for definition_name in ("error", "genericError"):
+        for definition_name in ("error",):
             assert schema["$defs"][definition_name]["properties"][
                 "validation_issues"
             ] == {
@@ -257,9 +258,8 @@ def test_every_batch_child_error_keeps_the_namespaced_issue_contract() -> None:
         assert root_name.endswith("__response"), action
         issue_name = f"{stem}__validationIssue"
         error_name = f"{stem}__error"
-        generic_error_name = f"{stem}__genericError"
         assert definitions[issue_name] == expected, action
-        for candidate in (error_name, generic_error_name):
+        for candidate in (error_name,):
             issue_array = definitions[candidate]["properties"][
                 "validation_issues"
             ]
@@ -323,3 +323,30 @@ def test_runtime_multi_issue_publisher_uses_exact_nonempty_fields() -> None:
         source,
         re.DOTALL,
     )
+
+
+def test_operational_error_contracts_are_strict_and_actionable() -> None:
+    generator = _generator()
+    schema = generator.generic_error_response_schema()
+    for validator_class in (Draft7Validator, Draft202012Validator):
+        validator = validator_class(schema)
+        for name in (
+            "request_too_large.error.json",
+            "invalid_config.error.json",
+        ):
+            response = json.loads(
+                (XDEBUG / "examples" / "errors" / name).read_text(
+                    encoding="utf-8"
+                )
+            )
+            validator.validate(response)
+            missing_evidence = copy.deepcopy(response)
+            if response["error"]["code"] == "REQUEST_TOO_LARGE":
+                missing_evidence["error"].pop("max_bytes")
+            else:
+                missing_evidence["error"].pop("config_key")
+            assert not validator.is_valid(missing_evidence)
+
+            retryable = copy.deepcopy(response)
+            retryable["error"]["recoverable"] = True
+            assert not validator.is_valid(retryable)

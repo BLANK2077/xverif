@@ -10,6 +10,7 @@
 #include "core/npi/time_contract.h"
 #include "core/session/session_timeout.h"
 #include "core/session/request_deadline.h"
+#include "core/session/transport_common.h"
 #include "core/schema/internal_request_contract.h"
 #include "core/schema/runtime_schema_validator.h"
 #include "core/transport/file_exchange.h"
@@ -386,25 +387,8 @@ static void end_npi_startup_capture() {
 }
 
 static bool send_all(int fd, const char* buf, size_t len) {
-    size_t sent = 0;
-    while (sent < len) {
-        ssize_t n = write(fd, buf + sent, len - sent);
-        if (n <= 0) return false;
-        sent += n;
-    }
-    return true;
-}
-
-static bool read_command_line(int fd, char* line, size_t line_size) {
-    size_t total = 0;
-    while (total < line_size - 1) {
-        ssize_t n = read(fd, line + total, 1);
-        if (n <= 0) return false;
-        if (line[total] == '\n') break;
-        total++;
-    }
-    line[total] = '\0';
-    return true;
+    return xdebug_core::write_all_deadline(fd, buf, len) ==
+           xdebug_core::TransportIoStatus::Ok;
 }
 
 static Json ok_response(const Json& data = Json::object()) {
@@ -420,6 +404,24 @@ static Json error_response(Json error) {
 static Json error_response(const std::string& code, const std::string& message) {
     return error_response(
         xdebug_core::DiagnosticErrorBuilder::handler(code, message).to_json());
+}
+
+static Json request_too_large_response() {
+    const std::string message =
+        "JSON request exceeds the session transport limit";
+    Json error = xdebug_core::DiagnosticErrorBuilder::transport(
+                     "REQUEST_TOO_LARGE", message)
+                     .recoverable(false)
+                     .to_json();
+    error["limit_name"] = "request_bytes";
+    error["received_bytes"] = xdebug_core::kMaxSessionJsonBytes + 1U;
+    error["max_bytes"] = xdebug_core::kMaxSessionJsonBytes;
+    error["transport"] = g_transport;
+    error["phase"] = "transport_request";
+    error["next_actions"] = Json::array({
+        "Split the batch into smaller requests or use a bounded export action."
+    });
+    return error_response(error);
 }
 
 static void patch_example_path(Json& example, const std::string& invalid_arg, const Json& value) {
@@ -653,8 +655,14 @@ static int file_transport_loop(const std::string& file_dir) {
 
 static bool handle_client(int client_fd, bool& should_quit) {
     should_quit = false;
-    char line[1024 * 1024] = {};
-    if (!read_command_line(client_fd, line, sizeof(line))) return false;
+    std::string line;
+    const xdebug_core::TransportIoStatus read_status =
+        xdebug_core::read_bounded_line_deadline(
+            client_fd, line, xdebug_core::kMaxSessionJsonBytes);
+    if (read_status == xdebug_core::TransportIoStatus::TooLarge) {
+        return send_response(client_fd, request_too_large_response());
+    }
+    if (read_status != xdebug_core::TransportIoStatus::Ok) return false;
     Json request;
     try {
         request = Json::parse(line);
@@ -807,6 +815,12 @@ int server_main(int argc, char** argv) {
         return 1;
     }
     arg_idx++;
+    std::string runtime_config_error;
+    if (!xdebug_core::xdebug_file_and_log_env_config_valid(
+            runtime_config_error)) {
+        fprintf(stderr, "%s\n", runtime_config_error.c_str());
+        return 1;
+    }
     server_debug_open_log();
     server_debug_log("server_main: parsed session_id=%s argc=%d", g_session_id.c_str(), argc);
     xdebug_core::log_lifecycle_event("engine", g_session_id, "server.start", true,

@@ -884,9 +884,20 @@ APB 配置的基础字段为 `paddr/pwdata/prdata/pwrite/penable/psel/clk/rst_n`
 - `TIME_SPEC_INVALID`
 - `WAVE_QUERY_FAILED`
 - `INTERNAL_ENGINE_FAILED`
+- `REQUEST_TOO_LARGE`
+- `INVALID_CONFIG`
 - `INTERNAL_ERROR`
 
 所有脚本必须先检查 `ok`。失败时读取 `error.code` 和 `error.message`，不要解析 stderr 或人类文本。
+
+`REQUEST_TOO_LARGE` 是请求边界的失败闭包：`error` 会给出 `limit_name=request_bytes`、
+`received_bytes`、`max_bytes`、`transport`、`phase` 和 `next_actions`。不要原样重试、自动提高
+环境上限、截断 JSON 或切换 transport；应按 `next_actions` 拆分 batch、减少内联配置，或改用
+action 明确支持的有界查询/export。
+
+`INVALID_CONFIG` 会给出 `config_key`、`config_source`、`expected` 和 `next_actions`。它表示当前
+进程的配置不能安全执行请求，不会静默采用默认值。修正环境或 request 配置后启动新进程；敏感
+配置的原值不会回显，`received_redacted=true` 表示值已隐藏。
 
 `meta.truncated=true` 表示结果被主动截断。优先缩小查询范围或提高 action-specific `line_limit`；需要完整结果时使用对应 export action。
 

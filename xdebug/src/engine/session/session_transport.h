@@ -2,6 +2,7 @@
 
 #include "session_registry.h"
 #include "json.hpp"
+#include "session/transport_common.h"
 #include "session/transport_timeout.h"
 
 #include <string>
@@ -30,7 +31,10 @@ struct SessionFileExchangeResult {
 bool write_endpoint_file(const SessionInfo& session);
 bool read_endpoint_file(const std::string& session_id, SessionInfo& endpoint);
 
-int connect_session_endpoint(const SessionInfo& session);
+int connect_session_endpoint(
+    const SessionInfo& session,
+    const xdebug_core::TransportDeadline& deadline =
+        xdebug_core::TransportDeadline());
 bool send_file_request_to_endpoint(const SessionInfo& session,
                                    const nlohmann::json& request,
                                    nlohmann::json& response,

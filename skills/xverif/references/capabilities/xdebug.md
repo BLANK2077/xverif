@@ -140,6 +140,8 @@ zero-wait 或 no-error。
 
 - 参数不确定：查询 action schema，读取 `invalid_arg/expected/allowed_values/did_you_mean/required_any_of/correct_example`。
 - 响应 truncated/partial：缩小查询或使用该 action 明确支持的 limits/export。
+- `REQUEST_TOO_LARGE`：读取 `received_bytes/max_bytes/transport/phase`，按 `next_actions` 拆分 batch、减少内联配置或使用有界 export；不要原样重试、提高全局上限、截断请求或切换 transport。
+- `INVALID_CONFIG`：读取 `config_key/config_source/expected`，按 `next_actions` 修正配置并启动新进程；`recoverable=false` 表示同一进程内重试无效，`received_redacted=true` 表示敏感原值已隐藏。
 - session/transport/LSF/timeout：转 `xverif-admin`，不自动 retry/reopen/fallback。
 
 ## 深入参考

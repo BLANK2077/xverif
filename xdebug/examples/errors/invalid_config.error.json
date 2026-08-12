@@ -1,0 +1,28 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": false,
+  "action": "session.open",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": null,
+  "summary": {
+    "status": "error",
+    "error_code": "INVALID_CONFIG"
+  },
+  "data": null,
+  "error": {
+    "code": "INVALID_CONFIG",
+    "message": "XDEBUG_FILE_MAX_JSON_BYTES must be a positive bounded integer",
+    "recoverable": false,
+    "error_layer": "handler",
+    "config_key": "XDEBUG_FILE_MAX_JSON_BYTES",
+    "config_source": "environment",
+    "expected": "integer in the supported range",
+    "received_redacted": true,
+    "next_actions": [
+      "Set XDEBUG_FILE_MAX_JSON_BYTES to a valid value and start a new xdebug process."
+    ]
+  }
+}

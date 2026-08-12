@@ -161,6 +161,46 @@
           "type": "integer",
           "minimum": 0
         },
+        "limit_name": {
+          "enum": [
+            "request_bytes"
+          ]
+        },
+        "received_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "transport": {
+          "enum": [
+            "stdio",
+            "uds",
+            "tcp",
+            "file"
+          ]
+        },
+        "phase": {
+          "enum": [
+            "public_request",
+            "internal_request",
+            "transport_request",
+            "transport_response"
+          ]
+        },
+        "config_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "config_source": {
+          "enum": [
+            "environment",
+            "default",
+            "request"
+          ]
+        },
         "protocol": {
           "enum": [
             "apb",
@@ -458,6 +498,60 @@
         "error_layer",
         "message",
         "recoverable"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "REQUEST_TOO_LARGE"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "recoverable": {
+                "const": false
+              }
+            },
+            "required": [
+              "limit_name",
+              "received_bytes",
+              "max_bytes",
+              "transport",
+              "phase",
+              "next_actions"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "INVALID_CONFIG"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "recoverable": {
+                "const": false
+              }
+            },
+            "required": [
+              "config_key",
+              "config_source",
+              "expected",
+              "next_actions"
+            ]
+          }
+        }
       ]
     },
     "tool": {

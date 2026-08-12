@@ -1,6 +1,7 @@
 #include "transport/file_exchange.h"
 
 #include "common/env_config.h"
+#include "session/transport_common.h"
 
 #include <algorithm>
 #include <atomic>
@@ -122,13 +123,22 @@ std::string claim_id_from_name(const std::string& name) {
     return dot == std::string::npos ? name : name.substr(0, dot);
 }
 
-bool read_json_limited(const std::string& path, Json& out, std::string& message) {
+enum class JsonFileReadStatus {
+    Ok,
+    OpenFailed,
+    ReadFailed,
+    TooLarge,
+    InvalidJson,
+};
+
+JsonFileReadStatus read_json_limited(const std::string& path, Json& out,
+                                     std::string& message,
+                                     std::size_t max_bytes) {
     int fd = open(path.c_str(), O_RDONLY);
     if (fd < 0) {
         message = std::string("open failed: ") + std::strerror(errno);
-        return false;
+        return JsonFileReadStatus::OpenFailed;
     }
-    int max_bytes = file_exchange_max_json_bytes();
     std::string text;
     char buf[8192];
     while (true) {
@@ -137,13 +147,13 @@ bool read_json_limited(const std::string& path, Json& out, std::string& message)
             if (errno == EINTR) continue;
             message = std::string("read failed: ") + std::strerror(errno);
             close(fd);
-            return false;
+            return JsonFileReadStatus::ReadFailed;
         }
         if (n == 0) break;
-        if (text.size() + static_cast<size_t>(n) > static_cast<size_t>(max_bytes)) {
-            message = "JSON file exceeds XDEBUG_FILE_MAX_JSON_BYTES";
+        if (text.size() + static_cast<size_t>(n) > max_bytes) {
+            message = "JSON file exceeds the transport size limit";
             close(fd);
-            return false;
+            return JsonFileReadStatus::TooLarge;
         }
         text.append(buf, static_cast<size_t>(n));
     }
@@ -152,12 +162,12 @@ bool read_json_limited(const std::string& path, Json& out, std::string& message)
         out = Json::parse(text);
         if (!out.is_object()) {
             message = "JSON root is not an object";
-            return false;
+            return JsonFileReadStatus::InvalidJson;
         }
-        return true;
+        return JsonFileReadStatus::Ok;
     } catch (const std::exception& e) {
         message = std::string("JSON parse failed: ") + e.what();
-        return false;
+        return JsonFileReadStatus::InvalidJson;
     }
 }
 
@@ -240,8 +250,11 @@ bool fail_claim(const std::string& dir,
                 const std::string& message,
                 const Json& worker,
                 const Json& error_detail = Json::object()) {
-    Json response = make_response_wrapper(id, false, status, message, file_exchange_now_us(), worker,
-                                          Json::object(), error_obj(status, message, error_detail));
+    const std::string error_code =
+        status == "request_too_large" ? "REQUEST_TOO_LARGE" : status;
+    Json response = make_response_wrapper(
+        id, false, status, message, file_exchange_now_us(), worker,
+        Json::object(), error_obj(error_code, message, error_detail));
     write_response(dir, id, response);
     std::string dst = join_path(join_path(dir, "failed"), id + "." + status_suffix(status) + ".json");
     return move_file(claim_path, dst);
@@ -382,6 +395,19 @@ FileExchangeResult file_exchange_send_request(const std::string& dir,
                                                const Json& request,
                                                int timeout_ms) {
     FileExchangeResult result;
+    if (request.dump().size() > kMaxSessionJsonBytes) {
+        result.status = "request_too_large";
+        result.message = "JSON request exceeds the session transport limit";
+        return result;
+    }
+    FileTransportEnvConfig env_config;
+    std::string env_error;
+    if (!xdebug_file_transport_env_config(
+            env_config, env_error, timeout_ms)) {
+        result.status = "invalid_config";
+        result.message = env_error;
+        return result;
+    }
     if (!ensure_file_transport_layout(dir)) {
         result.status = "layout_failed";
         result.message = "failed to create file transport directory";
@@ -409,13 +435,18 @@ FileExchangeResult file_exchange_send_request(const std::string& dir,
         return result;
     }
 
-    int poll_ms = file_exchange_poll_interval_ms();
+    const int poll_ms = env_config.poll_interval_ms;
     while (file_exchange_now_us() < deadline) {
         if (file_exists(rsp_path)) {
             Json response_wrapper;
             std::string read_error;
-            if (!read_json_limited(rsp_path, response_wrapper, read_error)) {
-                result.status = "invalid_response";
+            const JsonFileReadStatus read_status = read_json_limited(
+                rsp_path, response_wrapper, read_error,
+                static_cast<std::size_t>(file_exchange_max_json_bytes()));
+            if (read_status != JsonFileReadStatus::Ok) {
+                result.status = read_status == JsonFileReadStatus::TooLarge
+                                    ? "response_too_large"
+                                    : "invalid_response";
                 result.message = read_error;
                 return result;
             }
@@ -426,7 +457,7 @@ FileExchangeResult file_exchange_send_request(const std::string& dir,
             result.response_wrapper = response_wrapper;
             result.response = response_wrapper.value("response", Json::object());
 
-            if (file_exchange_keep_history()) {
+            if (env_config.keep_history) {
                 move_file(rsp_path, join_path(join_path(dir, "done"), result.request_id + ".response.json"));
             } else {
                 unlink(rsp_path.c_str());
@@ -470,10 +501,16 @@ FileClaimResult file_exchange_claim_one(const std::string& dir,
 
         Json wrapper;
         std::string read_error;
-        if (!read_json_limited(claim_path, wrapper, read_error)) {
-            result.status = "invalid_request";
+        constexpr std::size_t kFileRpcEnvelopeOverheadBytes = 64U * 1024U;
+        const JsonFileReadStatus read_status = read_json_limited(
+            claim_path, wrapper, read_error,
+            kMaxSessionJsonBytes + kFileRpcEnvelopeOverheadBytes);
+        if (read_status != JsonFileReadStatus::Ok) {
+            result.status = read_status == JsonFileReadStatus::TooLarge
+                                ? "request_too_large"
+                                : "invalid_request";
             result.message = read_error;
-            fail_claim(dir, id, claim_path, "invalid_request", read_error, worker);
+            fail_claim(dir, id, claim_path, result.status, read_error, worker);
             return result;
         }
         std::string validation_error;
@@ -481,6 +518,14 @@ FileClaimResult file_exchange_claim_one(const std::string& dir,
             result.status = "invalid_request";
             result.message = validation_error;
             fail_claim(dir, id, claim_path, "invalid_request", validation_error, worker);
+            return result;
+        }
+        if (wrapper["request"].dump().size() > kMaxSessionJsonBytes) {
+            result.status = "request_too_large";
+            result.message =
+                "JSON request exceeds the session transport limit";
+            fail_claim(dir, id, claim_path, result.status, result.message,
+                       worker);
             return result;
         }
         long long now = file_exchange_now_us();
@@ -536,7 +581,11 @@ int file_exchange_scan_stale_claims(const std::string& dir,
         std::string read_error;
         std::string id = claim_id_from_name(name.substr(0, name.size() - 5));
         long long created = 0;
-        if (read_json_limited(path, wrapper, read_error) && wrapper.contains("created_at_us") &&
+        if (read_json_limited(
+                path, wrapper, read_error,
+                kMaxSessionJsonBytes + 64U * 1024U) ==
+                JsonFileReadStatus::Ok &&
+            wrapper.contains("created_at_us") &&
             wrapper["created_at_us"].is_number_integer()) {
             id = wrapper.value("id", id);
             if (wrapper.contains("claimed_at_us") && wrapper["claimed_at_us"].is_number_integer()) {
