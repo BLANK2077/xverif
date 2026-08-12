@@ -612,7 +612,26 @@ SessionEnsureResult SessionManager::ensure_session(
                    : session.bind_host)
             : transport_options.host;
         session.port = transport_options.port;
-        session.auth_token = generate_auth_token();
+        std::string auth_token_error;
+        const bool force_secure_random_failure =
+            xdebug_core::env_raw_string(
+                "XDEBUG_ENGINE_TEST_SECURE_RANDOM_FAIL") == "1";
+        if (force_secure_random_failure ||
+            !generate_auth_token(session.auth_token, auth_token_error)) {
+            result.status = "secure_random_unavailable";
+            result.message = force_secure_random_failure
+                ? "Failed to generate the TCP authentication token"
+                : (auth_token_error.empty()
+                       ? "Failed to generate the TCP authentication token"
+                       : auth_token_error);
+            xdebug_core::log_lifecycle_event(
+                "engine",
+                session_name,
+                "ensure_session.secure_random_unavailable",
+                false,
+                {{"transport", requested_transport}});
+            return result;
+        }
     }
     if (!canonical_dbdir.empty() &&
         !populate_dbdir_metadata(canonical_dbdir, session)) {

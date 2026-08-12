@@ -16,6 +16,67 @@ def test_debug_query_rejects_native_session_action() -> None:
     assert error["correct_example"]["tool"] == "xverif_debug_session_close"
 
 
+@pytest.mark.parametrize(
+    ("requests", "forbidden_action", "child_path"),
+    [
+        (
+            [
+                {"api_version": "xdebug.v1", "action": "actions", "args": {}},
+                {"api_version": "xdebug.v1", "action": "session.kill", "args": {}},
+            ],
+            "session.kill",
+            "args.requests[1].action",
+        ),
+        (
+            [
+                {
+                    "api_version": "xdebug.v1",
+                    "action": "batch",
+                    "args": {
+                        "requests": [
+                            {
+                                "api_version": "xdebug.v1",
+                                "action": "session.open",
+                                "args": {"name": "unmanaged"},
+                            }
+                        ]
+                    },
+                }
+            ],
+            "session.open",
+            "args.requests[0].args.requests[0].action",
+        ),
+    ],
+)
+def test_debug_query_rejects_native_session_action_in_batch_before_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+    requests: list[dict],
+    forbidden_action: str,
+    child_path: str,
+) -> None:
+    debug = _RecordingDebug()
+    monkeypatch.setattr(server, "debug", debug)
+
+    rsp = server.xverif_debug_query(
+        action="batch",
+        args={"mode": "continue_on_error", "requests": requests},
+        output_format="json",
+    )
+
+    assert rsp["ok"] is False
+    error = rsp["error"]
+    assert error["code"] == "NATIVE_SESSION_ACTION_FORBIDDEN"
+    assert error["error_layer"] == "wrapper"
+    assert error["invalid_arg"] == child_path
+    assert error["batch_child_path"] == child_path
+    expected_tool = {
+        "session.kill": "xverif_debug_session_kill",
+        "session.open": "xverif_debug_session_open",
+    }
+    assert error["correct_example"]["tool"] == expected_tool[forbidden_action]
+    assert debug.calls == []
+
+
 def test_loop_wrapper_rejects_native_session_action() -> None:
     service = LoopWrapperService(mode="direct", xdebug_bin="false", xcov_bin="false")
     rsp = service.dispatch(

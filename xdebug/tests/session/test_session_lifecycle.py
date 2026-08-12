@@ -221,7 +221,8 @@ def test_session_open_list_doctor_close_for_each_resource_mode(
                 "session.open",
                 target=resource_targets[mode],
                 args={"name": name},
-            )
+            ),
+            env={"XDEBUG_ENGINE_TEST_SECURE_RANDOM_FAIL": "1"},
         )
         assert opened.ok
         assert opened.response["summary"] == {"status": "opened"}
@@ -560,7 +561,8 @@ def test_session_file_transport_open_query_doctor_and_close(
                 "session.open",
                 target=resource_targets["waveform"],
                 args={"name": name, "transport": "file"},
-            )
+            ),
+            env={"XDEBUG_ENGINE_TEST_SECURE_RANDOM_FAIL": "1"},
         )
         assert opened.ok
         assert opened.response["session"]["transport"] == "file"
@@ -616,6 +618,37 @@ def test_session_file_transport_open_query_doctor_and_close(
         )
     finally:
         _kill_all(cli_runner)
+
+
+@pytest.mark.session
+@pytest.mark.waveform
+def test_session_tcp_auth_secure_random_failure_fails_closed(
+    resource_targets: dict,
+    cli_runner: CliRunner,
+    isolated_home: Path,
+) -> None:
+    name = "tcp_secure_random_failure"
+    opened = cli_runner.run(
+        _request(
+            "session.open",
+            target=resource_targets["waveform"],
+            args={"name": name, "transport": "tcp"},
+        ),
+        env={"XDEBUG_ENGINE_TEST_SECURE_RANDOM_FAIL": "1"},
+    )
+
+    assert not opened.ok, opened.response
+    assert opened.response["error"]["code"] == "SECURE_RANDOM_UNAVAILABLE"
+    assert opened.response["summary"] == {
+        "status": "error",
+        "error_code": "SECURE_RANDOM_UNAVAILABLE",
+    }
+    registry_path = isolated_home / ".xdebug" / "engine" / "registry.json"
+    if registry_path.exists():
+        assert not any(
+            item["session_id"] == name
+            for item in _registry(isolated_home).get("sessions", [])
+        )
 
 
 @pytest.mark.session

@@ -187,6 +187,21 @@ int main() {
     assert(second_status != std::string::npos);
     assert(text.find("status: ok", second_status + 1) == std::string::npos);
 
+    Json complete_array_response = {
+        {"api_version", "xdebug.v1"},
+        {"ok", true},
+        {"action", "batch"},
+        {"data", Json{{"results", Json::array()}}},
+    };
+    for (int i = 0; i < 25; ++i) {
+        complete_array_response["data"]["results"].push_back(
+            Json{{"request_index", i}, {"ok", true}});
+    }
+    text = render_xout_response(complete_array_response);
+    assert(text.find("request_index") != std::string::npos);
+    assert(text.find("  24             true") != std::string::npos);
+    assert(text.find("(+ 5 more)") == std::string::npos);
+
     Json axi_response = {
         {"api_version", "xdebug.v1"},
         {"ok", true},
@@ -293,6 +308,27 @@ int main() {
     assert(text.find("@xdebug.error.v1") == 0);
     assert(text.find("action     : axi.query") != std::string::npos);
     assert(text.find("invalid_arg: args.query") != std::string::npos);
+
+    Json validation_error = {
+        {"ok", false},
+        {"action", "value.at"},
+        {"error", Json{
+            {"code", "INVALID_REQUEST"},
+            {"message", "request schema validation failed"},
+            {"validation_issues", Json::array()},
+        }},
+    };
+    for (int i = 0; i < 22; ++i) {
+        validation_error["error"]["validation_issues"].push_back(
+            Json{{"path", "args.field_" + std::to_string(i)},
+                 {"message", "is invalid"}});
+    }
+    text = render_xout_response(validation_error);
+    assert(text.find("validation_issues:") != std::string::npos);
+    assert(text.find("args.field_19") != std::string::npos);
+    assert(text.find("args.field_20") == std::string::npos);
+    assert(text.find("issue_count     : 22") != std::string::npos);
+    assert(text.find("issues_truncated: true") != std::string::npos);
 
     Json handler_text = {
         {"ok", true},

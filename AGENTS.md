@@ -334,6 +334,30 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 
 ### 2026-08-12 环境错误复盘
 
+- 错误现象：运行 `xverif_mcp.process` focused suite 时未显式设置 `XVERIF_TEST_EXECUTION_ENV=host`，被 required suite preflight 在收集前拒绝。
+- 误判原因：按该 suite 无真实 NPI/EDA 能力推断可直接执行，忽略 catalog 对进程集成测试声明了 host 执行边界。
+- 以后规则：focused suite 启动前除核对 gate membership 外，还必须从 plan/catalog 核对执行环境要求；凡 preflight 要求 host，首次命令即显式设置 `XVERIF_TEST_EXECUTION_ENV=host`。
+
+### 2026-08-12 环境错误复盘
+
+- 错误现象：C02 多 owner 并行实现期间，主线程在子 agent 尚可能触发构建时启动 `xdebug.contract`，19 个用例和 2 个 teardown 在共享 `xdebug/xdebug` 链接窗口报 `Permission denied`。
+- 误判原因：只把主线程显式启动的测试视为并发边界，没有先确认所有子 agent 已停止会重建同一可执行产物的命令。
+- 以后规则：多 agent 修改 xdebug 时，任何 contract/session/NPI/runtime suite 启动前必须先取得所有 owner 的“停止构建”确认；随后由主线程统一构建，并在源码冻结期间串行完成 runtime 验证。
+
+### 2026-08-12 环境错误复盘
+
+- 错误现象：运行 `xdebug.cpp_unit` focused suite 时先尝试了 fast gate，被 suite membership 门禁在收集前拒绝。
+- 误判原因：根据 suite 的 unit 层级和 C++ 定向测试性质推断 fast membership，没有先查询当前 catalog gate plan；测试层级不等于 gate。
+- 以后规则：每次运行 focused suite 前先用候选 gate 的 `--xverif-plan` 核对当前 membership；不能根据 level、cost 或测试语言推断 gate。
+
+### 2026-08-12 环境错误复盘
+
+- 错误现象：共享工作树仍有其它 pytest/build 流程时启动 `xdebug.session`，后段 stdio-loop 用例在并发链接 `xdebug/xdebug` 的窗口遇到 `Permission denied`，相邻启动失败用例也取得空响应。
+- 误判原因：启动前只确认当时没有活跃 `make`/`g++`，但没有等待其它会在后续阶段触发构建的 pytest 流程结束，未冻结整个 runtime suite 的共享可执行产物。
+- 以后规则：运行 xdebug session/NPI/runtime suite 前不仅要确认没有即时编译进程，还必须确认共享工作树中其它可能触发 xdebug 构建的 pytest 流程已全部结束；统一构建完成后再串行启动 runtime suite。
+
+### 2026-08-12 环境错误复盘
+
 - 错误现象：准备在新的临时 build 目录运行 VCS 时，直接把尚未创建的目录设为命令工作目录，进程在 shell 启动前因路径不存在而失败。
 - 误判原因：把命令内部的 `mkdir` 误认为能先于执行器切换工作目录生效。
 - 以后规则：以新目录作为命令工作目录前，必须先从已存在的父目录单独创建并核对目标目录；不能在同一次调用中依赖命令内部创建自身工作目录。

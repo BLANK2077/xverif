@@ -127,16 +127,16 @@ native CLI、engine、session、MCP、SDK-free loop、schema、example、XOUT、
 
 ### C01 计划与 Goal 基线
 
-状态：`in_progress`
+状态：`completed`
 
 - 提交本计划书。
 - 提交后按第 8 节创建 Goal。
 - 验证：Markdown、链接、`git diff --cached --check`。
-- commit：待填。
+- commit：`431c615`。
 
 ### C02 安全随机与 batch/MCP 边界
 
-状态：`pending`
+状态：`completed`
 
 - 安全随机循环读取，失败 `SECURE_RANDOM_UNAVAILABLE`。
 - 递归阻止 managed MCP batch lifecycle child。
@@ -144,10 +144,11 @@ native CLI、engine、session、MCP、SDK-free loop、schema、example、XOUT、
 - 删除 XOUT batch 二次截断，补有界 validation issue 表。
 - focused：xdebug.static、cpp_unit、contract、xverif_mcp.unit/process/action_smoke、native_xout_report。
 - commit 主题：`安全：加固 xdebug 随机认证与 batch 管理边界`。
+- commit：本提交。
 
 ### C03 Session 生命周期与 NPI 串行化
 
-状态：`pending`
+状态：`in_progress`
 
 - 缩小 lifecycle lease；建立单 NPI owner 序列。
 - cooperative deadline checkpoint 和进程外 hard termination。
@@ -306,9 +307,9 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 | 阶段 | 状态 | Commit | 验证摘要 |
 | --- | --- | --- | --- |
 | 前置评审基线 | completed | `5fe239c` | 三份文档；`git diff --cached --check` |
-| C01 计划书 | in_progress | 待填 | 待提交 |
-| C02 安全/batch | pending | - | - |
-| C03 Session | pending | - | - |
+| C01 计划书 | completed | `431c615` | 文档检查、`git diff --cached --check` |
+| C02 安全/batch | completed | 本提交 | 安全随机、batch/MCP、XOUT 边界及 focused suites 全绿 |
+| C03 Session | in_progress | - | 实施中 |
 | C04 FSDB identity | pending | - | - |
 | C05 Transport | pending | - | - |
 | C06 Cache | pending | - | - |
@@ -323,8 +324,14 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 | 时间 | 阶段 | 命令/检查 | 环境 | 结果 | 日志/备注 |
 | --- | --- | --- | --- | --- | --- |
 | 2026-08-12 | 前置 | `git diff --cached --check` | host | PASS | commit `5fe239c` |
+| 2026-08-12 | C01 | 计划书内容及 `git diff --cached --check` | host | PASS | commit `431c615`；Goal 已创建 |
+| 2026-08-12 | C02 | `xdebug.cpp_unit` / `xdebug.static` | host | PASS | 1 passed；107 passed |
+| 2026-08-12 | C02 | `xdebug.contract` / `xdebug.session` | host | PASS | 111 passed；38 passed |
+| 2026-08-12 | C02 | `xverif_mcp.unit` / `process` / `action_smoke` | host | PASS | 165 / 141 / 1 passed |
+| 2026-08-12 | C02 | `xdebug.native_xout_report` | host | PASS | 8 passed |
+| 2026-08-12 | C02 | request/schema/hint/runtime compatibility/examples | host | PASS | 281 schemas；218 examples；生成一致 |
 
 ## 11. 偏差与阻塞记录
 
-- 当前无偏差。
+- C02 首轮 runtime 验证与并行链接发生竞态，统一冻结构建并重建后串行复验全部通过；已按仓库规则写入环境复盘，不计为产品失败。
 - 任何 fallback、范围扩展、required suite 降级、公共合同偏离必须先取得用户确认，再记录于此。

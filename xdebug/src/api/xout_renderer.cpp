@@ -96,17 +96,11 @@ void render_data_value(TextResponseBuilder& out, const std::string& key,
     } else if (value.is_array() && !value.empty() &&
                xdebug::is_xout_scalar_json(value[0])) {
         out.emit_section(key);
-        int n = std::min(20, static_cast<int>(value.size()));
-        for (int i = 0; i < n; ++i) out.emit_row({json_to_xout_value(value[i])});
-        if (static_cast<int>(value.size()) > n) {
-            out.emit_kv("(+ " + std::to_string(value.size() - n) + " more)", "");
-        }
+        for (const auto& item : value)
+            out.emit_row({json_to_xout_value(item)});
     } else if (value.is_array() && !value.empty() && value[0].is_object()) {
-        int count = static_cast<int>(value.size());
         out.emit_section(key);
-        int n = std::min(20, count);
-        out.emit_json_table(value, n);
-        if (count > n) out.emit_kv("(+ " + std::to_string(count - n) + " more)", "");
+        out.emit_json_table(value, static_cast<int>(value.size()));
     } else if (value.is_object()) {
         bool has_direct_fields = false;
         for (auto it = value.begin(); it != value.end(); ++it) {
@@ -191,6 +185,21 @@ std::string render_xout_response(const Json& response,
         }
         if (response.contains("error") && response["error"].is_object()) {
             const Json& error = response["error"];
+            if (error.contains("validation_issues") &&
+                error["validation_issues"].is_array()) {
+                const Json& issues = error["validation_issues"];
+                const size_t rendered = std::min<size_t>(20, issues.size());
+                out.emit_section("validation_issues");
+                out.emit_kv("issue_count", Json(static_cast<unsigned long long>(issues.size())));
+                out.emit_kv("issues_truncated", rendered < issues.size());
+                std::vector<std::vector<std::string>> rows;
+                rows.reserve(rendered);
+                for (size_t i = 0; i < rendered; ++i) {
+                    rows.push_back({scalar_text(issues[i], "path"),
+                                    scalar_text(issues[i], "message")});
+                }
+                out.emit_table({"path", "message"}, rows);
+            }
             if (error.contains("candidates") && error["candidates"].is_array()) {
                 out.emit_section("candidates");
                 for (const auto& item : error["candidates"])

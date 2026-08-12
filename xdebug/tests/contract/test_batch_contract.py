@@ -70,6 +70,23 @@ def test_batch_stop_on_error_stops_after_first_failure(
 
 
 @pytest.mark.contract
+def test_batch_rejects_unknown_failure_mode(
+    stateless_stdio_loop: StdioLoopRunner,
+) -> None:
+    result = stateless_stdio_loop.request(_batch("continue_after_typo"))
+
+    assert result.returncode == 1
+    assert result.response["ok"] is False
+    error = result.response["error"]
+    assert error["code"] == "INVALID_REQUEST"
+    assert error["invalid_arg"] == "args.mode"
+    assert error["available_values"] == [
+        "continue_on_error",
+        "stop_on_error",
+    ]
+
+
+@pytest.mark.contract
 def test_batch_failure_aggregation_is_visible_in_xout(cli_runner: CliRunner) -> None:
     result = cli_runner.run(_batch("stop_on_error"), output_format="xout")
     assert result.returncode == 0

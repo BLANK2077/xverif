@@ -1375,6 +1375,16 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
         selected_props["filter"] = protocol_statistics_filter_schema(
             allow_ids=action == "axi.statistics"
         )
+    if action == "batch":
+        selected_props["mode"] = {
+            "type": "string",
+            "enum": ["continue_on_error", "stop_on_error"],
+            "default": "continue_on_error",
+            "description": (
+                "Batch failure policy. continue_on_error executes every child; "
+                "stop_on_error stops immediately after the first failed child."
+            ),
+        }
     if action == "stream.query":
         selected_props["filter"] = stream_query_filter_schema()
     if action == "axi.analysis" and "analysis" in selected_props:

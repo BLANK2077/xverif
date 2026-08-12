@@ -2586,6 +2586,13 @@ def test_xout_projection_uses_handler_base_and_overrides() -> None:
                    "stream.query", "trace.x_origin"):
         assert f'"{action}"' not in renderer_text
     assert "parse_xout" not in renderer_text
+    engine_renderer_text = (
+        XDEBUG / "src" / "engine" / "service" /
+        "engine_action_handler.cpp"
+    ).read_text(encoding="utf-8")
+    for generic_renderer in (renderer_text, engine_renderer_text):
+        assert "std::min(20" not in generic_renderer
+        assert "(+ " not in generic_renderer
 
     makefile = (XDEBUG / "Makefile").read_text(encoding="utf-8")
     engine_sources = makefile.split("ENGINE_SRCS =", 1)[1].split("DESIGN_SRCS =", 1)[0]

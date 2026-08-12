@@ -24,8 +24,8 @@ std::string current_host_name() {
     return xdebug_core::current_host_name();
 }
 
-std::string generate_auth_token() {
-    return xdebug_core::generate_auth_token();
+bool generate_auth_token(std::string& token, std::string& error) {
+    return xdebug_core::generate_auth_token(token, error);
 }
 
 // --- Transport type helpers (thin wrappers around shared utils) ---

@@ -1157,6 +1157,19 @@ Json Dispatcher::handle_batch(const Json& request,
     Json failed_layers = Json::array();
     bool all_ok = true;
     std::string mode = args.value("mode", std::string("continue_on_error"));
+    if (mode != "continue_on_error" && mode != "stop_on_error") {
+        Json error =
+            DiagnosticErrorBuilder::handler(
+                "INVALID_ARGUMENT",
+                "args.mode must be continue_on_error or stop_on_error")
+                .invalid_arg("args.mode")
+                .expected("continue_on_error or stop_on_error")
+                .received(mode)
+                .available_values(
+                    Json::array({"continue_on_error", "stop_on_error"}))
+                .to_json();
+        return make_error(request, "batch", error);
+    }
     for (auto child : requests) {
         Json child_observability = observability;
         child_observability.erase("request_id");

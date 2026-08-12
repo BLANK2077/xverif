@@ -167,18 +167,11 @@ static void render_data_value(xdebug::TextResponseBuilder& out,
     } else if (val.is_array() && val.size() > 0 &&
                xdebug::is_xout_scalar_json(val[0])) {
         out.emit_section(key);
-        int n = std::min(20, (int)val.size());
-        for (int i = 0; i < n; ++i)
-            out.emit_row({xdebug::json_to_xout_value(val[i])});
-        if ((int)val.size() > n)
-            out.emit_kv("(+ " + std::to_string(val.size() - n) + " more)", "");
+        for (const auto& item : val)
+            out.emit_row({xdebug::json_to_xout_value(item)});
     } else if (val.is_array() && val.size() > 0 && val[0].is_object()) {
-        int count = (int)val.size();
         out.emit_section(key);
-        int n = std::min(20, count);
-        out.emit_json_table(val, n);
-        if (count > n)
-            out.emit_kv("(+ " + std::to_string(count - n) + " more)", "");
+        out.emit_json_table(val, static_cast<int>(val.size()));
     } else if (val.is_object()) {
         bool has_direct_fields = false;
         for (auto it = val.begin(); it != val.end(); ++it) {

@@ -9,7 +9,7 @@
 namespace xdebug_engine {
 
 std::string current_host_name();
-std::string generate_auth_token();
+bool generate_auth_token(std::string& token, std::string& error);
 bool is_tcp_transport(const SessionInfo& session);
 bool is_file_transport(const SessionInfo& session);
 bool is_local_session_host(const SessionInfo& session);

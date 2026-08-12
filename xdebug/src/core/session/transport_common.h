@@ -3,6 +3,7 @@
 #include "transport_timeout.h"
 
 #include <arpa/inet.h>
+#include <cerrno>
 #include <cstring>
 #include <fcntl.h>
 #include <netdb.h>
@@ -25,30 +26,61 @@ inline std::string current_host_name() {
 
 // --- Auth token generation ---
 
-inline std::string generate_auth_token() {
-    unsigned char bytes[24] = {};
-    int fd = open("/dev/urandom", O_RDONLY);
-    if (fd >= 0) {
-        ssize_t n = read(fd, bytes, sizeof(bytes));
-        close(fd);
-        if (n != static_cast<ssize_t>(sizeof(bytes))) memset(bytes, 0, sizeof(bytes));
-    }
-    if (bytes[0] == 0 && bytes[1] == 0) {
-        unsigned long long seed = static_cast<unsigned long long>(time(nullptr)) ^
-                                  (static_cast<unsigned long long>(getpid()) << 32);
-        for (size_t i = 0; i < sizeof(bytes); ++i) {
-            seed = seed * 6364136223846793005ULL + 1;
-            bytes[i] = static_cast<unsigned char>(seed >> 24);
+using SecureRandomReadFn = ssize_t (*)(int, void*, size_t);
+
+inline bool fill_secure_random_bytes(int fd,
+                                     unsigned char* bytes,
+                                     size_t size,
+                                     std::string& error,
+                                     SecureRandomReadFn read_fn = ::read) {
+    size_t offset = 0;
+    while (offset < size) {
+        const ssize_t count =
+            read_fn(fd, bytes + offset, size - offset);
+        if (count > 0) {
+            offset += static_cast<size_t>(count);
+            continue;
         }
+        if (count < 0 && errno == EINTR) continue;
+        error = count == 0
+            ? "secure random source ended before the authentication token was complete"
+            : std::string("failed to read secure random source: ") +
+                  std::strerror(errno);
+        return false;
     }
+    return true;
+}
+
+inline bool generate_auth_token(std::string& token, std::string& error) {
+    token.clear();
+    error.clear();
+    int flags = O_RDONLY;
+#ifdef O_CLOEXEC
+    flags |= O_CLOEXEC;
+#endif
+    int fd = -1;
+    do {
+        fd = open("/dev/urandom", flags);
+    } while (fd < 0 && errno == EINTR);
+    if (fd < 0) {
+        error = std::string("failed to open secure random source: ") +
+                std::strerror(errno);
+        return false;
+    }
+
+    unsigned char bytes[24] = {};
+    const bool filled =
+        fill_secure_random_bytes(fd, bytes, sizeof(bytes), error);
+    close(fd);
+    if (!filled) return false;
+
     static const char hex[] = "0123456789abcdef";
-    std::string out;
-    out.reserve(sizeof(bytes) * 2);
+    token.reserve(sizeof(bytes) * 2);
     for (unsigned char b : bytes) {
-        out.push_back(hex[b >> 4]);
-        out.push_back(hex[b & 0xf]);
+        token.push_back(hex[b >> 4]);
+        token.push_back(hex[b & 0xf]);
     }
-    return out;
+    return true;
 }
 
 // --- Transport type checks ---

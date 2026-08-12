@@ -563,6 +563,38 @@ def xverif_debug_session_gc(verbose: bool = False) -> dict:
     return debug.session_gc(verbose=verbose)
 
 
+def _forbidden_batch_lifecycle_action(args: dict) -> tuple[str, str] | None:
+    """Find the first forbidden native session action in a nested batch."""
+    requests = args.get("requests")
+    if not isinstance(requests, list):
+        return None
+
+    pending: list[tuple[Any, str]] = [
+        (child, f"args.requests[{index}]")
+        for index, child in reversed(list(enumerate(requests)))
+    ]
+    while pending:
+        child, path = pending.pop()
+        if not isinstance(child, dict):
+            continue
+        child_action = child.get("action")
+        if is_forbidden_native_session_action(child_action):
+            return child_action, f"{path}.action"
+        if child_action != "batch":
+            continue
+        child_args = child.get("args")
+        child_requests = (
+            child_args.get("requests") if isinstance(child_args, dict) else None
+        )
+        if not isinstance(child_requests, list):
+            continue
+        pending.extend(
+            (nested, f"{path}.args.requests[{index}]")
+            for index, nested in reversed(list(enumerate(child_requests)))
+        )
+    return None
+
+
 @xverif_tool("debug")
 def xverif_debug_query(
     action: str,
@@ -612,6 +644,14 @@ def xverif_debug_query(
             "INVALID_ARGUMENT", "args must be an object",
             recoverable=True, error_layer="wrapper",
         )
+    if action == "batch":
+        forbidden_child = _forbidden_batch_lifecycle_action(args or {})
+        if forbidden_child is not None:
+            child_action, child_path = forbidden_child
+            error = forbidden_native_session_error(child_action)
+            error["error"]["invalid_arg"] = child_path
+            error["error"]["batch_child_path"] = child_path
+            return error
     if limits is not None and not isinstance(limits, dict):
         return _tool_error(
             "INVALID_ARGUMENT", "limits must be an object",

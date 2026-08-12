@@ -355,6 +355,8 @@ std::string ensure_error_code(const SessionEnsureResult& result) {
     if (result.status == "invalid_session_id") return "INVALID_SESSION_ID";
     if (result.status == "invalid_args") return "INVALID_REQUEST";
     if (result.status == "invalid_transport") return "INVALID_REQUEST";
+    if (result.status == "secure_random_unavailable")
+        return "SECURE_RANDOM_UNAVAILABLE";
     if (result.message.find("invalid_config:") != std::string::npos) return "INVALID_CONFIG";
     if (result.status == "npi_init_failed") return "NPI_INIT_FAILED";
     if (result.status == "npi_load_design_failed") return "NPI_LOAD_DESIGN_FAILED";

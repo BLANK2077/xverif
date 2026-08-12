@@ -4,14 +4,82 @@
 #include "protocol/core_protocol.h"
 #include "session/session_endpoint_contract.h"
 #include "session/session_timeout.h"
+#include "session/transport_common.h"
 #include "session/session_types.h"
 #include "test_temp_path.h"
 
 #include <cassert>
 #include <cstdlib>
 #include <string>
+#include <vector>
+
+namespace {
+
+struct ScriptedReadStep {
+    ssize_t result;
+    int error;
+};
+
+std::vector<ScriptedReadStep> g_read_steps;
+size_t g_read_step = 0;
+unsigned char g_next_random_byte = 0;
+
+ssize_t scripted_secure_random_read(int, void* buffer, size_t size) {
+    assert(g_read_step < g_read_steps.size());
+    const ScriptedReadStep step = g_read_steps[g_read_step++];
+    if (step.result < 0) {
+        errno = step.error;
+        return step.result;
+    }
+    const size_t count = static_cast<size_t>(step.result);
+    assert(count <= size);
+    unsigned char* bytes = static_cast<unsigned char*>(buffer);
+    for (size_t i = 0; i < count; ++i) {
+        bytes[i] = g_next_random_byte++;
+    }
+    return step.result;
+}
+
+}  // namespace
 
 int main() {
+    unsigned char random_bytes[8] = {};
+    std::string random_error;
+    g_read_steps = {{-1, EINTR}, {2, 0}, {1, 0}, {5, 0}};
+    g_read_step = 0;
+    g_next_random_byte = 0;
+    assert(xdebug_core::fill_secure_random_bytes(
+        0, random_bytes, sizeof(random_bytes), random_error,
+        scripted_secure_random_read));
+    assert(g_read_step == g_read_steps.size());
+    for (size_t i = 0; i < sizeof(random_bytes); ++i) {
+        assert(random_bytes[i] == static_cast<unsigned char>(i));
+    }
+
+    g_read_steps = {{2, 0}, {0, 0}};
+    g_read_step = 0;
+    g_next_random_byte = 0;
+    random_error.clear();
+    assert(!xdebug_core::fill_secure_random_bytes(
+        0, random_bytes, sizeof(random_bytes), random_error,
+        scripted_secure_random_read));
+    assert(random_error.find("ended before") != std::string::npos);
+
+    g_read_steps = {{-1, EIO}};
+    g_read_step = 0;
+    random_error.clear();
+    assert(!xdebug_core::fill_secure_random_bytes(
+        0, random_bytes, sizeof(random_bytes), random_error,
+        scripted_secure_random_read));
+    assert(random_error.find("failed to read") != std::string::npos);
+
+    std::string auth_token;
+    assert(xdebug_core::generate_auth_token(auth_token, random_error));
+    assert(auth_token.size() == 48);
+    for (const char c : auth_token) {
+        assert((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'));
+    }
+
     xdebug_core::TimeRenderUnit render_unit = xdebug_core::TimeRenderUnit::Ns;
     std::string render_unit_error;
     assert(xdebug_core::parse_time_render_unit(
