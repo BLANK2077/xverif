@@ -94,6 +94,13 @@ APB/AXI action 只在需要协议专属 transaction、channel 或 violation 语�
 提供 `PREADY` 和 `PSLVERR`；缺少任一信号时 `apb.config.load` 直接拒绝，不假设
 zero-wait 或 no-error。
 
+需要持久化 APB transaction 时使用 `apb.export`，不要改用通用 `stream.export`。它要求
+完整 `time_range.begin/end`，顶层 `direction` 与 `address` exact/range/mask 取 AND；不传
+`output.path` 时只返回固定最多 8 行 `data.preview`，传 path 时写一个按时间排序、混合读写的
+TSV/CSV data artifact 及 meta。用 `scanned_transaction_count`、
+`in_range_transaction_count`、`matched_transaction_count`、`preview_row_count`、
+`artifact_bytes` 和 canonical completeness 判断结果，不能把 preview 当作完整导出。
+
 只需要计数时使用 `apb.statistics`：`filter.direction` 与 `filter.address` 取 AND，address
 只能选择 exact 队列、闭区间 range 或 value/mask 三种模式之一。它只统计已完成事务，
 复用同一 session/config 的 canonical APB 缓存，不接受 `line_limit`，也不会重新扫描 FSDB。

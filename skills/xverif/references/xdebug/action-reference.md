@@ -65,6 +65,7 @@
 | `apb.config.list` | stable | waveform | 列出 APB 配置。 | 读取 APB 配置存储；`args:{}` 列全部，`args.name` 显示单个配置详情。 | 查看可用 APB interface 名称。 | args:{} list all; optional name shows one config |
 | `apb.config.load` | stable | waveform | 加载 APB 配置。 | 保存 APB interface 信号映射。 | 定义后续 APB 查询对象。 | required: name; also one of: config / config_path |
 | `apb.transaction.cursor` | stable | waveform | 在 APB transfer 间移动游标。 | 基于 APB 查询结果按 op/direction 定位 begin/next/prev 等。 | 交互式浏览 APB 事务。 | required: name, op |
+| `apb.export` | stable | waveform | 预览或导出 APB 事务。 | 必须给出完整 time_range；direction 与顶层 address exact/range/mask 取 AND。无 output.path 时固定最多返回 8 行 data.preview；有 path 时写一个按时间排序的 TSV/CSV data artifact 和 meta，不回退到 query/stream。 | 把完整过滤结果交给外部表格或脚本，并保留扫描、匹配、字节数与完整性证据。 | required: name, time_range.begin/end<br>optional: direction, address, render_time_unit, value_format, output<br>output.file_format: tsv/csv; file_format requires path |
 | `apb.query` | stable | waveform | 查询 APB transfer。 | direction 与 address exact/range/mask 取 AND；先过滤再应用 1-based `query.index`、`query.line_limit` 或 last。旧 `addr` 和标量 address 被拒绝。 | 抽取标准 APB completed transfer。 | required: name<br>address is exact/range/mask object |
 | `apb.statistics` | stable | waveform | 统计已完成 APB 事务。 | 复用 canonical APB 缓存，按 direction 与一种 address 模式过滤并分别统计 read/write。 | 按方向或地址核对 APB 访问次数。 | required: name<br>filter direction/address with AND; address mode is exact/range/mask |
 | `apb.transfer_window` | experimental | waveform | 实验性 APB 窗口分析。 | 围绕指定 APB transfer 返回相关信号窗口。 | 解释单笔 APB 访问现场。 | required: name |

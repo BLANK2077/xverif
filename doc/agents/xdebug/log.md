@@ -1,5 +1,11 @@
 # xdebug 架构说明书维护日志
 
+## 2026-08-12
+
+- 新增 `apb.export` 公开合同：完整 time range、顶层 direction/address、固定 8 行 preview
+  或单 TSV/CSV data artifact + meta；响应分别发布扫描/范围内/匹配/预览/artifact bytes
+  与 canonical completeness，不提供 query/stream fallback。
+
 ## 2026-07-28
 
 - `rc.generate` 删除 group 配置中的 `expanded` 输入；保留 subgroup 递归，生成的

@@ -2,10 +2,11 @@
   "schema_version": "xdebug.internal-request-manifest.v1",
   "api_version": "xdebug.internal.v1",
   "aggregate_schema_ref": "schemas/v1/internal/engine.request.schema.json",
-  "action_count": 70,
+  "action_count": 71,
   "actions": {
     "apb.config.list": "schemas/v1/internal/actions/apb.config.list.request.schema.json",
     "apb.config.load": "schemas/v1/internal/actions/apb.config.load.request.schema.json",
+    "apb.export": "schemas/v1/internal/actions/apb.export.request.schema.json",
     "apb.query": "schemas/v1/internal/actions/apb.query.request.schema.json",
     "apb.statistics": "schemas/v1/internal/actions/apb.statistics.request.schema.json",
     "apb.transaction.cursor": "schemas/v1/internal/actions/apb.transaction.cursor.request.schema.json",
@@ -78,6 +79,7 @@
   "helper_dispatch_kinds": {
     "apb.config.list": "server_forward",
     "apb.config.load": "server_forward",
+    "apb.export": "server_forward",
     "apb.query": "server_forward",
     "apb.statistics": "server_forward",
     "apb.transaction.cursor": "server_forward",
@@ -150,6 +152,7 @@
   "helper_envelope_schemas": {
     "apb.config.list": "schemas/v1/internal/helper-actions/apb.config.list.request.schema.json",
     "apb.config.load": "schemas/v1/internal/helper-actions/apb.config.load.request.schema.json",
+    "apb.export": "schemas/v1/internal/helper-actions/apb.export.request.schema.json",
     "apb.query": "schemas/v1/internal/helper-actions/apb.query.request.schema.json",
     "apb.statistics": "schemas/v1/internal/helper-actions/apb.statistics.request.schema.json",
     "apb.transaction.cursor": "schemas/v1/internal/helper-actions/apb.transaction.cursor.request.schema.json",

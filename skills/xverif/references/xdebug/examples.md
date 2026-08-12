@@ -57,3 +57,20 @@
 该分支禁止 `target`/session；成功响应的 parser 证据是
 `deterministic_syntax_parser` 与 `syntax_validated`。design signal 分支则必须使用
 design session，两种 args 不能混用。
+
+## APB 有界预览与完整导出
+
+预览固定最多返回 8 笔，完整时间范围的 begin/end 都必须提供：
+
+```json
+{"api_version":"xdebug.v1","action":"apb.export","target":{"session_id":"case_a"},"args":{"name":"apb0","time_range":{"begin":"0ns","end":"1us"},"direction":"all","value_format":"hex"}}
+```
+
+写文件时显式给 path；`file_format` 不能脱离 path 单独出现：
+
+```json
+{"api_version":"xdebug.v1","action":"apb.export","target":{"session_id":"case_a"},"args":{"name":"apb0","time_range":{"begin":"0ns","end":"1us"},"direction":"write","address":{"mode":"range","begin":"32'h1000","end":"32'h10ff"},"output":{"path":"artifacts/apb0","file_format":"tsv"}}}
+```
+
+written 响应的 `summary.output.data_path/meta_path`、`artifact_bytes`、匹配计数和 meta
+必须一致；该 action 不回退到 `apb.query` 或 `stream.export`。

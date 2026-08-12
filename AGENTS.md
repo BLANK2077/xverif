@@ -340,6 +340,12 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 
 ### 2026-08-12 环境错误复盘
 
+- 错误现象：C08 统一生成检查时，根据生成文档名称猜测了不存在的 `skills/xverif/scripts/generate_xdebug_action_refs.py`，命令未启动。
+- 误判原因：把 checked-in generated action 索引误认为有独立脚本入口，没有先从实际文件和正式 skill suite 核对维护方式。
+- 以后规则：skill 生成内容先通过 `rg --files skills` 与对应 catalog suite 确认真实 owner/入口；不存在独立生成器时运行正式 skill suite，不按产物名猜脚本。
+
+### 2026-08-12 环境错误复盘
+
 - 错误现象：复核新增 fixture/catalog 时，手写 Python probe 导入了不存在的 `testinfra.xverif_test.catalog.load_catalog`，未进入 registry 加载。
 - 误判原因：根据模块用途猜测公共 helper 名，没有先检查实际 API 或直接使用正式 catalog suite。
 - 以后规则：testinfra catalog/fixture 校验统一先查 `testinfra.unit` 的正式测试入口并从 gate/suite 执行；临时 Python probe 只有在核对真实导出符号后才使用。

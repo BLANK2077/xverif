@@ -345,6 +345,32 @@ def test_protocol_query_index_and_line_limit_can_be_combined() -> None:
     )
 
 
+def test_apb_export_requires_complete_range_and_strict_top_level_filters() -> None:
+    base = {
+        "name": "apb0",
+        "time_range": {"begin": "0ns", "end": "1us"},
+    }
+    assert _valid_args("apb.export", base)
+    assert _valid_args(
+        "apb.export",
+        {
+            **base,
+            "direction": "write",
+            "address": {"mode": "exact", "values": ["32'h1000"]},
+            "output": {"path": "artifacts/apb", "file_format": "csv"},
+        },
+    )
+    assert not _valid_args(
+        "apb.export", {"name": "apb0", "time_range": {"begin": "0ns"}}
+    )
+    assert not _valid_args(
+        "apb.export", {"name": "apb0", "time_range": {"end": "1us"}}
+    )
+    assert not _valid_args("apb.export", {**base, "address": "0x1000"})
+    assert not _valid_args("apb.export", {**base, "line_limit": 8})
+    assert not _valid_args(
+        "apb.export", {**base, "output": {"file_format": "tsv"}}
+    )
 def test_list_delete_has_one_typed_selector_from_schema_to_storage() -> None:
     assert _valid_args(
         "list.delete",
@@ -510,6 +536,7 @@ def test_value_format_is_centralized_and_removed_aliases_are_not_consumed() -> N
     assert 'args["payload"]' not in pulse_handler
 
     for action in (
+        "apb.export",
         "axi.export",
         "event.export",
         "list.export",
@@ -625,6 +652,7 @@ AUDITED_BROAD_CONSUMER_FILES = {
     "api/dispatcher.cpp": "catalog/batch/session target envelope dispatch",
     "engine/service/actions/combined/trace_x_origin.cpp": "closed limits object",
     "engine/service/actions/protocol/apb_config_load.cpp": "strict APB config parser",
+    "engine/service/actions/protocol/apb_export.cpp": "closed APB export/filter/output parser",
     "engine/service/actions/protocol/apb_query.cpp": "closed APB query and filter parser",
     "engine/service/actions/protocol/apb_statistics.cpp": "closed APB statistics filter",
     "engine/service/actions/protocol/axi_config_load.cpp": "strict AXI config parser",

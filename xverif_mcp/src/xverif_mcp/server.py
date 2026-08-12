@@ -47,7 +47,7 @@ INSTRUCTIONS = """Use xverif for deterministic chip verification: design/FSDB de
 | Catalog/resources | actions, schema, session.*, scope.* |
 | Values/proof | value.*, signal.*, expr.*, verify.*, window.verify |
 | Static/dynamic cause | signal.resolve/canonicalize, trace.* |
-| APB | apb.config.*, query, statistics, transaction.cursor, transfer_window |
+| APB | apb.config.*, query/statistics/export, transaction.cursor, transfer_window |
 | AXI | axi.config.*, query/statistics/analysis/export, transaction.cursor, channel_stall, latency_outlier, outstanding_timeline, request_response_pair |
 | Streams | stream.config.*, describe/validate/query/export, protocol.handshake.inspect |
 | Events | event.config.*, find/export, counter.statistics |

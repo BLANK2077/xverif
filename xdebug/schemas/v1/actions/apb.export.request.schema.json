@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "xdebug.apb.query.request.v1",
-  "title": "apb.query request",
+  "$id": "xdebug.apb.export.request.v1",
+  "title": "apb.export request",
   "type": "object",
   "required": [
     "api_version",
@@ -23,7 +23,7 @@
     "action": {
       "type": "string",
       "enum": [
-        "apb.query"
+        "apb.export"
       ]
     },
     "target": {
@@ -69,7 +69,8 @@
     "args": {
       "type": "object",
       "required": [
-        "name"
+        "name",
+        "time_range"
       ],
       "properties": {
         "address": {
@@ -246,45 +247,45 @@
           ],
           "description": "协议 transaction 的方向过滤；read/write/all 的可用性以本 action enum 为准。"
         },
-        "last": {
-          "const": true,
-          "description": "Select the final transaction matching the other transaction filters."
-        },
         "name": {
           "type": "string",
           "description": "Saved-object name in this action namespace; do not assume names are shared by cursors, lists, and protocol configs."
         },
-        "query": {
+        "output": {
           "type": "object",
-          "minProperties": 1,
           "properties": {
-            "line_limit": {
-              "type": "integer",
-              "minimum": 1,
-              "description": "Limits returned evidence rows only, not scanning, aggregation, or the verdict; read completeness fields as well."
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Output path prefix; omit it to return at most eight APB transactions in data.preview."
             },
-            "index": {
-              "type": "integer",
-              "minimum": 1,
-              "description": "One-based query, cursor, or list position; the action schema defines its exact reference set."
+            "file_format": {
+              "type": "string",
+              "enum": [
+                "tsv",
+                "csv"
+              ],
+              "default": "tsv",
+              "description": "APB transaction artifact file format."
             }
           },
-          "anyOf": [
+          "allOf": [
             {
-              "required": [
-                "line_limit"
-              ],
-              "description": "Closed query selector; use only the index, channel, time, or filter branches declared by this action's schema."
-            },
-            {
-              "required": [
-                "index"
-              ],
-              "description": "Closed query selector; use only the index, channel, time, or filter branches declared by this action's schema."
+              "if": {
+                "required": [
+                  "file_format"
+                ]
+              },
+              "then": {
+                "required": [
+                  "path"
+                ]
+              },
+              "description": "Export destination and rendering controls. path, file_format, and verbose are supported only where this action declares them."
             }
           ],
           "additionalProperties": false,
-          "description": "Protocol query controls; use 1-based query.index and query.line_limit; legacy quantity fields are rejected."
+          "description": "Export destination and rendering controls. path, file_format, and verbose are supported only where this action declares them."
         },
         "render_time_unit": {
           "type": "string",
@@ -295,6 +296,28 @@
             "us"
           ],
           "description": "Controls only canonical response time rendering: auto, ps, ns, or us. It never changes input parsing, sampling, filtering, or ordering."
+        },
+        "time_range": {
+          "type": "object",
+          "minProperties": 1,
+          "properties": {
+            "begin": {
+              "type": "string",
+              "minLength": 1,
+              "description": "闭区间起点；省略时使用可用波形窗口起点。"
+            },
+            "end": {
+              "type": "string",
+              "minLength": 1,
+              "description": "闭区间终点；省略时使用可用波形窗口终点。"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Closed analysis interval. begin and end may be omitted independently to use the available waveform bounds.",
+          "required": [
+            "begin",
+            "end"
+          ]
         },
         "value_format": {
           "type": "string",
@@ -307,17 +330,7 @@
           "description": "返回 LogicValue 的显示格式；不改变比较、采样或底层四态值。"
         }
       },
-      "additionalProperties": false,
-      "allOf": [
-        {
-          "not": {
-            "required": [
-              "last",
-              "query"
-            ]
-          }
-        }
-      ]
+      "additionalProperties": false
     },
     "limits": {
       "type": "object",
@@ -333,35 +346,31 @@
     }
   },
   "additionalProperties": false,
-  "description": "Query completed APB transfers with direction and exact, range, or mask address filters.",
-  "x-purpose": "查询 APB transfer。",
-  "x-how_it_works": "direction 与 address exact/range/mask 取 AND；先过滤再应用 1-based query.index、query.line_limit 或 last。旧 addr 和标量 address 被拒绝。",
-  "x-when_to_use": "抽取标准 APB completed transfer。",
-  "x-arg_contract_notes": "required: name; address is exact/range/mask object",
-  "x-description-zh": "按方向以及 exact、range 或 mask 地址条件查询已完成 APB transfer。",
+  "description": "Preview or export filtered APB transactions from one complete time range.",
+  "x-description-zh": "预览或导出完整时间范围内过滤后的 APB 事务。",
+  "x-purpose": "预览或导出 APB 事务。",
+  "x-how_it_works": "必须给出完整 time_range；direction 与顶层 address exact/range/mask 取 AND。无 output.path 时固定最多返回 8 行 data.preview；有 path 时写一个按时间排序的 TSV/CSV data artifact 和 meta，不回退到 query/stream。",
+  "x-when_to_use": "把完整过滤结果交给外部表格或脚本，并保留扫描、匹配、字节数与完整性证据。",
+  "x-arg_contract_notes": "required: name, time_range.begin/end; optional: direction, address, render_time_unit, value_format, output; output.file_format: tsv/csv; file_format requires path",
   "x-agent": {
     "use_when": [
-      "Need completed APB transfer counts or rows filtered by direction and a canonical exact/range/mask address object."
+      "Need a bounded in-response APB preview or one complete TSV/CSV transaction artifact plus metadata."
     ],
     "do_not_use_when": [
-      "Do not use it for AXI channel semantics, custom valid-ready fields, or a focused signal window around one APB transfer."
+      "Do not use it for aggregate-only APB counts, interactive transaction selection, AXI semantics, or generic valid-ready streams."
     ],
     "alternatives": [
       {
-        "action": "apb.export",
-        "when": "Persist the complete filtered APB transaction set as TSV or CSV."
+        "action": "apb.query",
+        "when": "Interactively select or inspect APB transactions without creating an artifact."
       },
       {
         "action": "apb.statistics",
-        "when": "Need aggregate APB counts and unresolved-filter diagnostics without transaction rows."
-      },
-      {
-        "action": "apb.transfer_window",
-        "when": "Inspect signal evidence around one APB transfer."
+        "when": "Need only aggregate APB counts and unresolved-filter diagnostics."
       }
     ],
     "constraints": [
-      "required: name; address is exact/range/mask object"
+      "required: name, time_range.begin/end; optional: direction, address, render_time_unit, value_format, output; output.file_format: tsv/csv; file_format requires path"
     ]
   }
 }

@@ -202,8 +202,8 @@ inline Json protocol_example_args(const std::string& action) {
                                 {"pwdata", "top.u.pwdata"},
                                 {"prdata", "top.u.prdata"}}}};
     }
-    if (action == "axi.export") {
-        return Json{{"name", "axi0"},
+    if (action == "axi.export" || action == "apb.export") {
+        return Json{{"name", action == "axi.export" ? "axi0" : "apb0"},
                     {"time_range", {{"begin", "0ns"}, {"end", "1000ns"}}},
                     {"output", {{"path", "xdebug-axi-export"}, {"file_format", "tsv"}}}};
     }

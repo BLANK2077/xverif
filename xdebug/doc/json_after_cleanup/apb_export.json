@@ -1,0 +1,130 @@
+{
+  "request": {
+    "api_version": "xdebug.v1",
+    "action": "apb.export",
+    "target": {
+      "session_id": "case_a"
+    },
+    "args": {
+      "name": "apb0",
+      "time_range": {
+        "begin": "0ns",
+        "end": "1us"
+      },
+      "direction": "all",
+      "value_format": "hex"
+    }
+  },
+  "response": {
+    "api_version": "xdebug.v1",
+    "ok": true,
+    "action": "apb.export",
+    "tool": {
+      "name": "xdebug",
+      "version": "0.1.0"
+    },
+    "session": {
+      "session_id": "case_a",
+      "mode": "waveform",
+      "fsdb": "waves.fsdb",
+      "socket_path": "session-endpoints/case_a.sock",
+      "transport": "uds",
+      "server_host": "localhost"
+    },
+    "summary": {
+      "name": "apb0",
+      "direction": "all",
+      "status": "preview",
+      "output_written": false,
+      "scanned_transaction_count": 10,
+      "in_range_transaction_count": 10,
+      "matched_transaction_count": 10,
+      "matched_write_count": 5,
+      "matched_read_count": 5,
+      "unresolved_filter_count": 0,
+      "preview_row_count": 8,
+      "sample_count": 200,
+      "full_scan_count": 1,
+      "requested_range": {
+        "begin": "0ns",
+        "end": "1000ns"
+      },
+      "scanned_range": {
+        "begin": "5ns",
+        "end": "995ns"
+      },
+      "scan_complete": true,
+      "analysis_complete": true,
+      "response_truncated": true,
+      "total_count": 10,
+      "returned_count": 8,
+      "truncation_scopes": [
+        "response_preview"
+      ],
+      "value_width_complete": true,
+      "width_diagnostics": []
+    },
+    "data": {
+      "preview": [
+        {
+          "time": "15ns",
+          "direction": "write",
+          "addr": "32'h00001000",
+          "data": "32'h00000012",
+          "has_error": false
+        },
+        {
+          "time": "35ns",
+          "direction": "read",
+          "addr": "32'h00001004",
+          "data": "32'h00000034",
+          "has_error": false
+        },
+        {
+          "time": "55ns",
+          "direction": "write",
+          "addr": "32'h00001008",
+          "data": "32'h00000056",
+          "has_error": false
+        },
+        {
+          "time": "75ns",
+          "direction": "read",
+          "addr": "32'h0000100c",
+          "data": "32'h00000078",
+          "has_error": false
+        },
+        {
+          "time": "95ns",
+          "direction": "write",
+          "addr": "32'h00001010",
+          "data": "32'h0000009a",
+          "has_error": false
+        },
+        {
+          "time": "115ns",
+          "direction": "read",
+          "addr": "32'h00001014",
+          "data": "32'h000000bc",
+          "has_error": false
+        },
+        {
+          "time": "135ns",
+          "direction": "write",
+          "addr": "32'h00001018",
+          "data": "32'h000000de",
+          "has_error": false
+        },
+        {
+          "time": "155ns",
+          "direction": "read",
+          "addr": "32'h0000101c",
+          "data": "32'h000000f0",
+          "has_error": true
+        }
+      ]
+    },
+    "error": null
+  },
+  "stderr": ""
+}

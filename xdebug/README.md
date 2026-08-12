@@ -840,9 +840,15 @@ APB 配置的基础字段为 `paddr/pwdata/prdata/pwrite/penable/psel/clk/rst_n`
 - 旧配置不带这两个字段仍可使用，但不能可靠区分 wait-state 或报告 slave
   error response。
 
-同一 session 和同一 APB 语义配置的 query、statistics、transfer_window 与 cursor
+同一 session 和同一 APB 语义配置的 query、export、statistics、transfer_window 与 cursor
 复用一次完整 FSDB 扫描；地址查询按需构建独立索引。分析缓存达到 hard limit 时返回
 明确错误，不会静默缩小时间范围或切换数据源。
+
+`apb.export` 要求 `name` 和完整的 `time_range.begin/end`；`direction` 默认 `all`，顶层
+`address` 只接受 exact/range/mask 中一种。省略 `output.path` 时只在 `data.preview` 返回
+最多 8 笔；显式 path 时写一个按时间排序、混合读写的 TSV/CSV data artifact 和配套 meta。
+written 响应发布 `data_path`、`meta_path`、`artifact_bytes` 及扫描/匹配/完整性计数；preview
+与 written shape 严格分离，不会静默改用 `apb.query`、`stream.export` 或其它数据源。
 
 ### Design-aware hierarchy：scope.list
 

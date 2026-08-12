@@ -43,9 +43,23 @@ _SESSION_TOOL_CONTRACTS: dict[str, Json] = {
 
 
 def _minimal_call(action: str) -> Json | None:
-    path = Path(repo_root()) / "xdebug" / "examples" / "requests" / f"{action}.basic.json"
+    spec = action_spec(action)
+    if spec is None:
+        raise XdebugContractError(f"{action} is absent from the canonical action registry")
+    examples = spec.get("examples")
+    request_paths = examples.get("request") if isinstance(examples, dict) else None
+    if (
+        not isinstance(request_paths, list)
+        or not request_paths
+        or not isinstance(request_paths[0], str)
+        or not request_paths[0]
+    ):
+        raise XdebugContractError(
+            f"{action} has no primary request example in the canonical action registry"
+        )
+    path = Path(repo_root()) / "xdebug" / request_paths[0]
     if not path.is_file():
-        return None
+        raise XdebugContractError(f"{action} primary request example does not exist: {path}")
     request = json.loads(path.read_text(encoding="utf-8"))
     args = request.get("args", {})
     if not isinstance(args, dict):
@@ -90,6 +104,7 @@ def _invalid_examples(minimal: Json | None, args_schema: Json) -> list[Json]:
 def _constraints(action: str, args_schema: Json) -> list[str]:
     del args_schema
     action_constraints = {
+        "apb.export": "标准 APB completed transfer 导出使用顶层 direction/address 与闭合 time_range；省略 output.path 返回最多 8 行 preview，提供 path 时写完整 TSV/CSV artifact。",
         "apb.query": "标准 APB completed transfer 使用 apb.query；address 只接受 exact/range/mask 对象，过滤后再应用 index/line_limit/last。",
         "axi.query": "标准 AXI reconstructed transaction 或精确 channel handshake 使用 axi.query；transaction 模式按 direction/address/id/address-handshake time 取 AND。",
         "event.find": "line_limit 仅在 mode=all 时合法，且只限制返回 evidence，不限制扫描。",
@@ -109,6 +124,7 @@ def _skill_guidance(action: str) -> Json:
         "instruction": "构造请求前读取 $xverif 的 xdebug workflow、action 路由和完整性合同；不要仅凭本 schema 猜跨 action 语义。",
     }
     routing = {
+        "apb.export": "标准 APB completed transfer 的有界预览或完整 artifact 使用 apb.export；交互式行查询使用 apb.query，聚合计数使用 apb.statistics。",
         "apb.query": "标准 APB completed transfer 使用 apb.query；只需聚合计数使用 apb.statistics，自定义 valid-ready 字段使用 stream.query。",
         "axi.query": "标准 AXI channel/reconstructed transaction 使用 axi.query；默认返回每笔第一拍并完整展开第一笔，精确查询后用 output.include_data=true 展开所有 beats。",
         "stream.query": "通用 valid-ready、FIFO、packet 和任意命名字段使用 stream.query；标准 APB/AXI 专用语义分别转 apb.query/axi.query。",

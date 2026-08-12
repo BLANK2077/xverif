@@ -201,7 +201,7 @@ native CLI、engine、session、MCP、SDK-free loop、schema、example、XOUT、
 
 ### C08 APB export
 
-状态：`pending`
+状态：`completed`
 
 - handler、catalog、schema、example、XOUT、MCP/skill 全闭环。
 - action catalog 保持 73。
@@ -313,8 +313,8 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 | C04 FSDB identity | completed | `7e27303` | registry v3 纳秒指纹、open 二次校验、query 前 fail-closed gate 与 RESOURCE_CHANGED AI 证据完成 |
 | C05 Transport | completed | `0725a50` | 64 MiB 统一边界、block I/O、单调 deadline、严格 env 与结构化错误完成 |
 | C06 Cache | completed | `477efdd` | 全元数据预算、O(1) stats、批量 LRU、有界 APB/AXI selection 与资源/等价性门禁完成 |
-| C07 Hierarchy | completed | 本提交 | `scope.list` 的 wave/design/merged 与 generate/interface array/modport/mpport 关系完成真实 VCS/NPI 验证；未扩展 mixed-language/bind |
-| C08 APB export | pending | - | - |
+| C07 Hierarchy | completed | `7c26474` | `scope.list` 的 wave/design/merged 与 generate/interface array/modport/mpport 关系完成真实 VCS/NPI 验证；未扩展 mixed-language/bind |
+| C08 APB export | completed | 本提交 | 73-action catalog；APB preview/闭区间/方向地址过滤/TSV/CSV/meta/no-clobber/宽度完整性完成真实 VIP FSDB/NPI 与 native XOUT 验证 |
 | C09 AI/schema | pending | - | - |
 | C10 清理 | pending | - | - |
 | C11 全量验收 | pending | - | - |
@@ -348,10 +348,16 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 | 2026-08-12 | C07 | `xdebug.design_semantics` / `xdebug.static` / `xdebug.cpp_unit` | host | PASS | 6 / 108 / 1 passed；新 fixture 由 VCS 生成 daidir，真实 NPI 验证 generate/interface array/modport/mpport |
 | 2026-08-12 | C07 | `xdebug.contract` / `xdebug.synthetic_existing` / `skills.xverif` | host | PASS | 112 / 2 / 16 passed |
 | 2026-08-12 | C07 | `testinfra.unit` | host | PARTIAL | C07 相关 catalog、fixture、C++ runner 检查通过；39 passed，唯一失败来自另一个任务未跟踪 flock 报告中的机器绝对路径，未修改、未过滤 |
+| 2026-08-12 | C08 | build / request、response、hint、internal、metadata、help、current sample 生成检查 / schema / examples / runtime compatibility | host | PASS | 构建通过；283 schemas；226 examples；71 internal actions / 64 helper envelopes；全部生成产物一致 |
+| 2026-08-12 | C08 | `xdebug.static` / `xdebug.action_runtime_catalog` / `xdebug.cpp_unit` / `xdebug.contract` | host | PASS | 111 / 1 / 1 / 112 passed |
+| 2026-08-12 | C08 | `skills.xverif` / `skills.public_docs` / `xverif_mcp.unit` | host | PASS | 16 / 3 / 166 passed；MCP minimal call 读取 catalog 首个 canonical request example |
+| 2026-08-12 | C08 | `xdebug.apb_vip` | host，真实 VCS/NPI fixture | PASS | 1 passed；10 笔真实 APB completed transfer，验证 8 行 preview、闭区间、direction/address、decimal、TSV/CSV、meta parity、artifact width 和错误路径 |
+| 2026-08-12 | C08 | prepare `xdebug.xif_event` / `xdebug.native_xout_all` | host，真实 VCS/NPI fixtures | PASS | 缺失 fixture 按正式 prepare 入口生成并通过 probe；73 actions + 9 error cases 的 native XOUT 矩阵 1 passed |
 
 ## 11. 偏差与阻塞记录
 
 - C02 首轮 runtime 验证与并行链接发生竞态，统一冻结构建并重建后串行复验全部通过；已按仓库规则写入环境复盘，不计为产品失败。
 - C06 首轮 probe unit 的 symlink escape 测试把目标误建在允许目录内；修正为同级真实外部目标后正式 cpp_unit 通过。AXI VIP 首轮因其独立 runner 未传递 probe marker 而未生成测试 artifact，补齐每个 runner 自有 tmp marker 后完整复验通过。
+- C08 首轮 static 暴露测试函数边界误置与 C 风格地址字面量，修正测试后通过；首轮 contract 暴露新 action primary example 未遵守 runtime `.basic.json` 约定，统一 primary 命名并让 MCP 从 catalog 读取后通过。真实 APB VIP 进一步确认默认时间输出必须将 `1us` canonicalize 为 `1000ns`，以及 artifact-only 分支必须主动发布宽度完整性；按统一时间/宽度合同修正后完整通过。
 - C07 首轮 design runtime 因 action catalog 已改为 `requires:any`、但 internal request schema 尚未重生成而在 helper routing 层拒绝 design-only session；重生成并加入一致性复验后 6 个真实 NPI 用例全过。旧 synthetic fixture 还按字段全集比较 wave item，更新为验证新增 source/capability 证据。`testinfra.unit` 剩余唯一失败属于另一个任务的未跟踪 flock 报告，不进入本阶段提交。
 - 任何 fallback、范围扩展、required suite 降级、公共合同偏离必须先取得用户确认，再记录于此。

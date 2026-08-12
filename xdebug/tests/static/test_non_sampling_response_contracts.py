@@ -58,6 +58,7 @@ non_sampling_success_response_variants = (
 EXPECTED_ACTIONS = {
     "apb.config.list",
     "apb.config.load",
+    "apb.export",
     "apb.query",
     "apb.statistics",
     "apb.transaction.cursor",
@@ -271,7 +272,7 @@ def _assert_pair_invalid(
 
 def test_exact_action_and_external_definition_coverage() -> None:
     assert set(NON_SAMPLING_RESPONSE_ACTIONS) == EXPECTED_ACTIONS
-    assert len(NON_SAMPLING_RESPONSE_ACTIONS) == 53
+    assert len(NON_SAMPLING_RESPONSE_ACTIONS) == 54
     assert non_sampling_required_external_definitions() == {
         "commonBlock",
         "logicValue",
@@ -304,7 +305,7 @@ def test_all_reachable_variants_have_valid_minimal_witnesses() -> None:
                 f"{action}/{variant.name}: "
                 + "; ".join(error.message for error in errors)
             )
-    assert variant_count == 130
+    assert variant_count == 132
 
 
 def test_all_registered_success_examples_match_a_correlated_variant() -> None:
@@ -339,8 +340,8 @@ def test_all_registered_success_examples_match_a_correlated_variant() -> None:
                     f"{action}: {errors[0].json_path}: "
                     f"{errors[0].message}"
                 )
-    assert response_count == 62
-    assert witness_count == 61
+    assert response_count == 64
+    assert witness_count == 63
     assert not failures, "\n".join(failures)
 
 
@@ -595,6 +596,7 @@ def test_axi_analysis_osd_extrema_are_exact_integer_counts() -> None:
         ("apb.config.list", "named", "list"),
         ("event.config.list", "named", "list"),
         ("apb.query", "count", "single_found"),
+        ("apb.export", "preview", "written"),
         ("axi.query", "transaction_count", "transaction_found"),
         ("list.export", "preview", "written"),
         ("list.first_change", "found", "not_found"),
@@ -646,3 +648,29 @@ def test_axi_export_preview_shape_is_not_reachable() -> None:
     summary["status"] = "preview"
     summary["output_written"] = False
     _assert_pair_invalid("axi.export", summary, data)
+
+
+def test_apb_export_preview_and_written_shapes_are_strictly_correlated() -> None:
+    assert [
+        variant.name
+        for variant in non_sampling_success_response_variants("apb.export")
+    ] == ["preview", "written"]
+
+    preview_summary, preview_data = _variant("apb.export", "preview")
+    preview_data["preview"] = [
+        {
+            "time": "10ns",
+            "direction": "write",
+            "addr": "0x1000",
+            "data": "0x12",
+            "has_error": False,
+        }
+    ]
+    _assert_pair_valid("apb.export", preview_summary, preview_data)
+    preview_summary["artifact_bytes"] = 1
+    _assert_pair_invalid("apb.export", preview_summary, preview_data)
+
+    written_summary, written_data = _variant("apb.export", "written")
+    _assert_pair_valid("apb.export", written_summary, written_data)
+    written_summary.pop("artifact_bytes")
+    _assert_pair_invalid("apb.export", written_summary, written_data)

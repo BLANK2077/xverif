@@ -109,6 +109,7 @@
       "recommended_actions": [
         "value.at",
         "apb.query",
+        "apb.export",
         "apb.transaction.cursor",
         "apb.statistics",
         "apb.transfer_window"
@@ -180,6 +181,52 @@
       ]
     },
     {
+      "name": "apb.export",
+      "category": "waveform",
+      "status": "stable",
+      "requires": "waveform",
+      "handler_kind": "engine_forward",
+      "schemas": {
+        "request": "schemas/v1/actions/apb.export.request.schema.json",
+        "response": "schemas/v1/actions/apb.export.response.schema.json"
+      },
+      "examples": {
+        "request": [
+          "examples/requests/apb.export.basic.json",
+          "examples/requests/apb.export.written.json"
+        ],
+        "response": [
+          "examples/responses/apb.export.basic.json",
+          "examples/responses/apb.export.written.json"
+        ]
+      },
+      "required_args": [
+        "name",
+        "time_range"
+      ],
+      "description_en": "Preview or export filtered APB transactions from one complete time range.",
+      "description_zh": "预览或导出完整时间范围内过滤后的 APB 事务。",
+      "purposes": [
+        "export"
+      ],
+      "use_when": [
+        "Need a bounded in-response APB preview or one complete TSV/CSV transaction artifact plus metadata."
+      ],
+      "do_not_use_when": [
+        "Do not use it for aggregate-only APB counts, interactive transaction selection, AXI semantics, or generic valid-ready streams."
+      ],
+      "alternatives": [
+        {
+          "action": "apb.query",
+          "when": "Interactively select or inspect APB transactions without creating an artifact."
+        },
+        {
+          "action": "apb.statistics",
+          "when": "Need only aggregate APB counts and unresolved-filter diagnostics."
+        }
+      ]
+    },
+    {
       "name": "apb.query",
       "category": "waveform",
       "status": "stable",
@@ -212,6 +259,10 @@
         "Do not use it for AXI channel semantics, custom valid-ready fields, or a focused signal window around one APB transfer."
       ],
       "alternatives": [
+        {
+          "action": "apb.export",
+          "when": "Persist the complete filtered APB transaction set as TSV or CSV."
+        },
         {
           "action": "apb.statistics",
           "when": "Need aggregate APB counts and unresolved-filter diagnostics without transaction rows."

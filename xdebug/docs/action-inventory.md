@@ -71,6 +71,7 @@ contract error，不表示存在兼容入口。
 | `list.export` | waveform | stable | waveform | waveform engine forward | targeted |
 | `apb.config.load` | waveform | stable | waveform | waveform engine forward | partial |
 | `apb.config.list` | waveform | stable | waveform | waveform engine forward | partial |
+| `apb.export` | waveform | stable | waveform | waveform engine forward | APB VIP/native XOUT |
 | `apb.query` | waveform | stable | waveform | waveform engine forward | regression |
 | `apb.statistics` | waveform | stable | waveform | waveform engine forward | regression |
 | `apb.transaction.cursor` | waveform | stable | waveform | waveform engine forward | partial |

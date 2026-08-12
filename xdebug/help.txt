@@ -220,7 +220,7 @@ Common actions
       signal.stability, protocol.handshake.inspect, signal.anomaly.inspect
 
   Protocol:
-      apb.query, axi.query, axi.analysis
+      apb.query, apb.export, axi.query, axi.analysis
 
   Combined:
       trace.active_driver

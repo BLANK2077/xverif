@@ -98,6 +98,9 @@
                 "$ref": "#/$defs/batchChild_apb_config_load_a4584d4bb6__response"
               },
               {
+                "$ref": "#/$defs/batchChild_apb_export_0170ab1750__response"
+              },
+              {
                 "$ref": "#/$defs/batchChild_apb_query_61feb3a19a__response"
               },
               {
@@ -8007,6 +8010,2402 @@
             },
             "error": {
               "$ref": "#/$defs/batchChild_apb_config_load_a4584d4bb6__error"
+            }
+          },
+          "required": [
+            "api_version",
+            "ok",
+            "action",
+            "tool",
+            "session",
+            "summary",
+            "data",
+            "error"
+          ]
+        }
+      ],
+      "additionalProperties": false
+    },
+    "batchChild_apb_export_0170ab1750__jsonValue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/batchChild_apb_export_0170ab1750__jsonValue"
+          }
+        },
+        {
+          "$ref": "#/$defs/batchChild_apb_export_0170ab1750__jsonObject"
+        }
+      ]
+    },
+    "batchChild_apb_export_0170ab1750__jsonObject": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/batchChild_apb_export_0170ab1750__jsonValue"
+      },
+      "x-dynamic-map": true,
+      "description": "显式动态键 JSON 对象；每个 value 仍受 jsonValue 递归合同约束。"
+    },
+    "batchChild_apb_export_0170ab1750__successSummary": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "direction": {
+              "enum": [
+                "all",
+                "read",
+                "write"
+              ]
+            },
+            "scanned_transaction_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "in_range_transaction_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "matched_transaction_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "matched_write_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "matched_read_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "unresolved_filter_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "preview_row_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sample_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "full_scan_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "requested_range": {
+              "$ref": "#/$defs/batchChild_apb_export_0170ab1750__nonSamplingTimeRange"
+            },
+            "scanned_range": {
+              "$ref": "#/$defs/batchChild_apb_export_0170ab1750__nonSamplingTimeRange"
+            },
+            "value_width_complete": {
+              "type": "boolean"
+            },
+            "width_diagnostics": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "signal": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "role": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "enum": [
+                      "npi_range_size_unavailable",
+                      "conflicting_signal_widths",
+                      "derived_width_unavailable"
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "reason",
+                  "role",
+                  "signal"
+                ]
+              }
+            },
+            "status": {
+              "const": "preview"
+            },
+            "output_written": {
+              "const": false
+            },
+            "scan_complete": {
+              "type": "boolean"
+            },
+            "analysis_complete": {
+              "type": "boolean"
+            },
+            "response_truncated": {
+              "type": "boolean"
+            },
+            "total_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "returned_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "truncation_scopes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "analysis_complete",
+            "direction",
+            "full_scan_count",
+            "in_range_transaction_count",
+            "matched_read_count",
+            "matched_transaction_count",
+            "matched_write_count",
+            "name",
+            "output_written",
+            "preview_row_count",
+            "requested_range",
+            "response_truncated",
+            "returned_count",
+            "sample_count",
+            "scan_complete",
+            "scanned_range",
+            "scanned_transaction_count",
+            "status",
+            "total_count",
+            "truncation_scopes",
+            "unresolved_filter_count",
+            "value_width_complete",
+            "width_diagnostics"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "direction": {
+              "enum": [
+                "all",
+                "read",
+                "write"
+              ]
+            },
+            "scanned_transaction_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "in_range_transaction_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "matched_transaction_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "matched_write_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "matched_read_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "unresolved_filter_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "preview_row_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sample_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "full_scan_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "requested_range": {
+              "$ref": "#/$defs/batchChild_apb_export_0170ab1750__nonSamplingTimeRange"
+            },
+            "scanned_range": {
+              "$ref": "#/$defs/batchChild_apb_export_0170ab1750__nonSamplingTimeRange"
+            },
+            "value_width_complete": {
+              "type": "boolean"
+            },
+            "width_diagnostics": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "signal": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "role": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "enum": [
+                      "npi_range_size_unavailable",
+                      "conflicting_signal_widths",
+                      "derived_width_unavailable"
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "reason",
+                  "role",
+                  "signal"
+                ]
+              }
+            },
+            "status": {
+              "const": "written"
+            },
+            "output_written": {
+              "const": true
+            },
+            "artifact_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "output": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "data_path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "meta_path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "file_format": {
+                  "enum": [
+                    "tsv",
+                    "csv"
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "data_path",
+                "file_format",
+                "meta_path",
+                "path"
+              ]
+            },
+            "scan_complete": {
+              "type": "boolean"
+            },
+            "analysis_complete": {
+              "type": "boolean"
+            },
+            "response_truncated": {
+              "type": "boolean"
+            },
+            "total_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "returned_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "truncation_scopes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "analysis_complete",
+            "artifact_bytes",
+            "direction",
+            "full_scan_count",
+            "in_range_transaction_count",
+            "matched_read_count",
+            "matched_transaction_count",
+            "matched_write_count",
+            "name",
+            "output",
+            "output_written",
+            "preview_row_count",
+            "requested_range",
+            "response_truncated",
+            "returned_count",
+            "sample_count",
+            "scan_complete",
+            "scanned_range",
+            "scanned_transaction_count",
+            "status",
+            "total_count",
+            "truncation_scopes",
+            "unresolved_filter_count",
+            "value_width_complete",
+            "width_diagnostics"
+          ]
+        }
+      ]
+    },
+    "batchChild_apb_export_0170ab1750__successData": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "preview": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "time": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "direction": {
+                    "enum": [
+                      "read",
+                      "write"
+                    ]
+                  },
+                  "addr": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "data": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "has_error": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "addr",
+                  "data",
+                  "direction",
+                  "has_error",
+                  "time"
+                ]
+              },
+              "maxItems": 8
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "preview"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        }
+      ]
+    },
+    "batchChild_apb_export_0170ab1750__errorSummary": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "error"
+        },
+        "error_code": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "error_code",
+        "status"
+      ]
+    },
+    "batchChild_apb_export_0170ab1750__validationIssue": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "message",
+        "path"
+      ]
+    },
+    "batchChild_apb_export_0170ab1750__error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "recoverable": {
+          "type": "boolean"
+        },
+        "error_layer": {
+          "enum": [
+            "schema",
+            "handler",
+            "wrapper",
+            "session_manager",
+            "transport",
+            "internal"
+          ]
+        },
+        "invalid_arg": {
+          "type": "string"
+        },
+        "expected": {
+          "type": "string"
+        },
+        "received": {
+          "$ref": "#/$defs/batchChild_apb_export_0170ab1750__jsonValue"
+        },
+        "received_type": {
+          "type": "string"
+        },
+        "received_redacted": {
+          "type": "boolean"
+        },
+        "available_values": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "did_you_mean": {
+          "type": "string",
+          "minLength": 1
+        },
+        "schema_path": {
+          "type": "string"
+        },
+        "required_any_of": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "missing_name": {
+          "type": "string"
+        },
+        "missing_resource": {
+          "type": "string"
+        },
+        "next_actions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "example_note": {
+          "type": "string"
+        },
+        "correct_example": {
+          "$ref": "#/$defs/batchChild_apb_export_0170ab1750__jsonValue"
+        },
+        "cause_code": {
+          "type": "string"
+        },
+        "validation": {
+          "$ref": "#/$defs/batchChild_apb_export_0170ab1750__jsonValue"
+        },
+        "current_estimated_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hard_max_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit_name": {
+          "enum": [
+            "request_bytes"
+          ]
+        },
+        "received_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "transport": {
+          "enum": [
+            "stdio",
+            "uds",
+            "tcp",
+            "file"
+          ]
+        },
+        "phase": {
+          "enum": [
+            "public_request",
+            "internal_request",
+            "transport_request",
+            "transport_response"
+          ]
+        },
+        "config_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "config_source": {
+          "enum": [
+            "environment",
+            "default",
+            "request"
+          ]
+        },
+        "protocol": {
+          "enum": [
+            "apb",
+            "axi",
+            "stream"
+          ]
+        },
+        "key_summary": {
+          "type": "string"
+        },
+        "manifest_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resource": {
+          "enum": [
+            "daidir",
+            "fsdb"
+          ]
+        },
+        "expected_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "actual_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "actual_size_bytes": {
+          "type": [
+            "null",
+            "integer"
+          ],
+          "minimum": 0
+        },
+        "expected_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "actual_sha256": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{64}$"
+            }
+          ]
+        },
+        "manifest_schema_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "manifest_state": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_mode": {
+          "enum": [
+            "design",
+            "waveform",
+            "combined"
+          ]
+        },
+        "session_transport": {
+          "enum": [
+            "uds",
+            "tcp",
+            "file"
+          ]
+        },
+        "idle_sec": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "idle_timeout_sec": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cleanup_succeeded": {
+          "type": "boolean"
+        },
+        "termination_confirmed": {
+          "type": "boolean"
+        },
+        "cancel_state": {
+          "enum": [
+            "confirmed",
+            "unknown"
+          ]
+        },
+        "session_state": {
+          "enum": [
+            "cleanup_failed",
+            "terminated_on_timeout"
+          ]
+        },
+        "lifecycle_state": {
+          "enum": [
+            "cleanup_failed"
+          ]
+        },
+        "compensation_status": {
+          "enum": [
+            "cleaned",
+            "not_created",
+            "token_mismatch",
+            "cleanup_failed"
+          ]
+        },
+        "backend_error_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "exit_status": {
+          "type": "integer"
+        },
+        "health_status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resource_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "change_kind": {
+          "enum": [
+            "missing",
+            "type_changed",
+            "path_changed",
+            "fingerprint_upgrade_required",
+            "identity_changed",
+            "metadata_changed",
+            "identity_and_metadata_changed"
+          ]
+        },
+        "expected_resource_identity": {
+          "type": "object",
+          "properties": {
+            "canonical_path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "device": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "inode": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "size_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "mtime_ns": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "canonical_path",
+            "device",
+            "inode",
+            "mtime_ns",
+            "size_bytes"
+          ]
+        },
+        "actual_resource_identity": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "canonical_path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "device": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "inode": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "size_bytes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "mtime_ns": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "canonical_path",
+                "device",
+                "inode",
+                "mtime_ns",
+                "size_bytes"
+              ]
+            }
+          ]
+        },
+        "requested_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "removed_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retained_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed_session_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "failure_kind": {
+          "type": "string"
+        },
+        "failure_phase": {
+          "enum": [
+            "npi_init",
+            "npi_load_design",
+            "npi_fsdb_open"
+          ]
+        },
+        "startup_reason": {
+          "type": "string"
+        },
+        "native_error_summary": {
+          "type": "string"
+        },
+        "diagnostic_log": {
+          "type": "string"
+        },
+        "advisories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "severity": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "message",
+              "severity"
+            ]
+          }
+        },
+        "validation_issues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/batchChild_apb_export_0170ab1750__validationIssue"
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "error_layer",
+        "message",
+        "recoverable"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "REQUEST_TOO_LARGE"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "recoverable": {
+                "const": false
+              }
+            },
+            "required": [
+              "limit_name",
+              "received_bytes",
+              "max_bytes",
+              "transport",
+              "phase",
+              "next_actions"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "INVALID_CONFIG"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "properties": {
+              "recoverable": {
+                "const": false
+              }
+            },
+            "required": [
+              "config_key",
+              "config_source",
+              "expected",
+              "next_actions"
+            ]
+          }
+        }
+      ]
+    },
+    "batchChild_apb_export_0170ab1750__tool": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "build_id": {
+          "type": "string"
+        },
+        "git_revision": {
+          "type": "string"
+        },
+        "schema_revision": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version"
+      ]
+    },
+    "batchChild_apb_export_0170ab1750__sessionRecord": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "enum": [
+            "design",
+            "waveform",
+            "combined"
+          ]
+        },
+        "daidir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fsdb": {
+          "type": "string",
+          "minLength": 1
+        },
+        "socket_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "transport": {
+          "enum": [
+            "uds",
+            "tcp",
+            "file"
+          ]
+        },
+        "file_dir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bind_host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "server_host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "server_pid": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "created_at": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "last_active": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "daidir_mtime_ns": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "daidir_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "daidir_dev": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "daidir_inode": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fsdb_mtime_ns": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fsdb_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fsdb_dev": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fsdb_inode": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "session_id",
+        "mode",
+        "transport"
+      ],
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "mode": {
+                  "const": "design"
+                }
+              },
+              "required": [
+                "mode",
+                "daidir"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "fsdb"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "fsdb_mtime_ns"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "fsdb_size"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "fsdb_dev"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "fsdb_inode"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "properties": {
+                "mode": {
+                  "const": "waveform"
+                }
+              },
+              "required": [
+                "mode",
+                "fsdb"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "daidir"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "daidir_mtime_ns"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "daidir_size"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "daidir_dev"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "daidir_inode"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "properties": {
+                "mode": {
+                  "const": "combined"
+                }
+              },
+              "required": [
+                "mode",
+                "daidir",
+                "fsdb"
+              ]
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "transport": {
+                  "const": "uds"
+                }
+              },
+              "required": [
+                "transport",
+                "socket_path",
+                "server_host"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "file_dir"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "host"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "bind_host"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "port"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "properties": {
+                "transport": {
+                  "const": "tcp"
+                }
+              },
+              "required": [
+                "transport",
+                "host",
+                "bind_host",
+                "port",
+                "server_host"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "socket_path"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "file_dir"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "properties": {
+                "transport": {
+                  "const": "file"
+                }
+              },
+              "required": [
+                "transport",
+                "file_dir",
+                "server_host"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "socket_path"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "host"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "bind_host"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "port"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "batchChild_apb_export_0170ab1750__suggestedNextAction": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "chain_id": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "signal": {
+              "type": "string"
+            },
+            "time": {
+              "type": "string"
+            },
+            "value_format": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "max_depth": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_chains": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_paths": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_nodes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_time_steps": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_trace_signals": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_results": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "timeout_ms": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "reason"
+      ]
+    },
+    "batchChild_apb_export_0170ab1750__finding": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "signal": {
+          "type": "string"
+        },
+        "time": {
+          "type": "string"
+        },
+        "begin": {
+          "type": "string"
+        },
+        "end": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/batchChild_apb_export_0170ab1750__jsonValue"
+        },
+        "details": {
+          "$ref": "#/$defs/batchChild_apb_export_0170ab1750__jsonValue"
+        }
+      },
+      "additionalProperties": false
+    },
+    "batchChild_apb_export_0170ab1750__warning": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "severity": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "signal": {
+              "type": "string"
+            },
+            "time": {
+              "type": "string"
+            },
+            "details": {
+              "$ref": "#/$defs/batchChild_apb_export_0170ab1750__jsonValue"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "code",
+            "message"
+          ]
+        }
+      ]
+    },
+    "batchChild_apb_export_0170ab1750__logicValue": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "known": {
+          "type": "boolean"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bits": {
+          "type": "string",
+          "minLength": 1
+        },
+        "has_x": {
+          "type": "boolean"
+        },
+        "has_z": {
+          "type": "boolean"
+        },
+        "requested_value_format": {
+          "const": "dec"
+        },
+        "effective_value_format": {
+          "const": "bin"
+        },
+        "value_format_reason": {
+          "const": "decimal cannot preserve per-bit X/Z"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "known",
+        "value"
+      ],
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "required": [
+                "width",
+                "bits"
+              ]
+            },
+            {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "width"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "bits"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "known": {
+                  "const": true
+                }
+              },
+              "required": [
+                "known"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "has_x"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "has_z"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "requested_value_format"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "effective_value_format"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "value_format_reason"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "properties": {
+                "known": {
+                  "const": false
+                },
+                "has_x": {
+                  "type": "boolean"
+                },
+                "has_z": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "known",
+                "has_x",
+                "has_z"
+              ],
+              "anyOf": [
+                {
+                  "properties": {
+                    "has_x": {
+                      "const": true
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "has_z": {
+                      "const": true
+                    }
+                  }
+                }
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "requested_value_format"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "effective_value_format"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "value_format_reason"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "properties": {
+                "known": {
+                  "const": false
+                },
+                "has_x": {
+                  "type": "boolean"
+                },
+                "has_z": {
+                  "type": "boolean"
+                },
+                "requested_value_format": {
+                  "const": "dec"
+                },
+                "effective_value_format": {
+                  "const": "bin"
+                },
+                "value_format_reason": {
+                  "const": "decimal cannot preserve per-bit X/Z"
+                }
+              },
+              "required": [
+                "known",
+                "has_x",
+                "has_z",
+                "requested_value_format",
+                "effective_value_format",
+                "value_format_reason"
+              ],
+              "anyOf": [
+                {
+                  "properties": {
+                    "has_x": {
+                      "const": true
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "has_z": {
+                      "const": true
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "batchChild_apb_export_0170ab1750__sessionHealthFailureEvidence": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "health_status": {
+          "enum": [
+            "healthy",
+            "registry_missing",
+            "process_exited",
+            "socket_missing",
+            "connect_failed",
+            "ping_failed",
+            "dbdir_missing",
+            "dbdir_changed",
+            "fsdb_missing",
+            "fsdb_changed"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ]
+    },
+    "batchChild_apb_export_0170ab1750__sessionCleanupItem": {
+      "type": "object",
+      "properties": {
+        "removed_session": {
+          "$ref": "#/$defs/batchChild_apb_export_0170ab1750__sessionRecord"
+        },
+        "reason": {
+          "enum": [
+            "idle_timeout",
+            "unhealthy"
+          ]
+        },
+        "health_evidence": {
+          "$ref": "#/$defs/batchChild_apb_export_0170ab1750__sessionHealthFailureEvidence"
+        },
+        "idle_sec": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "idle_timeout_sec": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "removed_session"
+      ],
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "reason": {
+                  "const": "idle_timeout"
+                }
+              },
+              "required": [
+                "reason",
+                "idle_sec",
+                "idle_timeout_sec"
+              ],
+              "not": {
+                "required": [
+                  "health_evidence"
+                ]
+              }
+            },
+            {
+              "properties": {
+                "reason": {
+                  "const": "unhealthy"
+                },
+                "health_evidence": {
+                  "$ref": "#/$defs/batchChild_apb_export_0170ab1750__sessionHealthFailureEvidence"
+                }
+              },
+              "required": [
+                "reason",
+                "health_evidence"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "idle_sec"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "idle_timeout_sec"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "batchChild_apb_export_0170ab1750__commonBlock": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "card": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "card",
+        "file",
+        "message"
+      ]
+    },
+    "batchChild_apb_export_0170ab1750__reset": {
+      "type": "object",
+      "required": [
+        "signal",
+        "polarity"
+      ],
+      "properties": {
+        "signal": {
+          "type": "string",
+          "minLength": 1,
+          "description": "One-bit final waveform signal path used as reset."
+        },
+        "polarity": {
+          "type": "string",
+          "enum": [
+            "active_low",
+            "active_high"
+          ],
+          "description": "Level that asserts reset. X, Z, and unavailable samples are conservatively treated as asserted."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Reset definition. Both signal and polarity are required when reset is supplied."
+    },
+    "batchChild_apb_export_0170ab1750__valueWidthDiagnostic": {
+      "type": "object",
+      "properties": {
+        "signal": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role": {
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "npi_range_size_unavailable",
+            "conflicting_signal_widths",
+            "derived_width_unavailable"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "role",
+        "signal"
+      ]
+    },
+    "batchChild_apb_export_0170ab1750__nonSamplingTimeRange": {
+      "type": "object",
+      "properties": {
+        "begin": {
+          "type": "string",
+          "minLength": 1
+        },
+        "end": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "begin",
+        "end"
+      ]
+    },
+    "batchChild_apb_export_0170ab1750__successSummary0": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "direction": {
+          "enum": [
+            "all",
+            "read",
+            "write"
+          ]
+        },
+        "scanned_transaction_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "in_range_transaction_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "matched_transaction_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "matched_write_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "matched_read_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unresolved_filter_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "preview_row_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sample_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "full_scan_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "requested_range": {
+          "$ref": "#/$defs/batchChild_apb_export_0170ab1750__nonSamplingTimeRange"
+        },
+        "scanned_range": {
+          "$ref": "#/$defs/batchChild_apb_export_0170ab1750__nonSamplingTimeRange"
+        },
+        "value_width_complete": {
+          "type": "boolean"
+        },
+        "width_diagnostics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "signal": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "role": {
+                "type": "string"
+              },
+              "reason": {
+                "enum": [
+                  "npi_range_size_unavailable",
+                  "conflicting_signal_widths",
+                  "derived_width_unavailable"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "reason",
+              "role",
+              "signal"
+            ]
+          }
+        },
+        "status": {
+          "const": "preview"
+        },
+        "output_written": {
+          "const": false
+        },
+        "scan_complete": {
+          "type": "boolean"
+        },
+        "analysis_complete": {
+          "type": "boolean"
+        },
+        "response_truncated": {
+          "type": "boolean"
+        },
+        "total_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "returned_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncation_scopes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "analysis_complete",
+        "direction",
+        "full_scan_count",
+        "in_range_transaction_count",
+        "matched_read_count",
+        "matched_transaction_count",
+        "matched_write_count",
+        "name",
+        "output_written",
+        "preview_row_count",
+        "requested_range",
+        "response_truncated",
+        "returned_count",
+        "sample_count",
+        "scan_complete",
+        "scanned_range",
+        "scanned_transaction_count",
+        "status",
+        "total_count",
+        "truncation_scopes",
+        "unresolved_filter_count",
+        "value_width_complete",
+        "width_diagnostics"
+      ]
+    },
+    "batchChild_apb_export_0170ab1750__successData0": {
+      "type": "object",
+      "properties": {
+        "preview": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "time": {
+                "type": "string",
+                "minLength": 1
+              },
+              "direction": {
+                "enum": [
+                  "read",
+                  "write"
+                ]
+              },
+              "addr": {
+                "type": "string",
+                "minLength": 1
+              },
+              "data": {
+                "type": "string",
+                "minLength": 1
+              },
+              "has_error": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "addr",
+              "data",
+              "direction",
+              "has_error",
+              "time"
+            ]
+          },
+          "maxItems": 8
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "preview"
+      ]
+    },
+    "batchChild_apb_export_0170ab1750__successSummary1": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "direction": {
+          "enum": [
+            "all",
+            "read",
+            "write"
+          ]
+        },
+        "scanned_transaction_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "in_range_transaction_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "matched_transaction_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "matched_write_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "matched_read_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unresolved_filter_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "preview_row_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sample_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "full_scan_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "requested_range": {
+          "$ref": "#/$defs/batchChild_apb_export_0170ab1750__nonSamplingTimeRange"
+        },
+        "scanned_range": {
+          "$ref": "#/$defs/batchChild_apb_export_0170ab1750__nonSamplingTimeRange"
+        },
+        "value_width_complete": {
+          "type": "boolean"
+        },
+        "width_diagnostics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "signal": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "role": {
+                "type": "string"
+              },
+              "reason": {
+                "enum": [
+                  "npi_range_size_unavailable",
+                  "conflicting_signal_widths",
+                  "derived_width_unavailable"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "reason",
+              "role",
+              "signal"
+            ]
+          }
+        },
+        "status": {
+          "const": "written"
+        },
+        "output_written": {
+          "const": true
+        },
+        "artifact_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "data_path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "meta_path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "file_format": {
+              "enum": [
+                "tsv",
+                "csv"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "data_path",
+            "file_format",
+            "meta_path",
+            "path"
+          ]
+        },
+        "scan_complete": {
+          "type": "boolean"
+        },
+        "analysis_complete": {
+          "type": "boolean"
+        },
+        "response_truncated": {
+          "type": "boolean"
+        },
+        "total_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "returned_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncation_scopes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "analysis_complete",
+        "artifact_bytes",
+        "direction",
+        "full_scan_count",
+        "in_range_transaction_count",
+        "matched_read_count",
+        "matched_transaction_count",
+        "matched_write_count",
+        "name",
+        "output",
+        "output_written",
+        "preview_row_count",
+        "requested_range",
+        "response_truncated",
+        "returned_count",
+        "sample_count",
+        "scan_complete",
+        "scanned_range",
+        "scanned_transaction_count",
+        "status",
+        "total_count",
+        "truncation_scopes",
+        "unresolved_filter_count",
+        "value_width_complete",
+        "width_diagnostics"
+      ]
+    },
+    "batchChild_apb_export_0170ab1750__successData1": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "batchChild_apb_export_0170ab1750__response": {
+      "title": "apb.export response",
+      "description": "Preview or export filtered APB transactions from one complete time range.",
+      "x-description-zh": "预览或导出完整时间范围内过滤后的 APB 事务。",
+      "x-output_notes": "apb.export 成功响应的 summary 字段为 summary.analysis_complete, summary.artifact_bytes, summary.direction, summary.full_scan_count, summary.in_range_transaction_count, summary.matched_read_count, summary.matched_transaction_count, summary.matched_write_count, summary.name, summary.output, summary.output_written, summary.preview_row_count, summary.requested_range, summary.response_truncated, summary.returned_count, summary.sample_count, summary.scan_complete, summary.scanned_range, summary.scanned_transaction_count, summary.status, summary.total_count, summary.truncation_scopes, summary.unresolved_filter_count, summary.value_width_complete, summary.width_diagnostics；data 字段为 data.preview。未知字段会被拒绝。完整性和裁剪事实使用 summary.scan_complete, summary.analysis_complete, summary.response_truncated, summary.total_count, summary.returned_count, summary.truncation_scopes。",
+      "type": "object",
+      "properties": {
+        "api_version": {
+          "const": "xdebug.v1"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "action": {
+          "const": "apb.export"
+        },
+        "tool": {
+          "$ref": "#/$defs/batchChild_apb_export_0170ab1750__tool"
+        },
+        "session": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/batchChild_apb_export_0170ab1750__sessionRecord"
+            }
+          ]
+        },
+        "schema_version": {
+          "type": "string"
+        },
+        "suggested_next_actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/batchChild_apb_export_0170ab1750__suggestedNextAction"
+          }
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/batchChild_apb_export_0170ab1750__successSummary"
+            },
+            {
+              "$ref": "#/$defs/batchChild_apb_export_0170ab1750__errorSummary"
+            }
+          ]
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/batchChild_apb_export_0170ab1750__successData"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/batchChild_apb_export_0170ab1750__finding"
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/batchChild_apb_export_0170ab1750__warning"
+          }
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/batchChild_apb_export_0170ab1750__error"
+            }
+          ]
+        }
+      },
+      "required": [
+        "api_version",
+        "ok",
+        "action",
+        "tool",
+        "session",
+        "summary",
+        "data",
+        "error"
+      ],
+      "oneOf": [
+        {
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "error": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "api_version",
+            "ok",
+            "action",
+            "tool",
+            "session",
+            "summary",
+            "data",
+            "error"
+          ],
+          "oneOf": [
+            {
+              "properties": {
+                "summary": {
+                  "$ref": "#/$defs/batchChild_apb_export_0170ab1750__successSummary0"
+                },
+                "data": {
+                  "$ref": "#/$defs/batchChild_apb_export_0170ab1750__successData0"
+                }
+              },
+              "required": [
+                "summary",
+                "data"
+              ]
+            },
+            {
+              "properties": {
+                "summary": {
+                  "$ref": "#/$defs/batchChild_apb_export_0170ab1750__successSummary1"
+                },
+                "data": {
+                  "$ref": "#/$defs/batchChild_apb_export_0170ab1750__successData1"
+                }
+              },
+              "required": [
+                "summary",
+                "data"
+              ]
+            }
+          ]
+        },
+        {
+          "properties": {
+            "ok": {
+              "const": false
+            },
+            "session": {
+              "type": "null"
+            },
+            "summary": {
+              "$ref": "#/$defs/batchChild_apb_export_0170ab1750__errorSummary"
+            },
+            "data": {
+              "type": "null"
+            },
+            "error": {
+              "$ref": "#/$defs/batchChild_apb_export_0170ab1750__error"
             }
           },
           "required": [
@@ -189131,6 +191530,7 @@
               "actions",
               "apb.config.list",
               "apb.config.load",
+              "apb.export",
               "apb.query",
               "apb.statistics",
               "apb.transaction.cursor",
@@ -189302,6 +191702,9 @@
               },
               {
                 "$ref": "#/$defs/batchChild_apb_config_load_a4584d4bb6__response"
+              },
+              {
+                "$ref": "#/$defs/batchChild_apb_export_0170ab1750__response"
               },
               {
                 "$ref": "#/$defs/batchChild_apb_query_61feb3a19a__response"

@@ -38,4 +38,7 @@ xdebug_waveform::ValueFilterMatch match_protocol_query_filter(
     const std::string& id = std::string(),
     int id_width = 0);
 
+bool protocol_direction_matches(bool is_write,
+                                const std::string& direction);
+
 }  // namespace xdebug_design

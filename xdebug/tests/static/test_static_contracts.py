@@ -471,6 +471,7 @@ def test_config_load_recommendations_are_exact_and_actionable() -> None:
         "apb.config.load": [
             "value.at",
             "apb.query",
+            "apb.export",
             "apb.transaction.cursor",
             "apb.statistics",
             "apb.transfer_window",

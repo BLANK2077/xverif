@@ -93,6 +93,7 @@ ENGINE_SRCS = src/engine/main.cpp \
               src/engine/service/actions/protocol/apb_config_list.cpp \
               src/engine/service/actions/protocol/apb_config_load.cpp \
               src/engine/service/actions/protocol/apb_transaction_cursor.cpp \
+              src/engine/service/actions/protocol/apb_export.cpp \
               src/engine/service/actions/protocol/apb_query.cpp \
               src/engine/service/actions/protocol/apb_statistics.cpp \
               src/engine/service/actions/protocol/axi_analysis.cpp \
@@ -199,6 +200,7 @@ WAVEFORM_SRCS = src/waveform/service/action_support.cpp \
                 src/waveform/cache/analysis_size_estimator.cpp \
                 src/waveform/apb/apb_manager.cpp \
                 src/waveform/apb/apb_analyzer.cpp \
+                src/waveform/apb/apb_exporter.cpp \
                 src/waveform/axi/axi_manager.cpp \
                 src/waveform/axi/axi_transaction_tracker.cpp \
                 src/waveform/axi/axi_transaction_json.cpp \

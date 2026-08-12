@@ -241,6 +241,20 @@ def test_protocol_query_projections_publish_strong_skill_routing() -> None:
                    for item in payload["constraints"])
 
 
+def test_apb_export_projection_explains_preview_and_artifact_modes() -> None:
+    root = Path(__file__).resolve().parents[2]
+    schema = json.loads((
+        root / "xdebug/schemas/v1/actions/apb.export.request.schema.json"
+    ).read_text(encoding="utf-8"))
+    payload = project(
+        "apb.export", "request", "mcp",
+        {"ok": True, "data": {"schema": schema}},
+    )["data"]
+    assert "最多 8 行 preview" in payload["constraints"][0]
+    assert "apb.query" in payload["skill_guidance"]["routing_hint"]
+    assert payload["minimal_call"]["action"] == "apb.export"
+
+
 def _contains_key(value: object, key: str) -> bool:
     if isinstance(value, dict):
         return key in value or any(_contains_key(child, key) for child in value.values())

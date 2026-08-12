@@ -32,14 +32,6 @@ Json apb_transaction_json(const xdebug_waveform::ApbTransaction& txn) {
     return out;
 }
 
-bool direction_matches(
-    const xdebug_waveform::ApbTransaction& transaction,
-    const std::string& direction) {
-    return direction == "all" ||
-        (direction == "write" && transaction.is_write) ||
-        (direction == "read" && !transaction.is_write);
-}
-
 void set_query_summary(
     Json& summary,
     const xdebug_waveform::ApbDiagnostics& diagnostics,
@@ -127,7 +119,7 @@ public:
         if (keep_limit > 0) page.reserve(keep_limit);
         for (const ApbTransaction* transaction : result->all) {
             if (!transaction ||
-                !direction_matches(*transaction, direction)) {
+                !protocol_direction_matches(transaction->is_write, direction)) {
                 continue;
             }
             if (match_protocol_query_filter(

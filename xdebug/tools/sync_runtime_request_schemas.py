@@ -207,6 +207,9 @@ RUNTIME_CONSUMER_CONTRACTS_BY_ACTION: dict[
     "apb.config.load": _runtime_consumer_contract(
         "apb.config.load", {"config", "config_path"}
     ),
+    "apb.export": _runtime_consumer_contract(
+        "apb.export", {"direction", "address", "output", "time_range"}
+    ),
     "apb.query": _runtime_consumer_contract(
         "apb.query", {"direction", "address", "query", "last"}
     ),
@@ -481,6 +484,29 @@ OUTPUT_SCHEMAS_BY_ACTION: dict[str, dict[str, Any]] = {
         },
         "additionalProperties": False,
     },
+    "apb.export": {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Output path prefix; omit it to return at most eight APB transactions in data.preview.",
+            },
+            "file_format": {
+                "type": "string",
+                "enum": ["tsv", "csv"],
+                "default": "tsv",
+                "description": "APB transaction artifact file format.",
+            },
+        },
+        "allOf": [
+            {
+                "if": {"required": ["file_format"]},
+                "then": {"required": ["path"]},
+            }
+        ],
+        "additionalProperties": False,
+    },
     "axi.query": {
         "type": "object",
         "properties": {
@@ -602,6 +628,7 @@ OUTPUT_SCHEMAS_BY_ACTION: dict[str, dict[str, Any]] = {
 # the display-only render_time_unit selector. It is not a generic engine knob.
 TIME_RENDERING_ACTIONS = {
     "apb.transaction.cursor",
+    "apb.export",
     "apb.query",
     "apb.transfer_window",
     "axi.analysis",
@@ -646,6 +673,7 @@ TIME_RENDERING_ACTIONS = {
 # event and waveform actions cannot drift independently.
 VALUE_BEARING_ACTIONS = {
     "apb.transaction.cursor",
+    "apb.export",
     "apb.query",
     "apb.statistics",
     "apb.transfer_window",
@@ -1596,7 +1624,7 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
             ],
             "description": "Select transactions by 1-based index/line_limit, or exactly match an AXI channel handshake time.",
         }
-    if action in {"apb.query", "axi.query"}:
+    if action in {"apb.export", "apb.query", "axi.query"}:
         protocol_filter = protocol_statistics_filter_schema(allow_ids=True)
         address_filter = copy.deepcopy(
             protocol_filter["properties"]["address"]
@@ -1622,6 +1650,8 @@ def sync_schema(schema: dict[str, Any], spec: dict[str, Any], arg_schemas: dict[
                     "transaction filters."
                 ),
             }
+    if action == "apb.export" and "time_range" in selected_props:
+        selected_props["time_range"]["required"] = ["begin", "end"]
     if action == "list.export" and "format" in selected_props:
         selected_props["format"] = {
             "type": "string",

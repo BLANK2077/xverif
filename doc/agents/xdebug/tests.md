@@ -62,10 +62,13 @@ address、ID 和 handshake lazy index；1-byte hard budget 必须稳定返回
 `ANALYSIS_MEMORY_LIMIT_EXCEEDED`，不得改用 range、offline 或其它 backend。
 
 `xdebug.apb_vip` 除 wait-state、PSLVERR、statistics filter 和 cursor 既有语义外，
-还必须通过 test-only probe 证明 query/statistics/transfer_window/cursor 全流程只发布一次
+还必须通过 test-only probe 证明 query/export/statistics/transfer_window/cursor 全流程只发布一次
 APB canonical build、只扫描一次 FSDB，并触发独立 AddressIndex。1-byte soft budget
 覆盖两个语义 config 逐出后 generation cursor 位置恢复；1-byte hard budget 必须返回
 `ANALYSIS_MEMORY_LIMIT_EXCEEDED`，不得缩小范围或切换 backend。
+`apb.export` 同时覆盖无 path 的 8 行 preview、TSV/CSV 单 data artifact + meta、
+direction/address/time_range 过滤、artifact byte/count/range 一致性以及 preview/written
+严格响应分支；不得把 preview 截断误报为扫描不完整。
 
 `xdebug.analysis_cache_benchmark` 是 nightly 的独立 performance/semantic suite，消费
 APB VIP、AXI VIP 和 stream v1 三个已发布 fixture，不生成数据库。它在三个独立

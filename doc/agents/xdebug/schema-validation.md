@@ -72,6 +72,10 @@ aggregate、单 action schema 与 helper envelope 必须由
   必须在 `sync_runtime_request_schemas.py` 使用 action-specific template 生成，不能复用
   第一个同名 `config` 参数的通用 shape。
 - 导出路径：`output.path`
+- `apb.export`：`name`、`time_range.begin`、`time_range.end` 全部必填；`direction` 和
+  exact/range/mask `address` 位于 args 顶层，不接受 query/filter 包装。`output` 可省略以
+  返回最多 8 行 preview；显式 `output.file_format:tsv|csv` 时必须同时提供 path。有 path
+  只返回单 data artifact 与 meta 的路径/字节证据，不混入 preview shape。
 
 特殊收紧合同：
 
@@ -89,6 +93,8 @@ aggregate、单 action schema 与 helper envelope 必须由
   `field_scope` 已删除且不提供兼容。packet stream 必须指定
   `filter.position=sop|eop`。
 - `apb.query` / `axi.query` 不接受旧 `args.num`、`args.limit` 或猜测的顶层数量字段。
+- `apb.export` 不公开 `line_limit`；preview cap 固定为 8，完整 artifact 的行数不受 preview
+  cap 影响。不得 fallback 到 `apb.query`、`stream.export`、其它数据源或更窄窗口。
 - `apb.statistics` / `axi.statistics` 使用严格 `args.filter`：direction、ID、address 三类
   条件取 AND；ID 队列内部取 OR；address 的 exact/range/mask 只能选择一种。APB schema
   不公开 IDs，mask=0、标准化重复值和反向 range 由 handler 返回明确语义错误。三类

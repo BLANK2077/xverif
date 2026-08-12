@@ -1,0 +1,51 @@
+{
+  "api_version": "xdebug.v1",
+  "ok": true,
+  "action": "apb.export",
+  "tool": {
+    "name": "xdebug",
+    "version": "0.1.0"
+  },
+  "session": {
+    "session_id": "case_a",
+    "mode": "waveform",
+    "fsdb": "waves.fsdb",
+    "socket_path": "session-endpoints/case_a.sock",
+    "transport": "uds",
+    "server_host": "localhost"
+  },
+  "summary": {
+    "name": "apb0",
+    "direction": "write",
+    "status": "written",
+    "output_written": true,
+    "scanned_transaction_count": 10,
+    "in_range_transaction_count": 10,
+    "matched_transaction_count": 4,
+    "matched_write_count": 4,
+    "matched_read_count": 0,
+    "unresolved_filter_count": 0,
+    "preview_row_count": 0,
+    "sample_count": 200,
+    "full_scan_count": 1,
+    "requested_range": {"begin": "0ns", "end": "1000ns"},
+    "scanned_range": {"begin": "5ns", "end": "995ns"},
+    "artifact_bytes": 384,
+    "output": {
+      "path": "artifacts/apb0",
+      "data_path": "artifacts/apb0.tsv",
+      "meta_path": "artifacts/apb0.meta.json",
+      "file_format": "tsv"
+    },
+    "scan_complete": true,
+    "analysis_complete": true,
+    "response_truncated": false,
+    "total_count": 4,
+    "returned_count": 4,
+    "truncation_scopes": [],
+    "value_width_complete": true,
+    "width_diagnostics": []
+  },
+  "data": {},
+  "error": null
+}

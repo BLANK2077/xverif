@@ -101,6 +101,7 @@ def test_final_report_replaces_prior_phase_instead_of_copying_it(
 
 def test_specialized_current_layout_is_a_protected_contract() -> None:
     by_action = {item.action: item for item in CASES}
+    assert "preview:" in by_action["apb.export"].required_text
     assert "transactions:" in by_action["apb.query"].required_text
     assert "transactions:" in by_action["axi.query"].required_text
     assert "phase_order" in by_action["axi.query"].required_text
@@ -111,7 +112,7 @@ def test_specialized_current_layout_is_a_protected_contract() -> None:
     assert set(value.forbidden_text) == {
         "summary:", "entry_details:", "sample_details:",
     }
-    assert {"apb.query", "axi.query", "stream.query", "value.at"} <= (
+    assert {"apb.export", "apb.query", "axi.query", "stream.query", "value.at"} <= (
         SPECIAL_XOUT_ACTIONS
     )
 
@@ -123,8 +124,8 @@ def test_native_matrix_role_counts_are_frozen(repo_root: Path) -> None:
         item.action for item in CASES
         if _request_schema_exposes_value_format(repo_root, item.action)
     }
-    assert len(value_format_actions) == 30
-    assert len(value_format_actions) * 2 == 60
+    assert len(value_format_actions) == 31
+    assert len(value_format_actions) * 2 == 62
     assert 3 == len(("hex", "bin", "dec"))
 
     reusable_prerequisites = {

@@ -42,6 +42,10 @@
         "purpose": "查询 APB transfer。"
       },
       {
+        "action": "apb.export",
+        "purpose": "预览或导出完整时间范围内过滤后的 APB 事务。"
+      },
+      {
         "action": "apb.transaction.cursor",
         "purpose": "在 APB transfer 间移动游标。"
       },

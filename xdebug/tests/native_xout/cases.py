@@ -29,6 +29,8 @@ CASES = (
          forbidden_text=("\nactions:\n",)),
     case("apb.config.list", "P", {"name": "apb0"}, "apb", "config"),
     case("apb.config.load", "P", {"name": "apb_primary", "config": "$APB_CONFIG"}, error_family="signal/config"),
+    case("apb.export", "P", {"name": "apb0", "time_range": {"begin": "0ns", "end": "1us"}}, "apb", "filter/config/time",
+         ("preview:", "time", "direction", "addr", "data", "has_error")),
     case("apb.query", "P", {"name": "apb0", "query": {"line_limit": 2}}, "apb", "filter/config",
          ("transactions:", "time", "addr", "data", "is_write", "has_error")),
     case("apb.statistics", "P", {"name": "apb0"}, "apb", "filter/config"),

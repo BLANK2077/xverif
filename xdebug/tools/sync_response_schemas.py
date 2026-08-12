@@ -68,6 +68,7 @@ COMMON_BLOCK_ACTIONS = {
 
 VALUE_ACTIONS = {
     "apb.transaction.cursor",
+    "apb.export",
     "apb.query",
     "apb.statistics",
     "apb.transfer_window",

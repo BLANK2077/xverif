@@ -29,6 +29,7 @@ NON_SAMPLING_RESPONSE_ACTIONS = frozenset(
     {
         "apb.config.list",
         "apb.config.load",
+        "apb.export",
         "apb.query",
         "apb.statistics",
         "apb.transaction.cursor",
@@ -1541,6 +1542,87 @@ def _apb_query_contract() -> tuple[NonSamplingSuccessVariant, ...]:
         _closed({"filter": filter_schema}, ("filter",)),
     )
     return count, listed, single_found, single_not_found
+
+
+def _apb_export_contract() -> tuple[NonSamplingSuccessVariant, ...]:
+    export_row = _closed(
+        {
+            "time": _string(),
+            "direction": {"enum": ["read", "write"]},
+            "addr": _string(),
+            "data": _string(),
+            "has_error": {"type": "boolean"},
+        },
+        ("time", "direction", "addr", "data", "has_error"),
+    )
+    common = {
+        "name": _string(),
+        "direction": {"enum": ["all", "read", "write"]},
+        "scanned_transaction_count": _integer(),
+        "in_range_transaction_count": _integer(),
+        "matched_transaction_count": _integer(),
+        "matched_write_count": _integer(),
+        "matched_read_count": _integer(),
+        "unresolved_filter_count": _integer(),
+        "preview_row_count": _integer(),
+        "sample_count": _integer(),
+        "full_scan_count": _integer(),
+        "requested_range": _ref("nonSamplingTimeRange"),
+        "scanned_range": _ref("nonSamplingTimeRange"),
+        **_value_width_properties(),
+    }
+    common_required = tuple(common)
+    preview = _variant(
+        "preview",
+        _summary(
+            {
+                **common,
+                "status": {"const": "preview"},
+                "output_written": {"const": False},
+            },
+            (*common_required, "status", "output_written"),
+            complete=True,
+        ),
+        _closed(
+            {
+                "preview": _array(
+                    export_row,
+                    max_items=8,
+                )
+            },
+            ("preview",),
+        ),
+    )
+    written = _variant(
+        "written",
+        _summary(
+            {
+                **common,
+                "status": {"const": "written"},
+                "output_written": {"const": True},
+                "artifact_bytes": _integer(),
+                "output": _closed(
+                    {
+                        "path": _string(),
+                        "data_path": _string(),
+                        "meta_path": _string(),
+                        "file_format": {"enum": ["tsv", "csv"]},
+                    },
+                    ("path", "data_path", "meta_path", "file_format"),
+                ),
+            },
+            (
+                *common_required,
+                "status",
+                "output_written",
+                "artifact_bytes",
+                "output",
+            ),
+            complete=True,
+        ),
+        _closed({}),
+    )
+    return preview, written
 
 
 def _axi_query_contract() -> tuple[NonSamplingSuccessVariant, ...]:
@@ -4653,6 +4735,7 @@ NON_SAMPLING_EXTERNAL_DEFINITIONS = frozenset(
 _CONTRACT_BUILDERS = {
     "apb.config.list": _apb_config_list_contract,
     "apb.config.load": _apb_config_load_contract,
+    "apb.export": _apb_export_contract,
     "apb.query": _apb_query_contract,
     "apb.statistics": lambda: _protocol_statistics_contract(
         "apb.statistics",

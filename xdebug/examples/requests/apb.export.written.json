@@ -1,0 +1,26 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "apb.export",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {
+    "name": "apb0",
+    "time_range": {
+      "begin": "0ns",
+      "end": "1us"
+    },
+    "direction": "write",
+    "address": {
+      "mode": "range",
+      "begin": "32'h1000",
+      "end": "32'h10ff"
+    },
+    "render_time_unit": "ns",
+    "value_format": "hex",
+    "output": {
+      "path": "artifacts/apb0",
+      "file_format": "tsv"
+    }
+  }
+}

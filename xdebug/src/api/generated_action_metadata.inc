@@ -76,6 +76,12 @@
     }
     {
         ActionRecommendation recommendation;
+        recommendation.action = "apb.export";
+        recommendation.purpose = "预览或导出完整时间范围内过滤后的 APB 事务。";
+        spec.recommended_actions.push_back(recommendation);
+    }
+    {
+        ActionRecommendation recommendation;
         recommendation.action = "apb.transaction.cursor";
         recommendation.purpose = "在 APB transfer 间移动游标。";
         spec.recommended_actions.push_back(recommendation);
@@ -118,6 +124,28 @@
 }
 {
     ActionSpec spec;
+    spec.name = "apb.export";
+    spec.category = "waveform";
+    spec.status = action_status_from_string("stable");
+    spec.resource = resource_requirement_from_string("waveform");
+    spec.handler_kind = "engine_forward";
+    spec.request_schema = "schemas/v1/actions/apb.export.request.schema.json";
+    spec.response_schema = "schemas/v1/actions/apb.export.response.schema.json";
+    spec.request_examples = {"examples/requests/apb.export.basic.json", "examples/requests/apb.export.written.json"};
+    spec.response_examples = {"examples/responses/apb.export.basic.json", "examples/responses/apb.export.written.json"};
+    spec.args.required = {"name", "time_range"};
+    spec.description_en = "Preview or export filtered APB transactions from one complete time range.";
+    spec.description_zh = "预览或导出完整时间范围内过滤后的 APB 事务。";
+    spec.purposes = {"export"};
+    spec.use_when = {"Need a bounded in-response APB preview or one complete TSV/CSV transaction artifact plus metadata."};
+    spec.do_not_use_when = {"Do not use it for aggregate-only APB counts, interactive transaction selection, AXI semantics, or generic valid-ready streams."};
+    spec.alternatives = Json::array();
+    spec.alternatives.push_back({{"action", "apb.query" }, {"when", "Interactively select or inspect APB transactions without creating an artifact." }});
+    spec.alternatives.push_back({{"action", "apb.statistics" }, {"when", "Need only aggregate APB counts and unresolved-filter diagnostics." }});
+    registry.register_spec(spec);
+}
+{
+    ActionSpec spec;
     spec.name = "apb.query";
     spec.category = "waveform";
     spec.status = action_status_from_string("stable");
@@ -134,6 +162,7 @@
     spec.use_when = {"Need completed APB transfer counts or rows filtered by direction and a canonical exact/range/mask address object."};
     spec.do_not_use_when = {"Do not use it for AXI channel semantics, custom valid-ready fields, or a focused signal window around one APB transfer."};
     spec.alternatives = Json::array();
+    spec.alternatives.push_back({{"action", "apb.export" }, {"when", "Persist the complete filtered APB transaction set as TSV or CSV." }});
     spec.alternatives.push_back({{"action", "apb.statistics" }, {"when", "Need aggregate APB counts and unresolved-filter diagnostics without transaction rows." }});
     spec.alternatives.push_back({{"action", "apb.transfer_window" }, {"when", "Inspect signal evidence around one APB transfer." }});
     registry.register_spec(spec);
