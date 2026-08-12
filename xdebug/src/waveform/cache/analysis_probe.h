@@ -44,9 +44,14 @@ private:
     std::uint64_t access_sequence_ = 0;
 };
 
+// Resolve the opt-in probe path only inside the repository's formal test
+// execution environment. Exposed for the probe unit binary; not a public API.
+std::string analysis_probe_path_from_environment();
+
 // Test-only internal probe. It remains disabled unless the engine process is
-// started with XDEBUG_TEST_ANALYSIS_PROBE_PATH. It is intentionally not
-// exposed through any public action, schema, MCP tool, JSON response, or XOUT.
+// started with both the testinfra-owned XVERIF_TEST_TMPDIR marker and
+// XDEBUG_TEST_ANALYSIS_PROBE_PATH. It is intentionally not exposed through
+// any public action, schema, MCP tool, JSON response, or XOUT.
 AnalysisProbe& analysis_probe();
 
 }  // namespace xdebug_waveform

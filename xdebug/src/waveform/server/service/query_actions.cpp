@@ -178,29 +178,11 @@ Json ai_axi_latency_outlier(const Json& args, std::string& error) {
     npiFsdbTime begin = 0, end = 0;
     if (!json_time_range(args, begin, end, error)) return Json();
     if (!ensure_axi_analyzed_for_ai(name, error)) return Json();
-    std::vector<xdebug_waveform::AxiContextTransaction> candidates;
-    if (!g_axi_analyzer.get_transactions_in_range(name, begin, end, candidates, -1)) {
-        error = "AXI config not analyzed: " + name;
-        return Json();
-    }
     const int filter = direction_filter(args);
-    candidates.erase(std::remove_if(candidates.begin(), candidates.end(),
-        [filter](const xdebug_waveform::AxiContextTransaction& item) {
-            return !item.txn || (filter == 1 && !item.txn->is_write) ||
-                (filter == 2 && item.txn->is_write);
-        }), candidates.end());
     auto latency_key = [](const xdebug_waveform::AxiContextTransaction& item) -> npiFsdbTime {
         return item.txn->resp_time >= item.txn->addr_time
             ? item.txn->resp_time - item.txn->addr_time : 0;
     };
-    std::sort(candidates.begin(), candidates.end(),
-        [&](const xdebug_waveform::AxiContextTransaction& lhs,
-            const xdebug_waveform::AxiContextTransaction& rhs) {
-            const npiFsdbTime lhs_latency = latency_key(lhs);
-            const npiFsdbTime rhs_latency = latency_key(rhs);
-            if (lhs_latency != rhs_latency) return lhs_latency > rhs_latency;
-            return lhs.txn->seq < rhs.txn->seq;
-        });
     const std::string method = args.value("method", std::string("top_n"));
     const int top_n = args.value("top_n", 10);
     const int line_limit = args.value("line_limit", 1000);
@@ -213,26 +195,28 @@ Json ai_axi_latency_outlier(const Json& args, std::string& error) {
         }
         if (!parse_user_time(threshold_text.c_str(), false, threshold, error)) return Json();
     }
-    Json out = Json::array();
+    std::vector<xdebug_waveform::AxiContextTransaction> candidates;
+    size_t candidate_count = 0;
     size_t matched_outlier_count = 0;
+    if (!g_axi_analyzer.get_latency_outliers_in_range(
+            name, begin, end, filter, method == "threshold", threshold,
+            static_cast<size_t>(top_n), line_limit, candidates,
+            candidate_count, matched_outlier_count)) {
+        error = "AXI config not analyzed: " + name;
+        return Json();
+    }
+    Json out = Json::array();
     const bool include_data = args.value("output", Json::object()).value("include_data", false);
     for (size_t i = 0; i < candidates.size(); ++i) {
-        const bool selected = method == "threshold"
-            ? latency_key(candidates[i]) > threshold
-            : static_cast<int>(i) < top_n;
-        if (!selected) continue;
-        ++matched_outlier_count;
-        if (line_limit < 0 || static_cast<int>(out.size()) < line_limit) {
-            Json txn = axi_txn_to_json(candidates[i].txn, include_data);
-            txn["match_time"] = format_time(candidates[i].match_time);
-            txn["latency"] = format_duration(latency_key(candidates[i]));
-            out.push_back(std::move(txn));
-        }
+        Json txn = axi_txn_to_json(candidates[i].txn, include_data);
+        txn["match_time"] = format_time(candidates[i].match_time);
+        txn["latency"] = format_duration(latency_key(candidates[i]));
+        out.push_back(std::move(txn));
     }
     const size_t returned_outlier_count = out.size();
     auto range = format_time_range(begin, end);
     Json data = {{"summary", {{"name", name}, {"begin", range.first}, {"end", range.second},
-                              {"candidate_count", candidates.size()}}}};
+                              {"candidate_count", candidate_count}}}};
     data["outliers"] = std::move(out);
     data["method"] = method;
     data["classification"] = method == "threshold" ? "threshold_exceeded" : "slowest_ranking";

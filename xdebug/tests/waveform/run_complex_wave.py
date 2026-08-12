@@ -721,6 +721,7 @@ class AiRunner(object):
         self.env = os.environ.copy()
         self.env["HOME"] = self.home
         self.env["PYTHON"] = sys.executable
+        self.env["XVERIF_TEST_TMPDIR"] = self.home
         self.sid = None
         self.rows = []
         self.duplicate_contract_violations = []
@@ -1825,6 +1826,7 @@ def run_axi(xdebug, fsdb, sim_log=AXI_SIM_LOG, handshake_oracle_path=AXI_HANDSHA
             lru = AiRunner(xdebug, fsdb, "axi_soft_lru")
             lru.env["XDEBUG_ANALYSIS_CACHE_MAX_BYTES"] = "1"
             lru.env["XDEBUG_ANALYSIS_CACHE_HARD_MAX_BYTES"] = "2147483648"
+            lru.env["XVERIF_TEST_TMPDIR"] = lru_probe_dir
             lru.env["XDEBUG_TEST_ANALYSIS_PROBE_PATH"] = lru_probe
             try:
                 lru.open()

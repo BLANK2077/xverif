@@ -299,6 +299,49 @@ void test_fixed_seed_schedules() {
     }
 }
 
+void test_latency_outlier_selection_is_bounded_and_stable() {
+    std::vector<AxiTransaction> transactions(6);
+    const npiFsdbTime latencies[] = {10, 50, 30, 50, 20, 40};
+    for (size_t index = 0; index < transactions.size(); ++index) {
+        transactions[index].seq = index + 1;
+        transactions[index].addr_time = 100 + index;
+        transactions[index].resp_time =
+            transactions[index].addr_time + latencies[index];
+        transactions[index].is_write = index != 5;
+    }
+    AxiLatencyOutlierSelection top = select_axi_latency_outliers(
+        transactions, 0, 1000, 0, false, 0, 4, 2);
+    assert(top.candidate_count == 6);
+    assert(top.matched_outlier_count == 4);
+    assert(top.transactions.size() == 2);
+    assert(top.transactions[0]->seq == 2);
+    assert(top.transactions[1]->seq == 4);
+
+    AxiLatencyOutlierSelection threshold = select_axi_latency_outliers(
+        transactions, 0, 1000, 0, true, 25, 0, 3);
+    assert(threshold.candidate_count == 6);
+    assert(threshold.matched_outlier_count == 4);
+    assert(threshold.transactions.size() == 3);
+    assert(threshold.transactions[0]->seq == 2);
+    assert(threshold.transactions[1]->seq == 4);
+    assert(threshold.transactions[2]->seq == 6);
+
+    AxiLatencyOutlierSelection reads = select_axi_latency_outliers(
+        transactions, 0, 1000, 2, false, 0, 10, 10);
+    assert(reads.candidate_count == 1);
+    assert(reads.transactions.size() == 1);
+    assert(reads.transactions[0]->seq == 6);
+
+    AxiLatencyOutlierSelection ranged = select_axi_latency_outliers(
+        transactions, 102, 104, 0, false, 0, 10, 10);
+    assert(ranged.candidate_count == 3);
+    assert(ranged.matched_outlier_count == 3);
+    assert(ranged.transactions.size() == 3);
+    assert(ranged.transactions[0]->seq == 4);
+    assert(ranged.transactions[1]->seq == 3);
+    assert(ranged.transactions[2]->seq == 5);
+}
+
 } // namespace
 
 int main() {
@@ -311,6 +354,7 @@ int main() {
     test_reset_and_orphans();
     test_working_set_estimator_includes_pending_state();
     test_fixed_seed_schedules();
+    test_latency_outlier_selection_is_bounded_and_stable();
     std::cout << "PASS: AXI transaction tracker unit tests\n";
     return 0;
 }

@@ -870,11 +870,13 @@ bool AxiAnalyzer::get_latency_stats(const std::string& name, int filter, const c
 
     if (!seen || out.samples == 0) return false;
     out.avg = total / static_cast<double>(out.samples);
-    std::sort(latencies.begin(), latencies.end());
     auto percentile = [&](size_t percent) {
         size_t rank = (percent * latencies.size() + 99) / 100;
         if (rank == 0) rank = 1;
-        return latencies[rank - 1];
+        const size_t index = rank - 1;
+        std::nth_element(
+            latencies.begin(), latencies.begin() + index, latencies.end());
+        return latencies[index];
     };
     out.p50 = percentile(50);
     out.p95 = percentile(95);
@@ -972,6 +974,47 @@ bool AxiAnalyzer::get_transactions_in_range(const std::string& name,
     std::sort(out.begin(), out.end(), [](const AxiContextTransaction& lhs, const AxiContextTransaction& rhs) {
         return lhs.match_time < rhs.match_time;
     });
+    return true;
+}
+
+bool AxiAnalyzer::get_latency_outliers_in_range(
+    const std::string& name,
+    npiFsdbTime begin,
+    npiFsdbTime end,
+    int direction_filter,
+    bool threshold_mode,
+    npiFsdbTime threshold,
+    std::size_t top_n,
+    int max_results,
+    std::vector<AxiContextTransaction>& out,
+    std::size_t& candidate_count,
+    std::size_t& matched_outlier_count) const {
+    out.clear();
+    candidate_count = 0;
+    matched_outlier_count = 0;
+    const AxiResult* result = get_result(name);
+    if (!result) return false;
+
+    const std::size_t response_limit = max_results < 0
+        ? std::numeric_limits<std::size_t>::max()
+        : static_cast<std::size_t>(max_results);
+    const std::size_t retained_limit = threshold_mode
+        ? response_limit : std::min(top_n, response_limit);
+    const AxiLatencyOutlierSelection selection =
+        select_axi_latency_outliers(
+            result->all, begin, end, direction_filter, threshold_mode,
+            threshold, top_n, retained_limit);
+    candidate_count = selection.candidate_count;
+    matched_outlier_count = selection.matched_outlier_count;
+    out.reserve(selection.transactions.size());
+    for (const AxiTransaction* transaction : selection.transactions) {
+        AxiContextTransaction item;
+        item.txn = transaction;
+        item.match_time =
+            transaction->addr_time >= begin && transaction->addr_time <= end
+                ? transaction->addr_time : transaction->resp_time;
+        out.push_back(item);
+    }
     return true;
 }
 

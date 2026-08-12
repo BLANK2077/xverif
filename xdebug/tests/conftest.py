@@ -123,7 +123,11 @@ def cli_runner(
     return CliRunner(
         xdebug_bin,
         cwd=repo_root,
-        base_env={"HOME": str(isolated_home), "XVERIF_HOME": str(repo_root)},
+        base_env={
+            "HOME": str(isolated_home),
+            "XVERIF_HOME": str(repo_root),
+            "XVERIF_TEST_TMPDIR": str(isolated_home.parent),
+        },
     )
 
 
@@ -136,7 +140,11 @@ def persistent_cli_runner(
     runner = HybridCliRunner(
         xdebug_bin,
         cwd=repo_root,
-        base_env={"HOME": str(isolated_home), "XVERIF_HOME": str(repo_root)},
+        base_env={
+            "HOME": str(isolated_home),
+            "XVERIF_HOME": str(repo_root),
+            "XVERIF_TEST_TMPDIR": str(isolated_home.parent),
+        },
     )
     try:
         yield runner

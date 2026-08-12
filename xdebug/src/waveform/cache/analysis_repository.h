@@ -135,6 +135,11 @@ struct AnalysisRepositoryStats {
     std::uint64_t resident_estimated_bytes = 0;
     std::uint64_t build_estimated_bytes = 0;
     std::uint64_t charged_bytes = 0;
+    std::uint64_t metadata_estimated_bytes = 0;
+    std::size_t generation_count = 0;
+    std::size_t cursor_count = 0;
+    std::size_t binding_count = 0;
+    std::size_t tombstone_count = 0;
     std::uint64_t access_sequence = 0;
 };
 
@@ -344,6 +349,7 @@ public:
             changes);
 
     AnalysisRepositoryStats stats() const;
+    AnalysisRepositoryStats debug_recomputed_stats() const;
     const AnalysisCacheConfig& config() const { return config_; }
 
 private:
@@ -423,6 +429,27 @@ private:
                                                 nullptr) const;
     std::uint64_t current_resident_estimated_bytes() const;
     std::uint64_t current_build_estimated_bytes() const;
+    static std::uint64_t key_metadata_bytes(const AnalysisCacheKey& key);
+    static std::uint64_t cursor_metadata_bytes(const GenerationCursor& cursor);
+    static std::uint64_t binding_metadata_bytes(
+        const std::string& session_id, const std::string& config_name,
+        const std::string& digest);
+    void add_resident_bytes(std::uint64_t bytes);
+    void remove_resident_bytes(std::uint64_t bytes);
+    void add_build_bytes(std::uint64_t bytes);
+    void remove_build_bytes(std::uint64_t bytes);
+    void add_metadata_bytes(std::uint64_t bytes);
+    void remove_metadata_bytes(std::uint64_t bytes);
+    void erase_generation_if_unreferenced(const AnalysisCacheKey& key);
+    bool erase_one_releasable_metadata();
+    void evict_to_budget(std::uint64_t limit, std::uint64_t new_charge,
+                         const AnalysisCacheKey* protected_canonical,
+                         const IndexKey* protected_index,
+                         const std::string& reason,
+                         const AnalysisCacheKey*
+                             preserve_stream_ranges_for_full = nullptr,
+                         const AnalysisCacheKey*
+                             excluded_stream_ranges_for_full = nullptr);
     bool make_hard_room(std::uint64_t new_charge,
                         const AnalysisCacheKey* protected_canonical,
                         const IndexKey* protected_index,
@@ -432,15 +459,6 @@ private:
                             excluded_stream_ranges_for_full = nullptr);
     void enforce_soft_budget(const AnalysisCacheKey* protected_canonical,
                              const IndexKey* protected_index);
-    bool evict_cold_index(const IndexKey* protected_index,
-                          const AnalysisCacheKey* protected_owner,
-                          const std::string& reason,
-                          const AnalysisCacheKey*
-                              preserve_stream_ranges_for_full = nullptr);
-    bool evict_cold_canonical(const AnalysisCacheKey* protected_canonical,
-                              const std::string& reason,
-                              const AnalysisCacheKey*
-                                  preserve_stream_ranges_for_full = nullptr);
     static bool is_stream_sibling_range(
         const AnalysisCacheKey& candidate,
         const AnalysisCacheKey& full_key);
@@ -459,10 +477,12 @@ private:
     CanonicalStore stream_entries_;
     std::map<IndexKey, IndexObject> indexes_;
     std::map<AnalysisCacheKey, std::uint64_t> generations_;
-    std::set<AnalysisCacheKey> evicted_keys_;
+    std::map<AnalysisCacheKey, std::uint64_t> evicted_keys_;
     std::map<std::string, GenerationCursor> cursors_;
+    std::map<std::string, std::uint64_t> cursor_access_sequences_;
     std::map<std::string, std::map<std::string, std::string>> stream_bindings_;
     std::uint64_t access_sequence_ = 0;
+    AnalysisRepositoryStats stats_;
 };
 
 }  // namespace xdebug_waveform

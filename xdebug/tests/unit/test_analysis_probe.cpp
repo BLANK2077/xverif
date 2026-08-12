@@ -16,6 +16,44 @@ using xdebug_waveform::AnalysisProbeMetrics;
 using Json = nlohmann::ordered_json;
 
 int main() {
+    std::vector<char> marker_storage =
+        test_temp_template("xdebug-analysis-probe-root.XXXXXX");
+    char* marker = mkdtemp(marker_storage.data());
+    assert(marker != nullptr);
+    const std::string marker_path(marker);
+    const std::string allowed_path = marker_path + "/probe.jsonl";
+
+    unsetenv("XVERIF_TEST_TMPDIR");
+    setenv("XDEBUG_TEST_ANALYSIS_PROBE_PATH", allowed_path.c_str(), 1);
+    assert(xdebug_waveform::analysis_probe_path_from_environment().empty());
+    setenv("XVERIF_TEST_TMPDIR", marker_path.c_str(), 1);
+    assert(xdebug_waveform::analysis_probe_path_from_environment() ==
+           allowed_path);
+    setenv("XDEBUG_TEST_ANALYSIS_PROBE_PATH", marker_path.c_str(), 1);
+    assert(xdebug_waveform::analysis_probe_path_from_environment().empty());
+    const std::string escaped_path = marker_path + "/../escaped.jsonl";
+    setenv("XDEBUG_TEST_ANALYSIS_PROBE_PATH", escaped_path.c_str(), 1);
+    assert(xdebug_waveform::analysis_probe_path_from_environment().empty());
+    const std::string missing_parent = marker_path + "/missing/probe.jsonl";
+    setenv("XDEBUG_TEST_ANALYSIS_PROBE_PATH", missing_parent.c_str(), 1);
+    assert(xdebug_waveform::analysis_probe_path_from_environment().empty());
+    const std::string outside_template = marker_path + "-outside.XXXXXX";
+    std::vector<char> outside_storage(
+        outside_template.begin(), outside_template.end());
+    outside_storage.push_back('\0');
+    const int outside_fd = mkstemp(outside_storage.data());
+    assert(outside_fd >= 0);
+    close(outside_fd);
+    const std::string symlink_path = marker_path + "/escaped-link.jsonl";
+    assert(symlink(outside_storage.data(), symlink_path.c_str()) == 0);
+    setenv("XDEBUG_TEST_ANALYSIS_PROBE_PATH", symlink_path.c_str(), 1);
+    assert(xdebug_waveform::analysis_probe_path_from_environment().empty());
+    assert(unlink(symlink_path.c_str()) == 0);
+    assert(unlink(outside_storage.data()) == 0);
+    unsetenv("XDEBUG_TEST_ANALYSIS_PROBE_PATH");
+    assert(xdebug_waveform::analysis_probe_path_from_environment().empty());
+    assert(rmdir(marker_path.c_str()) == 0);
+
     std::vector<char> path_storage = test_temp_template("xdebug-analysis-probe.XXXXXX");
     char* path = path_storage.data();
     const int fd = mkstemp(path);

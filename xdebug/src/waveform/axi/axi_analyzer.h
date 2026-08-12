@@ -114,6 +114,18 @@ public:
                                    npiFsdbTime end,
                                    std::vector<AxiContextTransaction>& out,
                                    int max_results = -1) const;
+    bool get_latency_outliers_in_range(
+        const std::string& name,
+        npiFsdbTime begin,
+        npiFsdbTime end,
+        int direction_filter,
+        bool threshold_mode,
+        npiFsdbTime threshold,
+        std::size_t top_n,
+        int max_results,
+        std::vector<AxiContextTransaction>& out,
+        std::size_t& candidate_count,
+        std::size_t& matched_outlier_count) const;
     bool get_by_handshake(const std::string& name,
                           const std::string& channel,
                           npiFsdbTime handshake_time,

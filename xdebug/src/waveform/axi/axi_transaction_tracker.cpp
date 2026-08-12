@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <queue>
 
 namespace xdebug_waveform {
 namespace {
@@ -35,6 +36,26 @@ bool txn_addr_less(const AxiTransaction& lhs, const AxiTransaction& rhs) {
     return lhs.seq < rhs.seq;
 }
 
+npiFsdbTime transaction_latency(const AxiTransaction* transaction) {
+    return transaction->resp_time >= transaction->addr_time
+        ? transaction->resp_time - transaction->addr_time : 0;
+}
+
+bool latency_rank_better(const AxiTransaction* lhs,
+                         const AxiTransaction* rhs) {
+    const npiFsdbTime lhs_latency = transaction_latency(lhs);
+    const npiFsdbTime rhs_latency = transaction_latency(rhs);
+    if (lhs_latency != rhs_latency) return lhs_latency > rhs_latency;
+    return lhs->seq < rhs->seq;
+}
+
+struct LatencyRankBetter {
+    bool operator()(const AxiTransaction* lhs,
+                    const AxiTransaction* rhs) const {
+        return latency_rank_better(lhs, rhs);
+    }
+};
+
 } // namespace
 
 size_t axi_expected_beats(const std::string& len) {
@@ -49,6 +70,57 @@ std::string axi_write_phase_order(const AxiTransaction& txn) {
     if (txn.first_data_time < txn.addr_time) return "w_before_aw";
     if (txn.first_data_time == txn.addr_time) return "same_cycle";
     return "aw_before_w";
+}
+
+AxiLatencyOutlierSelection select_axi_latency_outliers(
+    const std::vector<AxiTransaction>& transactions,
+    npiFsdbTime begin,
+    npiFsdbTime end,
+    int direction_filter,
+    bool threshold_mode,
+    npiFsdbTime threshold,
+    size_t top_n,
+    size_t retained_limit) {
+    AxiLatencyOutlierSelection selection;
+    // The comparator orders better transactions before worse ones, so the
+    // priority-queue top is the worst retained item and can be replaced in
+    // O(log K) while memory remains bounded by retained_limit.
+    std::priority_queue<
+        const AxiTransaction*, std::vector<const AxiTransaction*>,
+        LatencyRankBetter> retained;
+
+    for (const AxiTransaction& transaction : transactions) {
+        if ((direction_filter == 1 && !transaction.is_write) ||
+            (direction_filter == 2 && transaction.is_write)) continue;
+        if (!((transaction.addr_time >= begin && transaction.addr_time <= end) ||
+              (transaction.resp_time >= begin && transaction.resp_time <= end))) {
+            continue;
+        }
+        ++selection.candidate_count;
+        if (threshold_mode &&
+            transaction_latency(&transaction) <= threshold) continue;
+        if (threshold_mode) ++selection.matched_outlier_count;
+        if (retained_limit == 0) continue;
+        if (retained.size() < retained_limit) {
+            retained.push(&transaction);
+        } else if (latency_rank_better(&transaction, retained.top())) {
+            retained.pop();
+            retained.push(&transaction);
+        }
+    }
+    if (!threshold_mode) {
+        selection.matched_outlier_count =
+            std::min(top_n, selection.candidate_count);
+    }
+    selection.transactions.reserve(retained.size());
+    while (!retained.empty()) {
+        selection.transactions.push_back(retained.top());
+        retained.pop();
+    }
+    std::sort(
+        selection.transactions.begin(), selection.transactions.end(),
+        latency_rank_better);
+    return selection;
 }
 
 std::size_t AxiTransactionTracker::estimated_working_set_bytes() const {

@@ -109,6 +109,12 @@ struct AxiResult {
     AxiDiagnostics diagnostics;
 };
 
+struct AxiLatencyOutlierSelection {
+    std::vector<const AxiTransaction*> transactions;
+    size_t candidate_count = 0;
+    size_t matched_outlier_count = 0;
+};
+
 struct AxiSample {
     npiFsdbTime time = 0;
     bool reset_active = false;
@@ -188,5 +194,14 @@ private:
 
 size_t axi_expected_beats(const std::string& len);
 std::string axi_write_phase_order(const AxiTransaction& txn);
+AxiLatencyOutlierSelection select_axi_latency_outliers(
+    const std::vector<AxiTransaction>& transactions,
+    npiFsdbTime begin,
+    npiFsdbTime end,
+    int direction_filter,
+    bool threshold_mode,
+    npiFsdbTime threshold,
+    size_t top_n,
+    size_t retained_limit);
 
 } // namespace xdebug_waveform

@@ -32,13 +32,34 @@ std::shared_ptr<const FakeEntry> fake(int value) {
     return std::shared_ptr<const FakeEntry>(new FakeEntry(value));
 }
 
+void assert_incremental_stats(const AnalysisRepository& repository) {
+    const AnalysisRepositoryStats incremental = repository.stats();
+    const AnalysisRepositoryStats recomputed = repository.debug_recomputed_stats();
+    assert(incremental.canonical_entry_count == recomputed.canonical_entry_count);
+    assert(incremental.index_count == recomputed.index_count);
+    assert(incremental.resident_estimated_bytes ==
+           recomputed.resident_estimated_bytes);
+    assert(incremental.build_estimated_bytes == recomputed.build_estimated_bytes);
+    assert(incremental.charged_bytes == recomputed.charged_bytes);
+    assert(incremental.metadata_estimated_bytes ==
+           recomputed.metadata_estimated_bytes);
+    assert(incremental.generation_count == recomputed.generation_count);
+    assert(incremental.cursor_count == recomputed.cursor_count);
+    assert(incremental.binding_count == recomputed.binding_count);
+    assert(incremental.tombstone_count == recomputed.tombstone_count);
+    assert(incremental.access_sequence == recomputed.access_sequence);
+}
+
 void publish(AnalysisRepository& repository, const AnalysisCacheKey& cache_key,
              int value, std::uint64_t bytes, std::uint64_t* generation = nullptr) {
     AnalysisCacheError error;
     assert(repository.begin_canonical(cache_key, "fake", bytes, error) ==
            AnalysisAcquireStatus::BuildStarted);
+    assert_incremental_stats(repository);
     assert(repository.publish_canonical(cache_key, "fake", fake(value), bytes, error));
+    assert_incremental_stats(repository);
     assert(repository.find_canonical<FakeEntry>(cache_key, "fake", generation)->value == value);
+    assert_incremental_stats(repository);
 }
 
 void test_key_and_strict_environment() {
@@ -83,7 +104,7 @@ void test_key_and_strict_environment() {
 void test_build_state_failure_and_bad_alloc() {
     AnalysisCacheConfig config;
     config.soft_max_bytes = 0;
-    config.hard_max_bytes = 1024;
+    config.hard_max_bytes = 16384;
     config.estimator_safety_factor = 1.0;
     AnalysisRepository repository(config);
     AnalysisCacheError error;
@@ -93,6 +114,7 @@ void test_build_state_failure_and_bad_alloc() {
     assert(repository.begin_canonical(a, "fake", 10, error) ==
            AnalysisAcquireStatus::ReentrantBuild);
     repository.fail_canonical(a, "injected_failure");
+    assert_incremental_stats(repository);
     assert(repository.stats().canonical_entry_count == 0);
     assert(repository.stats().build_estimated_bytes == 0);
 
@@ -103,7 +125,8 @@ void test_build_state_failure_and_bad_alloc() {
                                   "fake-index", 10, error) ==
            AnalysisAcquireStatus::BuildStarted);
     assert(!repository.update_index_build_bytes(
-        index_owner, index_generation, "address", 2048, error));
+        index_owner, index_generation, "address", 32768, error));
+    assert_incremental_stats(repository);
     assert(error.code == "ANALYSIS_MEMORY_LIMIT_EXCEEDED");
     assert(repository.stats().index_count == 0);
     assert(repository.stats().build_estimated_bytes == 0);
@@ -111,7 +134,8 @@ void test_build_state_failure_and_bad_alloc() {
     const AnalysisCacheKey growing = key("stream", "growing");
     assert(repository.begin_canonical(growing, "fake", 10, error) ==
            AnalysisAcquireStatus::BuildStarted);
-    assert(!repository.update_canonical_build_bytes(growing, 2048, error));
+    assert(!repository.update_canonical_build_bytes(growing, 32768, error));
+    assert_incremental_stats(repository);
     assert(error.code == "ANALYSIS_MEMORY_LIMIT_EXCEEDED");
     assert(repository.stats().build_estimated_bytes == 0);
 
@@ -131,7 +155,7 @@ void test_build_state_failure_and_bad_alloc() {
 void test_index_first_and_cross_protocol_lru() {
     AnalysisCacheConfig config;
     config.soft_max_bytes = 100;
-    config.hard_max_bytes = 1000;
+    config.hard_max_bytes = 16384;
     config.estimator_safety_factor = 1.0;
     std::vector<AnalysisCacheEvent> events;
     AnalysisRepository repository(config, [&](const AnalysisCacheEvent& event) {
@@ -160,6 +184,7 @@ void test_index_first_and_cross_protocol_lru() {
     publish(repository, stream, 3, 50);
     assert(repository.stats().canonical_entry_count == 3);
     assert(repository.stats().index_count == 0);
+    assert_incremental_stats(repository);
     assert(!repository.find_index<FakeEntry>(apb, apb_generation, "address",
                                              "fake-index"));
 
@@ -176,12 +201,13 @@ void test_index_first_and_cross_protocol_lru() {
     assert(pure_lru.find_canonical<FakeEntry>(a, "fake"));
     assert(!pure_lru.find_canonical<FakeEntry>(b, "fake"));
     assert(pure_lru.find_canonical<FakeEntry>(c, "fake"));
+    assert_incremental_stats(pure_lru);
 }
 
 void test_oversize_hard_limit_and_saturation() {
     AnalysisCacheConfig config;
     config.soft_max_bytes = 50;
-    config.hard_max_bytes = 200;
+    config.hard_max_bytes = 16384;
     config.estimator_safety_factor = 1.0;
     std::vector<AnalysisCacheEvent> events;
     AnalysisRepository repository(config, [&](const AnalysisCacheEvent& event) {
@@ -212,10 +238,10 @@ void test_oversize_hard_limit_and_saturation() {
     assert(index_repository.stats().index_count == 1);
 
     AnalysisCacheError error;
-    assert(repository.begin_canonical(key("stream", "too-large"), "fake", 220,
+    assert(repository.begin_canonical(key("stream", "too-large"), "fake", 32768,
                                       error) == AnalysisAcquireStatus::Rejected);
     assert(error.code == "ANALYSIS_MEMORY_LIMIT_EXCEEDED");
-    assert(error.recoverable && error.hard_max_bytes == 200);
+    assert(error.recoverable && error.hard_max_bytes == 16384);
     assert(error.suggestions.size() == 2);
     assert(repository.begin_canonical(
                key("stream", "saturated"), "fake",
@@ -230,12 +256,14 @@ void test_oversize_hard_limit_and_saturation() {
     assert(repository.begin_canonical(key("custom", "unsupported"), "fake", 1,
                                       error) == AnalysisAcquireStatus::Rejected);
     assert(error.code == "ANALYSIS_CACHE_PROTOCOL_UNSUPPORTED");
+    assert_incremental_stats(repository);
+    assert_incremental_stats(index_repository);
 }
 
 void test_generation_cursor_and_config_invalidation() {
     AnalysisCacheConfig config;
     config.soft_max_bytes = 40;
-    config.hard_max_bytes = 200;
+    config.hard_max_bytes = 16384;
     config.estimator_safety_factor = 1.0;
     AnalysisRepository repository(config);
     const AnalysisCacheKey a = key("axi", "cursor-a");
@@ -249,15 +277,18 @@ void test_generation_cursor_and_config_invalidation() {
     cursor.direction = "write";
     cursor.position = 17;
     assert(repository.put_cursor(cursor));
+    assert_incremental_stats(repository);
     publish(repository, b, 2, 40);
     assert(!repository.find_canonical<FakeEntry>(a, "fake"));
     assert(repository.get_cursor("axi:axi0:write", cursor));
+    assert_incremental_stats(repository);
 
     std::uint64_t generation_two = 0;
     publish(repository, a, 3, 40, &generation_two);
     assert(generation_two > generation_one);
     assert(repository.resume_cursor("axi:axi0:write", a, generation_two,
                                     cursor));
+    assert_incremental_stats(repository);
     assert(cursor.position == 17 && cursor.generation == generation_two);
 
     AnalysisCacheConfig unbounded = config;
@@ -274,6 +305,7 @@ void test_generation_cursor_and_config_invalidation() {
     stream_repository.notify_stream_config_change(
         "session-a", "stream0", old_key.semantic_digest,
         key("stream", "new-semantics").semantic_digest);
+    assert_incremental_stats(stream_repository);
     assert(!stream_repository.find_canonical<FakeEntry>(old_key, "fake"));
 
     publish(stream_repository, old_key, 10, 20);
@@ -290,12 +322,25 @@ void test_generation_cursor_and_config_invalidation() {
     stream_repository.notify_stream_config_change(
         "session-a", "alias", old_key.semantic_digest, new_digest);
     assert(!stream_repository.find_canonical<FakeEntry>(old_key, "fake"));
+    assert_incremental_stats(stream_repository);
+
+    repository.invalidate(a, "unit_invalidate");
+    assert_incremental_stats(repository);
+    repository.clear("unit_clear");
+    assert_incremental_stats(repository);
+    const AnalysisRepositoryStats cleared = repository.stats();
+    assert(cleared.charged_bytes == 0);
+    assert(cleared.metadata_estimated_bytes == 0);
+    assert(cleared.generation_count == 0);
+    assert(cleared.cursor_count == 0);
+    assert(cleared.binding_count == 0);
+    assert(cleared.tombstone_count == 0);
 }
 
 void test_stream_full_range_replacement_is_transactional() {
     AnalysisCacheConfig config;
     config.soft_max_bytes = 0;
-    config.hard_max_bytes = 200;
+    config.hard_max_bytes = 16384;
     config.estimator_safety_factor = 1.0;
     std::vector<AnalysisCacheEvent> events;
     AnalysisRepository repository(config, [&](const AnalysisCacheEvent& event) {
@@ -326,17 +371,36 @@ void test_stream_full_range_replacement_is_transactional() {
             event.reason == "full_replaced_range")
             ++replaced;
     assert(replaced == 2);
+    assert_incremental_stats(repository);
 
     AnalysisCacheConfig tight = config;
-    tight.hard_max_bytes = 35;
+    tight.hard_max_bytes = 4096;
     AnalysisRepository failed_full(tight);
     publish(failed_full, range_a, 5, 20);
     assert(failed_full.begin_canonical(full, "fake", 10, error) ==
            AnalysisAcquireStatus::BuildStarted);
-    assert(!failed_full.update_canonical_build_bytes(full, 20, error));
+    assert(!failed_full.update_canonical_build_bytes(full, 8192, error));
     assert(error.code == "ANALYSIS_MEMORY_LIMIT_EXCEEDED");
     assert(failed_full.find_canonical<FakeEntry>(range_a, "fake")->value == 5);
     assert(!failed_full.find_canonical<FakeEntry>(full, "fake"));
+    assert_incremental_stats(failed_full);
+}
+
+void test_metadata_churn_is_bounded_and_recomputable() {
+    AnalysisCacheConfig config;
+    config.soft_max_bytes = 64;
+    config.hard_max_bytes = 4096;
+    config.estimator_safety_factor = 1.0;
+    AnalysisRepository repository(config);
+    for (int i = 0; i < 64; ++i) {
+        publish(repository, key("apb", "churn-" + std::to_string(i)), i, 64);
+        assert(repository.stats().charged_bytes <= config.hard_max_bytes);
+        assert_incremental_stats(repository);
+    }
+    assert(repository.stats().generation_count +
+               repository.stats().tombstone_count < 64);
+    repository.clear("churn_clear");
+    assert_incremental_stats(repository);
 }
 
 }  // namespace
@@ -348,5 +412,6 @@ int main() {
     test_oversize_hard_limit_and_saturation();
     test_generation_cursor_and_config_invalidation();
     test_stream_full_range_replacement_is_transactional();
+    test_metadata_churn_is_bounded_and_recomputable();
     return 0;
 }

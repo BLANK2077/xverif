@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <fcntl.h>
 #include <iomanip>
+#include <limits.h>
 #include <sstream>
 #include <sys/stat.h>
 #include <utility>
@@ -12,11 +13,6 @@
 
 namespace xdebug_waveform {
 namespace {
-
-std::string probe_path_from_environment() {
-    const char* value = std::getenv("XDEBUG_TEST_ANALYSIS_PROBE_PATH");
-    return value == nullptr ? std::string() : std::string(value);
-}
 
 std::string key_summary(const std::string& material) {
     std::uint64_t hash = 1469598103934665603ULL;
@@ -52,7 +48,45 @@ bool append_private_line(const std::string& path, const std::string& line) {
     return true;
 }
 
+bool path_is_below(const std::string& path, const std::string& directory) {
+    return path.size() > directory.size() &&
+           path.compare(0, directory.size(), directory) == 0 &&
+           path[directory.size()] == '/';
+}
+
 }  // namespace
+
+std::string analysis_probe_path_from_environment() {
+    const char* test_tmpdir = std::getenv("XVERIF_TEST_TMPDIR");
+    if (test_tmpdir == nullptr || test_tmpdir[0] == '\0') return std::string();
+    const char* value = std::getenv("XDEBUG_TEST_ANALYSIS_PROBE_PATH");
+    if (value == nullptr || value[0] == '\0') return std::string();
+
+    char canonical_root[PATH_MAX];
+    if (realpath(test_tmpdir, canonical_root) == nullptr) return std::string();
+    const std::string requested(value);
+    const std::size_t separator = requested.find_last_of('/');
+    if (separator == std::string::npos || separator + 1 == requested.size())
+        return std::string();
+    const std::string parent = separator == 0
+        ? std::string("/") : requested.substr(0, separator);
+    char canonical_parent[PATH_MAX];
+    if (realpath(parent.c_str(), canonical_parent) == nullptr)
+        return std::string();
+    const std::string root(canonical_root);
+    const std::string resolved_parent(canonical_parent);
+    if (resolved_parent != root && !path_is_below(resolved_parent, root))
+        return std::string();
+
+    struct stat info {};
+    if (lstat(requested.c_str(), &info) == 0) {
+        char canonical_target[PATH_MAX];
+        if (realpath(requested.c_str(), canonical_target) == nullptr ||
+            !path_is_below(canonical_target, root))
+            return std::string();
+    }
+    return requested;
+}
 
 AnalysisProbe::AnalysisProbe(std::string path) : path_(std::move(path)) {}
 
@@ -92,7 +126,7 @@ void AnalysisProbe::record(const std::string& event,
 }
 
 AnalysisProbe& analysis_probe() {
-    static AnalysisProbe probe(probe_path_from_environment());
+    static AnalysisProbe probe(analysis_probe_path_from_environment());
     return probe;
 }
 

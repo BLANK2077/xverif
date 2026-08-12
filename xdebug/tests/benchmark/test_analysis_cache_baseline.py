@@ -178,6 +178,8 @@ def _summarize(
     rss_delta_bytes: list[int],
     estimated_bytes: list[int],
     scanner_invocations: list[int],
+    canonical_entry_counts: list[int],
+    index_counts: list[int],
 ) -> dict[str, Any]:
     ratios = [
         delta / estimate
@@ -198,6 +200,10 @@ def _summarize(
         "max_estimated_bytes": max(estimated_bytes),
         "max_rss_to_estimate_ratio": max(ratios, default=0.0),
         "scanner_invocations": scanner_invocations,
+        "canonical_entry_counts": canonical_entry_counts,
+        "max_canonical_entries": max(canonical_entry_counts),
+        "index_counts": index_counts,
+        "max_indexes": max(index_counts),
     }
 
 
@@ -301,6 +307,8 @@ def test_analysis_cache_phase0_baseline(
         rss_delta_bytes: list[int] = []
         estimated_bytes: list[int] = []
         scanner_invocations: list[int] = []
+        canonical_entry_counts: list[int] = []
+        index_counts: list[int] = []
 
         for sample in range(SAMPLE_COUNT):
             if protocol == "apb":
@@ -387,6 +395,8 @@ def test_analysis_cache_phase0_baseline(
                 for _ in range(2):
                     hot = _query(cli_runner, action, target=target, args=args)
                     hot_ms.append(hot.elapsed_ms)
+                    assert hot.response["summary"] == cold.response["summary"]
+                    assert hot.response["data"] == cold.response["data"]
                 if protocol == "stream" and sample == 0:
                     xout = _query(
                         cli_runner, action, target=target, args={**args, "line_limit": 1},
@@ -404,6 +414,10 @@ def test_analysis_cache_phase0_baseline(
                     range(1, len(rows) + 1)
                 )
                 scanner_invocations.append(int(rows[-1]["scanner_invocations"]))
+                canonical_entry_counts.append(max(
+                    int(row["entry_count"]) for row in rows
+                ))
+                index_counts.append(max(int(row["index_count"]) for row in rows))
                 estimated_bytes.append(max(
                     int(row["resident_bytes"] or row["build_bytes"])
                     for row in rows
@@ -412,7 +426,8 @@ def test_analysis_cache_phase0_baseline(
                 _kill_session(cli_runner, target)
 
         metrics[protocol] = _summarize(
-            cold_ms, hot_ms, rss_delta_bytes, estimated_bytes, scanner_invocations
+            cold_ms, hot_ms, rss_delta_bytes, estimated_bytes, scanner_invocations,
+            canonical_entry_counts, index_counts,
         )
 
     # AXI, APB, and Stream are repository-backed after Phases 2, 3, and 4B.
@@ -429,6 +444,8 @@ def test_analysis_cache_phase0_baseline(
             + thresholds["rss_measurement_tolerance_bytes"]
         )
         assert values["max_estimated_bytes"] <= limits["max_estimated_bytes"]
+        assert values["max_canonical_entries"] <= limits["max_canonical_entries"]
+        assert values["max_indexes"] <= limits["max_indexes"]
 
     # Latency and phase targets describe optimization progress. They are
     # reported, but only deterministic memory/scanner limits fail regression.

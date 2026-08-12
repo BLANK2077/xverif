@@ -334,6 +334,12 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 
 ### 2026-08-12 环境错误复盘
 
+- 错误现象：C06 三个 owner 尚在共享工作树修改 cache、benchmark 和算法源码时，主线程提前启动 `make -C xdebug internal-engines`；已在首个对象编译阶段立即中止，未完成链接或启动回归。
+- 误判原因：把可随时中止的增量编译当作只读检查，忽略编译会写共享 build 产物，且源码仍可能在编译期间变化。
+- 以后规则：多 owner 阶段只有在所有 owner 明确交付并停止修改后才能启动任何 build、link 或正式测试；进行中只允许 `git diff --check`、文本审阅和不写 build 产物的静态检查。
+
+### 2026-08-12 环境错误复盘
+
 - 错误现象：运行 `xverif_mcp.process` focused suite 时未显式设置 `XVERIF_TEST_EXECUTION_ENV=host`，被 required suite preflight 在收集前拒绝。
 - 误判原因：按该 suite 无真实 NPI/EDA 能力推断可直接执行，忽略 catalog 对进程集成测试声明了 host 执行边界。
 - 以后规则：focused suite 启动前除核对 gate membership 外，还必须从 plan/catalog 核对执行环境要求；凡 preflight 要求 host，首次命令即显式设置 `XVERIF_TEST_EXECUTION_ENV=host`。

@@ -5,6 +5,7 @@
 #include "core/session/request_deadline.h"
 
 #include <cerrno>
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -196,60 +197,182 @@ std::uint64_t AnalysisRepository::next_access_sequence() {
     return access_sequence_;
 }
 
+std::uint64_t AnalysisRepository::key_metadata_bytes(
+    const AnalysisCacheKey& key) {
+    return sizeof(AnalysisCacheKey) + key.protocol.size() +
+           key.session_id.size() + key.normalized_semantics.size() +
+           key.semantic_digest.size() + key.digest.size() + 64U;
+}
+
+std::uint64_t AnalysisRepository::cursor_metadata_bytes(
+    const GenerationCursor& cursor) {
+    return sizeof(GenerationCursor) + cursor.cursor_id.size() +
+           cursor.direction.size() + key_metadata_bytes(cursor.key) + 64U;
+}
+
+std::uint64_t AnalysisRepository::binding_metadata_bytes(
+    const std::string& session_id, const std::string& config_name,
+    const std::string& digest) {
+    return sizeof(std::string) * 3U + session_id.size() + config_name.size() +
+           digest.size() + 96U;
+}
+
+void AnalysisRepository::add_resident_bytes(std::uint64_t bytes) {
+    stats_.resident_estimated_bytes = saturating_add(
+        stats_.resident_estimated_bytes, bytes);
+    stats_.charged_bytes = saturating_add(stats_.charged_bytes, charge(bytes));
+}
+
+void AnalysisRepository::remove_resident_bytes(std::uint64_t bytes) {
+    stats_.resident_estimated_bytes -=
+        std::min(stats_.resident_estimated_bytes, bytes);
+    const std::uint64_t charged = charge(bytes);
+    stats_.charged_bytes -= std::min(stats_.charged_bytes, charged);
+}
+
+void AnalysisRepository::add_build_bytes(std::uint64_t bytes) {
+    stats_.build_estimated_bytes = saturating_add(
+        stats_.build_estimated_bytes, bytes);
+    stats_.charged_bytes = saturating_add(stats_.charged_bytes, charge(bytes));
+}
+
+void AnalysisRepository::remove_build_bytes(std::uint64_t bytes) {
+    stats_.build_estimated_bytes -=
+        std::min(stats_.build_estimated_bytes, bytes);
+    const std::uint64_t charged = charge(bytes);
+    stats_.charged_bytes -= std::min(stats_.charged_bytes, charged);
+}
+
+void AnalysisRepository::add_metadata_bytes(std::uint64_t bytes) {
+    stats_.metadata_estimated_bytes = saturating_add(
+        stats_.metadata_estimated_bytes, bytes);
+    stats_.charged_bytes = saturating_add(stats_.charged_bytes, charge(bytes));
+}
+
+void AnalysisRepository::remove_metadata_bytes(std::uint64_t bytes) {
+    stats_.metadata_estimated_bytes -=
+        std::min(stats_.metadata_estimated_bytes, bytes);
+    const std::uint64_t charged = charge(bytes);
+    stats_.charged_bytes -= std::min(stats_.charged_bytes, charged);
+}
+
+void AnalysisRepository::erase_generation_if_unreferenced(
+    const AnalysisCacheKey& key) {
+    const CanonicalStore* store = canonical_store_for_protocol(key.protocol);
+    if (store != nullptr && store->find(key) != store->end()) return;
+    for (const auto& cursor : cursors_)
+        if (cursor.second.key == key) return;
+    auto found = generations_.find(key);
+    if (found == generations_.end()) return;
+    remove_metadata_bytes(key_metadata_bytes(found->first));
+    generations_.erase(found);
+    if (stats_.generation_count > 0) --stats_.generation_count;
+}
+
+bool AnalysisRepository::erase_one_releasable_metadata() {
+    if (!evicted_keys_.empty()) {
+        auto victim = evicted_keys_.begin();
+        for (auto it = evicted_keys_.begin(); it != evicted_keys_.end(); ++it)
+            if (it->second < victim->second ||
+                (it->second == victim->second && it->first < victim->first))
+                victim = it;
+        const AnalysisCacheKey key = victim->first;
+        remove_metadata_bytes(key_metadata_bytes(victim->first));
+        evicted_keys_.erase(victim);
+        if (stats_.tombstone_count > 0) --stats_.tombstone_count;
+        erase_generation_if_unreferenced(key);
+        return true;
+    }
+    if (!cursors_.empty()) {
+        auto victim = cursors_.begin();
+        std::uint64_t victim_sequence = cursor_access_sequences_[victim->first];
+        for (auto it = cursors_.begin(); it != cursors_.end(); ++it) {
+            const std::uint64_t sequence = cursor_access_sequences_[it->first];
+            if (sequence < victim_sequence ||
+                (sequence == victim_sequence && it->first < victim->first)) {
+                victim = it;
+                victim_sequence = sequence;
+            }
+        }
+        const AnalysisCacheKey key = victim->second.key;
+        remove_metadata_bytes(cursor_metadata_bytes(victim->second));
+        cursor_access_sequences_.erase(victim->first);
+        cursors_.erase(victim);
+        if (stats_.cursor_count > 0) --stats_.cursor_count;
+        erase_generation_if_unreferenced(key);
+        return true;
+    }
+    if (!stream_bindings_.empty()) {
+        auto session = stream_bindings_.begin();
+        auto binding = session->second.begin();
+        if (binding != session->second.end()) {
+            remove_metadata_bytes(binding_metadata_bytes(
+                session->first, binding->first, binding->second));
+            session->second.erase(binding);
+            if (stats_.binding_count > 0) --stats_.binding_count;
+            if (session->second.empty()) stream_bindings_.erase(session);
+            return true;
+        }
+    }
+    return false;
+}
+
 std::uint64_t AnalysisRepository::current_charged_bytes(
     const AnalysisCacheKey* exempt_canonical,
     const IndexKey* exempt_index,
     const AnalysisCacheKey* excluded_stream_ranges_for_full) const {
-    std::uint64_t total = 0;
-    for (const CanonicalStore* store : {&apb_entries_, &axi_entries_,
-                                        &stream_entries_}) {
-        for (const auto& item : *store) {
-            if (exempt_canonical != nullptr && item.first == *exempt_canonical)
-                continue;
-            if (excluded_stream_ranges_for_full != nullptr &&
-                is_stream_sibling_range(
-                    item.first, *excluded_stream_ranges_for_full))
-                continue;
-            total = saturating_add(
-                total, charge(item.second.resident_estimated_bytes));
-            total = saturating_add(
-                total, charge(item.second.build_estimated_bytes));
+    std::uint64_t total = stats_.charged_bytes;
+    if (exempt_canonical != nullptr) {
+        const CanonicalStore* store =
+            canonical_store_for_protocol(exempt_canonical->protocol);
+        const auto found = store == nullptr ? CanonicalStore::const_iterator() :
+                                             store->find(*exempt_canonical);
+        if (store != nullptr && found != store->end()) {
+            const std::uint64_t exempt = saturating_add(
+                charge(found->second.resident_estimated_bytes),
+                charge(found->second.build_estimated_bytes));
+            total -= std::min(total, exempt);
         }
     }
-    for (const auto& item : indexes_) {
-        if (exempt_index != nullptr && item.first == *exempt_index) continue;
-        if (excluded_stream_ranges_for_full != nullptr &&
-            is_stream_sibling_range(
-                item.first.canonical_key,
-                *excluded_stream_ranges_for_full))
-            continue;
-        total = saturating_add(total, charge(item.second.resident_estimated_bytes));
-        total = saturating_add(total, charge(item.second.build_estimated_bytes));
+    if (exempt_index != nullptr) {
+        const auto found = indexes_.find(*exempt_index);
+        if (found != indexes_.end()) {
+            const std::uint64_t exempt = saturating_add(
+                charge(found->second.resident_estimated_bytes),
+                charge(found->second.build_estimated_bytes));
+            total -= std::min(total, exempt);
+        }
+    }
+    if (excluded_stream_ranges_for_full != nullptr) {
+        for (const auto& item : stream_entries_) {
+            if (!is_stream_sibling_range(
+                    item.first, *excluded_stream_ranges_for_full))
+                continue;
+            const std::uint64_t excluded = saturating_add(
+                charge(item.second.resident_estimated_bytes),
+                charge(item.second.build_estimated_bytes));
+            total -= std::min(total, excluded);
+        }
+        for (const auto& item : indexes_) {
+            if (!is_stream_sibling_range(
+                    item.first.canonical_key,
+                    *excluded_stream_ranges_for_full))
+                continue;
+            const std::uint64_t excluded = saturating_add(
+                charge(item.second.resident_estimated_bytes),
+                charge(item.second.build_estimated_bytes));
+            total -= std::min(total, excluded);
+        }
     }
     return total;
 }
 
 std::uint64_t AnalysisRepository::current_resident_estimated_bytes() const {
-    std::uint64_t total = 0;
-    for (const CanonicalStore* store : {&apb_entries_, &axi_entries_,
-                                        &stream_entries_})
-        for (const auto& item : *store)
-            total = saturating_add(total,
-                                   item.second.resident_estimated_bytes);
-    for (const auto& item : indexes_)
-        total = saturating_add(total, item.second.resident_estimated_bytes);
-    return total;
+    return stats_.resident_estimated_bytes;
 }
 
 std::uint64_t AnalysisRepository::current_build_estimated_bytes() const {
-    std::uint64_t total = 0;
-    for (const CanonicalStore* store : {&apb_entries_, &axi_entries_,
-                                        &stream_entries_})
-        for (const auto& item : *store)
-            total = saturating_add(total, item.second.build_estimated_bytes);
-    for (const auto& item : indexes_)
-        total = saturating_add(total, item.second.build_estimated_bytes);
-    return total;
+    return stats_.build_estimated_bytes;
 }
 
 void AnalysisRepository::set_memory_error(AnalysisCacheError& error,
@@ -278,20 +401,21 @@ bool AnalysisRepository::make_hard_room(
         request_key.protocol == "stream" &&
         request_key.scope == AnalysisCacheScope::Full
             ? &request_key : nullptr;
+    evict_to_budget(config_.hard_max_bytes, new_charge,
+                    protected_canonical, protected_index, "hard_limit",
+                    preserve_stream_ranges_for_full,
+                    excluded_stream_ranges_for_full);
     while (saturating_add(
                current_charged_bytes(
                    nullptr, nullptr, excluded_stream_ranges_for_full),
-               new_charge) >
-           config_.hard_max_bytes) {
+               new_charge) > config_.hard_max_bytes &&
+           erase_one_releasable_metadata()) {
         xdebug_core::request_deadline_checkpoint();
-        if (evict_cold_index(
-                protected_index, protected_canonical, "hard_limit",
-                preserve_stream_ranges_for_full))
-            continue;
-        if (evict_cold_canonical(
-                protected_canonical, "hard_limit",
-                preserve_stream_ranges_for_full))
-            continue;
+    }
+    if (saturating_add(
+            current_charged_bytes(
+                nullptr, nullptr, excluded_stream_ranges_for_full),
+            new_charge) > config_.hard_max_bytes) {
         set_memory_error(error, request_key);
         return false;
     }
@@ -302,87 +426,109 @@ void AnalysisRepository::enforce_soft_budget(
     const AnalysisCacheKey* protected_canonical,
     const IndexKey* protected_index) {
     if (config_.soft_max_bytes == 0) return;
-    while (current_charged_bytes(nullptr, nullptr) > config_.soft_max_bytes) {
-        xdebug_core::request_deadline_checkpoint();
-        if (evict_cold_index(protected_index, protected_canonical, "soft_lru"))
-            continue;
-        if (evict_cold_canonical(protected_canonical, "soft_lru")) continue;
-        break;
-    }
+    const std::uint64_t metadata_charge = charge(stats_.metadata_estimated_bytes);
+    evict_to_budget(saturating_add(config_.soft_max_bytes, metadata_charge), 0,
+                    protected_canonical,
+                    protected_index, "soft_lru");
 }
 
-bool AnalysisRepository::evict_cold_index(
-    const IndexKey* protected_index,
-    const AnalysisCacheKey*,
-    const std::string& reason,
-    const AnalysisCacheKey* preserve_stream_ranges_for_full) {
-    auto candidate = indexes_.end();
-    for (auto it = indexes_.begin(); it != indexes_.end(); ++it) {
-        xdebug_core::request_deadline_checkpoint();
-        if (it->second.state != ObjectState::Ready) continue;
-        if (protected_index != nullptr && it->first == *protected_index) continue;
-        if (preserve_stream_ranges_for_full != nullptr &&
-            is_stream_sibling_range(
-                it->first.canonical_key,
-                *preserve_stream_ranges_for_full))
-            continue;
-        if (candidate == indexes_.end() ||
-            it->second.access_sequence < candidate->second.access_sequence ||
-            (it->second.access_sequence == candidate->second.access_sequence &&
-             it->first < candidate->first)) {
-            candidate = it;
-        }
-    }
-    if (candidate == indexes_.end()) return false;
-    AnalysisCacheEvent event;
-    event.event = "evict";
-    event.protocol = candidate->first.canonical_key.protocol;
-    event.session_id = candidate->first.canonical_key.session_id;
-    event.key_summary = candidate->first.canonical_key.summary();
-    event.object_kind = "index:" + candidate->first.index_kind;
-    event.reason = reason;
-    event.estimated_bytes = candidate->second.resident_estimated_bytes;
-    event.access_sequence = candidate->second.access_sequence;
-    event.generation = candidate->first.canonical_generation;
-    indexes_.erase(candidate);
-    emit(event);
-    return true;
-}
-
-bool AnalysisRepository::evict_cold_canonical(
+void AnalysisRepository::evict_to_budget(
+    std::uint64_t limit, std::uint64_t new_charge,
     const AnalysisCacheKey* protected_canonical,
-    const std::string& reason,
-    const AnalysisCacheKey* preserve_stream_ranges_for_full) {
-    CanonicalStore* candidate_store = nullptr;
-    CanonicalStore::iterator candidate;
-    for (CanonicalStore* store : {&apb_entries_, &axi_entries_,
-                                  &stream_entries_}) {
-        for (auto it = store->begin(); it != store->end(); ++it) {
-            xdebug_core::request_deadline_checkpoint();
-            if (it->second.state != ObjectState::Ready) continue;
+    const IndexKey* protected_index, const std::string& reason,
+    const AnalysisCacheKey* preserve_stream_ranges_for_full,
+    const AnalysisCacheKey* excluded_stream_ranges_for_full) {
+    if (saturating_add(current_charged_bytes(
+                           nullptr, nullptr,
+                           excluded_stream_ranges_for_full),
+                       new_charge) <=
+        limit)
+        return;
+    std::vector<IndexKey> index_candidates;
+    for (const auto& item : indexes_) {
+        if (item.second.state != ObjectState::Ready) continue;
+        if (protected_index != nullptr && item.first == *protected_index)
+            continue;
+        if (preserve_stream_ranges_for_full != nullptr &&
+            is_stream_sibling_range(item.first.canonical_key,
+                                    *preserve_stream_ranges_for_full))
+            continue;
+        index_candidates.push_back(item.first);
+    }
+    std::sort(index_candidates.begin(), index_candidates.end(),
+              [&](const IndexKey& lhs, const IndexKey& rhs) {
+                  const IndexObject& a = indexes_.find(lhs)->second;
+                  const IndexObject& b = indexes_.find(rhs)->second;
+                  return a.access_sequence != b.access_sequence
+                             ? a.access_sequence < b.access_sequence
+                             : lhs < rhs;
+              });
+    for (const auto& key : index_candidates) {
+        if (saturating_add(current_charged_bytes(
+                               nullptr, nullptr,
+                               excluded_stream_ranges_for_full),
+                           new_charge) <= limit)
+            return;
+        xdebug_core::request_deadline_checkpoint();
+        auto found = indexes_.find(key);
+        if (found == indexes_.end()) continue;
+        AnalysisCacheEvent event{
+            "evict", key.canonical_key.protocol,
+            key.canonical_key.session_id, key.canonical_key.summary(),
+            "index:" + key.index_kind, reason,
+            found->second.resident_estimated_bytes, 0, 0,
+            found->second.access_sequence, key.canonical_generation};
+        remove_resident_bytes(found->second.resident_estimated_bytes);
+        remove_build_bytes(found->second.build_estimated_bytes);
+        if (found->second.state == ObjectState::Ready && stats_.index_count > 0)
+            --stats_.index_count;
+        indexes_.erase(found);
+        emit(event);
+    }
+
+    std::vector<AnalysisCacheKey> canonical_candidates;
+    for (const CanonicalStore* store : {&apb_entries_, &axi_entries_,
+                                        &stream_entries_}) {
+        for (const auto& item : *store) {
+            if (item.second.state != ObjectState::Ready) continue;
             if (protected_canonical != nullptr &&
-                it->first == *protected_canonical)
+                item.first == *protected_canonical)
                 continue;
             if (preserve_stream_ranges_for_full != nullptr &&
-                is_stream_sibling_range(
-                    it->first, *preserve_stream_ranges_for_full))
+                is_stream_sibling_range(item.first,
+                                        *preserve_stream_ranges_for_full))
                 continue;
-            if (candidate_store == nullptr ||
-                it->second.access_sequence <
-                    candidate->second.access_sequence ||
-                (it->second.access_sequence ==
-                     candidate->second.access_sequence &&
-                 it->first < candidate->first)) {
-                candidate_store = store;
-                candidate = it;
-            }
+            canonical_candidates.push_back(item.first);
         }
     }
-    if (candidate_store == nullptr) return false;
-    const AnalysisCacheKey key = candidate->first;
-    erase_canonical_internal(key, reason, false);
-    evicted_keys_.insert(key);
-    return true;
+    std::sort(canonical_candidates.begin(), canonical_candidates.end(),
+              [&](const AnalysisCacheKey& lhs, const AnalysisCacheKey& rhs) {
+                  const auto* lhs_store = canonical_store_for_protocol(lhs.protocol);
+                  const auto* rhs_store = canonical_store_for_protocol(rhs.protocol);
+                  const auto& a = lhs_store->find(lhs)->second;
+                  const auto& b = rhs_store->find(rhs)->second;
+                  return a.access_sequence != b.access_sequence
+                             ? a.access_sequence < b.access_sequence
+                             : lhs < rhs;
+              });
+    for (const auto& key : canonical_candidates) {
+        if (saturating_add(current_charged_bytes(
+                               nullptr, nullptr,
+                               excluded_stream_ranges_for_full),
+                           new_charge) <= limit)
+            return;
+        xdebug_core::request_deadline_checkpoint();
+        const auto* store = canonical_store_for_protocol(key.protocol);
+        if (store == nullptr || store->find(key) == store->end()) continue;
+        erase_canonical_internal(key, reason, false);
+        const auto inserted = evicted_keys_.emplace(key, next_access_sequence());
+        if (inserted.second) {
+            add_metadata_bytes(key_metadata_bytes(key));
+            ++stats_.tombstone_count;
+        } else {
+            inserted.first->second = next_access_sequence();
+        }
+    }
 }
 
 bool AnalysisRepository::is_stream_sibling_range(
@@ -418,12 +564,23 @@ void AnalysisRepository::erase_canonical_internal(
     if (found == store->end()) return;
     const std::uint64_t generation = found->second.generation;
     for (auto it = indexes_.begin(); it != indexes_.end();) {
-        if (it->first.canonical_key == key) it = indexes_.erase(it);
+        if (it->first.canonical_key == key) {
+            remove_resident_bytes(it->second.resident_estimated_bytes);
+            remove_build_bytes(it->second.build_estimated_bytes);
+            if (it->second.state == ObjectState::Ready && stats_.index_count > 0)
+                --stats_.index_count;
+            it = indexes_.erase(it);
+        }
         else ++it;
     }
     if (invalidate_cursors) {
         for (auto it = cursors_.begin(); it != cursors_.end();) {
-            if (it->second.key == key) it = cursors_.erase(it);
+            if (it->second.key == key) {
+                remove_metadata_bytes(cursor_metadata_bytes(it->second));
+                cursor_access_sequences_.erase(it->first);
+                if (stats_.cursor_count > 0) --stats_.cursor_count;
+                it = cursors_.erase(it);
+            }
             else ++it;
         }
     }
@@ -437,7 +594,13 @@ void AnalysisRepository::erase_canonical_internal(
     event.estimated_bytes = found->second.resident_estimated_bytes;
     event.access_sequence = found->second.access_sequence;
     event.generation = generation;
+    remove_resident_bytes(found->second.resident_estimated_bytes);
+    remove_build_bytes(found->second.build_estimated_bytes);
+    if (found->second.state == ObjectState::Ready &&
+        stats_.canonical_entry_count > 0)
+        --stats_.canonical_entry_count;
     store->erase(found);
+    erase_generation_if_unreferenced(key);
     emit(event);
 }
 
@@ -470,7 +633,12 @@ AnalysisAcquireStatus AnalysisRepository::begin_canonical(
                                 found->second.generation});
         return AnalysisAcquireStatus::Hit;
     }
-    if (!make_hard_room(charge(build_estimated_bytes), nullptr, nullptr,
+    const bool new_generation = generations_.find(key) == generations_.end();
+    const std::uint64_t generation_metadata =
+        new_generation ? charge(key_metadata_bytes(key)) : 0;
+    if (!make_hard_room(saturating_add(charge(build_estimated_bytes),
+                                       generation_metadata),
+                        nullptr, nullptr,
                         error, key)) {
         emit(AnalysisCacheEvent{"build_failed", key.protocol, key.session_id,
                                 key.summary(), "canonical", "hard_limit",
@@ -479,10 +647,17 @@ AnalysisAcquireStatus AnalysisRepository::begin_canonical(
     }
     CanonicalObject object;
     object.type_tag = type_tag;
-    object.generation = ++generations_[key];
+    auto generation = generations_.find(key);
+    if (generation == generations_.end()) {
+        generation = generations_.emplace(key, 0).first;
+        add_metadata_bytes(key_metadata_bytes(key));
+        ++stats_.generation_count;
+    }
+    object.generation = ++generation->second;
     object.build_estimated_bytes = build_estimated_bytes;
     object.access_sequence = next_access_sequence();
     (*store)[key] = object;
+    add_build_bytes(build_estimated_bytes);
     const bool after_evict = evicted_keys_.find(key) != evicted_keys_.end();
     emit(AnalysisCacheEvent{"miss", key.protocol, key.session_id, key.summary(),
                             "canonical",
@@ -510,6 +685,7 @@ bool AnalysisRepository::publish_canonical_erased(
         error.message = "canonical publish requires the matching building entry";
         return false;
     }
+    remove_build_bytes(found->second.build_estimated_bytes);
     found->second.build_estimated_bytes = 0;
     const AnalysisCacheKey* replaced_stream_ranges =
         key.protocol == "stream" && key.scope == AnalysisCacheScope::Full
@@ -517,6 +693,7 @@ bool AnalysisRepository::publish_canonical_erased(
     if (!make_hard_room(charge(resident_estimated_bytes), &key, nullptr,
                         error, key, replaced_stream_ranges)) {
         store->erase(found);
+        erase_generation_if_unreferenced(key);
         emit(AnalysisCacheEvent{"build_failed", key.protocol, key.session_id,
                                 key.summary(), "canonical", "hard_limit",
                                 resident_estimated_bytes});
@@ -528,6 +705,8 @@ bool AnalysisRepository::publish_canonical_erased(
     found->second.state = ObjectState::Ready;
     found->second.value = value;
     found->second.resident_estimated_bytes = resident_estimated_bytes;
+    add_resident_bytes(resident_estimated_bytes);
+    ++stats_.canonical_entry_count;
     found->second.access_sequence = next_access_sequence();
     const std::uint64_t generation = found->second.generation;
     const bool oversize = config_.soft_max_bytes != 0 &&
@@ -545,7 +724,12 @@ bool AnalysisRepository::publish_canonical_erased(
                             "canonical", "", resident_estimated_bytes,
                             resident_estimated_bytes, 0,
                             found->second.access_sequence, generation});
-    evicted_keys_.erase(key);
+    auto tombstone = evicted_keys_.find(key);
+    if (tombstone != evicted_keys_.end()) {
+        remove_metadata_bytes(key_metadata_bytes(tombstone->first));
+        evicted_keys_.erase(tombstone);
+        if (stats_.tombstone_count > 0) --stats_.tombstone_count;
+    }
     return true;
 }
 
@@ -564,10 +748,12 @@ bool AnalysisRepository::update_canonical_build_bytes(
         error.message = "canonical build accounting requires a building entry";
         return false;
     }
+    remove_build_bytes(found->second.build_estimated_bytes);
     found->second.build_estimated_bytes = 0;
     if (!make_hard_room(charge(build_estimated_bytes), &key, nullptr,
                         error, key)) {
         store->erase(found);
+        erase_generation_if_unreferenced(key);
         emit(AnalysisCacheEvent{"build_failed", key.protocol, key.session_id,
                                 key.summary(), "canonical", "hard_limit",
                                 build_estimated_bytes});
@@ -575,6 +761,7 @@ bool AnalysisRepository::update_canonical_build_bytes(
     }
     found = store->find(key);
     found->second.build_estimated_bytes = build_estimated_bytes;
+    add_build_bytes(build_estimated_bytes);
     return true;
 }
 
@@ -586,7 +773,9 @@ void AnalysisRepository::fail_canonical(const AnalysisCacheKey& key,
     if (found == store->end() ||
         found->second.state != ObjectState::Building) return;
     const std::uint64_t bytes = found->second.build_estimated_bytes;
+    remove_build_bytes(bytes);
     store->erase(found);
+    erase_generation_if_unreferenced(key);
     emit(AnalysisCacheEvent{"build_failed", key.protocol, key.session_id,
                             key.summary(), "canonical", reason, bytes});
 }
@@ -664,6 +853,7 @@ AnalysisAcquireStatus AnalysisRepository::begin_index(
     object.build_estimated_bytes = build_estimated_bytes;
     object.access_sequence = next_access_sequence();
     indexes_[key] = object;
+    add_build_bytes(build_estimated_bytes);
     emit(AnalysisCacheEvent{"miss", canonical_key.protocol,
                             canonical_key.session_id, canonical_key.summary(),
                             "index:" + index_kind, "cold", build_estimated_bytes,
@@ -685,6 +875,7 @@ bool AnalysisRepository::publish_index_erased(
         error.message = "index publish requires the matching building object";
         return false;
     }
+    remove_build_bytes(found->second.build_estimated_bytes);
     found->second.build_estimated_bytes = 0;
     if (!make_hard_room(charge(resident_estimated_bytes), &canonical_key, &key,
                         error, canonical_key)) {
@@ -695,6 +886,8 @@ bool AnalysisRepository::publish_index_erased(
     found->second.state = ObjectState::Ready;
     found->second.value = value;
     found->second.resident_estimated_bytes = resident_estimated_bytes;
+    add_resident_bytes(resident_estimated_bytes);
+    ++stats_.index_count;
     found->second.access_sequence = next_access_sequence();
     CanonicalStore* store = canonical_store_for_protocol(canonical_key.protocol);
     auto owner = store == nullptr ? CanonicalStore::iterator() :
@@ -732,6 +925,7 @@ bool AnalysisRepository::update_index_build_bytes(
         error.message = "index build accounting requires a building object";
         return false;
     }
+    remove_build_bytes(found->second.build_estimated_bytes);
     found->second.build_estimated_bytes = 0;
     if (!make_hard_room(charge(build_estimated_bytes), &canonical_key, &key,
                         error, canonical_key)) {
@@ -744,6 +938,7 @@ bool AnalysisRepository::update_index_build_bytes(
     }
     found = indexes_.find(key);
     found->second.build_estimated_bytes = build_estimated_bytes;
+    add_build_bytes(build_estimated_bytes);
     return true;
 }
 
@@ -756,6 +951,7 @@ void AnalysisRepository::fail_index(const AnalysisCacheKey& canonical_key,
     if (found == indexes_.end() || found->second.state != ObjectState::Building)
         return;
     const std::uint64_t bytes = found->second.build_estimated_bytes;
+    remove_build_bytes(bytes);
     indexes_.erase(found);
     emit(AnalysisCacheEvent{"build_failed", canonical_key.protocol,
                             canonical_key.session_id, canonical_key.summary(),
@@ -817,7 +1013,21 @@ std::shared_ptr<const void> AnalysisRepository::peek_index_erased(
 
 bool AnalysisRepository::put_cursor(const GenerationCursor& cursor) {
     if (cursor.cursor_id.empty()) return false;
+    const std::uint64_t bytes = cursor_metadata_bytes(cursor);
+    auto existing = cursors_.find(cursor.cursor_id);
+    const std::uint64_t old_bytes = existing == cursors_.end()
+        ? 0 : cursor_metadata_bytes(existing->second);
+    AnalysisCacheError error;
+    if (bytes > old_bytes &&
+        !make_hard_room(charge(bytes - old_bytes), &cursor.key, nullptr,
+                        error, cursor.key))
+        return false;
+    existing = cursors_.find(cursor.cursor_id);
+    if (existing != cursors_.end()) remove_metadata_bytes(old_bytes);
+    else ++stats_.cursor_count;
     cursors_[cursor.cursor_id] = cursor;
+    cursor_access_sequences_[cursor.cursor_id] = next_access_sequence();
+    add_metadata_bytes(bytes);
     return true;
 }
 
@@ -837,17 +1047,30 @@ bool AnalysisRepository::resume_cursor(const std::string& cursor_id,
     if (found == cursors_.end() || !(found->second.key == rebuilt_key))
         return false;
     found->second.generation = rebuilt_generation;
+    cursor_access_sequences_[cursor_id] = next_access_sequence();
     cursor = found->second;
     return true;
 }
 
 void AnalysisRepository::erase_cursor(const std::string& cursor_id) {
-    cursors_.erase(cursor_id);
+    auto found = cursors_.find(cursor_id);
+    if (found == cursors_.end()) return;
+    const AnalysisCacheKey key = found->second.key;
+    remove_metadata_bytes(cursor_metadata_bytes(found->second));
+    cursors_.erase(found);
+    cursor_access_sequences_.erase(cursor_id);
+    if (stats_.cursor_count > 0) --stats_.cursor_count;
+    erase_generation_if_unreferenced(key);
 }
 
 void AnalysisRepository::invalidate(const AnalysisCacheKey& key,
                                     const std::string& reason) {
-    evicted_keys_.erase(key);
+    auto tombstone = evicted_keys_.find(key);
+    if (tombstone != evicted_keys_.end()) {
+        remove_metadata_bytes(key_metadata_bytes(tombstone->first));
+        evicted_keys_.erase(tombstone);
+        if (stats_.tombstone_count > 0) --stats_.tombstone_count;
+    }
     erase_canonical_internal(key, reason, true);
 }
 
@@ -861,8 +1084,12 @@ void AnalysisRepository::clear(const std::string& reason) {
     }
     indexes_.clear();
     cursors_.clear();
+    cursor_access_sequences_.clear();
     stream_bindings_.clear();
     evicted_keys_.clear();
+    generations_.clear();
+    stats_ = AnalysisRepositoryStats();
+    stats_.access_sequence = access_sequence_;
 }
 
 void AnalysisRepository::notify_stream_config_change(
@@ -884,17 +1111,35 @@ void AnalysisRepository::notify_stream_config_changes(
         const std::string& name = std::get<0>(change);
         const std::string& old_digest = std::get<1>(change);
         const std::string& new_digest = std::get<2>(change);
-        stream_bindings_[session_id][name] = new_digest;
+        auto& bindings = stream_bindings_[session_id];
+        auto existing = bindings.find(name);
+        if (existing != bindings.end()) {
+            remove_metadata_bytes(binding_metadata_bytes(
+                session_id, name, existing->second));
+        } else {
+            ++stats_.binding_count;
+        }
+        bindings[name] = new_digest;
+        add_metadata_bytes(binding_metadata_bytes(session_id, name, new_digest));
+        evict_to_budget(config_.hard_max_bytes, 0, nullptr, nullptr,
+                        "hard_limit");
+        while (stats_.charged_bytes > config_.hard_max_bytes &&
+               erase_one_releasable_metadata()) {
+            xdebug_core::request_deadline_checkpoint();
+        }
         if (!old_digest.empty() && old_digest != new_digest)
             old_digests.insert(old_digest);
     }
     for (const std::string& old_digest : old_digests) {
         xdebug_core::request_deadline_checkpoint();
         bool still_bound = false;
-        for (const auto& binding : stream_bindings_[session_id]) {
-            if (binding.second == old_digest) {
-                still_bound = true;
-                break;
+        const auto session = stream_bindings_.find(session_id);
+        if (session != stream_bindings_.end()) {
+            for (const auto& binding : session->second) {
+                if (binding.second == old_digest) {
+                    still_bound = true;
+                    break;
+                }
             }
         }
         if (still_bound) continue;
@@ -909,23 +1154,78 @@ void AnalysisRepository::notify_stream_config_changes(
 }
 
 AnalysisRepositoryStats AnalysisRepository::stats() const {
+    AnalysisRepositoryStats value = stats_;
+    value.access_sequence = access_sequence_;
+    return value;
+}
+
+AnalysisRepositoryStats AnalysisRepository::debug_recomputed_stats() const {
     AnalysisRepositoryStats value;
+    const auto add_charge = [&](std::uint64_t bytes) {
+        value.charged_bytes = saturating_add(value.charged_bytes,
+                                             charge(bytes));
+    };
     for (const CanonicalStore* store : {&apb_entries_, &axi_entries_,
-                                        &stream_entries_})
-        for (const auto& item : *store)
+                                        &stream_entries_}) {
+        for (const auto& item : *store) {
             if (item.second.state == ObjectState::Ready)
                 ++value.canonical_entry_count;
-    for (const auto& item : indexes_)
+            value.resident_estimated_bytes = saturating_add(
+                value.resident_estimated_bytes,
+                item.second.resident_estimated_bytes);
+            value.build_estimated_bytes = saturating_add(
+                value.build_estimated_bytes,
+                item.second.build_estimated_bytes);
+            add_charge(item.second.resident_estimated_bytes);
+            add_charge(item.second.build_estimated_bytes);
+        }
+    }
+    for (const auto& item : indexes_) {
         if (item.second.state == ObjectState::Ready) ++value.index_count;
-    value.resident_estimated_bytes = current_resident_estimated_bytes();
-    value.build_estimated_bytes = current_build_estimated_bytes();
-    value.charged_bytes = current_charged_bytes(nullptr, nullptr);
+        value.resident_estimated_bytes = saturating_add(
+            value.resident_estimated_bytes,
+            item.second.resident_estimated_bytes);
+        value.build_estimated_bytes = saturating_add(
+            value.build_estimated_bytes, item.second.build_estimated_bytes);
+        add_charge(item.second.resident_estimated_bytes);
+        add_charge(item.second.build_estimated_bytes);
+    }
+    value.generation_count = generations_.size();
+    value.cursor_count = cursors_.size();
+    value.tombstone_count = evicted_keys_.size();
+    for (const auto& item : generations_) {
+        value.metadata_estimated_bytes = saturating_add(
+            value.metadata_estimated_bytes, key_metadata_bytes(item.first));
+        add_charge(key_metadata_bytes(item.first));
+    }
+    for (const auto& item : cursors_) {
+        value.metadata_estimated_bytes = saturating_add(
+            value.metadata_estimated_bytes, cursor_metadata_bytes(item.second));
+        add_charge(cursor_metadata_bytes(item.second));
+    }
+    for (const auto& session : stream_bindings_) {
+        for (const auto& binding : session.second) {
+            ++value.binding_count;
+            value.metadata_estimated_bytes = saturating_add(
+                value.metadata_estimated_bytes,
+                binding_metadata_bytes(session.first, binding.first,
+                                       binding.second));
+            add_charge(binding_metadata_bytes(session.first, binding.first,
+                                              binding.second));
+        }
+    }
+    for (const auto& item : evicted_keys_) {
+        value.metadata_estimated_bytes = saturating_add(
+            value.metadata_estimated_bytes, key_metadata_bytes(item.first));
+        add_charge(key_metadata_bytes(item.first));
+    }
     value.access_sequence = access_sequence_;
     return value;
 }
 
 void AnalysisRepository::emit(const AnalysisCacheEvent& event) const {
     if (event_sink_) event_sink_(event);
+    if (!analysis_probe().enabled()) return;
     const AnalysisRepositoryStats snapshot = stats();
     analysis_probe().record(
         event.event, event.protocol, event.key_summary,

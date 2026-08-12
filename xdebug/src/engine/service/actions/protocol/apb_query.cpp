@@ -113,25 +113,38 @@ public:
                 action_name(), "apb", name,
                 "canonical APB result unavailable");
 
-        std::vector<const ApbTransaction*> matches;
-        matches.reserve(result->all.size());
+        auto query = args["query"];
+        const int index = query.value("index", -1);
+        const int line_limit = query.value("line_limit", -1);
+        const bool last = args.value("last", false);
+        const size_t begin = index > 0
+            ? static_cast<size_t>(index - 1) : 0;
+        const size_t keep_limit = line_limit > 0
+            ? static_cast<size_t>(line_limit) : 0;
+        size_t matched_count = 0;
+        const ApbTransaction* selected = nullptr;
+        std::vector<const ApbTransaction*> page;
+        if (keep_limit > 0) page.reserve(keep_limit);
         for (const ApbTransaction* transaction : result->all) {
             if (!transaction ||
                 !direction_matches(*transaction, direction)) {
                 continue;
             }
             if (match_protocol_query_filter(
-                    filter, transaction->addr,
+                filter, transaction->addr,
                     transaction->addr_width) ==
                 ValueFilterMatch::Yes) {
-                matches.push_back(transaction);
+                const size_t match_index = matched_count++;
+                if (last) {
+                    selected = transaction;
+                } else if (index > 0 && line_limit < 0) {
+                    if (match_index == begin) selected = transaction;
+                } else if (keep_limit > 0 && match_index >= begin &&
+                           page.size() < keep_limit) {
+                    page.push_back(transaction);
+                }
             }
         }
-
-        auto query = args["query"];
-        const int index = query.value("index", -1);
-        const int line_limit = query.value("line_limit", -1);
-        const bool last = args.value("last", false);
         Json out;
         out["summary"] = {
             {"name", name},
@@ -142,58 +155,51 @@ public:
             out["filter"]["address"] = filter.address_json;
 
         if (last) {
-            const bool found = !matches.empty();
+            const bool found = selected != nullptr;
             out["summary"]["query_mode"] = "last";
             out["summary"]["found"] = found;
             if (found)
                 out["transaction"] =
-                    apb_transaction_json(*matches.back());
+                    apb_transaction_json(*selected);
             set_query_summary(
                 out["summary"], result->diagnostics,
-                matches.size(), found ? 1 : 0, false);
+                matched_count, found ? 1 : 0, false);
             return out;
         }
 
         if (index > 0 && line_limit < 0) {
-            const size_t offset = static_cast<size_t>(index - 1);
-            const bool found = offset < matches.size();
+            const bool found = selected != nullptr;
             out["summary"]["query_mode"] = "index";
             out["summary"]["found"] = found;
             if (found)
                 out["transaction"] =
-                    apb_transaction_json(*matches[offset]);
+                    apb_transaction_json(*selected);
             set_query_summary(
                 out["summary"], result->diagnostics,
-                matches.size(), found ? 1 : 0, false);
+                matched_count, found ? 1 : 0, false);
             return out;
         }
 
         if (line_limit > 0) {
-            const size_t begin = index > 0
-                ? static_cast<size_t>(index - 1) : 0;
             Json transactions = Json::array();
-            for (size_t i = begin;
-                 i < matches.size() &&
-                 transactions.size() <
-                     static_cast<size_t>(line_limit);
-                 ++i) {
+            for (const ApbTransaction* transaction : page) {
                 transactions.push_back(
-                    apb_transaction_json(*matches[i]));
+                    apb_transaction_json(*transaction));
             }
             const bool truncated =
-                begin + transactions.size() < matches.size();
+                begin + transactions.size() < matched_count;
             out["summary"]["query_mode"] = "list";
             out["transactions"] = std::move(transactions);
             set_query_summary(
                 out["summary"], result->diagnostics,
-                matches.size(), out["transactions"].size(), truncated);
+                matched_count, out["transactions"].size(), truncated);
             return out;
         }
 
         out["summary"]["query_mode"] = "count";
         set_query_summary(
             out["summary"], result->diagnostics,
-            matches.size(), 0, false);
+            matched_count, 0, false);
         return out;
     }
 

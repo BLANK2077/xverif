@@ -179,7 +179,7 @@ native CLI、engine、session、MCP、SDK-free loop、schema、example、XOUT、
 
 ### C06 Cache 内存与算法
 
-状态：`pending`
+状态：`completed`
 
 - generation/cursor/binding/tombstone 纳入预算并可释放。
 - 增量 stats，禁用 probe 时无全表统计。
@@ -312,7 +312,7 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 | C03 Session | completed | `111d386` | 生命周期 lease/NPI 串行、deadline/超时终止、list 纯读、close graceful/force 与全 surface 迁移完成 |
 | C04 FSDB identity | completed | `7e27303` | registry v3 纳秒指纹、open 二次校验、query 前 fail-closed gate 与 RESOURCE_CHANGED AI 证据完成 |
 | C05 Transport | completed | 本提交 | 64 MiB 统一边界、block I/O、单调 deadline、严格 env 与结构化错误完成 |
-| C06 Cache | pending | - | - |
+| C06 Cache | completed | 本提交 | 全元数据预算、O(1) stats、批量 LRU、有界 APB/AXI selection 与资源/等价性门禁完成 |
 | C07 Hierarchy | pending | - | - |
 | C08 APB export | pending | - | - |
 | C09 AI/schema | pending | - | - |
@@ -341,8 +341,12 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 | 2026-08-12 | C05 | `xdebug.cpp_unit` / `xdebug.static` / `xdebug.contract` | host | PASS | 1 / 108 / 112 passed |
 | 2026-08-12 | C05 | `xdebug.session` / MCP direct / MCP fake LSF | host | PASS | 41 / 4 / 3 passed |
 | 2026-08-12 | C05 | `skills.xverif` / `skills.xverif_admin` | host | PASS | 16 / 1 passed |
+| 2026-08-12 | C06 | `make -C xdebug all` / `xdebug.cpp_unit` / `xdebug.static` | host | PASS | 构建通过；1 / 108 passed |
+| 2026-08-12 | C06 | counter / synthetic existing / stream | host | PASS | 1 / 2 / 2 passed |
+| 2026-08-12 | C06 | APB VIP / AXI VIP / analysis cache benchmark | host | PASS | nightly required 各 1 passed；benchmark 含等价、RSS、估算字节、scanner 与 cardinality 硬门禁 |
 
 ## 11. 偏差与阻塞记录
 
 - C02 首轮 runtime 验证与并行链接发生竞态，统一冻结构建并重建后串行复验全部通过；已按仓库规则写入环境复盘，不计为产品失败。
+- C06 首轮 probe unit 的 symlink escape 测试把目标误建在允许目录内；修正为同级真实外部目标后正式 cpp_unit 通过。AXI VIP 首轮因其独立 runner 未传递 probe marker 而未生成测试 artifact，补齐每个 runner 自有 tmp marker 后完整复验通过。
 - 任何 fallback、范围扩展、required suite 降级、公共合同偏离必须先取得用户确认，再记录于此。
