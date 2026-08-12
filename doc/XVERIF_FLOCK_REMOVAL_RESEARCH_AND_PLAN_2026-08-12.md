@@ -545,7 +545,7 @@ session 单 engine、engine 串行请求、NPI mutex、MCP session lock、genera
 | F01 | per-session registry 与 action 热路径 | completed | `38eea24` |
 | F02 | xdebug config 与 owner-sharded logging | completed | 本提交 |
 | F03 | xcov 与 MCP owner logging | completed | 本提交 |
-| F04 | URG cache 与 fixture atomic claim | pending | pending |
+| F04 | URG cache 与 fixture atomic claim | completed | 本提交 |
 | F05 | 静态/strace 门禁、文档与 skill | pending | pending |
 | F06 | clean build、三档全量回归与最终证据 | pending | pending |
 
@@ -583,3 +583,19 @@ query、list、doctor、config、log 与 xcov cache hit 的 `strace -f -e trace=
 - `xcov.unit`：169 passed。
 - `xverif_mcp.unit`：178 passed。
 - `xverif_mcp.process`：141 passed；使用正式 host regression suite，没有 prepare。
+
+### 2026-08-12 F04 验证
+
+- URG cache hit 只校验 immutable entry、manifest、`COMPLETE` 和 artifact hash，不写 access marker、
+  不清理、不驱逐、不取得锁。
+- cold miss 使用 `claims/<key>/` 原子 mkdir 选出唯一 builder；follower 等待 `COMPLETE`，claim 超时和
+  超过 24 小时的 stale takeover 都返回或保留明确证据。构建仍经唯一 staging、完整校验、fsync 和
+  rename 发布。
+- action 路径不再做 LRU eviction。容量已满返回 `XCOV_CACHE_CAPACITY_EXCEEDED`，清理由显式维护窗口
+  处理，避免 query/action 为其它 cache entry 付出同步删除延迟。
+- fixture prepare 在 cache hit 时直接验证并返回；cache miss/rebuild 使用每 fixture 原子 mkdir claim，
+  follower 只等待发布。`current.json` 改用唯一临时文件、fsync 和原子 rename，消除固定 temp 名竞争。
+- `xcov.unit`：169 passed，包含同 key concurrent miss 仅执行一次 runner、容量硬失败和 stale staging
+  清理验证。
+- `testinfra.unit`：52 passed，包含两个并发 prepare 只执行一次 builder；本轮没有调用任何正式
+  `--xverif-prepare`，没有重建 fixture cache。

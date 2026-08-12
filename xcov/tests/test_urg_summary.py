@@ -643,7 +643,9 @@ def test_content_addressed_urg_cache_serializes_concurrent_miss(monkeypatch, tmp
     assert first_meta["key"] == second_meta["key"]
 
 
-def test_urg_cache_lru_and_abandoned_staging_are_bounded(monkeypatch, tmp_path):
+def test_urg_cache_capacity_is_explicit_and_abandoned_staging_is_cleaned(
+    monkeypatch, tmp_path
+):
     from xcov import urg_cache
 
     monkeypatch.setattr(
@@ -678,20 +680,17 @@ def test_urg_cache_lru_and_abandoned_staging_are_bounded(monkeypatch, tmp_path):
     _, first_meta = urg_cache.load_cached_urg_summary(
         str(first_vdb), cache_root=cache, runner=Runner(),
     )
-    _, second_meta = urg_cache.load_cached_urg_summary(
-        str(second_vdb), cache_root=cache, runner=Runner(),
-    )
-    assert first_meta["key"] != second_meta["key"]
-    entries = [path for path in (cache / "entries").iterdir() if path.is_dir()]
-    assert [path.name for path in entries] == [second_meta["key"]]
-
     stale = cache / "staging" / ("a" * 64 + ".stale")
     stale.mkdir()
     old = __import__("time").time() - urg_cache.ABANDONED_STAGING_SECONDS - 1
     __import__("os").utime(stale, (old, old))
-    urg_cache.load_cached_urg_summary(
-        str(second_vdb), cache_root=cache, runner=Runner(),
-    )
+    with pytest.raises(XcovError) as exc_info:
+        urg_cache.load_cached_urg_summary(
+            str(second_vdb), cache_root=cache, runner=Runner(),
+        )
+    assert exc_info.value.code == "XCOV_CACHE_CAPACITY_EXCEEDED"
+    entries = [path for path in (cache / "entries").iterdir() if path.is_dir()]
+    assert [path.name for path in entries] == [first_meta["key"]]
     assert not stale.exists()
 
 

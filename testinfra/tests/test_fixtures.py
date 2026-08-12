@@ -62,17 +62,49 @@ def test_prepare_publishes_and_reuses_fixture(tmp_path: Path) -> None:
     assert store.resolve(spec.id) == first
 
 
+def test_concurrent_prepare_uses_one_atomic_claim(tmp_path: Path, monkeypatch) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+
+    store, spec = make_store(tmp_path)
+    original = store._run_builder
+    entered = threading.Event()
+    release = threading.Event()
+    guard = threading.Lock()
+    calls = 0
+
+    def blocking_builder(builder_spec, staging) -> None:
+        nonlocal calls
+        with guard:
+            calls += 1
+        entered.set()
+        assert release.wait(timeout=5)
+        original(builder_spec, staging)
+
+    monkeypatch.setattr(store, "_run_builder", blocking_builder)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(store.prepare, spec.id)
+        assert entered.wait(timeout=5)
+        second = pool.submit(store.prepare, spec.id)
+        release.set()
+        first_path = first.result(timeout=5)
+        second_path = second.result(timeout=5)
+
+    assert calls == 1
+    assert first_path == second_path
+
+
 def test_prepare_reports_cache_and_rebuild_phases(tmp_path: Path) -> None:
     store, spec = make_store(tmp_path)
     rebuild_phases: list[str] = []
     store.prepare(spec.id, progress=rebuild_phases.append)
     assert rebuild_phases == [
-        "fingerprint", "lock", "builder", "output_validation", "publish"
+        "fingerprint", "claim", "builder", "output_validation", "publish"
     ]
 
     cache_phases: list[str] = []
     store.prepare(spec.id, progress=cache_phases.append)
-    assert cache_phases == ["fingerprint", "lock", "cache_validation"]
+    assert cache_phases == ["fingerprint", "cache_validation"]
 
 
 def test_prepare_cleans_staging_when_builder_is_interrupted(tmp_path: Path, monkeypatch) -> None:

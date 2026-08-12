@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import fcntl
 import functools
 import hashlib
 import json
@@ -229,74 +228,35 @@ def _tree_size(path: Path) -> int:
     return sum(item.stat().st_size for item in path.rglob("*") if item.is_file())
 
 
-def _safe_remove_entry(entry: Path, entries: Path) -> None:
-    if entry.parent != entries or not KEY_PATTERN.fullmatch(entry.name):
-        raise RuntimeError("refusing to remove a non-cache-entry path")
-    shutil.rmtree(entry)
-
-
-def _touch_access(access_root: Path, key: str) -> None:
-    access_root.mkdir(parents=True, exist_ok=True)
-    marker = access_root / key
-    marker.touch(exist_ok=True)
-    os.utime(marker, None)
-
-
-def _cleanup_abandoned_staging(staging: Path, locks: Path) -> None:
+def _cleanup_abandoned_staging(staging: Path) -> None:
     cutoff = time.time() - ABANDONED_STAGING_SECONDS
     for candidate in staging.iterdir():
         if not candidate.is_dir() or candidate.stat().st_mtime >= cutoff:
             continue
         if candidate.parent != staging or not KEY_PATTERN.match(candidate.name[:64]):
             continue
-        key = candidate.name[:64]
-        with (locks / f"{key}.lock").open("a+b") as key_lock:
-            try:
-                fcntl.flock(key_lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                continue
-            if candidate.exists():
-                shutil.rmtree(candidate)
+        if candidate.exists():
+            shutil.rmtree(candidate)
 
 
-def _evict_lru(root: Path, current_key: str) -> None:
+def _enforce_capacity_before_build(root: Path) -> None:
     entries = root / "entries"
-    locks = root / "locks"
-    access = root / "access"
     max_entries = _configured_limit("XVERIF_XCOV_CACHE_MAX_ENTRIES", DEFAULT_MAX_ENTRIES)
     max_bytes = _configured_limit("XVERIF_XCOV_CACHE_MAX_BYTES", DEFAULT_MAX_BYTES)
-    global_lock_path = root / "eviction.lock"
-    with global_lock_path.open("a+b") as global_lock:
-        fcntl.flock(global_lock.fileno(), fcntl.LOCK_EX)
-        rows = []
-        for entry in entries.iterdir():
-            if not entry.is_dir() or not KEY_PATTERN.fullmatch(entry.name):
-                continue
-            marker = access / entry.name
-            stamp = marker.stat().st_mtime_ns if marker.exists() else entry.stat().st_mtime_ns
-            rows.append((stamp, entry, _tree_size(entry)))
-        total_bytes = sum(row[2] for row in rows)
-        rows.sort(key=lambda row: row[0])
-        while len(rows) > max_entries or total_bytes > max_bytes:
-            candidate_index = next(
-                (index for index, row in enumerate(rows) if row[1].name != current_key),
-                None,
-            )
-            if candidate_index is None:
-                break
-            _, candidate, size = rows.pop(candidate_index)
-            key_lock_path = locks / f"{candidate.name}.lock"
-            with key_lock_path.open("a+b") as key_lock:
-                try:
-                    fcntl.flock(key_lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                except BlockingIOError:
-                    return
-                if candidate.exists():
-                    _safe_remove_entry(candidate, entries)
-                    total_bytes -= size
-                marker = access / candidate.name
-                if marker.exists():
-                    marker.unlink()
+    rows = [
+        entry for entry in entries.iterdir()
+        if entry.is_dir() and KEY_PATTERN.fullmatch(entry.name)
+    ]
+    total_bytes = sum(_tree_size(entry) for entry in rows)
+    if len(rows) >= max_entries or total_bytes >= max_bytes:
+        raise XcovError(
+            "XCOV_CACHE_CAPACITY_EXCEEDED",
+            "URG cache capacity is exhausted; remove old immutable entries in an explicit maintenance window before retrying",
+            entry_count=len(rows),
+            max_entries=max_entries,
+            size_bytes=total_bytes,
+            max_bytes=max_bytes,
+        )
 
 
 def _quarantine(entry: Path, quarantine_root: Path, key: str) -> None:
@@ -316,13 +276,11 @@ def load_cached_urg_summary(
     """Return parsed fixed-summary IR and observable cache metadata."""
     root = Path(cache_root).resolve() if cache_root else default_cache_root()
     entries = root / "entries"
-    locks = root / "locks"
+    claims = root / "claims"
     staging = root / "staging"
     quarantine = root / "quarantine"
-    access = root / "access"
-    for directory in (entries, locks, staging, access):
+    for directory in (entries, claims, staging):
         directory.mkdir(parents=True, exist_ok=True)
-    _cleanup_abandoned_staging(staging, locks)
     identity = _cache_identity(vdb, el_path, run_manifest_digest)
     # Validate the selected URG execution backend even on a cache hit.  A bad
     # LSF configuration must not appear healthy merely because another process
@@ -330,13 +288,54 @@ def load_cached_urg_summary(
     active_runner = runner or UrgRunner()
     key = _identity_key(identity)
     entry = entries / key
-    lock_path = locks / f"{key}.lock"
-    with lock_path.open("a+b") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+    claim = claims / key
+    deadline = time.monotonic() + 300.0
+    claimed = False
+    while not claimed:
         cached_index = _read_valid_entry(entry, identity, key)
         if cached_index is not None:
-            _touch_access(access, key)
-            _evict_lru(root, key)
+            return cached_index, {
+                "key": key,
+                "hit": True,
+                "entry": str(entry),
+                "urg_execution": _cache_hit_execution(active_runner),
+            }
+        try:
+            claim.mkdir(mode=0o700)
+            claimed = True
+        except FileExistsError:
+            try:
+                stale = time.time() - claim.stat().st_mtime > ABANDONED_STAGING_SECONDS
+            except FileNotFoundError:
+                continue
+            if stale:
+                quarantine.mkdir(parents=True, exist_ok=True)
+                try:
+                    os.replace(
+                        claim,
+                        quarantine / f"claim-{key}-{time.time_ns()}-{os.getpid()}",
+                    )
+                except FileNotFoundError:
+                    pass
+                continue
+            if time.monotonic() >= deadline:
+                raise XcovError(
+                    "XCOV_CACHE_CLAIM_TIMEOUT",
+                    "timed out waiting for the URG cache build owner",
+                    key=key,
+                )
+            time.sleep(0.05)
+
+    try:
+        (claim / "owner.json").write_text(
+            json.dumps(
+                {"pid": os.getpid(), "created_at_unix_ns": time.time_ns()},
+                sort_keys=True,
+            ) + "\n",
+            encoding="utf-8",
+        )
+        cached_index = _read_valid_entry(entry, identity, key)
+        if cached_index is not None:
             return cached_index, {
                 "key": key,
                 "hit": True,
@@ -345,6 +344,8 @@ def load_cached_urg_summary(
             }
         if entry.exists():
             _quarantine(entry, quarantine, key)
+        _cleanup_abandoned_staging(staging)
+        _enforce_capacity_before_build(root)
 
         with tempfile.TemporaryDirectory(prefix=f"{key}.", dir=staging) as stage_name:
             stage = Path(stage_name)
@@ -391,14 +392,14 @@ def load_cached_urg_summary(
             _fsync_directory(stage)
             os.replace(stage, entry)
             _fsync_directory(entries)
-            _touch_access(access, key)
-            _evict_lru(root, key)
             return index, {
                 "key": key,
                 "hit": False,
                 "entry": str(entry),
                 "urg_execution": _run_execution(result),
             }
+    finally:
+        shutil.rmtree(claim, ignore_errors=True)
 
 
 def _cache_hit_execution(runner: Any) -> Json:

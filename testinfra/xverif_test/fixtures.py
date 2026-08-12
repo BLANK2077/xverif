@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import fcntl
 import hashlib
 import json
 import os
@@ -8,6 +7,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 import fnmatch
 from dataclasses import dataclass
 from pathlib import Path
@@ -161,10 +161,59 @@ class FixtureStore:
         fingerprint, tool_identity = self.fingerprint(spec)
         fixture_root = self.root / spec.id
         fixture_root.mkdir(parents=True, exist_ok=True)
-        lock_path = fixture_root / ".prepare.lock"
-        notify("lock")
-        with lock_path.open("a+", encoding="utf-8") as lock_stream:
-            fcntl.flock(lock_stream.fileno(), fcntl.LOCK_EX)
+        if not rebuild:
+            try:
+                target = self._published_target(spec, fingerprint)
+            except FixtureError:
+                target = None
+            if target is not None:
+                notify("cache_validation")
+                self._validate_published(spec, target, fingerprint)
+                return target / "resources"
+
+        claim = fixture_root / ".prepare.claim"
+        notify("claim")
+        deadline = time.monotonic() + 3600.0
+        while True:
+            try:
+                claim.mkdir(mode=0o700)
+                break
+            except FileExistsError:
+                if not rebuild:
+                    try:
+                        target = self._published_target(spec, fingerprint)
+                        self._validate_published(spec, target, fingerprint)
+                        notify("cache_validation")
+                        return target / "resources"
+                    except FixtureError:
+                        pass
+                try:
+                    stale = time.time() - claim.stat().st_mtime > 24 * 60 * 60
+                except FileNotFoundError:
+                    continue
+                if stale:
+                    stale_claim = fixture_root / (
+                        f".prepare.claim.stale-{time.time_ns()}-{os.getpid()}"
+                    )
+                    try:
+                        os.replace(claim, stale_claim)
+                    except FileNotFoundError:
+                        pass
+                    continue
+                if time.monotonic() >= deadline:
+                    raise FixtureError(
+                        f"timed out waiting for fixture prepare claim: {spec.id}"
+                    )
+                time.sleep(0.1)
+
+        try:
+            (claim / "owner.json").write_text(
+                json.dumps(
+                    {"pid": os.getpid(), "created_at_unix_ns": time.time_ns()},
+                    sort_keys=True,
+                ) + "\n",
+                encoding="utf-8",
+            )
             if not rebuild:
                 try:
                     target = self._published_target(spec, fingerprint)
@@ -214,6 +263,8 @@ class FixtureStore:
             except BaseException:
                 shutil.rmtree(staging, ignore_errors=True)
                 raise
+        finally:
+            shutil.rmtree(claim, ignore_errors=True)
 
     def clean(self) -> None:
         if self.root.exists():
@@ -373,15 +424,23 @@ class FixtureStore:
 
     @staticmethod
     def _write_current(fixture_root: Path, fingerprint: str, version: str) -> None:
-        temporary = fixture_root / ".current.tmp"
-        temporary.write_text(
-            json.dumps(
-                {"fingerprint": fingerprint, "version": version}, sort_keys=True
-            )
-            + "\n",
-            encoding="utf-8",
+        descriptor, temporary_text = tempfile.mkstemp(
+            prefix=".current.", suffix=".tmp", dir=fixture_root
         )
-        os.replace(temporary, fixture_root / "current.json")
+        temporary = Path(temporary_text)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                stream.write(
+                    json.dumps(
+                        {"fingerprint": fingerprint, "version": version},
+                        sort_keys=True,
+                    ) + "\n"
+                )
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, fixture_root / "current.json")
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 def _compatibility_identity(value: str) -> str:
