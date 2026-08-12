@@ -18,7 +18,11 @@ def _read_ndjson(path: Path) -> list[dict]:
 
 
 def _stdio_events(home: Path, session_prefix: str = "adhoc") -> list[dict]:
-    matches = sorted((home / ".xdebug" / "sessions").glob(f"{session_prefix}_*/logs/stdio.ndjson"))
+    matches = sorted(
+        (home / ".xdebug" / "sessions").glob(
+            f"{session_prefix}_*/owners/*/logs/stdio.ndjson"
+        )
+    )
     assert matches, f"missing stdio.ndjson for {session_prefix}"
     rows: list[dict] = []
     for path in matches:

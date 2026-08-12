@@ -46,6 +46,32 @@ static bool exists(const std::string& path) {
     return access(path.c_str(), F_OK) == 0;
 }
 
+static std::string parent_dir(const std::string& path) {
+    const size_t slash = path.rfind('/');
+    return slash == std::string::npos ? "." : path.substr(0, slash);
+}
+
+static void collect_named_json_lines(const std::string& directory,
+                                     const std::string& filename,
+                                     std::vector<Json>& rows) {
+    DIR* dir = opendir(directory.c_str());
+    if (!dir) return;
+    while (dirent* entry = readdir(dir)) {
+        const std::string name = entry->d_name;
+        if (name == "." || name == "..") continue;
+        const std::string path = directory + "/" + name;
+        struct stat st;
+        if (stat(path.c_str(), &st) != 0) continue;
+        if (S_ISDIR(st.st_mode)) {
+            collect_named_json_lines(path, filename, rows);
+        } else if (S_ISREG(st.st_mode) && name == filename) {
+            const std::vector<Json> shard = read_json_lines(path);
+            rows.insert(rows.end(), shard.begin(), shard.end());
+        }
+    }
+    closedir(dir);
+}
+
 static std::vector<std::string> read_regular_files(
     const std::string& directory) {
     std::vector<std::string> contents;
@@ -164,7 +190,9 @@ int main() {
     assert(sanitized.value("log_truncated", false));
 
     xdebug_core::update_public_session_manifest("case_a", "design", "fixtures/foo.daidir", "");
-    std::string manifest_path = xdebug_core::public_session_dir("case_a") + "/session.json";
+    std::string manifest_path =
+        parent_dir(parent_dir(xdebug_core::public_action_log_path("case_a"))) +
+        "/manifest.json";
     Json manifest = Json::parse(read_file(manifest_path));
     assert(manifest["session_id"] == "case_a");
     assert(manifest["mode"] == "design");
@@ -175,7 +203,9 @@ int main() {
     assert(xdebug_core::update_public_session_manifest(
         "corrupt_case", "design", "fixtures/foo.daidir", ""));
     const std::string corrupt_manifest_path =
-        xdebug_core::public_session_dir("corrupt_case") + "/session.json";
+        parent_dir(parent_dir(
+            xdebug_core::public_action_log_path("corrupt_case"))) +
+        "/manifest.json";
     const std::string corrupt_manifest = "{not-valid-json\n";
     {
         std::ofstream corrupt(corrupt_manifest_path.c_str(), std::ios::trunc);
@@ -313,8 +343,8 @@ int main() {
         assert(sidecar["sha256"].get<std::string>().size() == 64);
     }
     const std::string payload_dir =
-        xdebug_core::public_session_dir("huge_case") +
-        "/logs/actions_payload";
+        parent_dir(xdebug_core::public_action_log_path("huge_case")) +
+        "/actions_payload";
     const std::vector<std::string> payloads =
         read_regular_files(payload_dir);
     assert(payloads.size() >= 2);
@@ -335,8 +365,8 @@ int main() {
         0,
         Json::object());
     const std::string health_payload_dir =
-        xdebug_core::public_session_dir("health_case") +
-        "/logs/actions_payload";
+        parent_dir(xdebug_core::public_action_log_path("health_case")) +
+        "/actions_payload";
     {
         std::ofstream blocker(health_payload_dir.c_str());
         assert(blocker.good());
@@ -353,8 +383,8 @@ int main() {
         {{"request_compact", huge},
          {"response_compact", huge_rsp}});
     const std::string health_log =
-        xdebug_core::public_session_dir("health_case") +
-        "/logs/log_health.ndjson";
+        parent_dir(xdebug_core::public_action_log_path("health_case")) +
+        "/log_health.ndjson";
     const std::vector<Json> health_events =
         read_json_lines(health_log);
     assert(!health_events.empty());
@@ -400,7 +430,10 @@ int main() {
         assert(wait(&status) > 0);
         assert(WIFEXITED(status) && WEXITSTATUS(status) == 0);
     }
-    std::vector<Json> concurrent = read_json_lines(xdebug_core::public_action_log_path("concurrent_case"));
+    std::vector<Json> concurrent;
+    collect_named_json_lines(
+        xdebug_core::public_session_dir("concurrent_case"),
+        "actions.ndjson", concurrent);
     assert(concurrent.size() == static_cast<size_t>(child_count * events_per_child));
     for (const auto& row : concurrent) {
         assert(row["session_id"] == "concurrent_case");

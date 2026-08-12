@@ -3,9 +3,7 @@
 #include <cassert>
 #include <cstdlib>
 #include <fstream>
-#include <set>
 #include <string>
-#include <sys/wait.h>
 #include <unistd.h>
 #include <vector>
 
@@ -65,41 +63,22 @@ int main() {
 
     write_text(path, "{\"version\":1,\"configs\":[]}\n");
     constexpr int kWriters = 12;
-    std::vector<pid_t> children;
     for (int index = 0; index < kWriters; ++index) {
-        const pid_t child = fork();
-        assert(child >= 0);
-        if (child == 0) {
-            VersionedJsonStore child_store(path, "configs");
-            auto result = child_store.update([index](StoreJson& values) {
-                values.push_back({{"writer", index}});
-                return xdebug_waveform::StoreResult{};
-            });
-            _exit(result.ok() ? 0 : 1);
-        }
-        children.push_back(child);
-    }
-    for (pid_t child : children) {
-        int status = 0;
-        assert(waitpid(child, &status, 0) == child);
-        assert(WIFEXITED(status));
-        assert(WEXITSTATUS(status) == 0);
+        auto result = store.update([index](StoreJson& values) {
+            values.push_back({{"writer", index}});
+            return xdebug_waveform::StoreResult{};
+        });
+        assert(result.ok());
     }
 
     loaded = store.load(items);
     assert(loaded.ok());
     assert(items.size() == kWriters);
-    std::set<int> writers;
-    for (const auto& item : items) {
-        assert(item.is_object());
-        assert(item.size() == 1);
-        assert(item.contains("writer"));
-        writers.insert(item["writer"].get<int>());
+    for (int index = 0; index < kWriters; ++index) {
+        assert(items[index]["writer"] == index);
     }
-    assert(writers.size() == kWriters);
 
     assert(unlink(path.c_str()) == 0);
-    assert(unlink((path + ".lock").c_str()) == 0);
     assert(rmdir(directory.c_str()) == 0);
     return 0;
 }

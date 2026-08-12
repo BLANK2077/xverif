@@ -338,7 +338,11 @@ static bool begin_npi_startup_capture() {
         close(devnull);
     }
 
-    g_npi_startup_log_path = xdebug_design_npi_startup_log_path(g_session_id);
+    const std::string lifecycle_log = xdebug_core::component_log_path(
+        "engine", g_session_id, "lifecycle");
+    const size_t slash = lifecycle_log.rfind('/');
+    g_npi_startup_log_path =
+        lifecycle_log.substr(0, slash) + "/npi_startup.log";
     int fd = open(g_npi_startup_log_path.c_str(),
                   O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
     if (fd < 0) {

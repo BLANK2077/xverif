@@ -7,7 +7,6 @@
 #include <fstream>
 #include <string>
 #include <sys/stat.h>
-#include <sys/wait.h>
 #include <unistd.h>
 #include <vector>
 
@@ -107,28 +106,16 @@ int main() {
         loaded).status == StoreStatus::NotFound);
 
     constexpr int kWriters = 8;
-    std::vector<pid_t> children;
     for (int index = 0; index < kWriters; ++index) {
-        const pid_t child = fork();
-        assert(child >= 0);
-        if (child == 0) {
-            CursorManager writer;
-            StoreResult stored =
-                writer.set_cursor(
-                    session,
-                    cursor(
-                        "parallel_" + std::to_string(index),
-                        static_cast<uint64_t>(100 + index)),
-                    false);
-            _exit(stored.ok() ? 0 : 1);
-        }
-        children.push_back(child);
-    }
-    for (pid_t child : children) {
-        int status = 0;
-        assert(waitpid(child, &status, 0) == child);
-        assert(WIFEXITED(status));
-        assert(WEXITSTATUS(status) == 0);
+        CursorManager writer;
+        StoreResult stored =
+            writer.set_cursor(
+                session,
+                cursor(
+                    "sequential_" + std::to_string(index),
+                    static_cast<uint64_t>(100 + index)),
+                false);
+        assert(stored.ok());
     }
     std::vector<Cursor> cursors;
     assert(manager.list_cursors(session, cursors).ok());

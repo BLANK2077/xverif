@@ -542,8 +542,8 @@ session 单 engine、engine 串行请求、NPI mutex、MCP session lock、genera
 | 阶段 | 内容 | 状态 | 提交 |
 | --- | --- | --- | --- |
 | F00 | 计划、基线与 goal | completed | `27da5d4` |
-| F01 | per-session registry 与 action 热路径 | completed | 本提交 |
-| F02 | xdebug config 与 owner-sharded logging | pending | pending |
+| F01 | per-session registry 与 action 热路径 | completed | `38eea24` |
+| F02 | xdebug config 与 owner-sharded logging | completed | 本提交 |
 | F03 | xcov 与 MCP owner logging | pending | pending |
 | F04 | URG cache 与 fixture atomic claim | pending | pending |
 | F05 | 静态/strace 门禁、文档与 skill | pending | pending |
@@ -560,3 +560,16 @@ query、list、doctor、config、log 与 xcov cache hit 的 `strace -f -e trace=
 - `xdebug.session`：39 passed；使用正式 regression suite 和既有 fixture cache，没有 prepare。
 - registry 已改为每 session `state.json`；关闭 generation 归档到 `history/`；query/doctor 不再取得
   lifecycle lease；activity 使用独立 marker。
+
+### 2026-08-12 F02 验证
+
+- VersionedJsonStore 去除跨进程 `flock`，保留临时文件、`fsync` 和原子 rename；cursor、stream、
+  protocol config 的生产写入仍由每 session 单 engine 的串行 action loop 承担。
+- xdebug public/engine 日志改为
+  `sessions/<session>/owners/<pid-start_nonce>/logs/*.ndjson`；每个进程只写自己的 shard，进程内
+  mutex 保证线程写入完整，tail、doctor、普通 bundle 与 redacted bundle 遍历聚合全部 shard。
+- NPI startup capture 与 lifecycle 日志使用同一个 engine owner shard；frontend 和 engine 分属不同
+  owner 是预期行为，不再假设一个 session 只有一个日志文件。
+- `make -C xdebug all cpp-unit-binaries -j4`：通过。
+- `xdebug.cpp_unit`：通过，1 suite passed；包含 owner shard 多进程聚合与 config 原子写验证。
+- `xdebug.session`：39 passed；使用正式 regression suite 和既有 fixture cache，没有 prepare。

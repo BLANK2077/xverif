@@ -142,15 +142,13 @@ def _assert_no_active_direct_resource_artifacts(
 def _direct_spawned_pids(isolated_home: Path) -> list[int]:
     pids: list[int] = []
     for directory in _direct_engine_directories(isolated_home):
-        lifecycle = directory / "logs" / "lifecycle.ndjson"
-        if not lifecycle.exists():
-            continue
-        for event in _read_ndjson(lifecycle):
-            if event.get("phase") != "ensure_session.spawned_server":
-                continue
-            pid = event.get("context", {}).get("pid")
-            if isinstance(pid, int) and pid > 0:
-                pids.append(pid)
+        for lifecycle in directory.glob("owners/*/logs/lifecycle.ndjson"):
+            for event in _read_ndjson(lifecycle):
+                if event.get("phase") != "ensure_session.spawned_server":
+                    continue
+                pid = event.get("context", {}).get("pid")
+                if isinstance(pid, int) and pid > 0:
+                    pids.append(pid)
     return pids
 
 
@@ -172,7 +170,7 @@ def _read_ndjson(path: Path) -> list[dict]:
 def _engine_transport_events(isolated_home: Path, session_prefix: str) -> list[dict]:
     matches = sorted(
         (isolated_home / ".xdebug" / "engine" / "sessions").glob(
-            f"{session_prefix}_*/logs/transport.ndjson"
+            f"{session_prefix}_*/owners/*/logs/transport.ndjson"
         )
     )
     assert matches, f"missing engine transport log for {session_prefix}"
@@ -186,18 +184,34 @@ def _single_engine_log(isolated_home: Path, session_prefix: str, log_name: str) 
     directory_prefix = session_prefix[:16]
     matches = sorted(
         (isolated_home / ".xdebug" / "engine" / "sessions").glob(
-            f"{directory_prefix}_*/logs/{log_name}.ndjson"
+            f"{directory_prefix}_*/owners/*/logs/{log_name}.ndjson"
         )
     )
     assert len(matches) == 1, f"expected one {log_name}.ndjson for {session_prefix}, got {matches}"
     return matches[0]
 
 
+def _engine_log_events(
+    isolated_home: Path, session_prefix: str, log_name: str
+) -> list[dict]:
+    directory_prefix = session_prefix[:16]
+    matches = sorted(
+        (isolated_home / ".xdebug" / "engine" / "sessions").glob(
+            f"{directory_prefix}_*/owners/*/logs/{log_name}.ndjson"
+        )
+    )
+    assert matches, f"missing {log_name}.ndjson for {session_prefix}"
+    rows: list[dict] = []
+    for path in matches:
+        rows.extend(_read_ndjson(path))
+    return rows
+
+
 def _single_npi_startup_log(isolated_home: Path, session_prefix: str) -> Path:
     directory_prefix = session_prefix[:16]
     matches = sorted(
         (isolated_home / ".xdebug" / "engine" / "sessions").glob(
-            f"{directory_prefix}_*/logs/npi_startup.log"
+            f"{directory_prefix}_*/owners/*/logs/npi_startup.log"
         )
     )
     assert len(matches) == 1, f"expected one npi_startup.log for {session_prefix}, got {matches}"
@@ -846,8 +860,7 @@ def test_direct_resource_timeout_cleans_process_and_registry(
 
     phases = []
     for directory in _direct_engine_directories(isolated_home):
-        lifecycle = directory / "logs" / "lifecycle.ndjson"
-        if lifecycle.exists():
+        for lifecycle in directory.glob("owners/*/logs/lifecycle.ndjson"):
             phases.extend(
                 event["phase"]
                 for event in _read_ndjson(lifecycle)
@@ -1225,7 +1238,7 @@ def test_engine_crash_marker_is_written_by_signal_handler(
     assert "request_id=crash-req-1" in text
     assert f"sig={signal.SIGABRT}" in text
 
-    lifecycle = _read_ndjson(_single_engine_log(isolated_home, "crashmark", "lifecycle"))
+    lifecycle = _engine_log_events(isolated_home, "crashmark", "lifecycle")
     snapshot = next(event for event in lifecycle if event["phase"] == "env.snapshot")
     context = snapshot["context"]
     assert context["argv_count"] == 2
@@ -1287,7 +1300,7 @@ def test_npi_startup_failure_is_classified_and_captured(
     assert startup_log.stat().st_mode & 0o777 == 0o600
     assert marker in startup_log.read_text(encoding="utf-8", errors="replace")
 
-    lifecycle = _read_ndjson(_single_engine_log(isolated_home, name, "lifecycle"))
+    lifecycle = _engine_log_events(isolated_home, name, "lifecycle")
     failure = next(event for event in lifecycle if event["phase"] == f"{phase}.failed")
     assert failure["context"]["failure_phase"] == phase
     assert failure["context"]["diagnostic_log"] == "engine_npi_startup"

@@ -8,7 +8,6 @@
 #include <fstream>
 #include <string>
 #include <sys/stat.h>
-#include <sys/wait.h>
 #include <unistd.h>
 #include <vector>
 
@@ -176,31 +175,19 @@ int main() {
     assert(!has_temporary(directory));
 
     constexpr int kWriters = 8;
-    std::vector<pid_t> children;
     for (int index = 0; index < kWriters; ++index) {
-        const pid_t child = fork();
-        assert(child >= 0);
-        if (child == 0) {
-            StreamManager writer;
-            const StreamConfig value =
-                config(
-                    "parallel_" + std::to_string(index),
-                    "top.parallel_" + std::to_string(index),
-                    "parallel");
-            StoreResult appended =
-                writer.load_configs(
-                    session,
-                    {value},
-                    "append");
-            _exit(appended.ok() ? 0 : 1);
-        }
-        children.push_back(child);
-    }
-    for (pid_t child : children) {
-        int status = 0;
-        assert(waitpid(child, &status, 0) == child);
-        assert(WIFEXITED(status));
-        assert(WEXITSTATUS(status) == 0);
+        StreamManager writer;
+        const StreamConfig value =
+            config(
+                "sequential_" + std::to_string(index),
+                "top.sequential_" + std::to_string(index),
+                "sequential");
+        StoreResult appended =
+            writer.load_configs(
+                session,
+                {value},
+                "append");
+        assert(appended.ok());
     }
     std::vector<StreamConfig> all;
     assert(manager.list_streams(session, all).ok());

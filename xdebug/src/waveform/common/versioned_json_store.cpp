@@ -6,7 +6,6 @@
 #include <exception>
 #include <fcntl.h>
 #include <fstream>
-#include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <utility>
@@ -73,24 +72,7 @@ VersionedJsonStore::VersionedJsonStore(
     std::string path,
     std::string collection)
     : path_(std::move(path)),
-      lock_path_(path_ + ".lock"),
       collection_(std::move(collection)) {}
-
-int VersionedJsonStore::lock() const {
-    int fd = open(lock_path_.c_str(), O_RDWR | O_CREAT, 0600);
-    if (fd < 0) return -1;
-    if (flock(fd, LOCK_EX) != 0) {
-        close(fd);
-        return -1;
-    }
-    return fd;
-}
-
-bool VersionedJsonStore::unlock(int fd) {
-    const bool ok = flock(fd, LOCK_UN) == 0;
-    close(fd);
-    return ok;
-}
 
 StoreResult VersionedJsonStore::load_unlocked(StoreJson& items) const {
     items = StoreJson::array();
@@ -137,42 +119,15 @@ StoreResult VersionedJsonStore::save_unlocked(const StoreJson& items) const {
 }
 
 StoreResult VersionedJsonStore::load(StoreJson& items) const {
-    int fd = lock();
-    if (fd < 0) {
-        return result(
-            StoreStatus::IoError,
-            "CONFIG_STORE_IO_ERROR",
-            "cannot lock config store: " + path_);
-    }
-    StoreResult loaded = load_unlocked(items);
-    if (!unlock(fd) && loaded.ok()) {
-        return result(
-            StoreStatus::IoError,
-            "CONFIG_STORE_IO_ERROR",
-            "cannot unlock config store: " + path_);
-    }
-    return loaded;
+    return load_unlocked(items);
 }
 
 StoreResult VersionedJsonStore::update(
     const std::function<StoreResult(StoreJson&)>& mutation) const {
-    int fd = lock();
-    if (fd < 0) {
-        return result(
-            StoreStatus::IoError,
-            "CONFIG_STORE_IO_ERROR",
-            "cannot lock config store: " + path_);
-    }
     StoreJson items;
     StoreResult outcome = load_unlocked(items);
     if (outcome.ok()) outcome = mutation(items);
     if (outcome.ok()) outcome = save_unlocked(items);
-    if (!unlock(fd) && outcome.ok()) {
-        return result(
-            StoreStatus::IoError,
-            "CONFIG_STORE_IO_ERROR",
-            "cannot unlock config store: " + path_);
-    }
     return outcome;
 }
 

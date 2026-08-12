@@ -45,11 +45,7 @@ public:
 
 private:
     std::string path_;
-    std::string lock_path_;
     std::string collection_;
-
-    int lock() const;
-    static bool unlock(int fd);
     StoreResult load_unlocked(StoreJson& items) const;
     StoreResult save_unlocked(const StoreJson& items) const;
 };

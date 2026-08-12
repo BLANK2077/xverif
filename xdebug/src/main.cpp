@@ -10,6 +10,7 @@
 #include "process/process_runner.h"
 
 #include <deque>
+#include <dirent.h>
 #include <fstream>
 #include <cstdlib>
 #include <cstdio>
@@ -18,6 +19,7 @@
 #include <string>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <algorithm>
 #include <vector>
 
 namespace {
@@ -117,7 +119,40 @@ std::string xdebug_home_from_session(const std::string& session_id) {
 }
 
 std::string component_session_dir(const std::string& component, const std::string& session_id) {
-    return parent_dir(parent_dir(xdebug_core::component_log_path(component, session_id, "lifecycle")));
+    std::string path = xdebug_core::component_log_path(component, session_id, "lifecycle");
+    for (int i = 0; i < 4; ++i) path = parent_dir(path);
+    return path;
+}
+
+void collect_log_files(const std::string& root,
+                       std::vector<std::string>& files) {
+    DIR* dir = opendir(root.c_str());
+    if (!dir) return;
+    while (dirent* entry = readdir(dir)) {
+        const std::string name = entry->d_name;
+        if (name == "." || name == "..") continue;
+        const std::string path = root + "/" + name;
+        struct stat st;
+        if (lstat(path.c_str(), &st) != 0) continue;
+        if (S_ISDIR(st.st_mode)) {
+            collect_log_files(path, files);
+        } else if (S_ISREG(st.st_mode) &&
+                   ((name.size() >= 8 &&
+                     name.compare(name.size() - 8, 8, ".ndjson") == 0) ||
+                     name == "npi_startup.log")) {
+            files.push_back(path);
+        }
+    }
+    closedir(dir);
+}
+
+std::vector<std::string> session_log_files(const xdebug::Json& paths) {
+    std::vector<std::string> files;
+    collect_log_files(paths["public_session"].get<std::string>(), files);
+    collect_log_files(paths["engine_session"].get<std::string>(), files);
+    std::sort(files.begin(), files.end());
+    files.erase(std::unique(files.begin(), files.end()), files.end());
+    return files;
 }
 
 xdebug::Json log_paths_for_session(const std::string& session_id) {
@@ -147,6 +182,10 @@ xdebug::Json log_doctor_response(const std::string& session_id) {
         std::string path = it.value().get<std::string>();
         rows.push_back({{"name", it.key()}, {"path", path}, {"exists", file_exists(path)}, {"bytes", file_size(path)}});
     }
+    for (const std::string& path : session_log_files(paths)) {
+        rows.push_back({{"name", "owner_shard"}, {"path", path},
+                        {"exists", true}, {"bytes", file_size(path)}});
+    }
     response["data"] = {{"logs", rows}};
     return response;
 }
@@ -167,9 +206,8 @@ void print_log_tail_file(const std::string& name, const std::string& path, int l
 
 int run_log_tail(const std::string& session_id, int lines) {
     xdebug::Json paths = log_paths_for_session(session_id);
-    for (const char* name : {"public_actions", "public_stdio", "engine_lifecycle", "engine_transport",
-                             "engine_crash_marker", "engine_npi_startup"}) {
-        print_log_tail_file(name, paths[name].get<std::string>(), lines);
+    for (const std::string& path : session_log_files(paths)) {
+        print_log_tail_file("owner_shard", path, lines);
     }
     return 0;
 }
@@ -233,11 +271,10 @@ int run_redacted_log_bundle(const std::string& session_id, const std::string& ou
     std::string tmp = xdebug_core::temporary_dir() + "/xdebug-log-bundle-" + std::to_string(getpid());
     ensure_dir_recursive(tmp);
     xdebug::Json paths = log_paths_for_session(session_id);
-    for (const char* name : {"public_actions", "public_stdio", "engine_lifecycle", "engine_transport",
-                             "engine_crash_marker", "engine_log_health", "public_log_health"}) {
-        std::string source = paths[name].get<std::string>();
-        if (!file_exists(source)) continue;
-        write_redacted_log_copy(source, tmp + "/" + std::string(name) + ".ndjson");
+    const std::string home = xdebug_home_from_session(session_id);
+    for (const std::string& source : session_log_files(paths)) {
+        if (source.compare(0, home.size() + 1, home + "/") != 0) continue;
+        write_redacted_log_copy(source, tmp + "/" + source.substr(home.size() + 1));
     }
     if (!old_mode.empty()) setenv("XDEBUG_LOG_PATH_MODE", old_mode.c_str(), 1);
     else unsetenv("XDEBUG_LOG_PATH_MODE");

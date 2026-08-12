@@ -17,8 +17,8 @@
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
-#include <sys/file.h>
 #include <sys/stat.h>
+#include <mutex>
 #include <unistd.h>
 
 namespace xdebug_core {
@@ -57,6 +57,8 @@ std::atomic<bool> g_log_degraded(false);
 std::atomic<int> g_log_first_code(static_cast<int>(LogDegradedCode::None));
 std::atomic<int> g_log_first_operation(
     static_cast<int>(LogDegradedOperation::None));
+std::mutex g_log_append_mutex;
+std::atomic<unsigned long> g_event_counter(0);
 
 const char* log_degraded_code_name(LogDegradedCode code) {
     switch (code) {
@@ -158,9 +160,9 @@ std::string now_iso8601() {
 std::string event_id() {
     using namespace std::chrono;
     long long us = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
-    static unsigned long counter = 0;
     std::ostringstream oss;
-    oss << std::hex << us << "-" << getpid() << "-" << counter++;
+    oss << std::hex << us << "-" << getpid() << "-"
+        << g_event_counter.fetch_add(1, std::memory_order_relaxed);
     return oss.str();
 }
 
@@ -191,12 +193,9 @@ std::string strip_ndjson_suffix(const std::string& name) {
 }
 
 bool write_file_atomic_append(const std::string& path, const std::string& payload, int mode = 0600) {
+    std::lock_guard<std::mutex> guard(g_log_append_mutex);
     int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, mode);
     if (fd < 0) return false;
-    if (flock(fd, LOCK_EX) != 0) {
-        close(fd);
-        return false;
-    }
     const char* data = payload.data();
     size_t left = payload.size();
     bool ok = true;
@@ -209,9 +208,24 @@ bool write_file_atomic_append(const std::string& path, const std::string& payloa
         data += n;
         left -= static_cast<size_t>(n);
     }
-    if (flock(fd, LOCK_UN) != 0) ok = false;
     if (close(fd) != 0) ok = false;
     return ok;
+}
+
+std::string owner_instance_id() {
+    static std::mutex mutex;
+    static pid_t owner_pid = -1;
+    static std::string owner;
+    std::lock_guard<std::mutex> guard(mutex);
+    const pid_t current = getpid();
+    if (owner_pid != current) {
+        owner_pid = current;
+        using namespace std::chrono;
+        const long long nonce = duration_cast<nanoseconds>(
+            steady_clock::now().time_since_epoch()).count();
+        owner = std::to_string(current) + "-" + std::to_string(nonce);
+    }
+    return owner;
 }
 
 void append_health_event(const std::string& log_path,
@@ -621,11 +635,13 @@ std::string public_session_dir(const std::string& session_id) {
 }
 
 std::string public_action_log_path(const std::string& session_id) {
-    return public_session_dir(session_id) + "/logs/actions.ndjson";
+    return public_session_dir(session_id) + "/owners/" +
+           owner_instance_id() + "/logs/actions.ndjson";
 }
 
 std::string public_stdio_log_path(const std::string& session_id) {
-    return public_session_dir(session_id) + "/logs/stdio.ndjson";
+    return public_session_dir(session_id) + "/owners/" +
+           owner_instance_id() + "/logs/stdio.ndjson";
 }
 
 std::string component_log_path(const std::string& component,
@@ -633,6 +649,7 @@ std::string component_log_path(const std::string& component,
                                const std::string& log_name) {
     return xdebug_home() + "/" + component + "/sessions/" +
            session_dir_name(session_id.empty() ? "adhoc" : session_id) +
+           "/owners/" + owner_instance_id() +
            "/logs/" + log_name + ".ndjson";
 }
 
@@ -768,7 +785,9 @@ bool update_public_session_manifest(const std::string& session_id,
         if (!daidir.empty()) manifest["daidir"] = daidir;
         if (!fsdb.empty()) manifest["fsdb"] = fsdb;
         manifest["last_log_at"] = now_iso8601();
-        std::string path = dir + "/session.json";
+        std::string owner_dir = dir + "/owners/" + owner_instance_id();
+        if (!ensure_dir_recursive(owner_dir)) return false;
+        std::string path = owner_dir + "/manifest.json";
         Json old;
         std::ifstream in(path.c_str());
         if (in) {
