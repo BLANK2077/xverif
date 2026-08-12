@@ -547,7 +547,7 @@ session 单 engine、engine 串行请求、NPI mutex、MCP session lock、genera
 | F03 | xcov 与 MCP owner logging | completed | 本提交 |
 | F04 | URG cache 与 fixture atomic claim | completed | 本提交 |
 | F05 | 静态/strace 门禁、文档与 skill | completed | 本提交 |
-| F06 | clean build、三档全量回归与最终证据 | pending | pending |
+| F06 | clean build、三档全量回归与最终证据 | blocked | 本提交 |
 
 最终必须满足：产品和 testinfra 源码中只有 session lifecycle lease 实现可以引用 `flock`；普通
 query、list、doctor、config、log 与 xcov cache hit 的 `strace -f -e trace=flock` 结果为零。
@@ -608,10 +608,24 @@ query、list、doctor、config、log 与 xcov cache hit 的 `strace -f -e trace=
 - 使用独立临时 HOME 执行 `strace -f -e trace=flock`：`actions`、`session.list`、不存在 session
   的 `session.doctor`、`stream.config.list`、`axi.config.list` 均为 0 次 `flock`。后 3 个请求按
   合同返回资源/session 错误，没有 fallback；trace 证据位于
-  `/tmp/xverif-flock-strace.5tr0ya`。
+  `<temporary-dir>/xverif-flock-strace.5tr0ya`。
 - 同步更新 xdebug embedded help、README、xdebug agent 说明、xcov/MCP README、xverif 与
   xverif-admin references，明确 per-session registry、owner shard 和 cache claim/容量合同。
 - `testinfra.unit`：53 passed；`xdebug.static`：119 passed；`skills.xverif`：16 passed；
   `skills.xverif_admin`：1 passed。
 - 已通过 Makefile 安装并逐目录验收 `xverif`、`xverif-admin` 到 `~/.codex/skills` 与
   `~/.claude/skills`。
+
+### 2026-08-12 F06 最终验收状态
+
+- 根目录 `make clean && make all -j4`：通过。`clean` 只清理构建产物，没有删除或准备 fixture
+  cache。
+- fast 全量 gate：574 passed。首次运行因本文档记录真实临时路径触发静态门禁，改为抽象
+  `<temporary-dir>` 后从同一正式入口重跑通过。
+- host regression：required suite preflight 在收集前停止，缺失当前指纹的
+  `xdebug.stream_differential_tool` fixture cache；0 tests executed。
+- host nightly：同一 required fixture preflight 在收集前停止；0 tests executed。
+- 阻塞是本次 xdebug 源码变更必然改变该 tool fixture 的 fingerprint，而现有 `current.json` 仍指向
+  旧 generation。完成 regression/nightly 必须显式运行
+  `pytest --xverif-prepare xdebug.stream_differential_tool`，这会重建缓存，与本任务“不要触发缓存
+  重建”的硬约束冲突，因此没有执行，也没有切换 runner、fixture 或测试层级。
