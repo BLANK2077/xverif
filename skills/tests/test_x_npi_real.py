@@ -264,3 +264,41 @@ def test_x_npi_urg_reads_all_coverage_types_without_npi(
     assert kinds == {"code", "functional", "assertion"}
     assert "NPI - Native Programming Interface" not in proc.stdout
     assert "NPI - Native Programming Interface" not in proc.stderr
+
+
+def test_x_npi_urg_uses_arbitrary_xml_root_and_keeps_zero_objects(
+    xverif_fixture: Any, tmp_path: Path,
+) -> None:
+    resources = xverif_fixture("xcov.zero_coverable")
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(SKILL / "scripts")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(EXAMPLES / "coverage_summary.py"),
+            "--vdb", str(resources / "zero_coverable.vdb"),
+            "--report", str(tmp_path / "zero-summary"),
+            "--limit", "1000",
+        ],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=180,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr[-8000:] + "\n" + proc.stdout[-4000:]
+    document = json.loads(proc.stdout)
+    assert document["ok"] is True
+    assert document["summary"]["root_scopes"] == ["route_matrix"]
+    assert document["summary"]["root_score_pct"] is not None
+    zero_rows = [
+        row for row in document["data"]["items"]
+        if row.get("coverage_kind") == "functional"
+        and row.get("scope") == "route_matrix.u_zero_coverable"
+        and row.get("coverable") == 0
+    ]
+    assert zero_rows
+    assert all(row["coverage_pct"] is None for row in zero_rows)
+    assert "NPI - Native Programming Interface" not in proc.stdout

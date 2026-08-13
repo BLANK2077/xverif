@@ -447,6 +447,38 @@ def test_x_npi_urg_parser_keeps_zero_denominator_exclusion(tmp_path: Path) -> No
     assert group["excluded"] == 2
 
 
+def test_x_npi_urg_parser_accepts_missing_score_only_for_zero_object_summary(
+    tmp_path: Path,
+) -> None:
+    report = tmp_path / "urg-report"
+    _write_urg_report(report)
+    xml = report / "session.xml"
+    text = xml.read_text(encoding="utf-8").replace(
+        '<attr type="Group Summary" value="1/2" />',
+        '<attr type="Group Summary" value="1/2" />\n'
+        '<attr type="Group Instance Summary" value="0/0" />',
+    ).replace(
+        '<scope type="Coverage Instance" name="cg0"><metric name="Group" value="1/2" />',
+        '<scope type="Coverage Instance" name="cg0">',
+    )
+    xml.write_text(text, encoding="utf-8")
+
+    summary = parse_summary(report)
+    instance = next(
+        row for row in summary.functional
+        if row["node_kind"] == "Coverage Instance"
+    )
+    assert instance["covered"] == instance["coverable"] == 0
+    assert instance["coverage_pct"] is None
+
+    xml.write_text(
+        text.replace('<attr type="Group Instance Summary" value="0/0" />', ""),
+        encoding="utf-8",
+    )
+    with pytest.raises(UrgCoverageError, match="lacks 'Group' metric"):
+        parse_summary(report)
+
+
 def test_container_planner_expands_only_real_xml_instances(tmp_path: Path) -> None:
     report = tmp_path / "urg-report"
     _write_urg_report(report)

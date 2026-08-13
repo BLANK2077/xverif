@@ -112,9 +112,12 @@ code bin 模型。`tests.txt` 已包含 canonical merged test list，不再为 t
 ## Summary 语义
 
 - 父 scope 直接使用 URG 提供的 subtree ratio，不再累计 descendants。
+- root scope 由 XML instance 的 `parent=null` 关系确定，不依赖 `top`、`tb` 等命名约定。
 - 单 metric `coverage_pct = covered / coverable * 100`。
 - 多 metric scope/root SCORE 是所选 metric pct 的算术平均；不要发布没有明确分母的跨 metric
   `covered/coverable/missing`。
+- 多 root 先按 metric 汇总各 root 的 covered/coverable；`0/0` 的 percentage 为 null，不参与
+  多 metric 平均，全部选中 metric 均不可评分时 SCORE 为 null。
 - functional Group SCORE 按 URG typed XML 发布，不从 code coverage 结构推断。
 - 固定 summary 不支持 per-test attribution、code source-file/type 聚合、functional bin、源码
   file/line 或完整 gap locator。缺字段就是不支持，不能静默回退 NPI traversal。

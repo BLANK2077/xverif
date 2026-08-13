@@ -37,19 +37,26 @@ def main() -> int:
         summary = export_summary(args.vdb, args.report, elfile=args.elfile)
         rows = summary.rows(metrics=args.metric, scope=args.scope)
         shown, truncated = split_limited(rows, args.limit)
-        root = next((row for row in summary.scopes if row["full_name"] == "top"), None)
-        selected_metrics = list(args.metric or (root["metrics"] if root else []))
-        pct_values = [
-            root["metrics"][metric]["coverage_pct"]
-            for metric in selected_metrics
-            if root and metric in root["metrics"]
-            and root["metrics"][metric]["coverage_pct"] is not None
-        ]
+        roots = [row for row in summary.scopes if row["parent"] is None]
+        selected_metrics = list(args.metric or sorted({
+            metric for root in roots for metric in root["metrics"]
+        }))
+        pct_values = []
+        for metric in selected_metrics:
+            metric_roots = [
+                root["metrics"][metric]
+                for root in roots if metric in root["metrics"]
+            ]
+            covered = sum(int(value["covered"]) for value in metric_roots)
+            coverable = sum(int(value["coverable"]) for value in metric_roots)
+            if coverable > 0:
+                pct_values.append(round(100.0 * covered / coverable, 4))
         result_summary = {
             "data_source": "urg_fixed_summary",
             "npi_initialized": False,
             "tests": list(summary.tests),
             "scope_count": len(summary.scopes),
+            "root_scopes": [root["full_name"] for root in roots],
             "functional_row_count": len(summary.functional),
             "assertion_row_count": len(summary.assertions),
             "row_count": len(rows),

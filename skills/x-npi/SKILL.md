@@ -70,8 +70,11 @@ from x_npi.container import plan_container_records, write_csv_set
 - `container_exclude.py` 是 x-npi 独立容器入口：从既有 fixed URG report 解析，或使用固定 full64
   URG 命令新生成 report；递归 instance 只展开 XML 真实节点，然后生成 exact container CSV 并原子
   发布四份 EL。NPI 在该流程只用于排除定位和 EL 操作。
-- URG summary 百分比使用其 typed subtree ratio；单 metric pct 为 `covered/coverable`，多 metric
-  root/scope SCORE 为所选 metric pct 的算术平均。`count` 不是 coverage pct。
+- URG summary 百分比使用其 typed subtree ratio；root scope 从 XML 的 instance parent 关系推导，
+  不假设名称为 `top`。单 metric pct 为 `covered/coverable`；多 root 时先按 metric 合并 root
+  分子/分母，多 metric root/scope SCORE 再对可评分的非 null metric pct 做算术平均。无
+  coverable object 的 `0/0` 保留 null 且不参与平均；全部不可评分时 SCORE 为 null。
+  `count` 不是 coverage pct。
 - 不支持从固定 summary 伪造 per-test attribution、source evidence 或 functional bin；需要 gap
   时使用受限 URG text detail，不回退 NPI 全树扫描。
 - 脚本 stdout 必须只有一个 JSON document。使用 `json_stdout_quarantine` 隔离 NPI native banner；summary 默认输出到 stdout，`transactions|timeline|full` 必须配合 `--output` 写文件，stdout 只返回摘要和文件位置。协议工具不提供 `line_limit`。

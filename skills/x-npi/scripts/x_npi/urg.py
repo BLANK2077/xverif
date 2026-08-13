@@ -265,6 +265,14 @@ def _scope_context(elem: ET.Element, stack: List[Json]) -> Json:
             (item["name"] for item in reversed(stack) if item["type"] == "Coverage Instance"),
             name if scope_type == "Coverage Instance" else None,
         ),
+        "group_instance_summary": next(
+            (
+                item["attrs"].get("Group Instance Summary")
+                for item in reversed(stack)
+                if item["type"] == "Groups"
+            ),
+            None,
+        ),
         "metrics": {},
         "attrs": {},
     }
@@ -299,9 +307,18 @@ def _finish_scope(
         }[scope_type]
         ratio = context["metrics"].get(metric_name)
         if ratio is None:
-            raise UrgCoverageError(
-                f"functional node {context['name']!r} lacks {metric_name!r} metric"
-            )
+            if context.get("group_instance_summary") == "0/0":
+                ratio = {
+                    "covered": 0,
+                    "coverable": 0,
+                    "missing": 0,
+                    "coverage_pct": None,
+                    "excluded": 0,
+                }
+            else:
+                raise UrgCoverageError(
+                    f"functional node {context['name']!r} lacks {metric_name!r} metric"
+                )
         variant = context.get("variant")
         scope = (
             variant.split("::", 1)[0]
