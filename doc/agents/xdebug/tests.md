@@ -128,6 +128,18 @@ pytest --rerun-failed .xverif-test-results/<run>/report.json
 
 重跑生成独立 run，并记录 `parent_report`；不会改写原 gate 结论，也不会自动 retry。
 
+`xdebug.native_xout_all` 的 73-action 原始审查报告只写 pytest 临时目录并在原地完成 body/hash、
+phase 和 action 数校验；普通 gate 不修改 tracked 的
+`doc/XDEBUG_XOUT_REAL_OUTPUT_REVIEW_2026-08-03.md`。确需更新该审查文档时，先取得一次完整且通过
+的 final 报告，再显式执行：
+
+```bash
+python3 xdebug/tools/publish_native_xout_report.py --input <native-xout-final-report.md>
+```
+
+发布工具拒绝非 final、primary action 数不是 73、body/hash 损坏、symlink 或 source/target 相同
+的输入，并通过同目录临时文件原子替换目标。
+
 ## 执行环境
 
 - 沙箱内：plan/collect、catalog/schema/testinfra、`fast`。

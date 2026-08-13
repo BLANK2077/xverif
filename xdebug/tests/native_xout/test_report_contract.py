@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import jsonschema
+import pytest
 
 from runner.raw_cli import RawCliResult
 
@@ -11,6 +12,7 @@ from .cases import CASES, ERROR_CASES, EXTERNAL_PROTECTION_CASES
 from .report import (
     SPECIAL_XOUT_ACTIONS,
     read_report_bodies,
+    publish_final_report,
     verify_report,
     write_report,
 )
@@ -97,6 +99,54 @@ def test_final_report_replaces_prior_phase_instead_of_copying_it(
     verify_report(path, expected_primary_by_phase={"final": 1})
     assert b"HISTORICAL BASELINE" not in path.read_bytes()
     assert [item.phase for item in read_report_bodies(path)] == ["final", "final"]
+
+
+def _complete_final_report(path: Path) -> None:
+    rows = [RawCliResult(
+        action="session.list", phase="final", role="setup",
+        request={"action": "session.list"}, command=("xdebug", "-"),
+        returncode=0, stdout=b"setup\n", stderr=b"", elapsed_ms=1,
+        timed_out=False,
+    )]
+    rows.extend(RawCliResult(
+        action=f"action.{index:02d}", phase="final", role="primary",
+        request={"action": f"action.{index:02d}"}, command=("xdebug", "-"),
+        returncode=0, stdout=f"body {index}\n".encode(), stderr=b"",
+        elapsed_ms=index, timed_out=False,
+    ) for index in range(73))
+    write_report(path, rows)
+
+
+def test_explicit_publish_validates_and_atomically_replaces_target(tmp_path: Path) -> None:
+    source = tmp_path / "source.md"
+    target = tmp_path / "published.md"
+    target.write_text("historical\n", encoding="utf-8")
+    _complete_final_report(source)
+
+    publish_final_report(source, target)
+
+    assert target.read_bytes() == source.read_bytes()
+    assert not list(tmp_path.glob(f".{target.name}.*.tmp"))
+
+
+def test_explicit_publish_rejects_corrupt_or_incomplete_report(tmp_path: Path) -> None:
+    source = tmp_path / "source.md"
+    target = tmp_path / "published.md"
+    _complete_final_report(source)
+    corrupted = source.read_bytes().replace(b"body 0", b"BROKEN", 1)
+    source.write_bytes(corrupted)
+    with pytest.raises(AssertionError):
+        publish_final_report(source, target)
+    assert not target.exists()
+
+
+def test_native_matrix_never_targets_tracked_review_document(repo_root: Path) -> None:
+    source = (
+        repo_root / "xdebug/tests/native_xout/test_native_xout_all.py"
+    ).read_text(encoding="utf-8")
+    assert "REPORT_PATH" not in source
+    assert 'tmp_path / "native-xout-final-report.md"' in source
+    assert "repo_root / REPORT_PATH" not in source
 
 
 def test_specialized_current_layout_is_a_protected_contract() -> None:

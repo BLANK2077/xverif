@@ -11,7 +11,7 @@ import pytest
 from runner.raw_cli import RawCliResult, RawCliRunner
 
 from .cases import CASES, ERROR_CASES, EXTERNAL_PROTECTION_CASES, NativeXoutCase
-from .report import REPORT_PATH, verify_report, write_report
+from .report import verify_report, write_report
 
 
 RESOURCE_PATHS = {
@@ -255,7 +255,7 @@ def test_all_runtime_actions_emit_native_xout(
         base_env={"HOME": str(isolated_home), "XVERIF_HOME": str(repo_root)},
         phase=os.environ.get("XDEBUG_XOUT_PHASE", ""),
     )
-    report_path = repo_root / REPORT_PATH
+    report_path = tmp_path / "native-xout-final-report.md"
     staged_report = report_path.with_suffix(report_path.suffix + ".tmp")
     staged_report.unlink(missing_ok=True)
     runtime = MatrixRuntime(runner, repo_root, tmp_path, xverif_fixture)

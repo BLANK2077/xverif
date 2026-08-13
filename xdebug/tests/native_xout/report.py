@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+import tempfile
 from typing import Iterable
 
 from runner.raw_cli import RawCliResult
@@ -183,3 +185,43 @@ def verify_report(path: Path, *, expected_primary_by_phase: dict[str, int]) -> N
     assert len(bodies) > sum(expected_primary_by_phase.values())
     for phase, expected_count in expected_primary_by_phase.items():
         assert len(found_primary.get(phase, set())) == expected_count
+
+
+def publish_final_report(source: Path, target: Path = REPORT_PATH) -> None:
+    """Validate and atomically publish one explicit final 73-action review report."""
+
+    if source.is_symlink():
+        raise ValueError("source report must be a regular non-symlink file")
+    if target.is_symlink():
+        raise ValueError("target report must not be a symlink")
+    source = source.resolve(strict=True)
+    target = target.resolve(strict=False)
+    if not source.is_file():
+        raise ValueError("source report must be a regular non-symlink file")
+    if source == target:
+        raise ValueError("source and target report must be different files")
+    bodies = read_report_bodies(source)
+    if not bodies or any(item.phase != "final" for item in bodies):
+        raise ValueError("source report must contain only final-phase bodies")
+    verify_report(source, expected_primary_by_phase={"final": 73})
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="wb",
+        prefix=f".{target.name}.",
+        suffix=".tmp",
+        dir=target.parent,
+        delete=False,
+    ) as stream:
+        temporary = Path(stream.name)
+        try:
+            stream.write(source.read_bytes())
+            stream.flush()
+            os.fsync(stream.fileno())
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            raise
+    try:
+        os.replace(temporary, target)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
