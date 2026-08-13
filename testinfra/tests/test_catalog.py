@@ -48,6 +48,8 @@ def test_gate_selection_is_monotonic() -> None:
     assert "xcov.urg_backend" in nightly
     assert "xcov.large_summary" in regression
     assert "xcov.large_summary" in nightly
+    assert "xcov.edge_cases" in regression
+    assert "xcov.edge_cases" in nightly
 
 
 def test_optional_real_lsf_identity_is_preserved_in_nightly() -> None:

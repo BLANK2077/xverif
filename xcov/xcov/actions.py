@@ -737,10 +737,12 @@ class Dispatcher:
                     urg_execution=result.scheduler,
                 )
             modinfo_path = Path(urg_dir) / "modinfo.txt"
-            if not modinfo_path.is_file():
-                raise XcovError("URG_ARTIFACT_MISSING", "URG did not produce modinfo.txt")
-            _ensure_artifact_budget(modinfo_path, "urg_modinfo_text")
-            combined_text = modinfo_path.read_text(encoding="utf-8", errors="replace")
+            empty_selection = not modinfo_path.is_file()
+            if empty_selection:
+                combined_text = ""
+            else:
+                _ensure_artifact_budget(modinfo_path, "urg_modinfo_text")
+                combined_text = modinfo_path.read_text(encoding="utf-8", errors="replace")
 
         items: List[Json] = []
         try:
@@ -760,7 +762,12 @@ class Dispatcher:
                 metric_artifacts = []
                 for metric in metrics:
                     try:
-                        payload = parse_metric_report(combined_text, scope, metric)
+                        payload = parse_metric_report(
+                            combined_text,
+                            scope,
+                            metric,
+                            allow_empty_selection=empty_selection,
+                        )
                         payload["exclusion_locator"] = {
                             "version": "xcov.urg_semantic.v1",
                             "vdb": os.path.realpath(sess.vdb),
@@ -2154,7 +2161,11 @@ def _coverage_from_urg(
                     coverage_pct(mt["covered"], mt["coverable"]),
                 ),
             })
-        percentages = [row["coverage_pct"] for row in metric_rows]
+        percentages = [
+            row["coverage_pct"]
+            for row in metric_rows
+            if row["coverage_pct"] is not None
+        ]
         row: Json = {
             "coverage_pct": (
                 round(sum(percentages) / len(percentages), 4)
@@ -2194,6 +2205,7 @@ def _code_coverage_from_urg(
             )
             for value in selected
         ]
+        percentages = [value for value in percentages if value is not None]
         row: Json = {
             "scope": sname,
             "metric": "summary",

@@ -136,6 +136,20 @@ suites:
     cost: {class: slow, estimate_sec: 45}
     timeouts: {execute_sec: 300, cleanup_sec: 20}
 
+  - id: xcov.edge_cases
+    owner: xcov
+    level: system
+    intent: [contract, semantics]
+    domains: [coverage]
+    runner: {kind: pytest, path: xcov/tests/test_edge_cases_real.py}
+    fixtures: [xcov.modinfo_edge_layouts, xcov.zero_coverable]
+    capabilities: [child_process, npi]
+    hermetic: false
+    deterministic: true
+    gates: [regression, nightly]
+    cost: {class: slow, estimate_sec: 120}
+    timeouts: {execute_sec: 600, cleanup_sec: 30}
+
   - id: xcov.large_summary
     owner: xcov
     level: system
@@ -295,7 +309,7 @@ suites:
     intent: [contract, semantics]
     domains: [skill, npi, fsdb, coverage, protocol]
     runner: {kind: pytest, path: skills/tests/test_x_npi_real.py}
-    fixtures: [xdebug.axi_vip, xdebug.apb_vip, xdebug.stream_v1, xcov.exclusion]
+    fixtures: [xdebug.axi_vip, xdebug.apb_vip, xdebug.stream_v1, xcov.exclusion, xcov.zero_coverable]
     capabilities: [child_process, npi, fsdb]
     hermetic: false
     deterministic: true

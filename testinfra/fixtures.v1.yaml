@@ -42,6 +42,34 @@ fixtures:
       - argv: [python3, "{repo}/testinfra/leaf/probe_fixture.py", --resources, "{resources}", --text-glob, complex.vdb/.vdb_version]
     tool_env: [VERDI_HOME]
 
+  - id: xcov.modinfo_edge_layouts
+    build_capabilities: [make, vcs, npi]
+    source_dir: xcov/fixtures/edge_cases
+    inputs: [Makefile, design.sv]
+    builder:
+      argv: [make, fixture, "RUN_DIR={resources}", VARIANT=edge]
+      cwd: "{source}"
+      timeout_sec: 1200
+    outputs:
+      - {name: vdb, path: edge_cases.vdb, kind: dir}
+    probes:
+      - argv: [python3, "{repo}/testinfra/leaf/probe_fixture.py", --resources, "{resources}", --text-glob, edge_cases.vdb/.vdb_version]
+    tool_env: [VCS_HOME, VERDI_HOME]
+
+  - id: xcov.zero_coverable
+    build_capabilities: [make, vcs, npi]
+    source_dir: xcov/fixtures/edge_cases
+    inputs: [Makefile, design.sv]
+    builder:
+      argv: [make, fixture, "RUN_DIR={resources}", VARIANT=zero]
+      cwd: "{source}"
+      timeout_sec: 1200
+    outputs:
+      - {name: vdb, path: zero_coverable.vdb, kind: dir}
+    probes:
+      - argv: [python3, "{repo}/testinfra/leaf/probe_fixture.py", --resources, "{resources}", --text-glob, zero_coverable.vdb/.vdb_version]
+    tool_env: [VCS_HOME, VERDI_HOME]
+
   - id: xcov.large_summary
     build_capabilities: [make, vcs, npi]
     source_dir: xcov/fixtures/large_summary

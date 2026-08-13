@@ -34,13 +34,27 @@ class CoverageExportParseError(RuntimeError):
         self.reason = reason
 
 
-def _instance_has_no_self_metric(text: str, scope: str) -> bool:
+def _instance_has_no_self_metric(text: str, scope: str, metric: str) -> bool:
     header = re.search(rf"^Module Instance : {re.escape(scope)}\s*$", text, re.MULTILINE)
     if not header:
         return False
     following = re.search(r"^={8,}\nModule : \S+", text[header.end():], re.MULTILINE)
     block = text[header.end():header.end() + following.start() if following else len(text)]
-    return bool(re.search(r"^Instance\s*:\s*\n(?:.*\n){0,4}\s*(?:--\s+)+\s*$", block, re.MULTILINE))
+    table = re.search(
+        r"^Instance\s*:\s*\n\s*\n(?P<header>\s*[A-Z]+(?:\s+[A-Z]+)*\s*)\n"
+        r"(?P<values>\s*(?:--|[\d.]+)(?:\s+(?:--|[\d.]+))*\s*)$",
+        block,
+        re.MULTILINE,
+    )
+    if not table:
+        return False
+    aliases = {
+        "SCORE": "score", "LINE": "line", "COND": "condition",
+        "TOGGLE": "toggle", "FSM": "fsm", "BRANCH": "branch",
+    }
+    columns = [aliases[name] for name in table.group("header").split()]
+    values = table.group("values").split()
+    return dict(zip(columns, values, strict=True)).get(metric) == "--"
 
 
 def _module_has_only_target(text: str, module: str, scope: str) -> bool:
@@ -54,11 +68,22 @@ def _module_has_only_target(text: str, module: str, scope: str) -> bool:
         return False
     end = re.search(r"^-{8,}\s*$", block[table.end():], re.MULTILINE)
     rows = block[table.end():table.end() + end.start() if end else len(block)]
-    instances = re.findall(r"(?:^|\s)(top(?:\.\S+)+)\s*$", rows, re.MULTILINE)
+    instances = re.findall(
+        r"^\s*(?:(?:--|[\d.]+)\s+)+(\S+)\s*$",
+        rows,
+        re.MULTILINE,
+    )
     return instances == [scope]
 
 
-def _section(text: str, metric: str, scope: str, module: str) -> str:
+def _section(
+    text: str,
+    metric: str,
+    scope: str,
+    module: str,
+    *,
+    allow_empty_selection: bool = False,
+) -> str:
     heading = _HEADINGS[metric]
     pattern = re.compile(
         rf"^{heading} Coverage for Instance : {re.escape(scope)}\s*$",
@@ -66,7 +91,7 @@ def _section(text: str, metric: str, scope: str, module: str) -> str:
     )
     match = pattern.search(text)
     if not match:
-        if _instance_has_no_self_metric(text, scope):
+        if allow_empty_selection or _instance_has_no_self_metric(text, scope, metric):
             return ""
         if module == "unknown" or not _module_has_only_target(text, module, scope):
             raise CoverageExportParseError(metric, scope, "target instance detail section is missing")
@@ -123,7 +148,7 @@ def _at(source_files: List[str], line: int | None) -> str | None:
 
 def _coverage(section: str, metric: str) -> Json:
     if not section:
-        return {"covered": 0, "coverable": 0, "missing": 0, "pct": 0.0}
+        return {"covered": 0, "coverable": 0, "missing": 0, "pct": None}
     patterns = {
         "line": r"^TOTAL\s+(\d+)\s+(\d+)\s+([\d.]+)",
         "condition": r"^Conditions\s+(\d+)\s+(\d+)\s+([\d.]+)",
@@ -218,19 +243,40 @@ def _condition_groups(section: str, source_files: List[str]) -> Tuple[List[Json]
         block = section[start.end():end]
         lines = block.splitlines()
         label_index = next((position for position, line in enumerate(lines)
-                            if re.match(r"^\s*(?:EXPRESSION|SUB-EXPRESSION)\s+", line)), None)
+                            if re.match(r"^\s*(?:EXPRESSION|SUB-EXPRESSION)(?:\s+.*)?$", line)), None)
         if label_index is None or label_index + 1 >= len(lines):
             continue
         label_line = lines[label_index]
-        label = re.match(r"^\s*(EXPRESSION|SUB-EXPRESSION)\s+(.+)$", label_line)
+        label = re.match(r"^\s*(EXPRESSION|SUB-EXPRESSION)(?:\s+(.*?))?\s*$", label_line)
         if not label:
             continue
         kind = label.group(1).lower().replace("-", "_")
-        raw_expression = label.group(2).strip()
         ids, vectors = _not_covered_vectors(block)
         if not vectors:
             continue
-        terms = _condition_terms(label_line, lines[label_index + 1], ids)
+        inline_expression = (label.group(2) or "").strip()
+        if inline_expression:
+            raw_expression = inline_expression
+            terms = _condition_terms(label_line, lines[label_index + 1], ids)
+        else:
+            if lines[label_index + 1].strip() != "Number  Term":
+                continue
+            numbered: Dict[int, str] = {}
+            for line in lines[label_index + 2:]:
+                if re.match(r"^\s*(?:-\d+-\s+)+Status\s*$", line):
+                    break
+                term_match = re.match(r"^\s*(\d+)\s+(.+?)\s*$", line)
+                if term_match:
+                    numbered[int(term_match.group(1))] = term_match.group(2).strip()
+            if any(term_id not in numbered for term_id in ids):
+                raise CoverageExportParseError(
+                    "condition", "", "condition Number Term table is incomplete"
+                )
+            terms = [
+                {"marker": f"-{term_id}-", "expression": numbered[term_id]}
+                for term_id in ids
+            ]
+            raw_expression = " ".join(numbered[index] for index in sorted(numbered))
         at = _at(source_files, int(start.group(1)))
         group_key = (at, tuple((term["marker"], term["expression"]) for term in terms))
         group = by_terms.get(group_key)
@@ -423,15 +469,19 @@ def _branch_groups(section: str, source_files: List[str], absolute_sources: List
 
 
 def _line_gaps(section: str, source_files: List[str]) -> List[Json]:
-    return [
-        {
-            "at": _at(source_files, int(match.group(1))),
-            "statement": match.group(2).strip(),
-            "hits": 0,
-            "required": "execute this statement",
-        }
-        for match in re.finditer(r"^\s*(\d+)\s+0/\d+\s+==>\s+(.+)$", section, re.MULTILINE)
-    ]
+    gaps: List[Json] = []
+    for match in re.finditer(
+        r"^\s*(\d+)\s+(\d+)/(\d+)\s+==>\s+(.+)$", section, re.MULTILINE
+    ):
+        missing = int(match.group(3)) - int(match.group(2))
+        for _ in range(missing):
+            gaps.append({
+                "at": _at(source_files, int(match.group(1))),
+                "statement": match.group(4).strip(),
+                "hits": 0,
+                "required": "execute this statement",
+            })
+    return gaps
 
 
 def _line_groups(section: str, source_files: List[str]) -> List[Json]:
@@ -460,8 +510,19 @@ def _line_groups(section: str, source_files: List[str]) -> List[Json]:
         line_no = int(str(gap["at"]).rsplit(":", 1)[1])
         owner = None
         for index, context in enumerate(contexts):
-            next_line = contexts[index + 1]["line"] if index + 1 < len(contexts) else None
-            if line_no >= context["line"] and (next_line is None or line_no < next_line):
+            next_line = next(
+                (
+                    candidate["line"]
+                    for candidate in contexts[index + 1:]
+                    if candidate["line"] > context["line"]
+                ),
+                None,
+            )
+            in_range = line_no >= context["line"] and (
+                next_line is None or line_no < next_line
+            )
+            has_capacity = len(context["uncovered"]) < context["missing"]
+            if in_range and has_capacity:
                 owner = context
                 break
         if owner is None:
@@ -554,6 +615,13 @@ def _fsm_block_gaps(block: str, fsm: str, source_files: List[str]) -> List[Json]
 
 
 def _fsm_groups(section: str, source_files: List[str]) -> Tuple[List[Json], Json]:
+    if not section:
+        return [], {
+            "covered": 0,
+            "coverable": 0,
+            "missing": 0,
+            "pct": None,
+        }
     starts = list(re.finditer(r"^Summary for FSM :: (.+)$", section, re.MULTILINE))
     if not starts:
         raise CoverageExportParseError("fsm", "", "FSM summary is missing")
@@ -606,11 +674,23 @@ def _non_actionable(section: str) -> List[Json]:
     return rows
 
 
-def parse_metric_report(text: str, scope: str, metric: str) -> Json:
+def parse_metric_report(
+    text: str,
+    scope: str,
+    metric: str,
+    *,
+    allow_empty_selection: bool = False,
+) -> Json:
     if metric not in PUBLIC_METRICS:
         raise ValueError(metric)
     module = _module_name(text, scope)
-    section = _section(text, metric, scope, module)
+    section = _section(
+        text,
+        metric,
+        scope,
+        module,
+        allow_empty_selection=allow_empty_selection,
+    )
     absolute_sources = _source_files(text, module)
     source_root, sources = _source_context(absolute_sources)
     parsers = {"toggle": lambda: _toggle_gaps(section)}
@@ -726,6 +806,8 @@ def parse_metric_report(text: str, scope: str, metric: str) -> Json:
 
 
 def _scalar(value: Any) -> str:
+    if value is None:
+        return "null"
     if isinstance(value, str):
         return json.dumps(value, ensure_ascii=False)
     if isinstance(value, bool):
@@ -994,9 +1076,10 @@ def _render_navigation_metrics(metrics: Json, indent: str) -> List[str]:
         if not row:
             lines.append(f"{indent}{metric}: unavailable")
             continue
+        pct_text = "null" if row["pct"] is None else f"{row['pct']:.2f}"
         lines.append(
             f"{indent}{metric}: covered={row['covered']} coverable={row['coverable']} "
-            f"missing={row['missing']} pct={row['pct']:.2f}"
+            f"missing={row['missing']} pct={pct_text}"
         )
     return lines
 

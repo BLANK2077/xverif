@@ -351,6 +351,14 @@ def _scope_context(elem: ET.Element, stack: List[Json]) -> Json:
             (ctx["name"] for ctx in reversed(stack) if ctx["type"] == "Coverage Instance"),
             name if scope_type == "Coverage Instance" else None,
         ),
+        "group_instance_summary": next(
+            (
+                ctx["attrs"].get("Group Instance Summary")
+                for ctx in reversed(stack)
+                if ctx["type"] == "Groups"
+            ),
+            None,
+        ),
         "metrics": {},
         "attrs": {},
     }
@@ -407,13 +415,22 @@ def _functional_row(ctx: Json, xml_path: Path) -> Optional[Json]:
         return None
     ratio = ctx["metrics"].get(metric_name)
     if ratio is None:
-        raise _xml_error(
-            xml_path,
-            "functional scope is missing its score metric",
-            scope_type=scope_type,
-            scope_name=ctx["name"],
-            metric=metric_name,
-        )
+        if ctx.get("group_instance_summary") == "0/0":
+            ratio = {
+                "covered": 0,
+                "coverable": 0,
+                "missing": 0,
+                "excluded": 0,
+                "pct": None,
+            }
+        else:
+            raise _xml_error(
+                xml_path,
+                "functional scope is missing its score metric",
+                scope_type=scope_type,
+                scope_name=ctx["name"],
+                metric=metric_name,
+            )
     variant = ctx.get("variant")
     scope = variant.split("::", 1)[0] if isinstance(variant, str) and "::" in variant else None
     score_pct = _percent_attr(ctx["attrs"].get("Score"), ratio["pct"], xml_path)

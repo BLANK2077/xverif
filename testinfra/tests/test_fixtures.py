@@ -179,6 +179,23 @@ def test_large_summary_fixture_fingerprints_generator_recipe_probe_and_tools() -
     assert set(tool_identity) == {"VCS_HOME", "VERDI_HOME"}
 
 
+def test_xcov_edge_fixtures_share_rtl_but_publish_independent_vdbs() -> None:
+    registry = FixtureRegistry.load(
+        ROOT / "testinfra/fixtures.v1.yaml",
+        ROOT / "testinfra/schemas/fixtures.v1.schema.json",
+    )
+    edge = registry.by_id("xcov.modinfo_edge_layouts")
+    zero = registry.by_id("xcov.zero_coverable")
+
+    assert edge.source_dir == zero.source_dir == "xcov/fixtures/edge_cases"
+    assert edge.inputs == zero.inputs == ("Makefile", "design.sv")
+    assert edge.builder["argv"][-1] == "VARIANT=edge"
+    assert zero.builder["argv"][-1] == "VARIANT=zero"
+    assert edge.outputs[0].path == "edge_cases.vdb"
+    assert zero.outputs[0].path == "zero_coverable.vdb"
+    assert edge.tool_env == zero.tool_env == ("VCS_HOME", "VERDI_HOME")
+
+
 def test_design_hierarchy_fixture_preserves_validated_npi_experiment_recipe() -> None:
     registry = FixtureRegistry.load(
         ROOT / "testinfra/fixtures.v1.yaml",

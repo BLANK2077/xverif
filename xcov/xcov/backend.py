@@ -612,17 +612,34 @@ def _canonical_scope_metric(scope: str, metric: Any, values: Any) -> Json:
             scope=scope,
             metric=metric,
         )
-    if isinstance(pct, bool) or not isinstance(pct, (int, float)) or not 0 <= pct <= 100:
-        raise XcovError(
-            "BACKEND_CONTRACT_VIOLATION",
-            "scope metric pct must be a finite number in 0..100",
-            operation=operation,
-            field="pct",
-            scope=scope,
-            metric=metric,
-        )
-    expected = round(100.0 * covered / coverable, 4) if coverable else 0.0
-    if metric != "functional" and abs(float(pct) - expected) > 0.01:
+    if coverable == 0:
+        if pct is not None:
+            raise XcovError(
+                "BACKEND_CONTRACT_VIOLATION",
+                "scope metric pct must be null when coverable is zero",
+                operation=operation,
+                field="pct",
+                scope=scope,
+                metric=metric,
+            )
+        canonical_pct = None
+    else:
+        if isinstance(pct, bool) or not isinstance(pct, (int, float)) or not 0 <= pct <= 100:
+            raise XcovError(
+                "BACKEND_CONTRACT_VIOLATION",
+                "scope metric pct must be a finite number in 0..100",
+                operation=operation,
+                field="pct",
+                scope=scope,
+                metric=metric,
+            )
+        canonical_pct = float(pct)
+    expected = round(100.0 * covered / coverable, 4) if coverable else None
+    if (
+        metric != "functional"
+        and expected is not None
+        and abs(float(canonical_pct) - expected) > 0.01
+    ):
         raise XcovError(
             "BACKEND_CONTRACT_VIOLATION",
             "scope metric pct disagrees with covered/coverable",
@@ -635,7 +652,7 @@ def _canonical_scope_metric(scope: str, metric: Any, values: Any) -> Json:
         "covered": covered,
         "coverable": coverable,
         "missing": missing,
-        "pct": float(pct),
+        "pct": canonical_pct,
     }
     if "excluded" in values:
         excluded = values["excluded"]
