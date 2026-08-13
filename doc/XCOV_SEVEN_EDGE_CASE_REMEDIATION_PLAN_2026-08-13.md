@@ -102,9 +102,68 @@ xcov 与 x-npi 的对应实现，并消除 `xdebug.native_xout_all` 修改 track
 
 | 阶段 | 状态 | 证据 |
 |---|---|---|
-| 计划文档与 goal | 进行中 | 本文已建立；goal 待首个文档提交后创建 |
-| 正式 fixture/suite 红灯 | 未开始 | 待记录正式 run id |
-| xcov 修复 | 未开始 | 待七项转绿 |
-| x-npi 同步 | 未开始 | 待 unit/real suite |
-| native XOUT 纯净化 | 未开始 | 待 tracked 文档哈希验证 |
-| 全量验收与推送 | 未开始 | 待 fast/regression/nightly 与 push |
+| 计划文档与 goal | 完成 | 计划提交 `b2eeb4c`；已建立带明确验收标准的执行 goal |
+| 正式 fixture/suite 红灯 | 完成 | `20260813-150414-j776aguz`：1 个静态复杂度测试通过，七项真实 VDB 测试全部按预期失败 |
+| xcov 修复 | 完成 | 提交 `6ef9573`；focused suite 共 189 项通过，七项真实 VDB 用例全部转绿 |
+| x-npi 同步 | 完成 | 提交 `470c4af`；unit 25 项、real VDB 8 项通过，并同步安装到 Codex/Claude |
+| native XOUT 纯净化 | 完成 | 提交 `0305de7`；report 11 项、all-actions 1 项通过，tracked 报告 SHA 不变 |
+| 全量验收与推送 | 完成（待本文提交后推送） | clean build、fast 579、regression 1187、nightly 1288 通过 |
+
+### 2026-08-13 正式红灯记录
+
+- registry/catalog 静态门禁：`20260813-150308-otee0wwy`，54 passed。
+- `xcov.modinfo_edge_layouts` 首次 prepare 发布 fingerprint
+  `ab3f85e4d7598a20bd55ff552af7e60d04b6851776f1dc734de6a26c83f7733b`；第二次为
+  `cache_validation` 命中。
+- `xcov.zero_coverable` 首次 prepare 发布 fingerprint
+  `752ef23a3a10c7180df3cf56bdbb11cf0ccd189cfbca12821f65dbf4228b9f03`；第二次为
+  `cache_validation` 命中。
+- 正式提交前只清理了新增 RTL 的末尾空白，因此仅对上述两个新增 ID 再次定向 prepare：
+  - `xcov.modinfo_edge_layouts`：`20260813-153514-dp1vzoea`，最终 fingerprint
+    `c3593f709bde233b12dceb014238a36b00a72dfc0954819691e71598c33af070`；
+    `20260813-153536-pvmo96_z` 再次 prepare 为 cache hit。
+  - `xcov.zero_coverable`：`20260813-153524-l_iezadj`，最终 fingerprint
+    `f2ce2d0a1b19517fc48a4d9e44ec05f8c7b01a391dd48118690d9e97e65e8257`；
+    `20260813-153542-ee9tjjcz` 再次 prepare 为 cache hit。
+- 未执行 `all-generated`、fixture clean、全量 fixture validation，未修改 FixtureStore 或
+  任何既有 fixture 定义/缓存指针。
+- `xcov.edge_cases`：`20260813-150414-j776aguz`，1 passed、7 failed：
+  1. 任意顶层：`target instance detail section is missing`。
+  2. 零对象：`functional scope is missing its score metric`。
+  3. Line `0/N`：`line construct missing count does not match gaps`。
+  4. null navigation 前置空 selection：`URG did not produce modinfo.txt`。
+  5. Condition Number-Term：`condition coverage object gap count does not match coverage missing`。
+  6. 单 metric `--`：`FSM summary is missing`。
+  7. 空 FSM：`URG did not produce modinfo.txt`。
+
+### 2026-08-13 修复与 focused 验收记录
+
+- xcov 提交 `6ef9573`：
+  - `xcov.unit`：`20260813-151912-fkh0bd72`，169 passed。
+  - `xcov.edge_cases`：`20260813-151944-sampp69n`，8 passed；其中 1 项验证正式 RTL
+    复杂度，7 项分别对应七个红灯。
+  - `xcov.modinfo_complex`：`20260813-152014-5b1no8i8`，5 passed。
+  - `xcov.urg_backend`：`20260813-152036-aabkpqnc`，7 passed。
+- x-npi 提交 `470c4af`：
+  - `skills.x_npi`：`20260813-151408-wvx2230e`，25 passed。
+  - `skills.x_npi_real`：`20260813-151431-pl9or62v`，8 passed。
+  - `make install-x-npi-skill` 完成；排除安装器私有 manifest 后，repo source 与
+    `~/.codex/skills/x-npi`、`~/.claude/skills/x-npi` 的 `diff -qr` 均为空。
+- native XOUT 提交 `0305de7`：
+  - `xdebug.native_xout_report`：`20260813-151709-1l5hvpnj`，11 passed。
+  - `xdebug.native_xout_all`：`20260813-151753-beuvjorz`，1 passed。
+  - 测试改为写 pytest `tmp_path`；显式发布工具独立验证 final/73-action 报告后才允许
+    更新 tracked 审阅文档。
+  - focused suite 前后及完整 nightly 后，`doc/XDEBUG_XOUT_REAL_OUTPUT_REVIEW_2026-08-03.md`
+    SHA256 均为 `5d89c7609597959658efb55206ad6771ece782279110a2a2993a7fd984aa0810`。
+
+### 2026-08-13 全仓最终验收记录
+
+- `make clean all`：通过；统一重建 native xdebug engine 及各 Python 子工具。
+- fast：`20260813-153550-7s_y9zja`，579 passed、706 deselected。
+- host regression：`20260813-153645-yo0m6u3f`，1187 passed。
+- host nightly：`20260813-154236-vzjd66_0`，1288 passed、2 skipped；两项 skip 均为
+  环境未提供 `bsub`/`bjobs`/`bkill` 的真实 LSF 条件用例，与本次 coverage 修改无关。
+- regression/nightly 均只消费已发布缓存，没有自动 prepare、fallback 或 fixture 迁移。
+- 最终 `git status --short` 仅包含本文进度更新；fixture runtime 与 tracked XOUT 审阅文档
+  均无 diff。
