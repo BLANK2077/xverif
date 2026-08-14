@@ -44,6 +44,21 @@ xrun -64bit -sv -uvm -uvmhome CDNS-1.2 \
 
 项目有正式构建入口时沿用项目入口，只补齐缺失的调试参数。复用已有 snapshot 可使用 `xrun -R -input /dev/null`。
 
+当前 Xcelium 24.09 实测行为：
+
+- 不指定 `-k` 也会在运行目录自动生成 `xrun.key`；它只保存依次执行的 Tcl 命令，是回看操作历史的首选；
+- Xrun 默认产生 `xrun.log`；若现有启动命令带有 `-l <logfile>`，则使用该路径。log 保存带 `xcelium>` prompt 的 Tcl 命令及命令输出，适合查看返回值和错误。
+
+不要为历史回溯专门追加 `-k` 或 `-l`。先查看自动生成的 `xrun.key`；需要返回值、错误或周边输出时，再查看现有 `-l` 路径或默认 `xrun.log`：
+
+```bash
+sed -n '1,240p' ./xrun.key
+tail -n 200 ./xrun.log
+rg -n 'xcelium>|stop |value |run|\*[EWF],' ./xrun.log
+```
+
+key/log 不是 PTY 的逐字节录像，Ctrl-C 控制字节不会作为普通命令写入 key。日志是运行时持续写入的证据；读取到末尾后仍应结合当前 `xcelium>` prompt 判断命令是否已经完成。
+
 ## 最短的 UVM component 实例断点路径
 
 第一步运行到 component 已创建。官方 UVM Tcl 直接支持停在 build phase 结束：

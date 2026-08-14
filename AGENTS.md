@@ -433,3 +433,15 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 - 错误现象：复核 VCS UCLI 能力时直接执行 `vcs -ID`，当前 shell 的 `VCS_HOME` 指向缺少 `bin/vcs1` 的 `X-2025.06-SP1/linux`，命令未进入版本查询。
 - 误判原因：只核对了 `vcs` wrapper 在 `PATH` 中可见，没有先核对 `VCS_HOME` 与实际 `linux64/bin/vcs1` 安装布局一致。
 - 以后规则：真实 VCS 编译或版本查询前同时核对 `command -v vcs`、`VCS_HOME` 和 `$VCS_HOME/linux64/bin/vcs1`；已有 `simv` 的 UCLI 只读实验不因编译入口环境错误改用其它模拟器。
+
+### 2026-08-14 环境错误复盘
+
+- 错误现象：为查询 VCS runtime 的 `-l`/`-k` 选项直接执行已有 `simv -help`，该 runtime 没有按预期打印帮助，而是启动并跑完了仿真。
+- 误判原因：把编译器 wrapper 的帮助入口类推到生成的 simulator executable，没有先用无执行副作用的手册搜索或隔离短交互验证。
+- 以后规则：查询 `simv` runtime 参数时优先查当前安装手册；需确认行为时使用已有仿真产物并显式进入 `-ucli`，只执行可控的短命令后退出，不用猜测的 `-help` 参数。
+
+### 2026-08-14 环境错误复盘
+
+- 错误现象：为定位 xsimdebug 文档行号，在双引号 `rg` 模式中包含 Markdown 反引号，shell 把其中的 `-l` 和 `-k` 当成命令替换执行。
+- 误判原因：组合多个搜索词时再次忽略了仓库已有的反引号搜索规则。
+- 以后规则：所有包含 Markdown 反引号的搜索模式一律使用单引号；只为组合多个 pattern 时使用多个 `-e`，不改用双引号包裹反引号。

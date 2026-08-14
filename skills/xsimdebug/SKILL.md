@@ -32,6 +32,8 @@ description: 当 AI agent 需要定位 SystemVerilog/UVM 验证问题、重新�
 - 保持同一个 PTY session。启动后持续向该 session 写命令，不为每条命令新建 shell 进程。
 - 不确定命令、选项或版本差异时，先在模拟器 prompt 执行 `help` 和 `help <command>`；以当前安装版本返回的帮助为准。
 - 运行中需要主动暂停时，向同一个 PTY 注入 Ctrl-C 字节 `0x03`；返回 prompt 后检查当前位置和调用栈。
+- 交互运行会自动产生 key 命令历史文件：VCS 为启动目录下的 `ucli.key`，Xrun 为运行目录下的 `xrun.key`；不要为此修改启动参数。回看执行过哪些命令时第一选择是 key；需要命令输出、错误和上下文时，再读取启动命令现有 `-l` 所指向的 log，不依赖终端 scrollback。
+- key/log 是模拟器生成的记录，不是 PTY 的逐字节录像；Ctrl-C 等控制字节、终端回显和 prompt 可能不会完整出现。
 - 不把 prompt 返回当作命令成功；检查模拟器原始 error/warning 输出。
 - 保留关键命令、断点 ID、时间、源码位置、实例路径和查询值作为证据。
 
@@ -44,11 +46,11 @@ tmux new-session -d -s xsimdebug-vcs \
   'cd /abs/path/to/run-dir && exec ./simv -ucli -no_save'
 tmux capture-pane -p -S -200 -t xsimdebug-vcs
 tmux send-keys -t xsimdebug-vcs 'help stop' Enter
-tmux capture-pane -p -S -200 -t xsimdebug-vcs
+sed -n '1,240p' /abs/path/to/run-dir/ucli.key
 tmux send-keys -t xsimdebug-vcs C-c
 ```
 
-Xrun 使用相同机制，把启动命令替换为项目实际的 `xrun ... -input /dev/null`。tmux 只替代 PTY 传输层，不改变 VCS UCLI 或 Xrun Tcl 命令语义。使用前确认 `tmux` 存在，保留同一 session，先从 `capture-pane` 确认模拟器 prompt 已返回再发送下一条命令；不要靠固定 sleep 猜测 ready，也不要为每条命令创建新 session。结束时先向模拟器发送 `exit`，只管理本次创建且名称明确的 session。
+Xrun 使用相同机制，把启动命令替换为项目实际的 `xrun ... -input /dev/null`，不要仅为记录历史追加 `-k` 或 `-l`。tmux 只替代 PTY 传输层，不改变 VCS UCLI 或 Xrun Tcl 命令语义。使用前确认 `tmux` 存在，保留同一 session；`capture-pane` 只用于确认 prompt/readiness。历史命令先看 key，输出和错误再查看已有 log。不要靠固定 sleep 猜测 ready，也不要为每条命令创建新 session。结束时先向模拟器发送 `exit`，只管理本次创建且名称明确的 session。
 
 ## 结果要求
 

@@ -39,6 +39,21 @@ vcs -full64 -sverilog -ntb_opts uvm-1.2 \
 
 项目已有正式编译入口时使用项目入口，只把上述命令作为参数合同参考。
 
+当前 VCS X-2025.06-SP1 实测行为：
+
+- 不指定 `-k` 也会在 `simv` 启动目录自动生成 `ucli.key`；它只保存依次执行的 UCLI 命令，是回看操作历史的首选；
+- 若现有启动命令带有 `-l <logfile>`，该文件保存 UCLI 命令及命令输出，适合查看返回值和错误；本次实测 log 不包含 `ucli%` prompt。
+
+不要为历史回溯专门追加 `-k` 或 `-l`。先查看自动生成的 `ucli.key`；需要返回值、错误或周边输出时，再从现有仿真启动命令确认 `-l` 的实际文件路径：
+
+```bash
+sed -n '1,240p' ./ucli.key
+tail -n 200 /path/from/existing-l-option
+rg -n 'stop |get |run|error|warning' /path/from/existing-l-option
+```
+
+key/log 不是 PTY 的逐字节录像，Ctrl-C 控制字节不会作为普通命令写入 key。日志是运行时持续写入的证据；读取到末尾后仍应结合当前 `ucli%` prompt 判断命令是否已经完成。
+
 ## 断点
 
 ```tcl

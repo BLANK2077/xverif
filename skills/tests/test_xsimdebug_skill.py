@@ -23,6 +23,9 @@ def test_xsimdebug_metadata_links_and_scope() -> None:
         "tmux new-session", "tmux send-keys", "tmux capture-pane",
         "help <command>", "固定 sleep", "重新编译代价过高",
         "不允许再次编译", "已有仿真 log 已足以定位问题",
+        "回看执行过哪些命令时第一选择是 key", "ucli.key", "xrun.key",
+        "历史命令先看 key", "输出和错误再查看已有 log",
+        "不是 PTY 的逐字节录像",
     ):
         assert term in skill_text
     description = skill_text.split("---", 2)[1]
@@ -40,13 +43,21 @@ def test_references_cover_common_interactive_debug_workflow() -> None:
     for term in (
         "help stop", "help get", "stop -line", "stop -delete",
         "get this.value", "get i", "next -end", "run -line",
+        "不指定 `-k` 也会", "自动生成 `ucli.key`",
+        "只保存依次执行的 UCLI 命令", "tail -n 200",
+        "不要为历史回溯专门追加 `-k` 或 `-l`",
     ):
         assert term in vcs
     for term in (
         "help stop", "help value", "stop -create -line", "stop -delete",
         "value hit_count", "value i", "run -return", "临时行断点",
+        "不指定 `-k` 也会", "自动生成 `xrun.key`",
+        "只保存依次执行的 Tcl 命令", "tail -n 200",
+        "不要为历史回溯专门追加 `-k` 或 `-l`",
     ):
         assert term in xrun
+    assert "-k /abs/path" not in vcs
+    assert "-k /abs/path" not in xrun
 
 
 def test_xrun_reference_uses_native_uvm_path_without_vcs_helper() -> None:
