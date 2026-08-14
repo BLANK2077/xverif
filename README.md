@@ -16,11 +16,12 @@
 - [`xentry`](xentry/README.md): decodes multi-beat byte fragments into configured raw fields.
 - [`xloc`](xloc/README.md): compresses and restores UVM log source locations.
 - [`xwiki`](skills/xwiki/SKILL.md): maintains persistent verification-project knowledge for agents.
+- [`xsimdebug`](skills/xsimdebug/SKILL.md): drives live VCS UCLI or Xcelium Tcl debug sessions through a terminal PTY.
 - [`xsva`](xsva/README.md): compiles SystemVerilog Assertions into structured IR and deterministic explanations.
 - [`xcov`](xcov/README.md): queries VCS/Verdi coverage databases and returns compact evidence.
 - [`xverif-mcp`](xverif_mcp/README.md): exposes xdebug/xcov as stateful backends and the other tools as stateless adapters through one MCP server.
 
-In short, `xdebug` answers where facts come from and what happened at a specific time; `xbit` computes exact SystemVerilog values; `xentry` extracts configured fields; `xloc` resolves compact log locations on demand; `xwiki` preserves project context; `xsva` lowers temporal semantics into IR; `xcov` reports covered and uncovered objects with source evidence; and `xverif-mcp` exposes these deterministic capabilities to AI agents.
+In short, `xdebug` answers where facts come from and what happened at a specific time; `xbit` computes exact SystemVerilog values; `xentry` extracts configured fields; `xloc` resolves compact log locations on demand; `xwiki` preserves project context; `xsimdebug` operates live VCS or Xcelium debug sessions; `xsva` lowers temporal semantics into IR; `xcov` reports covered and uncovered objects with source evidence; and `xverif-mcp` exposes these deterministic capabilities to AI agents.
 
 ## Tool overview
 
@@ -197,6 +198,7 @@ Dependency checks are isolated by suite. The `fast` gate is hermetic and starts 
 - xverif capability-routing skill: [`skills/xverif/SKILL.md`](skills/xverif/SKILL.md)
 - xverif administration skill: [`skills/xverif-admin/SKILL.md`](skills/xverif-admin/SKILL.md)
 - x-npi agent skill: [`skills/x-npi/SKILL.md`](skills/x-npi/SKILL.md)
+- xsimdebug live VCS/Xcelium skill: [`skills/xsimdebug/SKILL.md`](skills/xsimdebug/SKILL.md)
 - xdebug CLI reference: [`skills/xverif/references/xdebug/overview.md`](skills/xverif/references/xdebug/overview.md)
 - xdebug JSON API reference: [`skills/xverif/references/xdebug/json-api.md`](skills/xverif/references/xdebug/json-api.md)
 - SDK-free loop wrapper: [`skills/xverif-admin/references/sdk-free-loop/overview.md`](skills/xverif-admin/references/sdk-free-loop/overview.md)

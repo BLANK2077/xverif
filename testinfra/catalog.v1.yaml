@@ -283,6 +283,16 @@ suites:
     deterministic: true
     cost: {class: fast, estimate_sec: 5}
 
+  - id: skills.xsimdebug
+    owner: skills/xsimdebug
+    level: component
+    intent: [contract, semantics]
+    domains: [skill, vcs, ucli, uvm]
+    runner: {kind: pytest, path: skills/tests/test_xsimdebug_skill.py}
+    hermetic: true
+    deterministic: true
+    cost: {class: fast, estimate_sec: 3}
+
   - id: skills.public_docs
     owner: skills
     level: static

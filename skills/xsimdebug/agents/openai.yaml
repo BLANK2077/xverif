@@ -1,0 +1,4 @@
+interface:
+  display_name: "xsimdebug"
+  short_description: "日志不足或难以重编译时实时调试 VCS 与 Xrun"
+  default_prompt: "先判断仿真 log 是否足以定位；若不足且需要运行时现场、重编译代价过高或禁止重编译，使用 $xsimdebug 选择 VCS UCLI 或 Xrun Tcl，通过终端 PTY 设置断点并检查状态。"

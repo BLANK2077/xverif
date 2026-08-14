@@ -25,7 +25,7 @@ def test_catalog_loads_and_ids_are_unique() -> None:
     assert "xsva.core" in ids
     assert "xdebug.cpp_unit" in ids
     assert {
-        "skills.xverif", "skills.xverif_admin",
+        "skills.xverif", "skills.xverif_admin", "skills.xsimdebug",
         "skills.public_docs", "skills.x_npi", "skills.xwiki",
     } <= set(ids)
 

@@ -9,18 +9,19 @@
 >
 > `xdebug` 和 `xcov` 的部分能力需要用户在本地另行取得合法授权并安装相应 Synopsys software；设置 `VERDI_HOME` 或能够访问相关文件本身不代表已经获得 NPI/FSDB API 的使用权或 redistribution 权。不得把 `libNPI.so`、`libnpiL1.so`、`libnffr.so`、Synopsys headers/documentation，或包含这些内容的 binary、package、container image 随本仓库分发。具体边界见 [`THIRD_PARTY.md`](THIRD_PARTY.md)。
 
-`xverif` 是面向芯片验证 debug agent 的本地工具仓库，当前包含六个核心工具、一个持续记忆 skill 和一个统一 MCP 入口：
+`xverif` 是面向芯片验证 debug agent 的本地工具仓库，当前包含六个核心工具、两个 agent skill 和一个统一 MCP 入口：
 
 - [`xdebug`](xdebug/README.md)：查询设计数据库和波形数据库里的事实。
 - [`xbit`](xbit/README.md)：确定性计算 bit、literal、slice、表达式和 expected value。
 - [`xentry`](xentry/README.md)：按配置解析多拍 byte fragments，输出 raw entry 域段。
 - [`xloc`](xloc/README.md)：UVM 日志位置压缩与恢复，降低 LLM token 噪声。
 - [`xwiki`](skills/xwiki/SKILL.md)：维护验证项目 LLM wiki 的持续记忆 skill，避免 agent 每次 session 从 0 理解项目。
+- [`xsimdebug`](skills/xsimdebug/SKILL.md)：通过终端 PTY 实时操作 VCS UCLI 或 Xcelium Tcl 调试仿真。
 - [`xsva`](xsva/README.md)：把 SystemVerilog Assertion 编译为结构化 IR，并生成确定性解释和可视化。
 - [`xcov`](xcov/README.md)：查询 VCS/Verdi coverage database，输出 compact coverage evidence。
 - [`xverif-mcp`](xverif_mcp/README.md)：统一 MCP server，xdebug/xcov 作为 stateful backend，其他工具以 stateless CLI adapter 接入。
 
-简单说：`xdebug` 负责“事实从哪里来、某时刻发生了什么”，`xbit` 负责“这些值按 SystemVerilog 规则算出来到底是多少”，`xentry` 负责“这个 entry 的 bit 域段按配置切出来是什么”，`xloc` 负责“这条 log 在哪个文件的哪一行，但只在需要时才查”，`xwiki` 负责“把验证环境、DUT 功能、workflow、debug 入口等知识编译进持续 LLM wiki”，`xsva` 负责”assertion 的 temporal 语义先降成 IR，再解释给人和 agent”，`xcov` 负责“coverage database 里哪些 scope/object/bin 已覆盖或未覆盖，并给出源码 evidence”，`xverif-mcp` 负责”把确定性工具统一暴露给 AI agent 的 MCP 协议入口”。
+简单说：`xdebug` 负责“事实从哪里来、某时刻发生了什么”，`xbit` 负责“这些值按 SystemVerilog 规则算出来到底是多少”，`xentry` 负责“这个 entry 的 bit 域段按配置切出来是什么”，`xloc` 负责“这条 log 在哪个文件的哪一行，但只在需要时才查”，`xwiki` 负责“把验证环境、DUT 功能、workflow、debug 入口等知识编译进持续 LLM wiki”，`xsimdebug` 负责“直接操作正在运行的 VCS 或 Xcelium 仿真”，`xsva` 负责”assertion 的 temporal 语义先降成 IR，再解释给人和 agent”，`xcov` 负责“coverage database 里哪些 scope/object/bin 已覆盖或未覆盖，并给出源码 evidence”，`xverif-mcp` 负责”把确定性工具统一暴露给 AI agent 的 MCP 协议入口”。
 
 ## 工具概览
 
@@ -282,6 +283,7 @@ pytest --xverif-results-clean
 - xverif 能力路由 skill：[`skills/xverif/SKILL.md`](skills/xverif/SKILL.md)
 - xverif 运维 skill：[`skills/xverif-admin/SKILL.md`](skills/xverif-admin/SKILL.md)
 - x-npi agent skill：[`skills/x-npi/SKILL.md`](skills/x-npi/SKILL.md)，用于 AI 编写 Python `pynpi` 批量波形统计、APB/AXI/stream 离线分析和静态 driver/load 脚本；实时 active-driver 因果追踪仍用 xdebug。
+- xsimdebug 实时 VCS/Xcelium skill：[`skills/xsimdebug/SKILL.md`](skills/xsimdebug/SKILL.md)
 - xdebug CLI reference：[`skills/xverif/references/xdebug/overview.md`](skills/xverif/references/xdebug/overview.md)
 - xdebug JSON API 速查：[`skills/xverif/references/xdebug/json-api.md`](skills/xverif/references/xdebug/json-api.md)
 - SDK-free loop wrapper：[`skills/xverif-admin/references/sdk-free-loop/overview.md`](skills/xverif-admin/references/sdk-free-loop/overview.md)

@@ -415,3 +415,21 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 - 错误现象：在仓库 `tmp/` 子目录启动大型 URG 基准脚本时使用仓库相对 `.conda-xverif/bin/python`，命令在进入脚本和 EDA 工具前因解释器路径不存在退出。
 - 误判原因：切换工作目录后仍沿用只在仓库根成立的 Python 相对路径，没有在启动前按当前 cwd 解析入口。
 - 以后规则：从仓库任意子目录运行实验脚本时使用已核实的仓库 conda Python 绝对路径；不因相对入口失败切换系统 Python。
+
+### 2026-08-14 环境错误复盘
+
+- 错误现象：直接执行 `skill-creator/scripts/init_skill.py` 和 `quick_validate.py` 时因文件没有执行位而返回 `Permission denied`。
+- 误判原因：照用 skill 文档中的直接执行示例，没有先检查本机安装副本的脚本权限，也没有显式选择仓库 Python 环境。
+- 以后规则：调用本机 skill-creator Python 脚本前先核对解释器和文件权限；仓库任务统一使用 `.conda-xverif/bin/python <script>`，不依赖脚本执行位。
+
+### 2026-08-14 环境错误复盘
+
+- 错误现象：创建 xsimdebug skill 后查询 fast gate plan 时误用裸 `pytest`，shell 返回 `pytest: command not found`。
+- 误判原因：没有在每次仓库测试入口执行前坚持使用已确认的仓库 Conda pytest。
+- 以后规则：仓库 pytest 始终使用 `.conda-xverif/bin/pytest`；即使只是查询 gate plan，也不调用裸 `pytest`。
+
+### 2026-08-14 环境错误复盘
+
+- 错误现象：复核 VCS UCLI 能力时直接执行 `vcs -ID`，当前 shell 的 `VCS_HOME` 指向缺少 `bin/vcs1` 的 `X-2025.06-SP1/linux`，命令未进入版本查询。
+- 误判原因：只核对了 `vcs` wrapper 在 `PATH` 中可见，没有先核对 `VCS_HOME` 与实际 `linux64/bin/vcs1` 安装布局一致。
+- 以后规则：真实 VCS 编译或版本查询前同时核对 `command -v vcs`、`VCS_HOME` 和 `$VCS_HOME/linux64/bin/vcs1`；已有 `simv` 的 UCLI 只读实验不因编译入口环境错误改用其它模拟器。

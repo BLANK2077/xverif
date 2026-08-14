@@ -1,4 +1,4 @@
-.PHONY: all xdebug xbit xentry xloc xcov xwaveform clean install-all-skill remove-legacy-xverif-skills install-xverif-skill install-xverif-admin-skill install-xwiki-skill install-x-npi-skill _install-agent-skill
+.PHONY: all xdebug xbit xentry xloc xcov xwaveform clean install-all-skill remove-legacy-xverif-skills install-xverif-skill install-xverif-admin-skill install-xwiki-skill install-x-npi-skill install-xsimdebug-skill _install-agent-skill
 
 PYTHON ?= python3
 
@@ -33,6 +33,9 @@ install-xwiki-skill:
 
 install-x-npi-skill:
 	$(MAKE) _install-agent-skill SKILL_SRC=skills/x-npi SKILL_NAME=x-npi
+
+install-xsimdebug-skill:
+	$(MAKE) _install-agent-skill SKILL_SRC=skills/xsimdebug SKILL_NAME=xsimdebug
 
 remove-legacy-xverif-skills:
 	@set -eu; \

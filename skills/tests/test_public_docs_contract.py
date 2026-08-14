@@ -50,8 +50,11 @@ def test_removed_recommendations_do_not_appear_in_public_docs() -> None:
 
 def test_public_skill_links_target_new_layout() -> None:
     root = (ROOT / "README.md").read_text()
+    root_zh = (ROOT / "README.zh-CN.md").read_text()
     assert "skills/xverif/SKILL.md" in root
     assert "skills/xverif-admin/SKILL.md" in root
+    assert "skills/xsimdebug/SKILL.md" in root
+    assert "skills/xsimdebug/SKILL.md" in root_zh
 
 
 def test_component_readme_action_names_exist_in_current_catalogs() -> None:
