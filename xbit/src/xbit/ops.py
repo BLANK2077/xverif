@@ -8,6 +8,27 @@ def common_width(a: BitVector, b: BitVector) -> int:
     return max(a.width, b.width)
 
 
+def _coerce_binary_operands(a: BitVector, b: BitVector) -> tuple[int, bool, int, int]:
+    """Apply SystemVerilog binary expression width and signedness rules.
+
+    Arithmetic and relational operands are extended to the maximum operand
+    width.  The expression is signed only when both operands are signed; a
+    mixed signed/unsigned expression is therefore zero-extended and evaluated
+    as unsigned.
+    """
+    width = common_width(a, b)
+    signed = a.signed and b.signed
+    aa = a.resize(width, signed_extend=signed, signed=signed)
+    bb = b.resize(width, signed_extend=signed, signed=signed)
+    return width, signed, aa.as_int(signed), bb.as_int(signed)
+
+
+def _truncating_division(dividend: int, divisor: int) -> int:
+    """Return an integer quotient truncated toward zero without using float."""
+    quotient = abs(dividend) // abs(divisor)
+    return -quotient if (dividend < 0) != (divisor < 0) else quotient
+
+
 def slice_bits(value: BitVector, msb: int, lsb: int) -> BitVector:
     if lsb < 0 or msb < lsb or msb >= value.width:
         raise WidthError("slice range is invalid for value width", msb=msb, lsb=lsb, width=value.width)
@@ -134,10 +155,7 @@ def gray2bin(value: BitVector) -> BitVector:
 def binary_arithmetic(op: str, a: BitVector, b: BitVector) -> BitVector:
     a.require_known(op)
     b.require_known(op)
-    signed = a.signed or b.signed
-    av = a.as_int(signed)
-    bv = b.as_int(signed)
-    width = common_width(a, b)
+    width, signed, av, bv = _coerce_binary_operands(a, b)
     if op == "+":
         result = av + bv
     elif op == "-":
@@ -147,11 +165,12 @@ def binary_arithmetic(op: str, a: BitVector, b: BitVector) -> BitVector:
     elif op == "/":
         if bv == 0:
             raise DivisionByZero("division by zero")
-        result = int(av / bv)
+        result = _truncating_division(av, bv)
     elif op == "%":
         if bv == 0:
             raise DivisionByZero("modulo by zero")
-        result = av % bv
+        quotient = _truncating_division(av, bv)
+        result = av - quotient * bv
     else:
         raise EvalError("unsupported arithmetic operator", op=op)
     return BitVector(width, result, signed=signed)
@@ -179,9 +198,7 @@ def binary_bitwise(op: str, a: BitVector, b: BitVector) -> BitVector:
 def compare(op: str, a: BitVector, b: BitVector) -> BitVector:
     a.require_known(op)
     b.require_known(op)
-    signed = a.signed or b.signed
-    av = a.as_int(signed)
-    bv = b.as_int(signed)
+    _, _, av, bv = _coerce_binary_operands(a, b)
     table = {
         "==": av == bv,
         "!=": av != bv,

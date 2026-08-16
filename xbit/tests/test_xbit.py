@@ -14,7 +14,7 @@ SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
 from xbit.check import run_check
-from xbit.errors import ParseError, ValueError2State, WidthError
+from xbit.errors import DivisionByZero, ParseError, ValueError2State, WidthError
 from xbit.eval import eval_expr, parse_vars
 from xbit.format import ResponseContractError, failure, success, to_xout, validate_response
 from xbit.agent.stdio import validate_wrapped_response, wrap_response
@@ -36,6 +36,12 @@ class LiteralTests(unittest.TestCase):
         self.assertEqual(value.width, 32)
         self.assertEqual(value.unsigned, 0xFFFFFFFF)
         self.assertEqual(value.signed_value, -1)
+
+    def test_unsized_decimal_is_signed(self):
+        value = parse_value("42")
+        self.assertEqual(value.width, 32)
+        self.assertTrue(value.signed)
+        self.assertEqual(value.signed_value, 42)
 
     def test_2state_rejects_x(self):
         with self.assertRaises(ValueError2State):
@@ -74,6 +80,54 @@ class OpTests(unittest.TestCase):
     def test_bad_slice(self):
         with self.assertRaises(WidthError):
             ops.slice_bits(parse_value("8'hff"), 15, 8)
+
+    def test_mixed_signed_unsigned_is_unsigned(self):
+        signed_ff = parse_value("8'shff")
+        unsigned_one = parse_value("8'h01")
+        self.assertFalse(ops.compare("<", signed_ff, unsigned_one).truthy())
+        result = ops.binary_arithmetic("+", signed_ff, unsigned_one)
+        self.assertFalse(result.signed)
+        self.assertEqual(result.unsigned, 0)
+
+    def test_binary_operands_use_common_width_before_interpretation(self):
+        signed_ff = parse_value("8'shff")
+        signed_one = parse_value("16'sh0001")
+        unsigned_one = parse_value("16'h0001")
+        signed_result = ops.binary_arithmetic("+", signed_ff, signed_one)
+        mixed_result = ops.binary_arithmetic("+", signed_ff, unsigned_one)
+        self.assertTrue(signed_result.signed)
+        self.assertEqual(signed_result.signed_value, 0)
+        self.assertFalse(mixed_result.signed)
+        self.assertEqual(mixed_result.unsigned, 0x0100)
+
+    def test_wide_division_never_uses_float(self):
+        result = ops.binary_arithmetic(
+            "/", parse_value("64'hffffffffffffffff"), parse_value("64'd3")
+        )
+        self.assertEqual(result.unsigned, 0x5555555555555555)
+        result_128 = ops.binary_arithmetic(
+            "/",
+            parse_value("128'hffffffffffffffffffffffffffffffff"),
+            parse_value("128'd3"),
+        )
+        self.assertEqual(
+            result_128.unsigned,
+            0x55555555555555555555555555555555,
+        )
+
+    def test_signed_division_and_remainder_truncate_toward_zero(self):
+        dividend = parse_value("32'sd-5")
+        positive = parse_value("32'sd3")
+        negative = parse_value("32'sd-3")
+        self.assertEqual(ops.binary_arithmetic("/", dividend, positive).signed_value, -1)
+        self.assertEqual(ops.binary_arithmetic("%", dividend, positive).signed_value, -2)
+        self.assertEqual(ops.binary_arithmetic("/", dividend, negative).signed_value, 1)
+        self.assertEqual(ops.binary_arithmetic("%", dividend, negative).signed_value, -2)
+
+    def test_division_by_zero_is_typed_for_divide_and_modulo(self):
+        for op in ("/", "%"):
+            with self.assertRaises(DivisionByZero):
+                ops.binary_arithmetic(op, parse_value("64'd1"), parse_value("64'd0"))
 
 
 class EvalTests(unittest.TestCase):

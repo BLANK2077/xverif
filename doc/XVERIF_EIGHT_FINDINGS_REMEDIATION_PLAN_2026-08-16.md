@@ -15,8 +15,8 @@
 
 | Finding | 处置 | 状态 |
 | --- | --- | --- |
-| XBIT-COR-01 | 完整修复混合 signed/unsigned 语义 | pending |
-| XBIT-COR-02 | 完整修复大整数除法与负数取模 | pending |
+| XBIT-COR-01 | 完整修复混合 signed/unsigned 语义 | completed |
+| XBIT-COR-02 | 完整修复大整数除法与负数取模 | completed |
 | MCP-POLICY-01 | 完整实现严格 mutation/artifact 权限模型 | pending |
 | MCP-BATCH-01 | 完整实现同对象防护、原子发布和资源预算 | pending |
 | XDEBUG-EXPORT-01 | 抽取公共 atomic artifact publisher 并统一 APB/AXI/stream | pending |
@@ -37,8 +37,8 @@
 
 | 阶段 | 内容 | 预期提交 | 状态 |
 | --- | --- | --- | --- |
-| P00 | 建立任务书、Goal 和基线 | 文档：建立八项评审修复计划与验收账本 | in_progress |
-| P01 | XBIT-COR-01/02 | 修复：统一 SystemVerilog 数值运算语义 | pending |
+| P00 | 建立任务书、Goal 和基线 | 文档：建立八项评审修复计划与验收账本 | completed (`945644c`) |
+| P01 | XBIT-COR-01/02 | 修复：统一 SystemVerilog 数值运算语义 | completed（待提交） |
 | P02 | MCP-POLICY-01 | 安全：建立 MCP mutation 与 artifact 权限边界 | pending |
 | P03 | MCP-BATCH-01 | 安全：加固 MCP batch 输入输出与资源预算 | pending |
 | P04 | XDEBUG-EXPORT-01 | 导出：统一协议 artifact 原子发布 | pending |
@@ -82,3 +82,5 @@ tool/action capability 必须显式声明：
 | 日期 | 阶段 | 结果 | 证据 |
 | --- | --- | --- | --- |
 | 2026-08-16 | P00 | 已建立任务书；待创建 Goal | 本文件 |
+| 2026-08-16 | P00 | 已创建任务 Goal 并冻结验收范围 | goal `01a00a63-7b21-7e41-86cf-d9432fda70ec` |
+| 2026-08-16 | P01 | xbit mixed-sign、共同位宽、64/128 位除法、负数余数与零除用例通过 | `xbit.unit`: 32 passed |

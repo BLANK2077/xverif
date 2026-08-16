@@ -82,6 +82,7 @@ def parse_value(text: str | int | bool | BitVector, *, state: str = "2state", de
         return BitVector(width, value, signed=signed, state=state, x_mask=x_mask, z_mask=z_mask)
     if _DEC_RE.match(raw):
         value = int(raw.replace("_", ""), 10)
-        signed = default_signed or value < 0
+        # An unsized decimal integer literal is signed in SystemVerilog.
+        signed = True
         return BitVector.from_int(value, signed=signed)
     raise ParseError("unsupported value literal", literal=raw)
