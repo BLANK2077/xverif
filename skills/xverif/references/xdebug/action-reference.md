@@ -33,6 +33,7 @@
 - APB、AXI、stream、event、signal、verify 等所有会返回逻辑值的 action 共享同一 `value_format` 合同。协议字段从配置中的真实 signal handle 取 NPI range size；stream select/concat 等派生表达式仅在操作数宽度均可证明时携带位宽。无法证明时不按 FSDB 文本长度猜测，检查 `summary.value_width_complete` 与 `summary.width_diagnostics`。
 - `stream.*`：通用 vld-data / vld-rdy-data 任务抽取，是重要能力。凡是可抽象成 `clock + vld + data`，并可选 `rdy`、`bp`、`sop/eop`、`channel_id` 的外部接口、模块内部交互、pipeline stage、FIFO/queue 出入口、仲裁请求授予、RM/scoreboard 内部任务流，都可以注册 stream 后查询 transfer、stall、packet、多字段 filter 或导出 beats。一次性条件找点用 `event.find/export`；协议统计用 `protocol.handshake.inspect`；标准 AXI/APB 可优先用专用 action；非标准或模块内部 vld-data 任务优先考虑 stream。stream action 字段统一写 `stream`，不写 `name`。
 - `stream.query`、`stream.export` 和 `stream.validate(dynamic:true)` 的 `cache_scope` 默认 `full`：完整 FSDB 只构建一次 base，response 仍严格使用请求的 `time_range`。预计连续 query/export/dynamic validate 或多个不同窗口时保持 `full`；明确的一次性窄窗口可显式用 `range`。`range` 必须同时提供非空 `time_range`，并使用独立 range key；不同 range 不合并，也不改用 full。
+- `apb.export`、`axi.export` 和 `stream.export` 的 artifact 采用 create-new 整组发布：目标任一文件已存在时拒绝导出，不覆盖旧文件；写入、同步或并发发布失败会在返回前回滚本次整组文件。需要重试时必须换用新的 output path/prefix，不要先假定已有文件可被覆盖。
 - 收到 `ANALYSIS_MEMORY_LIMIT_EXCEEDED` 后，agent 可以显式发起新的 `cache_scope:"range"` 窄窗口请求；这是用户可见的新请求，不是 engine fallback。range 仍失败时停止重试并建议使用 `x-npi` 做离线一次性分析。`stream.validate(dynamic:false)` 必须省略 `cache_scope`。
 - `window.verify`：sampled proof。用于证明某个 clock window 内条件 always/eventually/never 是否成立；适合最终证明，不适合枚举原始 value-change timeline。
 - `signal.changes`：raw timeline。用于列出某个信号的精确变化时间；需要按表达式关联多信号时改用 `event.find/export`。

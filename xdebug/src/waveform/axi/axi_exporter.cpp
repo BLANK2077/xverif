@@ -1,9 +1,8 @@
 #include "axi_exporter.h"
+#include "waveform/common/atomic_artifact_publisher.h"
 
 #include <algorithm>
-#include <fstream>
 #include <sstream>
-#include <sys/stat.h>
 
 namespace xdebug_waveform {
 
@@ -23,28 +22,6 @@ bool txn_less(const AxiExportTransaction& lhs, const AxiExportTransaction& rhs) 
     return lhs.seq < rhs.seq;
 }
 
-bool ensure_parent_dir(const std::string& path) {
-    size_t slash = path.find_last_of('/');
-    if (slash == std::string::npos) return true;
-    std::string dir = path.substr(0, slash);
-    if (dir.empty()) return true;
-    std::string current = dir[0] == '/' ? "/" : "";
-    size_t pos = dir[0] == '/' ? 1 : 0;
-    while (pos <= dir.size()) {
-        size_t next = dir.find('/', pos);
-        std::string part = dir.substr(pos,
-            next == std::string::npos ? std::string::npos : next - pos);
-        if (!part.empty()) {
-            if (!current.empty() && current[current.size() - 1] != '/') current += "/";
-            current += part;
-            mkdir(current.c_str(), 0700);
-        }
-        if (next == std::string::npos) break;
-        pos = next + 1;
-    }
-    return true;
-}
-
 char sep_for(const std::string& format) {
     return format == "csv" ? ',' : '\t';
 }
@@ -53,7 +30,7 @@ std::string sv_hex(const std::string& value) {
     return "'h" + value;
 }
 
-void write_header(std::ofstream& out, char sep) {
+void write_header(std::ostream& out, char sep) {
     out << "seq" << sep << "completion_time" << sep << "addr_time" << sep
         << "first_data_time" << sep << "last_data_time" << sep << "latency" << sep
         << "phase_order" << sep << "response_dependency_violation" << sep
@@ -62,7 +39,7 @@ void write_header(std::ofstream& out, char sep) {
         << "expected_beat_count" << "\n";
 }
 
-void write_txn(std::ofstream& out, char sep, const AxiExportTransaction& txn) {
+void write_txn(std::ostream& out, char sep, const AxiExportTransaction& txn) {
     npiFsdbTime latency = txn.completion_time >= txn.addr_time
         ? txn.completion_time - txn.addr_time : 0;
     out << txn.seq << sep << format_time(txn.completion_time) << sep
@@ -174,26 +151,23 @@ bool AxiExporter::write_files(const std::string& output_prefix,
     write_file = output_prefix + ".write" + suffix;
     read_file = output_prefix + ".read" + suffix;
     meta_file = output_prefix + ".meta.json";
-    ensure_parent_dir(write_file);
     char sep = sep_for(result.format);
-    {
-        std::ofstream out(write_file.c_str());
-        if (!out) { error = "failed to write AXI write export: " + write_file; return false; }
+    std::vector<AtomicArtifact> artifacts;
+    artifacts.emplace_back(write_file, [&](std::ostream& out, std::string&) {
         write_header(out, sep);
         for (const auto& txn : result.writes) write_txn(out, sep, txn);
-    }
-    {
-        std::ofstream out(read_file.c_str());
-        if (!out) { error = "failed to write AXI read export: " + read_file; return false; }
+        return true;
+    });
+    artifacts.emplace_back(read_file, [&](std::ostream& out, std::string&) {
         write_header(out, sep);
         for (const auto& txn : result.reads) write_txn(out, sep, txn);
-    }
-    {
-        std::ofstream out(meta_file.c_str());
-        if (!out) { error = "failed to write AXI export meta: " + meta_file; return false; }
+        return true;
+    });
+    artifacts.emplace_back(meta_file, [&](std::ostream& out, std::string&) {
         out << axi_export_meta_json(result, write_file, read_file, meta_file).dump(2) << "\n";
-    }
-    return true;
+        return true;
+    });
+    return publish_atomic_artifact_set(artifacts, error);
 }
 
 Json axi_export_meta_json(const AxiExportResult& result,

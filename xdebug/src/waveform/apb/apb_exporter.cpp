@@ -3,15 +3,11 @@
 #include "core/npi/time_contract.h"
 #include "core/session/request_deadline.h"
 #include "core/value/logic_value.h"
+#include "waveform/common/atomic_artifact_publisher.h"
 
-#include <cerrno>
-#include <cstdio>
-#include <cstring>
 #include <fstream>
 #include <map>
 #include <set>
-#include <sys/stat.h>
-#include <unistd.h>
 
 namespace xdebug_waveform {
 namespace {
@@ -31,74 +27,6 @@ std::string csv_field(const std::string& value, char separator) {
         if (ch == '"') escaped += '"';
     }
     return escaped + "\"";
-}
-
-bool ensure_directory(const std::string& directory, std::string& error) {
-    if (directory.empty()) return true;
-    std::string current = directory[0] == '/' ? "/" : std::string();
-    std::size_t position = directory[0] == '/' ? 1 : 0;
-    while (position <= directory.size()) {
-        const std::size_t next = directory.find('/', position);
-        const std::string part = directory.substr(
-            position, next == std::string::npos ? std::string::npos
-                                                : next - position);
-        if (!part.empty()) {
-            if (!current.empty() && current.back() != '/') current += '/';
-            current += part;
-            if (mkdir(current.c_str(), 0700) != 0 && errno != EEXIST) {
-                error = "failed to create APB export directory " + current +
-                        ": " + std::strerror(errno);
-                return false;
-            }
-            struct stat info {};
-            if (stat(current.c_str(), &info) != 0 || !S_ISDIR(info.st_mode)) {
-                error = "APB export parent is not a directory: " + current;
-                return false;
-            }
-        }
-        if (next == std::string::npos) break;
-        position = next + 1;
-    }
-    return true;
-}
-
-bool make_temp_path(const std::string& target, std::string& temporary,
-                    std::string& error) {
-    std::string pattern = target + ".tmp.XXXXXX";
-    std::vector<char> writable(pattern.begin(), pattern.end());
-    writable.push_back('\0');
-    const int fd = mkstemp(writable.data());
-    if (fd < 0) {
-        error = "failed to create APB export temporary file for " + target +
-                ": " + std::strerror(errno);
-        return false;
-    }
-    close(fd);
-    temporary = writable.data();
-    return true;
-}
-
-bool file_bytes(const std::string& path, std::uint64_t& bytes,
-                std::string& error) {
-    struct stat info {};
-    if (stat(path.c_str(), &info) != 0 || !S_ISREG(info.st_mode)) {
-        error = "failed to stat APB export file: " + path;
-        return false;
-    }
-    bytes = static_cast<std::uint64_t>(info.st_size);
-    return true;
-}
-
-bool target_available(const std::string& path, std::string& error) {
-    struct stat info {};
-    if (lstat(path.c_str(), &info) == 0) {
-        error = "APB export target already exists: " + path;
-        return false;
-    }
-    if (errno == ENOENT) return true;
-    error = "failed to inspect APB export target " + path + ": " +
-            std::strerror(errno);
-    return false;
 }
 
 Json meta_json(npiFsdbFileHandle fsdb, const ApbExportResult& result,
@@ -210,38 +138,9 @@ bool ApbExporter::write_files(
     std::string& error) const {
     data_path = output_prefix + (result.format == "csv" ? ".csv" : ".tsv");
     meta_path = output_prefix + ".meta.json";
-    if (!target_available(data_path, error) ||
-        !target_available(meta_path, error))
-        return false;
-    const std::size_t slash = output_prefix.find_last_of('/');
-    if (slash != std::string::npos &&
-        !ensure_directory(output_prefix.substr(0, slash), error))
-        return false;
-    std::string data_temp;
-    std::string meta_temp;
-    struct TemporaryFiles {
-        std::string* data;
-        std::string* meta;
-        ~TemporaryFiles() {
-            if (!data->empty()) unlink(data->c_str());
-            if (!meta->empty()) unlink(meta->c_str());
-        }
-    } temporary_files{&data_temp, &meta_temp};
-    if (!make_temp_path(data_path, data_temp, error)) return false;
-    if (!make_temp_path(meta_path, meta_temp, error)) {
-        unlink(data_temp.c_str());
-        return false;
-    }
-    auto fail = [&](const std::string& message) {
-        error = message;
-        unlink(data_temp.c_str());
-        unlink(meta_temp.c_str());
-        return false;
-    };
     const char separator = result.format == "csv" ? ',' : '\t';
-    {
-        std::ofstream out(data_temp.c_str(), std::ios::trunc);
-        if (!out) return fail("failed to open APB export data file: " + data_path);
+    std::vector<AtomicArtifact> artifacts;
+    artifacts.emplace_back(data_path, [&](std::ostream& out, std::string&) {
         out << "time" << separator << "direction" << separator << "addr"
             << separator << "data" << separator << "has_error\n";
         for (const ApbTransaction* transaction : result.transactions) {
@@ -253,30 +152,16 @@ bool ApbExporter::write_files(
                 << csv_field(row["data"].get<std::string>(), separator) << separator
                 << (row["has_error"].get<bool>() ? "true" : "false") << '\n';
         }
-        out.close();
-        if (!out) return fail("failed to write APB export data file: " + data_path);
-    }
-    if (!file_bytes(data_temp, data_bytes, error)) return fail(error);
-    {
-        std::ofstream out(meta_temp.c_str(), std::ios::trunc);
-        if (!out) return fail("failed to open APB export meta file: " + meta_path);
-        out << meta_json(fsdb, result, data_path, meta_path, data_bytes).dump(2)
+        return true;
+    });
+    artifacts.emplace_back(meta_path, [&](std::ostream& out, std::string&) {
+        out << meta_json(fsdb, result, data_path, meta_path,
+                         artifacts.front().bytes).dump(2)
             << '\n';
-        out.close();
-        if (!out) return fail("failed to write APB export meta file: " + meta_path);
-    }
-    if (link(data_temp.c_str(), data_path.c_str()) != 0)
-        return fail("failed to publish APB export data file: " + data_path +
-                    ": " + std::strerror(errno));
-    unlink(data_temp.c_str());
-    data_temp.clear();
-    if (link(meta_temp.c_str(), meta_path.c_str()) != 0) {
-        unlink(data_path.c_str());
-        return fail("failed to publish APB export meta file: " + meta_path +
-                    ": " + std::strerror(errno));
-    }
-    unlink(meta_temp.c_str());
-    meta_temp.clear();
+        return true;
+    });
+    if (!publish_atomic_artifact_set(artifacts, error)) return false;
+    data_bytes = artifacts.front().bytes;
     return true;
 }
 

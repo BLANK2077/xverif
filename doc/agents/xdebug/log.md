@@ -1,5 +1,13 @@
 # xdebug 架构说明书维护日志
 
+## 2026-08-16
+
+- 新增公共 atomic artifact publisher，APB、AXI、stream exporter 统一使用同目录暂存、
+  文件 `fsync`、create-new 发布、整组失败回滚和目录 `fsync`；同 prefix 重试或并发导出
+  不覆盖既有结果，普通失败返回后不遗留部分 artifact set 或临时文件。
+- 新增独立 C++ publisher 测试，覆盖已有目标、stream 写失败、重复目标和双进程并发发布；
+  APB/AXI/stream 的公开文件名、meta 内容与 response 合同保持不变。
+
 ## 2026-08-12
 
 - 新增 `apb.export` 公开合同：完整 time range、顶层 direction/address、固定 8 行 preview

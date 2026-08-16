@@ -194,6 +194,7 @@ WAVEFORM_SRCS = src/waveform/service/action_support.cpp \
                 src/waveform/list/list_manager.cpp \
                 src/waveform/cursor/cursor_manager.cpp \
                 src/waveform/common/xdebug_waveform_paths.cpp \
+                src/waveform/common/atomic_artifact_publisher.cpp \
                 src/waveform/common/versioned_json_store.cpp \
                 src/waveform/common/time_spec.cpp \
                 src/waveform/common/clock_sampling.cpp \
@@ -335,6 +336,7 @@ $(eval $(call CPP_UNIT_BINARY,test_apb_manager,$(BUILD)/src/waveform/apb/apb_man
 $(eval $(call CPP_UNIT_BINARY,test_cursor_manager,$(BUILD)/src/waveform/cursor/cursor_manager.o $(BUILD)/src/waveform/common/xdebug_waveform_paths.o $(BUILD)/src/waveform/common/versioned_json_store.o $(BUILD)/src/core/common/tool_config.o $(BUILD)/src/core/common/path_utils.o $(BUILD)/src/core/common/env_config.o,))
 $(eval $(call CPP_UNIT_BINARY,test_list_manager,$(BUILD)/src/waveform/list/list_manager.o $(BUILD)/src/waveform/common/xdebug_waveform_paths.o $(BUILD)/src/waveform/common/versioned_json_store.o $(BUILD)/src/core/common/tool_config.o $(BUILD)/src/core/common/path_utils.o $(BUILD)/src/core/common/env_config.o,))
 $(eval $(call CPP_UNIT_BINARY,test_versioned_json_store,$(BUILD)/src/waveform/common/versioned_json_store.o,))
+$(eval $(call CPP_UNIT_BINARY,test_atomic_artifact_publisher,$(BUILD)/src/waveform/common/atomic_artifact_publisher.o,))
 $(eval $(call CPP_UNIT_BINARY,test_clock_sampling_event_manager,$(BUILD)/src/waveform/service/action_support.o $(BUILD)/src/waveform/service/config_support.o $(BUILD)/src/waveform/event/event_manager.o $(BUILD)/src/waveform/common/xdebug_waveform_paths.o $(BUILD)/src/waveform/common/versioned_json_store.o $(BUILD)/src/waveform/common/clock_sampling.o $(BUILD)/src/waveform/common/clock_sampling_response.o $(BUILD)/src/waveform/common/reset_config.o $(BUILD)/src/waveform/server/fsdb_value_reader.o $(BUILD)/src/waveform/server/fsdb_scan_utils.o $(CORE_OBJS),$(LDFLAGS)))
 
 cpp-unit-binaries: $(CPP_UNIT_BINARIES)

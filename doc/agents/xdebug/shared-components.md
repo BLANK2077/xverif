@@ -218,6 +218,23 @@ modport/mpport 是侧向关系，计入 visited/object budget，但不增加 hie
   directory `fsync`；只有成功后才按语义 fingerprint 通知 repository。description-only
   或同语义 replace 复用，写入/rename 失败保留旧文件与旧 cache。
 
+## Atomic Artifact Publisher
+
+路径：
+
+- `src/waveform/common/atomic_artifact_publisher.*`
+
+职责与要求：
+
+- APB、AXI 和 stream exporter 统一提交完整 artifact set，exporter 本身只提供每个文件的
+  内容 writer，不直接打开或截断最终路径。
+- 同组文件必须位于同一目录且目标名互不重复；目标已存在、软链接占位或并发 writer 抢先
+  发布时一律 create-new 失败，不能覆盖旧结果。
+- publisher 在目标同目录写临时文件，检查 writer/stream 状态，对每个文件执行 `fsync`，
+  再逐个 create-new 发布；任一写入、同步或发布失败都在返回前回滚整组最终名和临时文件。
+- 成功发布后删除临时名并对父目录执行 `fsync`。新增协议 exporter 必须复用该组件，并在
+  `test_atomic_artifact_publisher` 中覆盖 collision、writer failure 与 concurrent writer。
+
 ## Transport/File Exchange
 
 路径：

@@ -5,7 +5,7 @@
 - 日期：2026-08-16
 - 基线：`2f80afb`
 - 分支：`master`
-- 当前阶段：P03 batch 安全加固完成，准备进入 P04
+- 当前阶段：P04 protocol artifact 原子发布完成，准备进入 P05
 - 用户已有改动：`AGENTS.md`，本任务不得修改、暂存或提交该文件。
 - GitHub 边界：PR #3 与 issue #2 暂不处理，不移植、不回复、不关闭、不合并。
 
@@ -19,7 +19,7 @@
 | XBIT-COR-02 | 完整修复大整数除法与负数取模 | completed |
 | MCP-POLICY-01 | 完整实现严格 mutation/artifact 权限模型 | completed |
 | MCP-BATCH-01 | 完整实现同对象防护、原子发布和资源预算 | completed |
-| XDEBUG-EXPORT-01 | 抽取公共 atomic artifact publisher 并统一 APB/AXI/stream | pending |
+| XDEBUG-EXPORT-01 | 抽取公共 atomic artifact publisher 并统一 APB/AXI/stream | completed |
 | XSVA-COR-01 | 完整修复 sampled function 与层次信号依赖 | pending |
 | XCOV-CACHE-01 | 将并发容量合同明确为 best-effort soft limit | pending |
 | MCP-LIFE-01 | 完整实现可抢占 session 生命周期 | pending |
@@ -40,8 +40,8 @@
 | P00 | 建立任务书、Goal 和基线 | 文档：建立八项评审修复计划与验收账本 | completed (`945644c`) |
 | P01 | XBIT-COR-01/02 | 修复：统一 SystemVerilog 数值运算语义 | completed (`9a1b805`) |
 | P02 | MCP-POLICY-01 | 安全：建立 MCP mutation 与 artifact 权限边界 | completed (`0ba0844`) |
-| P03 | MCP-BATCH-01 | 安全：加固 MCP batch 输入输出与资源预算 | completed（待提交） |
-| P04 | XDEBUG-EXPORT-01 | 导出：统一协议 artifact 原子发布 | pending |
+| P03 | MCP-BATCH-01 | 安全：加固 MCP batch 输入输出与资源预算 | completed (`8966823`) |
+| P04 | XDEBUG-EXPORT-01 | 导出：统一协议 artifact 原子发布 | completed（待提交） |
 | P05 | XSVA-COR-01 | 修复：规范 sampled function 证据信号提取 | pending |
 | P06 | XCOV-CACHE-01 | 合同：明确 URG cache 并发软容量语义 | pending |
 | P07 | MCP-LIFE-01 | 生命周期：支持阻塞查询下的可抢占恢复 | pending |
@@ -88,3 +88,6 @@ tool/action capability 必须显式声明：
 | 2026-08-16 | P02 | admin skill 权限与排障文档合同通过 | `skills.xverif_admin`: 1 passed |
 | 2026-08-16 | P03 | batch 冻结输入并在执行前拒绝同路径、硬链接和软链接同对象，输入与请求数预算在执行前生效 | `xverif_mcp.process`: 151 passed |
 | 2026-08-16 | P03 | batch 输出经同目录暂存、fsync 和 create-new 原子发布；输出超限及发布失败不遗留部分结果 | `xverif_mcp.unit`: 180 passed；`skills.xverif_admin`: 1 passed |
+| 2026-08-16 | P04 | 公共 publisher 统一 APB/AXI/stream 的同目录暂存、逐文件 fsync、create-new、整组回滚和目录 fsync | `xdebug.cpp_unit`: 1 suite passed；host build `internal-engines` passed |
+| 2026-08-16 | P04 | 真实 FSDB 与 VIP 导出保持既有文件名、meta 和 response 合同 | `xdebug.contract`: 114 passed；`xdebug.stream`: 2 passed；`xdebug.apb_vip`: 1 passed；`xdebug.axi_vip`: 1 passed |
+| 2026-08-16 | P04 | xverif skill、公开文档与新增 C++ runner 纳管检查通过；并行 pytest 曾触发共享结果目录裁剪竞态，原入口串行重跑通过且已按仓库规则复盘 | `skills.xverif`: 16 passed；`skills.public_docs`: 4 passed；`testinfra.unit`: 54 passed |
