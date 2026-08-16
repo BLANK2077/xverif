@@ -70,6 +70,12 @@ def _load_server(
     monkeypatch.setenv("XVERIF_MCP_BACKEND", backend)
     monkeypatch.setenv("XVERIF_MCP_STARTUP_TIMEOUT_SEC", "30")
     monkeypatch.setenv("XVERIF_MCP_REQUEST_TIMEOUT_SEC", "60")
+    monkeypatch.setenv("XVERIF_MCP_ENABLE_MUTATION", "1")
+    monkeypatch.setenv("XVERIF_MCP_ENABLE_ARTIFACT_WRITE", "1")
+    monkeypatch.setenv(
+        "XVERIF_MCP_ARTIFACT_ROOT",
+        str(isolated_home.parent),
+    )
     pythonpath = str(MCP_SRC)
     if os.environ.get("PYTHONPATH"):
         pythonpath += os.pathsep + os.environ["PYTHONPATH"]
@@ -452,13 +458,18 @@ def test_mcp_batch_runs_real_session_workflow(
                 },
             )
         )
-        assert result == {
+        assert {
+            key: value
+            for key, value in result.items()
+            if key != "output_bytes"
+        } == {
             "ok": True,
             "total": 3,
             "ok_count": 3,
             "failed_count": 0,
             "output_file": str(output_file),
         }
+        assert result["output_bytes"] == output_file.stat().st_size
         output_rows = [
             json.loads(line)
             for line in output_file.read_text(encoding="utf-8").splitlines()

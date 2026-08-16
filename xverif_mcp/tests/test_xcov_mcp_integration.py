@@ -38,13 +38,22 @@ POLICY_ENV = [
     "XVERIF_MCP_ENABLE_ENTRY",
     "XVERIF_MCP_ENABLE_LOC",
     "XVERIF_MCP_ENABLE_SVA",
+    "XVERIF_MCP_ENABLE_MUTATION",
+    "XVERIF_MCP_ENABLE_ARTIFACT_WRITE",
+    "XVERIF_MCP_ARTIFACT_ROOT",
 ]
 
 
 def _server(monkeypatch, overrides=None):
     for name in POLICY_ENV:
         monkeypatch.delenv(name, raising=False)
-    for name, value in (overrides or {}).items():
+    resolved_overrides = overrides or {}
+    monkeypatch.setenv("XVERIF_MCP_ENABLE_MUTATION", "1")
+    export_roots = resolved_overrides.get("XVERIF_XCOV_EXPORT_ROOTS")
+    if export_roots:
+        monkeypatch.setenv("XVERIF_MCP_ENABLE_ARTIFACT_WRITE", "1")
+        monkeypatch.setenv("XVERIF_MCP_ARTIFACT_ROOT", export_roots)
+    for name, value in resolved_overrides.items():
         monkeypatch.setenv(name, value)
     if "xverif_mcp.server" in sys.modules:
         return importlib.reload(sys.modules["xverif_mcp.server"])

@@ -36,6 +36,9 @@ def test_full_action_smoke_uses_published_combined_fixture(tmp_path, xverif_fixt
         "XVERIF_TEST_TMPDIR": str(isolated_state),
         "XVERIF_MCP_LOG_DIR": str(tmp_path / "mcp-logs"),
         "XVERIF_LOOP_LOG_DIR": str(tmp_path / "loop-logs"),
+        "XVERIF_MCP_ENABLE_MUTATION": "1",
+        "XVERIF_MCP_ENABLE_ARTIFACT_WRITE": "1",
+        "XVERIF_MCP_ARTIFACT_ROOT": str(tmp_path),
     })
     result = subprocess.run(
         [
