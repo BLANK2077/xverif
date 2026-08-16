@@ -530,8 +530,168 @@ class TestLoopSessionQuery:
         assert len(results) == 2, f"expected 2 results, got {len(results)}; errors={errors}"
         assert all(r.get("ok") for r in results)
 
+    def test_kill_preempts_blocked_query_without_state_resurrection(
+        self,
+        session,
+        monkeypatch,
+    ):
+        """kill 不应排在阻塞 query 后面，旧 query 也不能复活状态。"""
+        assert session.open()["ok"] is True
+        request_started = threading.Event()
+        original_request = session.handle.request
+
+        def observed_request(request, timeout_sec):
+            if request.get("action") == "value.at":
+                request_started.set()
+            return original_request(request, timeout_sec)
+
+        monkeypatch.setattr(session.handle, "request", observed_request)
+        query_results = []
+        query_thread = threading.Thread(
+            target=lambda: query_results.append(
+                session.query(
+                    "value.at",
+                    {"signal": "clk", "sleep": 30},
+                    output_format="json",
+                )
+            )
+        )
+        query_thread.start()
+        assert request_started.wait(timeout=2)
+
+        started = time.monotonic()
+        killed = session.kill()
+        elapsed = time.monotonic() - started
+        query_thread.join(timeout=2)
+
+        assert elapsed < 2
+        assert killed["ok"] is True
+        assert session.handle is None
+        assert session.state == "closed"
+        assert not query_thread.is_alive()
+        assert query_results[0]["error"]["code"] == "SESSION_LOST"
+        assert (
+            query_results[0]["error"]["cleanup"]["subprocess"]
+            == "already_detached"
+        )
+
+    def test_doctor_does_not_wait_for_blocked_request_lane(
+        self,
+        session,
+        monkeypatch,
+    ):
+        assert session.open()["ok"] is True
+        request_started = threading.Event()
+        original_request = session.handle.request
+
+        def observed_request(request, timeout_sec):
+            if request.get("action") == "value.at":
+                request_started.set()
+            return original_request(request, timeout_sec)
+
+        monkeypatch.setattr(session.handle, "request", observed_request)
+        query_thread = threading.Thread(
+            target=lambda: session.query(
+                "value.at",
+                {"signal": "clk", "sleep": 0.5},
+                output_format="json",
+            )
+        )
+        query_thread.start()
+        assert request_started.wait(timeout=2)
+
+        started = time.monotonic()
+        result = session.doctor(verbose=True)
+        elapsed = time.monotonic() - started
+        query_thread.join(timeout=2)
+
+        assert elapsed < 0.5
+        assert result["summary"]["source"] == "fixed_native_admin"
+        assert result["summary"]["backend_healthy"] is True
+        assert not query_thread.is_alive()
+
 
 class TestLoopSessionClose:
+    def test_close_returns_busy_without_waiting_for_blocked_query(
+        self,
+        session,
+        monkeypatch,
+    ):
+        assert session.open()["ok"] is True
+        request_started = threading.Event()
+        original_request = session.handle.request
+
+        def observed_request(request, timeout_sec):
+            if request.get("action") == "value.at":
+                request_started.set()
+            return original_request(request, timeout_sec)
+
+        monkeypatch.setattr(session.handle, "request", observed_request)
+        query_thread = threading.Thread(
+            target=lambda: session.query(
+                "value.at",
+                {"signal": "clk", "sleep": 0.5},
+                output_format="json",
+            )
+        )
+        query_thread.start()
+        assert request_started.wait(timeout=2)
+
+        started = time.monotonic()
+        result = session.close()
+        elapsed = time.monotonic() - started
+        query_thread.join(timeout=2)
+
+        assert elapsed < 0.5
+        assert result["ok"] is False
+        assert result["error"]["code"] == "SESSION_BUSY"
+        assert result["session_preserved"] is True
+        assert session.state == "alive"
+        assert not query_thread.is_alive()
+
+    def test_manager_preserves_busy_session(
+        self,
+        session,
+        monkeypatch,
+    ):
+        manager = McpSessionManager(
+            runtime=TEST_RUNTIME,
+            xdebug_bin=session.xdebug_bin,
+            logger=TEST_LOGGER,
+        )
+        assert manager.open_session("busy", fsdb="test.fsdb")["ok"] is True
+        managed = manager.sessions["busy"]
+        request_started = threading.Event()
+        original_request = managed.handle.request
+
+        def observed_request(request, timeout_sec):
+            if request.get("action") == "value.at":
+                request_started.set()
+            return original_request(request, timeout_sec)
+
+        monkeypatch.setattr(managed.handle, "request", observed_request)
+        query_thread = threading.Thread(
+            target=lambda: manager.query(
+                "busy",
+                "value.at",
+                {"signal": "clk", "sleep": 0.5},
+                output_format="json",
+            )
+        )
+        query_thread.start()
+        assert request_started.wait(timeout=2)
+
+        result = manager.close_session("busy")
+        query_thread.join(timeout=2)
+
+        assert result["error"]["code"] == "SESSION_BUSY"
+        assert result["session_preserved"] is True
+        assert manager.sessions["busy"] is managed
+        assert "busy" not in manager.tombstones
+        assert managed.state == "alive"
+        assert not query_thread.is_alive()
+        manager.kill_session("busy")
+
     def test_close_changes_state(self, session):
         session.open()
         r = session.close()

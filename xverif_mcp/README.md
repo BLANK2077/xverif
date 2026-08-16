@@ -7,7 +7,9 @@
 - **xbit / xentry / xloc**：stateless in-process adapter，调用各工具公开 Python contract。
 - **xsva**：stateless CLI adapter，只调用 `tools/xsva` 公开 CLI；JSON 按公开合同校验，command-specific XOUT 领域文本原样传递，不导入 private serializer。
 
-xdebug/xcov direct 和 LSF 共用 stdio-loop session manager，只在 `Launcher` 层分离。每 session 独立进程，同 session 串行（request_lock），多 session 可并行。
+xdebug/xcov direct 和 LSF 共用 stdio-loop session manager，只在 `Launcher` 层分离。每 session 独立进程，同 session 的 query 通过独立 request lane 串行，多 session 可并行；生命周期状态锁不跨越阻塞的 backend request。
+
+阻塞 query 不会阻塞 recovery lane：`kill` 会先原子摘除 loop handle，再终止进程，并按 backend 能力通过独立 fixed native admin path 完成条件清理；旧 query 的迟到异常不能覆盖最终 lifecycle 状态。普通 `close` 若 request lane 正忙，会立即返回可重试的 `SESSION_BUSY` 并保留 session；`doctor` 不等待 busy lane，xdebug 改走 fixed native admin path，无法独立探测的 backend 则明确报告 health unknown。
 
 MCP 层保持轻量：它只负责启动/终止 `tools/xdebug --stdio-loop` 或
 `tools/xcov --stdio-loop` 进程、维护单一 canonical `session_id` 索引、转发 JSON request、

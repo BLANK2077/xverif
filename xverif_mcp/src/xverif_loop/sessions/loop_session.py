@@ -46,6 +46,53 @@ def _serialized_lifecycle(method):
     return wrapped
 
 
+def _redacted_operation(method):
+    """Redact a public result without holding the lifecycle state lock."""
+
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        result = method(self, *args, **kwargs)
+        with self._lifecycle_lock:
+            ownership_token = self._ownership_token
+        return redact_sensitive_json(
+            result,
+            secret_values=(ownership_token,),
+        )
+
+    return wrapped
+
+
+def _bounded_close(method):
+    """Reserve the request lane or fail immediately without changing state."""
+
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        force = bool(kwargs.get("force", args[0] if args else False))
+        lane_acquired = force or self._request_lock.acquire(blocking=False)
+        if not lane_acquired:
+            result = _error(
+                "SESSION_BUSY",
+                "session request lane is busy; retry close or use kill",
+                session=self.public_json(),
+            )
+            result["session_preserved"] = True
+            result["retryable"] = True
+        else:
+            try:
+                result = method(self, *args, **kwargs)
+            finally:
+                if not force:
+                    self._request_lock.release()
+        with self._lifecycle_lock:
+            ownership_token = self._ownership_token
+        return redact_sensitive_json(
+            result,
+            secret_values=(ownership_token,),
+        )
+
+    return wrapped
+
+
 def _safe_name(s: str, max_len: int = 64) -> str:
     x = re.sub(r"[^A-Za-z0-9_]", "_", s).strip("_")
     return (x or "unnamed")[:max_len]
@@ -148,6 +195,11 @@ class XdebugLoopSession:
         default_factory=threading.RLock,
         repr=False,
     )
+    _request_lock: threading.RLock = field(
+        default_factory=threading.RLock,
+        repr=False,
+    )
+    _lifecycle_generation: int = field(default=0, repr=False)
 
     def _attach_observability(
         self,
@@ -181,10 +233,14 @@ class XdebugLoopSession:
         proc = getattr(h, "proc", None)
         return proc is not None and proc.poll() is None
 
-    @_serialized_lifecycle
-    def abort(self, reason: str, source: str = "transport") -> Json:
-        self.state = "dead"
-        self.last_error = reason
+    @_redacted_operation
+    def abort(
+        self,
+        reason: str,
+        source: str = "transport",
+        *,
+        expected_generation: Optional[int] = None,
+    ) -> Json:
         capability = lifecycle_capability(self.backend)
         cleanup: Json = {
             "source": source,
@@ -196,21 +252,37 @@ class XdebugLoopSession:
                 else "not_applicable"
             ),
         }
+        with self._lifecycle_lock:
+            if (
+                expected_generation is not None
+                and expected_generation != self._lifecycle_generation
+            ):
+                return {
+                    "source": source,
+                    "subprocess": "already_detached",
+                    "lsf_job": "not_applicable",
+                    "backend_cleanup": "superseded_by_lifecycle_operation",
+                }
+            self.state = "dead"
+            self.last_error = reason
+            handle = self.handle
+            self.handle = None
+            self._lifecycle_generation += 1
+            session_id = self.session_id
+            if handle is not None:
+                self._capture_scheduler_handle(handle)
         self.logger.try_session(
             self.alias,
             "session.abort.begin",
             False,
             backend=self.backend,
             launcher=self.launcher.mode,
-            session_id=self.session_id,
+            session_id=session_id,
             reason=reason,
             source=source,
             state=self.state,
         )
-        handle = self.handle
-        self.handle = None
         if handle is not None:
-            self._capture_scheduler_handle(handle)
             try:
                 termination = self.launcher.terminate(handle)
                 cleanup["subprocess"] = "terminated"
@@ -225,14 +297,15 @@ class XdebugLoopSession:
                     "result",
                     {"ok": False, "error_type": type(exc).__name__},
                 )
-        self.last_cleanup = cleanup
+        with self._lifecycle_lock:
+            self.last_cleanup = cleanup
         self.logger.try_session(
             self.alias,
             "session.abort.end",
             cleanup.get("subprocess") != "cleanup_failed",
             backend=self.backend,
             launcher=self.launcher.mode,
-            session_id=self.session_id,
+            session_id=session_id,
             cleanup=cleanup,
             job_id=(
                 getattr(handle, "job_id", None)
@@ -423,6 +496,7 @@ class XdebugLoopSession:
                 else "not_applicable"
             )
             self.handle = self.launcher.start(cfg)
+            self._lifecycle_generation += 1
             if self.launcher.mode == "lsf":
                 self.scheduler_status = "submitted"
                 self._capture_scheduler_handle(self.handle)
@@ -626,7 +700,7 @@ class XdebugLoopSession:
                 observability_cursor,
             )
 
-    @_serialized_lifecycle
+    @_bounded_close
     def close(
         self,
         force: bool = False,
@@ -783,7 +857,7 @@ class XdebugLoopSession:
             observability_cursor,
         )
 
-    @_serialized_lifecycle
+    @_redacted_operation
     def doctor(self, verbose: bool = False) -> Json:
         capability = lifecycle_capability(self.backend)
         transport_alive = self.process_alive()
@@ -798,10 +872,20 @@ class XdebugLoopSession:
             }
             _attach_trace_id(req, self.backend, self.alias)
             _request_native_json(req, self.backend)
-            try:
-                backend_response = _backend_payload(self._call_raw(req))
-            except Exception as exc:
-                backend_response = _error("DOCTOR_TRANSPORT_FAILED", str(exc))
+            if self._request_lock.acquire(blocking=False):
+                try:
+                    backend_response = _backend_payload(self._call_raw(req))
+                except Exception as exc:
+                    backend_response = _error("DOCTOR_TRANSPORT_FAILED", str(exc))
+                finally:
+                    self._request_lock.release()
+            elif capability.fixed_admin_path:
+                source = "fixed_native_admin"
+                backend_response = self._call_native_admin(
+                    capability.native_health_action
+                )
+            else:
+                source = "request_lane_busy"
         elif capability.fixed_admin_path and self.session_id:
             source = "fixed_native_admin"
             backend_response = self._call_native_admin(capability.native_health_action)
@@ -832,7 +916,7 @@ class XdebugLoopSession:
             "observability": self.logger.observability_status(),
         }
 
-    @_serialized_lifecycle
+    @_redacted_operation
     def kill(self) -> Json:
         observability_cursor = self.logger.failure_cursor()
         capability = lifecycle_capability(self.backend)
@@ -856,64 +940,20 @@ class XdebugLoopSession:
         }
         errors: Json = {}
         response: Optional[Json] = None
-        transport_ambiguous = False
-        conditional_target = self.session_id or self.alias
-        conditional_token = (
-            self._ownership_token
-            if capability.supports_conditional_cleanup_token
-            else None
-        )
-
-        if (
-            capability.native_kill_action
-            and self.session_id
-            and self.state == "alive"
-            and self.process_alive()
-        ):
-            req: Json = {
-                "request_id": f"kill-{_safe_name(self.alias)}",
-                "api_version": self.api_version,
-                "action": capability.native_kill_action,
-                "target": {"session_id": self.session_id},
-            }
-            if conditional_token:
-                req["args"] = {
-                    "mode": "force",
-                    "ownership_token": conditional_token,
-                }
-            elif self.backend == "xdebug":
-                req["args"] = {"mode": "force"}
-            _attach_trace_id(req, self.backend, self.alias)
-            _request_native_json(req, self.backend)
-            try:
-                response = _backend_payload(
-                    self._call_raw(
-                        req,
-                        timeout=self.runtime.close_timeout_sec,
-                    )
-                )
-            except Exception as exc:
-                transport_ambiguous = True
-                stages["native_kill"] = "transport_unresolved"
-                errors["native_transport"] = {
-                    "error_type": type(exc).__name__,
-                }
-        elif capability.native_kill_action and capability.fixed_admin_path:
-            response = self._call_native_admin(
-                capability.native_kill_action,
-                session_id=conditional_target,
-                ownership_token=conditional_token,
+        with self._lifecycle_lock:
+            conditional_target = self.session_id or self.alias
+            conditional_token = (
+                self._ownership_token
+                if capability.supports_conditional_cleanup_token
+                else None
             )
-        elif capability.native_kill_action:
-            response = _error(
-                "NATIVE_KILL_UNAVAILABLE",
-                "native kill path unavailable",
-            )
-
-        handle = self.handle
-        self.handle = None
+            handle = self.handle
+            self.handle = None
+            self.state = "terminating"
+            self._lifecycle_generation += 1
+            if handle is not None:
+                self._capture_scheduler_handle(handle)
         if handle is not None:
-            self._capture_scheduler_handle(handle)
             try:
                 termination = self.launcher.terminate(handle)
                 stages["loop_terminate"] = "ok"
@@ -936,22 +976,21 @@ class XdebugLoopSession:
         else:
             stages["loop_terminate"] = "already_exited"
 
-        if (
-            transport_ambiguous
-            and capability.native_kill_action
-            and capability.fixed_admin_path
-        ):
-            # The loop response is unknowable after transport loss.  Resolve
-            # this same cleanup operation through the fixed admin path using
-            # the conditional key; this cannot remove an alias owned by a
-            # different session.open.
+        if capability.native_kill_action and capability.fixed_admin_path:
+            # Kill is the recovery lane: never wait behind a blocked loop
+            # request.  Terminate the loop first, then conditionally clean the
+            # exact backend session through the independent admin process.
             response = self._call_native_admin(
                 capability.native_kill_action,
                 session_id=conditional_target,
                 ownership_token=conditional_token,
             )
             stages["native_kill_resolution"] = "fixed_native_admin"
-            errors.pop("native_transport", None)
+        elif capability.native_kill_action:
+            response = _error(
+                "NATIVE_KILL_UNAVAILABLE",
+                "native kill path unavailable",
+            )
 
         if capability.native_kill_action:
             if response is None:
@@ -975,16 +1014,18 @@ class XdebugLoopSession:
                     stages["native_kill"] = "failed"
                     errors["native_kill"] = response
 
-        self.last_cleanup = stages
+        with self._lifecycle_lock:
+            self.last_cleanup = stages
         if errors:
             stages["errors"] = errors
-            self.state = (
-                "orphan_suspected"
-                if capability.backend_survives_loop
-                else "cleanup_partial"
-            )
-            if self.launcher.mode == "lsf":
-                self.scheduler_status = "cleanup_partial"
+            with self._lifecycle_lock:
+                self.state = (
+                    "orphan_suspected"
+                    if capability.backend_survives_loop
+                    else "cleanup_partial"
+                )
+                if self.launcher.mode == "lsf":
+                    self.scheduler_status = "cleanup_partial"
             result = _error(
                 "SESSION_CLEANUP_PARTIAL_FAILURE",
                 "session kill cleanup was only partially confirmed",
@@ -1005,9 +1046,10 @@ class XdebugLoopSession:
                 result,
                 observability_cursor,
             )
-        self.state = "closed"
-        if self.launcher.mode == "lsf":
-            self.scheduler_status = "closed"
+        with self._lifecycle_lock:
+            self.state = "closed"
+            if self.launcher.mode == "lsf":
+                self.scheduler_status = "closed"
         self.logger.try_session(
             self.alias,
             "session.kill.end",
@@ -1105,28 +1147,32 @@ class XdebugLoopSession:
             )
         return payload
 
-    @_serialized_lifecycle
+    @_redacted_operation
     def query(self, action: str, args: Optional[Json] = None,
               target: Optional[Json] = None, limits: Optional[Json] = None,
               output: Optional[Json] = None, output_format: str = "xout",
               retain_transport_envelope: bool = False) -> Any:
-        if self.state != "alive" or not self.session_id:
-            return _error("SESSION_DEAD", f"session is not alive: {self.alias}")
+        with self._lifecycle_lock:
+            if self.state != "alive" or not self.session_id:
+                return _error("SESSION_DEAD", f"session is not alive: {self.alias}")
+            self._seq += 1
+            request_seq = self._seq
+            session_id = self.session_id
+            request_generation = self._lifecycle_generation
         if self.backend == "xcov" and (limits is not None or output is not None):
             return _error(
                 "INVALID_ARGUMENT",
                 "xcov limits and artifact output must be nested inside action args",
                 error_layer="wrapper",
             )
-        self._seq += 1
         req: Json = {
-            "request_id": f"{_safe_name(self.alias)}-{self._seq}",
+            "request_id": f"{_safe_name(self.alias)}-{request_seq}",
             "api_version": self.api_version, "action": action,
         }
         trace_id = _attach_trace_id(req, self.backend, self.alias)
         if args is not None:
             req["args"] = args
-        req["target"] = {"session_id": self.session_id}
+        req["target"] = {"session_id": session_id}
         if limits is not None:
             req["limits"] = limits
         if self.backend == "xcov":
@@ -1172,7 +1218,11 @@ class XdebugLoopSession:
                 operation_started=False,
             )
         except ProtocolError as exc:
-            cleanup = self.abort(str(exc), source="transport")
+            cleanup = self.abort(
+                str(exc),
+                source="transport",
+                expected_generation=request_generation,
+            )
             self.logger.try_session(
                 self.alias,
                 "query.end",
@@ -1196,7 +1246,11 @@ class XdebugLoopSession:
                 observability_cursor,
             )
         except OSError as exc:
-            cleanup = self.abort(str(exc), source="io")
+            cleanup = self.abort(
+                str(exc),
+                source="io",
+                expected_generation=request_generation,
+            )
             self.logger.try_session(
                 self.alias,
                 "query.end",
@@ -1220,7 +1274,11 @@ class XdebugLoopSession:
                 observability_cursor,
             )
         except Exception as exc:
-            cleanup = self.abort(str(exc), source="unexpected")
+            cleanup = self.abort(
+                str(exc),
+                source="unexpected",
+                expected_generation=request_generation,
+            )
             self.logger.try_session(
                 self.alias,
                 "query.end",
@@ -1246,7 +1304,9 @@ class XdebugLoopSession:
         if response_says_session_terminal(rsp):
             cleanup = self.abort(
                 f"backend reported terminal session after action {action}",
-                source="backend_response")
+                source="backend_response",
+                expected_generation=request_generation,
+            )
             self.logger.try_session(
                 self.alias,
                 "query.end",
@@ -1360,10 +1420,19 @@ class XdebugLoopSession:
         return _error("INVALID_OUTPUT_FORMAT", f"unsupported: {output_format}")
 
     def _call_raw(self, req: Json, timeout: Optional[float] = None) -> Json:
-        if not self.handle:
-            return _error("SESSION_PROCESS_MISSING", "no loop process")
         with self._lifecycle_lock:
-            return self.handle.request(
+            handle = self.handle
+            generation = self._lifecycle_generation
+        if handle is None:
+            raise ProtocolError("session loop process is detached")
+        with self._request_lock:
+            with self._lifecycle_lock:
+                if (
+                    self.handle is not handle
+                    or self._lifecycle_generation != generation
+                ):
+                    raise ProtocolError("session loop process was detached")
+            return handle.request(
                 req,
                 timeout_sec=(
                     self.runtime.request_timeout_sec
@@ -1372,20 +1441,31 @@ class XdebugLoopSession:
                 ),
             )
 
-    @_serialized_lifecycle
+    @_redacted_operation
     def public_json(self, verbose: bool = False) -> Json:
-        h = self.handle
-        out: Json = {
-            "session_id": self.session_id,
-            "management_key": self.alias,
-            "ownership": "managed",
-            "ownership_confirmed": self.session_id is not None,
-            "state": self.state,
-            "launcher": self.launcher.mode,
-            "backend": self.backend,
-            "scheduler": self.scheduler_json(),
-        }
-        resource_path = self.fsdb or self.daidir
+        with self._lifecycle_lock:
+            h = self.handle
+            session_id = self.session_id
+            state = self.state
+            resource_path = self.fsdb or self.daidir
+            run_manifest = self.run_manifest
+            queue = self.queue
+            resource = self.resource
+            job_name = self.job_name
+            pid = self.pid
+            last_cleanup = dict(self.last_cleanup)
+            last_error = self.last_error
+            scheduler = self.scheduler_json()
+            out: Json = {
+                "session_id": session_id,
+                "management_key": self.alias,
+                "ownership": "managed",
+                "ownership_confirmed": session_id is not None,
+                "state": state,
+                "launcher": self.launcher.mode,
+                "backend": self.backend,
+                "scheduler": scheduler,
+            }
         if resource_path:
             out[self.target_key if self.fsdb else "daidir"] = os.path.basename(resource_path)
             path_hash = hashlib.sha256(
@@ -1397,10 +1477,10 @@ class XdebugLoopSession:
                                     "dev": stat.st_dev, "inode": stat.st_ino}
             except OSError:
                 identity["stat"] = None
-            if self.run_manifest:
+            if run_manifest:
                 try:
                     identity["manifest_sha256"] = hashlib.sha256(
-                        Path(self.run_manifest).read_bytes()).hexdigest()
+                        Path(run_manifest).read_bytes()).hexdigest()
                     # The native xdebug/xcov backend verifies the manifest at
                     # open time.  This wrapper only reports its own digest, so
                     # do not claim that the digest itself performed validation.
@@ -1410,39 +1490,40 @@ class XdebugLoopSession:
             out["resource_identity"] = identity
         if verbose:
             out["resource_path"] = resource_path
-            if self.run_manifest: out["run_manifest"] = self.run_manifest
-            if self.queue: out["queue"] = self.queue
-            if self.resource: out["lsf_resource"] = self.resource
-            if self.job_name: out["job_name"] = self.job_name
+            if run_manifest: out["run_manifest"] = run_manifest
+            if queue: out["queue"] = queue
+            if resource: out["lsf_resource"] = resource
+            if job_name: out["job_name"] = job_name
             if h and getattr(h, "job_id", None): out["job_id"] = h.job_id
-            if self.pid: out["pid"] = self.pid
-            if self.last_cleanup: out["last_cleanup"] = self.last_cleanup
-            if self.last_error: out["last_error"] = self.last_error
+            if pid: out["pid"] = pid
+            if last_cleanup: out["last_cleanup"] = last_cleanup
+            if last_error: out["last_error"] = last_error
         return out
 
     def scheduler_json(self) -> Json:
         """Publish requested, resolved and actually submitted LSF settings."""
-        handle = self.handle
-        if handle is not None:
-            self._capture_scheduler_handle(handle)
-        return {
-            "mode": self.launcher.mode,
-            "status": self.scheduler_status,
-            "requested": {
-                "queue": self.requested_queue,
-                "resource": self.requested_resource,
-            },
-            "effective": {
-                "queue": self.queue,
-                "resource": self.resource,
-            },
-            "submitted": {
-                "queue": self.submitted_queue,
-                "resource": self.submitted_resource,
-                "job_name": self.submitted_job_name,
-                "job_id": self.submitted_job_id,
-            },
-        }
+        with self._lifecycle_lock:
+            handle = self.handle
+            if handle is not None:
+                self._capture_scheduler_handle(handle)
+            return {
+                "mode": self.launcher.mode,
+                "status": self.scheduler_status,
+                "requested": {
+                    "queue": self.requested_queue,
+                    "resource": self.requested_resource,
+                },
+                "effective": {
+                    "queue": self.queue,
+                    "resource": self.resource,
+                },
+                "submitted": {
+                    "queue": self.submitted_queue,
+                    "resource": self.submitted_resource,
+                    "job_name": self.submitted_job_name,
+                    "job_id": self.submitted_job_id,
+                },
+            }
 
     def _capture_scheduler_handle(self, handle: JsonlProcess) -> None:
         self.submitted_queue = getattr(handle, "submitted_queue", None)

@@ -5,7 +5,7 @@
 - 日期：2026-08-16
 - 基线：`2f80afb`
 - 分支：`master`
-- 当前阶段：P06 XCOV cache soft-limit 合同完成，准备进入 P07
+- 当前阶段：P07 MCP 可抢占生命周期完成，准备进入 P08 全量验收
 - 用户已有改动：`AGENTS.md`，本任务不得修改、暂存或提交该文件。
 - GitHub 边界：PR #3 与 issue #2 暂不处理，不移植、不回复、不关闭、不合并。
 
@@ -22,7 +22,7 @@
 | XDEBUG-EXPORT-01 | 抽取公共 atomic artifact publisher 并统一 APB/AXI/stream | completed |
 | XSVA-COR-01 | 完整修复 sampled function 与层次信号依赖 | completed |
 | XCOV-CACHE-01 | 将并发容量合同明确为 best-effort soft limit | completed |
-| MCP-LIFE-01 | 完整实现可抢占 session 生命周期 | pending |
+| MCP-LIFE-01 | 完整实现可抢占 session 生命周期 | completed |
 
 验收要求：
 
@@ -43,8 +43,8 @@
 | P03 | MCP-BATCH-01 | 安全：加固 MCP batch 输入输出与资源预算 | completed (`8966823`) |
 | P04 | XDEBUG-EXPORT-01 | 导出：统一协议 artifact 原子发布 | completed (`7b3a78a`) |
 | P05 | XSVA-COR-01 | 修复：规范 sampled function 证据信号提取 | completed (`d5324af`) |
-| P06 | XCOV-CACHE-01 | 合同：明确 URG cache 并发软容量语义 | completed（待提交） |
-| P07 | MCP-LIFE-01 | 生命周期：支持阻塞查询下的可抢占恢复 | pending |
+| P06 | XCOV-CACHE-01 | 合同：明确 URG cache 并发软容量语义 | completed (`493c17c`) |
+| P07 | MCP-LIFE-01 | 生命周期：支持阻塞查询下的可抢占恢复 | completed（待提交） |
 | P08 | 全量验证、skill 安装和报告收口 | 文档：完成八项评审修复最终验收 | pending |
 
 ## 4. 公共合同
@@ -94,3 +94,5 @@ tool/action capability 必须显式声明：
 | 2026-08-16 | P05 | sampled 参数递归提取、单 cursor 层次路径/select、依赖去重与畸形调用 partial diagnostic 通过 | `xsva.core`: 138 passed；`xsva.cli`: 14 passed；`skills.xverif`: 16 passed |
 | 2026-08-16 | P05 | VCS 语义用例保持一致 | `xsva.vcs`: 4 passed |
 | 2026-08-16 | P06 | URG cache 明确为已发布 entry 快照的 best-effort soft admission；不同 key 并发可超限，后续 cold admission 关闭，warm hit 与显式维护合同不变 | host `xcov.unit`: 170 passed；host `xcov.urg_backend`: 7 passed；`skills.xverif`: 16 passed；`skills.public_docs`: 4 passed |
+| 2026-08-16 | P07 | query request lane 与 lifecycle state lock 分离；kill 原子摘除 handle 并抢占终止阻塞 transport，generation guard 阻止旧 query 覆盖最终状态 | `xverif_mcp.process`: 155 passed |
+| 2026-08-16 | P07 | close 在 request lane busy 时立即返回 `SESSION_BUSY` 并保留 session；doctor 不等待 busy lane，按 backend 能力走 fixed native admin 或明确 health unknown | `xverif_mcp.unit`: 180 passed；新增 blocked query 对 kill/close/doctor 竞态用例通过 |
