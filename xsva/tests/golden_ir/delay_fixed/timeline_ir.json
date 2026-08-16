@@ -20,6 +20,9 @@
       "has_window": false,
       "window": null,
       "depends_on_captures": [],
+      "signals_to_query": [
+        "ack"
+      ],
       "requirement": "",
       "failure_condition": "ack is false at cycle +2"
     }

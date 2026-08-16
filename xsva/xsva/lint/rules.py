@@ -11,6 +11,7 @@
   XSVA-W008  multi-clock property
   XSVA-W009  macro detected
   XSVA-W010  unsupported assignment form
+  XSVA-W011  sampled function dependency is incomplete
   XSVA-E001  failed to parse property
   XSVA-E002  property not found
   XSVA-E003  unbalanced parentheses
@@ -30,6 +31,7 @@ RULES: dict[str, dict] = {
     "XSVA-W008": {"severity": "warning", "msg": "Multi-clock property is not fully supported."},
     "XSVA-W009": {"severity": "warning", "msg": "Macro detected. Preprocess source for accurate parsing."},
     "XSVA-W010": {"severity": "warning", "msg": "Unsupported assignment form."},
+    "XSVA-W011": {"severity": "warning", "msg": "Sampled function dependency is incomplete."},
     "XSVA-E001": {"severity": "error", "msg": "Failed to parse property."},
     "XSVA-E002": {"severity": "error", "msg": "Property not found."},
     "XSVA-E003": {"severity": "error", "msg": "Unbalanced parentheses."},

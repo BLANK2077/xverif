@@ -412,6 +412,15 @@ def _serialize_timeline_ir(timeline: TimelineIR) -> dict[str, Any]:
              "has_window": ob.has_window,
              "window": {"start": ob.window.start, "end": ob.window.end, "unbounded": ob.window.unbounded} if ob.window else None,
              "depends_on_captures": ob.depends_on_captures,
+             "signals_to_query": [
+                 signal.name + (
+                     f"[{signal.bit_select[0]}]"
+                     if signal.bit_select and signal.bit_select[0] == signal.bit_select[1]
+                     else f"[{signal.bit_select[0]}:{signal.bit_select[1]}]"
+                     if signal.bit_select else ""
+                 )
+                 for signal in ob.signals_to_query
+             ],
              "requirement": ob.requirement,
              "failure_condition": ob.failure_condition}
             for ob in timeline.obligations

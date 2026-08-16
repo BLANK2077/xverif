@@ -20,6 +20,9 @@
       "has_window": false,
       "window": null,
       "depends_on_captures": [],
+      "signals_to_query": [
+        "ack"
+      ],
       "requirement": "",
       "failure_condition": "ack is false at cycle +1"
     },
@@ -32,6 +35,10 @@
       "depends_on_captures": [
         "v"
       ],
+      "signals_to_query": [
+        "done_id",
+        "v"
+      ],
       "requirement": "",
       "failure_condition": "done_id == v is false at cycle +2"
     },
@@ -42,6 +49,9 @@
       "has_window": false,
       "window": null,
       "depends_on_captures": [],
+      "signals_to_query": [
+        "ack"
+      ],
       "requirement": "",
       "failure_condition": "ack is false at cycle +2"
     },
@@ -54,6 +64,10 @@
       "depends_on_captures": [
         "v"
       ],
+      "signals_to_query": [
+        "done_id",
+        "v"
+      ],
       "requirement": "",
       "failure_condition": "done_id == v is false at cycle +3"
     },
@@ -64,6 +78,9 @@
       "has_window": false,
       "window": null,
       "depends_on_captures": [],
+      "signals_to_query": [
+        "ack"
+      ],
       "requirement": "",
       "failure_condition": "ack is false at cycle +3"
     },
@@ -74,6 +91,10 @@
       "has_window": false,
       "window": null,
       "depends_on_captures": [
+        "v"
+      ],
+      "signals_to_query": [
+        "done_id",
         "v"
       ],
       "requirement": "",

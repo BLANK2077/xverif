@@ -24,6 +24,9 @@
         "unbounded": false
       },
       "depends_on_captures": [],
+      "signals_to_query": [
+        "ack"
+      ],
       "requirement": "",
       "failure_condition": "ack is never true from cycle +1 to +4"
     }

@@ -36,7 +36,11 @@ def _worst_status(a: str, b: str) -> str:
 def _signal_refs(expr_ir: ExprIR | None) -> list[SignalRef]:
     if expr_ir is None:
         return []
-    return list(expr_ir.signals)
+    result: list[SignalRef] = []
+    for signal in expr_ir.signals:
+        if signal not in result:
+            result.append(signal)
+    return result
 
 
 # ── main lowering ──
@@ -339,7 +343,11 @@ def _expr_to_obligation(
     if expr.sampled_funcs:
         func = expr.sampled_funcs[0]
         if func == "$past":
-            depth = expr.sample_dependencies[0].depth or 1
+            dependency = next(
+                (item for item in expr.sample_dependencies if item.func == "$past"),
+                None,
+            )
+            depth = dependency.depth if dependency and dependency.depth else 1
             return ObligationIR(
                 id=f"ob_{pi}_{i}", kind=ObligationKind.COMPARE_PAST,
                 expr=expr.raw, expr_ir=expr, has_cycle=True, cycle=cycle,

@@ -108,5 +108,6 @@ class ExprIR:
 
     contains_x_sensitive_op: bool = False
     contains_sampled_func: bool = False
+    dependency_complete: bool = True
 
     span: SourceSpan = field(default_factory=SourceSpan)

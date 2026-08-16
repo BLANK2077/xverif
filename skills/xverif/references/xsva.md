@@ -19,8 +19,11 @@ xsva explain --file input.sva --property p_name --markdown
 2. 对目标 property 取 timeline IR。
 3. 优先基于 `semantic_notes` 解释用户语义。
 4. local variable 看 captures 和 depends_on_captures。
-5. `first_match`、`throughout`、`intersect`、`within`、`[*]`、`[->]`、`[=]` 等高级 sequence 必须依赖 IR/semantic_notes。
-6. JSON/XOUT 响应先检查 `completeness`：路径返回数小于总数或
+5. 波形取证只使用 obligation 的 `signals_to_query` canonical 依赖；它保留层次路径与
+   固定 bit/part select，并包含 sampled function 参数内递归提取的信号。出现
+   `XSVA-W011` 时依赖不完整，不能自行猜补缺失信号。
+6. `first_match`、`throughout`、`intersect`、`within`、`[*]`、`[->]`、`[=]` 等高级 sequence 必须依赖 IR/semantic_notes。
+7. JSON/XOUT 响应先检查 `completeness`：路径返回数小于总数或
    `path_enumeration_complete=false` 时，`response_truncated=true` 且
    `truncation_scopes=["analysis.match_paths"]`；此时不能把返回路径当作全集。
 

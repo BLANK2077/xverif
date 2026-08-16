@@ -20,6 +20,10 @@
       "has_window": false,
       "window": null,
       "depends_on_captures": [],
+      "signals_to_query": [
+        "valid",
+        "data"
+      ],
       "requirement": "",
       "failure_condition": null
     }

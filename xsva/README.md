@@ -45,7 +45,10 @@ Assertions:
 Sequence IR 使用单一 canonical 结构：property 关系存于 `implication`，两侧分别
 存于 `antecedent` 与 `consequent`。Timeline IR 使用 `trigger`、`match_paths` 和
 显式 `disable_obligation`；`match_paths[].obligations` 只引用同一 Timeline IR 中
-`obligations[].id` 的 canonical ID。
+`obligations[].id` 的 canonical ID。每个 obligation 通过 `signals_to_query` 发布去重后的
+canonical 波形依赖，保留完整层次路径和固定 bit/part select；sampled function 的表达式
+参数会递归提取依赖。缺失参数、未闭合调用或无效 `$past` depth 返回 `XSVA-W011` 并将
+lowering 标为 `partial`，不会泄漏内部索引异常。
 
 ## 示例
 

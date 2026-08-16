@@ -242,3 +242,30 @@ property p;
 endproperty
 """, "p")
     assert ob.cycle == 3
+
+
+def test_sampled_hierarchical_dependencies_are_canonical_timeline_evidence():
+    timeline = _timeline("""
+property p;
+  req |-> $past(top.u_bus.data[3:0], 2);
+endproperty
+""", "p")
+
+    obligation = timeline.obligations[0]
+    assert obligation.kind.value == "compare_past"
+    assert [(signal.name, signal.bit_select) for signal in obligation.signals_to_query] == [
+        ("top.u_bus.data", (3, 0)),
+    ]
+    assert timeline.lowering_status.value == "exact"
+
+
+def test_malformed_sampled_dependency_is_partial_with_typed_diagnostic():
+    timeline = _timeline("""
+property p;
+  req |-> $past;
+endproperty
+""", "p")
+
+    assert timeline.lowering_status.value == "partial"
+    assert timeline.obligations[0].signals_to_query == []
+    assert any(item.code == "XSVA-W011" for item in timeline.diagnostics)

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from xsva.ir.diagnostics import DiagnosticBag
 from xsva.ir.expr import ExprIR, ExprKind, SampleDependencyIR, SignalRef
 
 from .scanner import Scanner, TokenKind
@@ -19,8 +20,9 @@ class ExprParser:
     - 提取 local variable 引用
     """
 
-    def __init__(self, scanner: Scanner) -> None:
+    def __init__(self, scanner: Scanner, diag: DiagnosticBag | None = None) -> None:
         self._scanner = scanner
+        self._diag = diag
 
     def parse_expr(self) -> ExprIR:
         """解析一个表达式，返回 ExprIR。
@@ -33,152 +35,10 @@ class ExprParser:
             return ExprIR(kind=ExprKind.RAW, raw="")
 
         raw = self._reconstruct_raw(tokens)
-        signals: list[SignalRef] = []
-        local_refs: list[str] = []
-        sampled_funcs: list[str] = []
-        sample_deps: list[SampleDependencyIR] = []
-        contains_sampled = False
+        (signals, local_refs, sampled_funcs, sample_deps,
+         dependency_complete) = self._analyze_tokens(tokens)
+        contains_sampled = bool(sampled_funcs)
         contains_x_sensitive = False
-
-        i = 0
-        while i < len(tokens):
-            tk = tokens[i]
-
-            # 跳过单目运算符
-            if tk.kind in (TokenKind.NOT, TokenKind.TILDE, TokenKind.AMP,
-                           TokenKind.PIPE, TokenKind.CARET, TokenKind.STAR):
-                # 但 & / | 可能是双目，这里保守处理
-                i += 1
-                continue
-
-            # 跳过比较运算符
-            if tk.kind in (TokenKind.EQ_EQ, TokenKind.NOT_EQ,
-                           TokenKind.LT, TokenKind.GT):
-                i += 1
-                continue
-
-            # 跳过括号 / 逗号 / 冒号 / 数字 / 等
-            if tk.kind in (TokenKind.LPAREN, TokenKind.RPAREN,
-                           TokenKind.LBRACKET, TokenKind.RBRACKET,
-                           TokenKind.LBRACE, TokenKind.RBRACE,
-                           TokenKind.COMMA, TokenKind.COLON, TokenKind.SEMICOLON,
-                           TokenKind.NUMBER, TokenKind.QUESTION,
-                           TokenKind.DOT, TokenKind.EQ,
-                           TokenKind.PLUS, TokenKind.MINUS, TokenKind.SLASH,
-                           TokenKind.PERCENT, TokenKind.AT):
-                i += 1
-                continue
-
-            # 系统函数
-            if tk.kind in (TokenKind.SYS_PAST, TokenKind.SYS_ROSE, TokenKind.SYS_FELL,
-                           TokenKind.SYS_STABLE, TokenKind.SYS_CHANGED, TokenKind.SYS_ISUNKNOWN,
-                           TokenKind.SYS_ONEHOT, TokenKind.SYS_ONEHOT0, TokenKind.SYS_COUNTONES):
-                func_name = tk.kind.value
-                sampled_funcs.append(func_name)
-                contains_sampled = True
-
-                # 解析参数
-                depth: int | None = None
-                ref_cycle: int | None = None
-                if tk.kind == TokenKind.SYS_PAST:
-                    depth = 1  # default $past(x) = $past(x, 1)
-                    ref_cycle = -1
-
-                inner_expr = ""
-                # 跳过 ( 和 )
-                if i + 1 < len(tokens) and tokens[i + 1].kind == TokenKind.LPAREN:
-                    inner_start = i + 2
-                    inner_end = self._find_matching_paren(tokens, i + 1)
-                    inner_expr = self._reconstruct_raw(tokens[inner_start:inner_end])
-
-                    # 检查 $past(x, N) 的第二个参数
-                    if tk.kind == TokenKind.SYS_PAST:
-                        inner_tokens = tokens[inner_start:inner_end]
-                        comma_idx = None
-                        for j, itk in enumerate(inner_tokens):
-                            if itk.kind == TokenKind.COMMA:
-                                comma_idx = j
-                                break
-                        if comma_idx is not None:
-                            depth_tokens = inner_tokens[comma_idx + 1:]
-                            depth_str = self._reconstruct_raw(depth_tokens).strip()
-                            try:
-                                depth = int(depth_str)
-                                ref_cycle = -depth
-                            except ValueError:
-                                depth = None
-                                ref_cycle = None
-
-                    i = inner_end + 1  # skip past )
-                else:
-                    i += 1
-
-                if inner_expr:
-                    sd = SampleDependencyIR(
-                        func=func_name,
-                        expr=inner_expr,
-                        current_cycle=0,
-                        reference_cycle=ref_cycle,
-                        depth=depth,
-                    )
-                    sample_deps.append(sd)
-                continue
-
-            # 标识符 — 区分信号 vs local var
-            if tk.kind == TokenKind.IDENT:
-                name = tk.text
-
-                # 检查位选：ident [ ... ]
-                bit_select: tuple[int, int] | None = None
-                if i + 2 < len(tokens) and tokens[i + 1].kind == TokenKind.LBRACKET:
-                    j = i + 2
-                    sel_parts: list[str] = []
-                    while j < len(tokens) and tokens[j].kind != TokenKind.RBRACKET:
-                        sel_parts.append(tokens[j].text)
-                        j += 1
-                    if j < len(tokens):
-                        sel_text = "".join(sel_parts)
-                        if ":" in sel_text:
-                            left, right = sel_text.split(":", 1)
-                            try:
-                                bit_select = (int(left.strip()), int(right.strip()))
-                            except ValueError:
-                                pass
-                        else:
-                            try:
-                                b = int(sel_text.strip())
-                                bit_select = (b, b)
-                            except ValueError:
-                                pass
-                        i = j  # skip to ]
-
-                # 检查层次化路径
-                segments: list[str] = [name]
-                is_hierarchical = False
-                j = i + 1 + (1 if bit_select is not None else 0)  # rough
-                while j < len(tokens) - 1 and tokens[j].kind == TokenKind.DOT:
-                    if j + 1 < len(tokens) and tokens[j + 1].kind == TokenKind.IDENT:
-                        segments.append(tokens[j + 1].text)
-                        is_hierarchical = True
-                        j += 2
-                    else:
-                        break
-
-                # 简单启发式：local var 通常短小写名
-                if not is_hierarchical and name.islower() and not bit_select:
-                    # 不能完全确定是 local var，这里保守放 signals
-                    pass
-
-                sr = SignalRef(
-                    segments=tuple(segments),
-                    bit_select=bit_select,
-                    is_hierarchical=is_hierarchical,
-                )
-                signals.append(sr)
-                i += 1
-                continue
-
-            i += 1
 
         kind = ExprKind.IDENTIFIER if len(signals) == 1 or not contains_sampled else ExprKind.OPAQUE
         if contains_sampled:
@@ -195,6 +55,7 @@ class ExprParser:
             sample_dependencies=sample_deps,
             contains_sampled_func=contains_sampled,
             contains_x_sensitive_op=contains_x_sensitive,
+            dependency_complete=dependency_complete,
         )
 
     def parse_expr_until(self, end_kinds: set[TokenKind]) -> ExprIR:
@@ -251,7 +112,180 @@ class ExprParser:
             tokens.append(self._scanner.advance())
         return tokens
 
-    def _find_matching_paren(self, tokens, open_idx: int) -> int:
+    def _analyze_tokens(self, tokens) -> tuple[
+        list[SignalRef], list[str], list[str], list[SampleDependencyIR], bool
+    ]:
+        signals: list[SignalRef] = []
+        local_refs: list[str] = []
+        sampled_funcs: list[str] = []
+        sample_deps: list[SampleDependencyIR] = []
+        dependency_complete = True
+        sampled_kinds = {
+            TokenKind.SYS_PAST, TokenKind.SYS_ROSE, TokenKind.SYS_FELL,
+            TokenKind.SYS_STABLE, TokenKind.SYS_CHANGED, TokenKind.SYS_ISUNKNOWN,
+            TokenKind.SYS_ONEHOT, TokenKind.SYS_ONEHOT0, TokenKind.SYS_COUNTONES,
+        }
+
+        def merge(nested) -> None:
+            nonlocal dependency_complete
+            nested_signals, nested_locals, nested_funcs, nested_deps, complete = nested
+            for signal in nested_signals:
+                self._append_signal(signals, signal)
+            for local in nested_locals:
+                if local not in local_refs:
+                    local_refs.append(local)
+            sampled_funcs.extend(nested_funcs)
+            sample_deps.extend(nested_deps)
+            dependency_complete = dependency_complete and complete
+
+        i = 0
+        while i < len(tokens):
+            tk = tokens[i]
+            if tk.kind in sampled_kinds:
+                func_name = tk.kind.value
+                sampled_funcs.append(func_name)
+                depth: int | None = 1 if tk.kind == TokenKind.SYS_PAST else None
+                ref_cycle: int | None = -1 if tk.kind == TokenKind.SYS_PAST else None
+                if i + 1 >= len(tokens) or tokens[i + 1].kind != TokenKind.LPAREN:
+                    dependency_complete = False
+                    self._sampled_diagnostic(func_name, "requires a parenthesized expression argument")
+                    sample_deps.append(SampleDependencyIR(
+                        func=func_name, expr="", reference_cycle=ref_cycle, depth=depth,
+                    ))
+                    i += 1
+                    continue
+                close_idx = self._find_matching_paren(tokens, i + 1)
+                if close_idx is None:
+                    dependency_complete = False
+                    self._sampled_diagnostic(func_name, "has an unclosed argument list")
+                    close_idx = len(tokens)
+                args = self._split_top_level_args(tokens[i + 2:close_idx])
+                expr_tokens = args[0] if args else []
+                inner_expr = self._reconstruct_raw(expr_tokens).strip()
+                if not inner_expr:
+                    dependency_complete = False
+                    self._sampled_diagnostic(func_name, "requires a non-empty expression argument")
+
+                if tk.kind == TokenKind.SYS_PAST and len(args) >= 2:
+                    depth_text = self._reconstruct_raw(args[1]).strip()
+                    try:
+                        parsed_depth = int(depth_text)
+                        if parsed_depth <= 0:
+                            raise ValueError
+                        depth = parsed_depth
+                        ref_cycle = -parsed_depth
+                    except ValueError:
+                        depth = None
+                        ref_cycle = None
+                        dependency_complete = False
+                        self._sampled_diagnostic(
+                            func_name, "requires a positive integer depth when depth is provided",
+                        )
+                sample_deps.append(SampleDependencyIR(
+                    func=func_name,
+                    expr=inner_expr,
+                    current_cycle=0,
+                    reference_cycle=ref_cycle,
+                    depth=depth,
+                ))
+                if inner_expr:
+                    merge(self._analyze_tokens(expr_tokens))
+                dependency_args = args[2:] if tk.kind == TokenKind.SYS_PAST else args[1:]
+                for argument in dependency_args:
+                    merge(self._analyze_tokens(argument))
+                i = close_idx + 1 if close_idx < len(tokens) else len(tokens)
+                continue
+
+            if tk.kind == TokenKind.IDENT:
+                signal, next_index, select_tokens = self._parse_signal_reference(tokens, i)
+                self._append_signal(signals, signal)
+                if select_tokens:
+                    merge(self._analyze_tokens(select_tokens))
+                i = next_index
+                continue
+            i += 1
+
+        return signals, local_refs, sampled_funcs, sample_deps, dependency_complete
+
+    def _parse_signal_reference(self, tokens, start: int) -> tuple[SignalRef, int, list]:
+        segments = [tokens[start].text]
+        bit_select: tuple[int, int] | None = None
+        dynamic_select_tokens: list = []
+        cursor = start + 1
+        while cursor < len(tokens):
+            if tokens[cursor].kind == TokenKind.LBRACKET:
+                close = self._find_matching_bracket(tokens, cursor)
+                if close is None:
+                    return SignalRef(
+                        segments=tuple(segments),
+                        is_hierarchical=len(segments) > 1,
+                    ), len(tokens), []
+                select_tokens = tokens[cursor + 1:close]
+                if close + 1 < len(tokens) and tokens[close + 1].kind == TokenKind.DOT:
+                    segments[-1] += "[" + "".join(t.text for t in select_tokens) + "]"
+                    cursor = close + 1
+                    continue
+                select_text = "".join(t.text for t in select_tokens)
+                try:
+                    if ":" in select_text:
+                        left, right = select_text.split(":", 1)
+                        bit_select = (int(left), int(right))
+                    else:
+                        bit = int(select_text)
+                        bit_select = (bit, bit)
+                except ValueError:
+                    dynamic_select_tokens = select_tokens
+                cursor = close + 1
+                break
+            if (tokens[cursor].kind == TokenKind.DOT and
+                    cursor + 1 < len(tokens) and
+                    tokens[cursor + 1].kind == TokenKind.IDENT):
+                segments.append(tokens[cursor + 1].text)
+                cursor += 2
+                continue
+            break
+        return SignalRef(
+            segments=tuple(segments),
+            bit_select=bit_select,
+            is_hierarchical=len(segments) > 1,
+        ), cursor, dynamic_select_tokens
+
+    def _append_signal(self, signals: list[SignalRef], signal: SignalRef) -> None:
+        if signal not in signals:
+            signals.append(signal)
+
+    def _split_top_level_args(self, tokens) -> list[list]:
+        if not tokens:
+            return []
+        parts: list[list] = [[]]
+        paren_depth = 0
+        bracket_depth = 0
+        brace_depth = 0
+        for tk in tokens:
+            if tk.kind == TokenKind.LPAREN:
+                paren_depth += 1
+            elif tk.kind == TokenKind.RPAREN and paren_depth:
+                paren_depth -= 1
+            elif tk.kind == TokenKind.LBRACKET:
+                bracket_depth += 1
+            elif tk.kind == TokenKind.RBRACKET and bracket_depth:
+                bracket_depth -= 1
+            elif tk.kind == TokenKind.LBRACE:
+                brace_depth += 1
+            elif tk.kind == TokenKind.RBRACE and brace_depth:
+                brace_depth -= 1
+            if (tk.kind == TokenKind.COMMA and paren_depth == 0 and
+                    bracket_depth == 0 and brace_depth == 0):
+                parts.append([])
+            else:
+                parts[-1].append(tk)
+        return parts
+
+    def _sampled_diagnostic(self, func: str, reason: str) -> None:
+        if self._diag is not None:
+            self._diag.warning("XSVA-W011", f"{func} {reason}; sampled dependency is partial")
+
+    def _find_matching_paren(self, tokens, open_idx: int) -> int | None:
         """找到与 open_idx 处 ( 匹配的 ) token 的 index。"""
         depth = 0
         for i in range(open_idx, len(tokens)):
@@ -261,7 +295,18 @@ class ExprParser:
                 depth -= 1
                 if depth == 0:
                     return i
-        return len(tokens) - 1
+        return None
+
+    def _find_matching_bracket(self, tokens, open_idx: int) -> int | None:
+        depth = 0
+        for i in range(open_idx, len(tokens)):
+            if tokens[i].kind == TokenKind.LBRACKET:
+                depth += 1
+            elif tokens[i].kind == TokenKind.RBRACKET:
+                depth -= 1
+                if depth == 0:
+                    return i
+        return None
 
     def _reconstruct_raw(self, tokens) -> str:
         """从 token 列表重建原始文本。"""

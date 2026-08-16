@@ -11,6 +11,7 @@
   XSVA-W008  multi-clock property
   XSVA-W009  macro detected
   XSVA-W010  unsupported assignment form
+  XSVA-W011  sampled function dependency is incomplete
 """
 
 from __future__ import annotations

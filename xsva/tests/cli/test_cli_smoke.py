@@ -95,6 +95,57 @@ def test_parse_defaults_to_domain_ir_and_explain_to_semantic_text(tmp_path):
     assert "ack must be true at cycle +1 to +4" in explained.stdout
 
 
+def test_timeline_json_publishes_canonical_sampled_dependencies(tmp_path):
+    source = """
+property p_sampled;
+  req |-> $past(top.u_bus.data[3:0], 2);
+endproperty
+"""
+    parsed = _run(
+        tmp_path,
+        source,
+        "parse",
+        "--property",
+        "p_sampled",
+        "--emit",
+        "timeline-ir",
+        "--json",
+    )
+
+    assert parsed.returncode == 0, parsed.stderr
+    payload = json.loads(parsed.stdout)
+    validate_response(payload, expected_action="parse")
+    assert payload["result"]["obligations"][0]["signals_to_query"] == [
+        "top.u_bus.data[3:0]",
+    ]
+    _assert_analysis_contract(payload, "exact")
+
+
+def test_malformed_sampled_function_is_typed_partial_not_internal_error(tmp_path):
+    source = """
+property p_partial;
+  req |-> $past;
+endproperty
+"""
+    parsed = _run(
+        tmp_path,
+        source,
+        "parse",
+        "--property",
+        "p_partial",
+        "--emit",
+        "timeline-ir",
+        "--json",
+    )
+
+    assert parsed.returncode == 0, parsed.stderr
+    payload = json.loads(parsed.stdout)
+    validate_response(payload, expected_action="parse")
+    _assert_analysis_contract(payload, "partial")
+    assert payload["diagnostics"][0]["code"] == "XSVA-W011"
+    assert payload["result"]["obligations"][0]["signals_to_query"] == []
+
+
 def test_default_error_is_xout_and_json_error_is_explicit(tmp_path):
     result = _run(tmp_path, SOURCE, "explain", "--property", "missing")
     assert result.returncode == 3

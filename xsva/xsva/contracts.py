@@ -477,6 +477,7 @@ def _timeline_result(value: Any) -> None:
                 "has_window",
                 "window",
                 "depends_on_captures",
+                "signals_to_query",
                 "requirement",
                 "failure_condition",
             },
@@ -510,6 +511,15 @@ def _timeline_result(value: Any) -> None:
         _string_array(
             obligation["depends_on_captures"],
             f"{path}.depends_on_captures",
+        )
+        _string_array(
+            obligation["signals_to_query"],
+            f"{path}.signals_to_query",
+        )
+        _contract(
+            len(set(obligation["signals_to_query"])) == len(obligation["signals_to_query"]),
+            f"{path}.signals_to_query",
+            "canonical signal dependencies must be unique",
         )
         _contract(
             obligation["failure_condition"] is None

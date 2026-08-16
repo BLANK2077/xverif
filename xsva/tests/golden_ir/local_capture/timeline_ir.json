@@ -32,6 +32,11 @@
       "depends_on_captures": [
         "v"
       ],
+      "signals_to_query": [
+        "ack",
+        "rsp",
+        "v"
+      ],
       "requirement": "",
       "failure_condition": "ack & & rsp == v is never true from cycle +1 to +4"
     }
