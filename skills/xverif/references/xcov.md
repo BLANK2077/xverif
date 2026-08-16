@@ -206,10 +206,12 @@ assert export（输出目录内保留 `asserts.txt`，并生成 `assert.json`、
   bkill，失败不会 fallback 到 direct。
 - cache key 包含 VDB 内容、run manifest、URG provenance/固定参数、merged selection 和
   EL 内容；EL 变更会生成新 key。损坏 entry 会被隔离并重新生成，不会降级为 NPI 读取。
-- 缓存默认最多 20 GiB/128 entries，可用 `XVERIF_XCOV_CACHE_MAX_BYTES` 和
-  `XVERIF_XCOV_CACHE_MAX_ENTRIES` 调整。warm hit 是纯只读校验；cold miss 通过原子 claim 保证
-  同 key 只运行一次 URG。容量已满会返回 `XCOV_CACHE_CAPACITY_EXCEEDED`，需要在显式维护窗口
-  清理旧 immutable entry，不会在 action 返回路径同步 LRU 驱逐。
+- 缓存默认 soft admission 阈值为 20 GiB/128 entries，可用
+  `XVERIF_XCOV_CACHE_MAX_BYTES` 和 `XVERIF_XCOV_CACHE_MAX_ENTRIES` 调整。warm hit 是纯只读
+  校验；cold miss 通过 per-key 原子 claim 保证同 key 只运行一次 URG。不同 key 并发 cold
+  miss 不做全局 reservation，可能同时通过同一已发布 entry 快照而超过阈值，因此该配置
+  不是并发 hard bound。超限后新的 cold miss 返回 `XCOV_CACHE_CAPACITY_EXCEEDED`；需要在
+  显式维护窗口清理旧 immutable entry，不会在 action 返回路径同步 LRU 驱逐。
 - exclusion 的 license/NPI 错误：在沙箱外确认 Verdi/NPI 和 license server。
 - action 参数不确定：先用原生 `actions` 和 `schema` action 查询。
 - 大结果：设置 limit，必要时 `overflow:"to_file"` 或 output path。

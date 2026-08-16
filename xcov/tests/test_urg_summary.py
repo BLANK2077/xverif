@@ -694,6 +694,91 @@ def test_urg_cache_capacity_is_explicit_and_abandoned_staging_is_cleaned(
     assert not stale.exists()
 
 
+def test_urg_cache_distinct_key_concurrency_has_explicit_soft_admission_contract(
+    monkeypatch, tmp_path
+):
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    from xcov import urg_cache
+
+    monkeypatch.setattr(
+        urg_cache,
+        "_urg_identity",
+        lambda: {
+            "path": "vcs-bin/urg",
+            "release": "X-test",
+            "size_bytes": 1,
+            "mtime_ns": 1,
+        },
+    )
+    monkeypatch.setenv("XVERIF_XCOV_CACHE_MAX_ENTRIES", "1")
+    cache = tmp_path / "cache"
+    barrier = threading.Barrier(2)
+
+    class DistinctKeyRunner:
+        def __init__(self):
+            self.call_count = 0
+            self.guard = threading.Lock()
+
+        def run(self, argv, timeout=None):
+            with self.guard:
+                self.call_count += 1
+            report = Path(argv[argv.index("-report") + 1])
+            for name in REQUIRED_ARTIFACTS:
+                content = "placeholder\n"
+                if name == "session.xml":
+                    content = SESSION_XML
+                elif name == "tests.txt":
+                    content = (
+                        "Total tests in report: 1\n"
+                        "Data from the following tests was used to generate this report\n"
+                        "test0\n"
+                    )
+                (report / name).write_text(content, encoding="utf-8")
+            barrier.wait(timeout=5)
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    vdbs = []
+    for index in range(3):
+        vdb = tmp_path / f"distinct-{index}.vdb"
+        vdb.mkdir()
+        (vdb / "content").write_text(str(index), encoding="ascii")
+        vdbs.append(vdb)
+
+    runner = DistinctKeyRunner()
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [
+            pool.submit(
+                urg_cache.load_cached_urg_summary,
+                str(vdb),
+                cache_root=cache,
+                runner=runner,
+            )
+            for vdb in vdbs[:2]
+        ]
+        metadata = [future.result(timeout=10)[1] for future in futures]
+
+    assert runner.call_count == 2
+    assert len({item["key"] for item in metadata}) == 2
+    entries = sorted(
+        path.name for path in (cache / "entries").iterdir() if path.is_dir()
+    )
+    assert entries == sorted(item["key"] for item in metadata)
+    assert len(entries) == 2  # max_entries=1 is a soft admission threshold.
+
+    class MustNotRun:
+        def run(self, argv, timeout=None):
+            raise AssertionError("oversubscribed cache must reject later cold admission")
+
+    with pytest.raises(XcovError) as exc_info:
+        urg_cache.load_cached_urg_summary(
+            str(vdbs[2]), cache_root=cache, runner=MustNotRun(),
+        )
+    assert exc_info.value.code == "XCOV_CACHE_CAPACITY_EXCEEDED"
+    assert "soft admission threshold" in exc_info.value.message
+    assert urg_cache.CACHE_CAPACITY_CONTRACT == "best_effort_soft_admission"
+
+
 def test_streaming_parser_keeps_code_assert_and_functional_types(tmp_path):
     index = parse_urg_summary(_report(tmp_path))
 

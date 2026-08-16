@@ -29,6 +29,7 @@ Json = Dict[str, Any]
 
 CACHE_SCHEMA_VERSION = "xcov.urg-summary-cache.v1"
 PARSER_SCHEMA_VERSION = "xcov.urg-summary-ir.v1"
+CACHE_CAPACITY_CONTRACT = "best_effort_soft_admission"
 FIXED_SUMMARY_OPTIONS = (
     "-xml_verbose", "-format", "text", "-show", "summary",
 )
@@ -239,7 +240,15 @@ def _cleanup_abandoned_staging(staging: Path) -> None:
             shutil.rmtree(candidate)
 
 
-def _enforce_capacity_before_build(root: Path) -> None:
+def _enforce_soft_capacity_before_build(root: Path) -> None:
+    """Apply a published-entry snapshot before admitting one cold build.
+
+    This check intentionally does not serialize different cache keys or reserve
+    bytes for active staging directories. Distinct-key builds can therefore
+    oversubscribe the configured thresholds when they pass the same snapshot.
+    Once oversubscribed, later cold admissions fail until explicit maintenance
+    removes immutable entries; warm hits remain available.
+    """
     entries = root / "entries"
     max_entries = _configured_limit("XVERIF_XCOV_CACHE_MAX_ENTRIES", DEFAULT_MAX_ENTRIES)
     max_bytes = _configured_limit("XVERIF_XCOV_CACHE_MAX_BYTES", DEFAULT_MAX_BYTES)
@@ -251,7 +260,7 @@ def _enforce_capacity_before_build(root: Path) -> None:
     if len(rows) >= max_entries or total_bytes >= max_bytes:
         raise XcovError(
             "XCOV_CACHE_CAPACITY_EXCEEDED",
-            "URG cache capacity is exhausted; remove old immutable entries in an explicit maintenance window before retrying",
+            "URG cache soft admission threshold is exhausted; remove old immutable entries in an explicit maintenance window before retrying",
             entry_count=len(rows),
             max_entries=max_entries,
             size_bytes=total_bytes,
@@ -345,7 +354,7 @@ def load_cached_urg_summary(
         if entry.exists():
             _quarantine(entry, quarantine, key)
         _cleanup_abandoned_staging(staging)
-        _enforce_capacity_before_build(root)
+        _enforce_soft_capacity_before_build(root)
 
         with tempfile.TemporaryDirectory(prefix=f"{key}.", dir=staging) as stage_name:
             stage = Path(stage_name)

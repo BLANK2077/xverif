@@ -99,8 +99,8 @@ xverif_cov_get_schema
 - `XVERIF_XCOV_CACHE_DIR`：覆盖默认 `.xverif/xcov/cache` 根目录；summary entry
   位于其 `urg-summary/` 子目录，session-owned exclusion working dir 位于其 `sessions/`
   子目录。两者不会再分别落到不同根。
-- `XVERIF_XCOV_CACHE_MAX_BYTES`：cache 总字节上限，默认 20 GiB。
-- `XVERIF_XCOV_CACHE_MAX_ENTRIES`：cache entry 上限，默认 128。
+- `XVERIF_XCOV_CACHE_MAX_BYTES`：cold build 的 cache 软准入字节阈值，默认 20 GiB。
+- `XVERIF_XCOV_CACHE_MAX_ENTRIES`：cold build 的 cache 软准入 entry 阈值，默认 128。
 - `XVERIF_XCOV_URG_BACKEND`：每次 URG 的执行 backend，只接受 `direct|lsf`，默认
   `direct`；不会从外层 `XVERIF_MCP_BACKEND` 或仅存在的 `XVERIF_LSF_BSUB` 推断。
 - `XVERIF_XCOV_URG_QUEUE`：内层 URG LSF queue；backend=lsf 时必填。
@@ -112,7 +112,12 @@ xverif_cov_get_schema
 固定 URG summary 使用内容寻址 cache。key 包含 VDB 内容 hash、可选 run-manifest
 hash、URG 绝对路径/release/文件身份、固定 argv、parser/cache version、merged selection
 和当前 EL hash。每个 entry 校验六文件 hash/size 与 semantic counts；per-key `fcntl`
-锁保证并发 miss 只执行一次 URG，完成后经 fsync 和 atomic rename 发布。损坏 entry
+per-key claim 保证同 key 并发 miss 只执行一次 URG，完成后经 fsync 和 atomic rename
+发布。容量采用 `best_effort_soft_admission`：cold build 只检查当时已发布 entry，不为
+其它 key 的 staging 预留条目或字节，因此不同 key 同时 cold miss 时可超过配置阈值；
+超限后新的 cold miss 返回 `XCOV_CACHE_CAPACITY_EXCEEDED`，warm hit 仍可读取，直到显式
+维护清理 immutable entry。该阈值不是并发 hard bound，也不会在 action 热路径自动驱逐。
+损坏 entry
 隔离后重建，超过 24 小时的 abandoned staging 才清理。`session.status` 的
 `cached_indexes.state/key/hit/urg_execution` 可观察当前 index、cold/warm、direct/LSF、
 submitted queue/resource、job name/id 和 exit status。warm hit 的 `submitted=false`，不会
