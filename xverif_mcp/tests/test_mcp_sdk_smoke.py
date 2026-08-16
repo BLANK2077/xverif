@@ -33,6 +33,9 @@ POLICY_ENV = [
     "XVERIF_MCP_ENABLE_MUTATION",
     "XVERIF_MCP_ENABLE_ARTIFACT_WRITE",
     "XVERIF_MCP_ARTIFACT_ROOT",
+    "XVERIF_MCP_BATCH_MAX_INPUT_BYTES",
+    "XVERIF_MCP_BATCH_MAX_REQUESTS",
+    "XVERIF_MCP_BATCH_MAX_OUTPUT_BYTES",
 ]
 
 
@@ -824,8 +827,100 @@ def test_batch_output_file_failure_is_explicit(tmp_path, monkeypatch: pytest.Mon
     content, _ = _call_tool(
         monkeypatch,
         "xverif_batch",
-        {"batch_file": str(batch_file), "output_file": "/nonexistent/dir/results.ndjson"},
+        {"batch_file": str(batch_file),
+         "output_file": str(tmp_path / "nonexistent/results.ndjson")},
     )
     payload = json.loads(content[0].text)
     assert payload["ok"] is False
     assert payload["error"]["code"] == "BATCH_OUTPUT_WRITE_FAILED"
+
+
+@pytest.mark.parametrize("alias_kind", ["same", "hardlink", "symlink"])
+def test_batch_rejects_same_input_object_through_aliases(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    alias_kind: str,
+):
+    batch_file = tmp_path / "batch.ndjson"
+    batch_file.write_text(json.dumps({"tool": "xverif_ping", "args": {}}) + "\n")
+    output_file = tmp_path / "output.ndjson"
+    if alias_kind == "same":
+        output_file = batch_file
+    elif alias_kind == "hardlink":
+        os.link(batch_file, output_file)
+    else:
+        output_file.symlink_to(batch_file)
+    content, _ = _call_tool(
+        monkeypatch,
+        "xverif_batch",
+        {"batch_file": str(batch_file), "output_file": str(output_file)},
+    )
+    payload = json.loads(content[0].text)
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "BATCH_INPUT_OUTPUT_SAME_FILE"
+
+
+def test_batch_output_is_create_new_and_preserves_existing_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    batch_file = tmp_path / "batch.ndjson"
+    output_file = tmp_path / "output.ndjson"
+    batch_file.write_text(json.dumps({"tool": "xverif_ping", "args": {}}) + "\n")
+    output_file.write_text("keep\n")
+    content, _ = _call_tool(
+        monkeypatch,
+        "xverif_batch",
+        {"batch_file": str(batch_file), "output_file": str(output_file)},
+    )
+    payload = json.loads(content[0].text)
+    assert payload["error"]["code"] == "BATCH_OUTPUT_EXISTS"
+    assert output_file.read_text() == "keep\n"
+
+
+def test_batch_request_budget_is_checked_before_execution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    batch_file = tmp_path / "batch.ndjson"
+    output_file = tmp_path / "output.ndjson"
+    line = json.dumps({"tool": "xverif_ping", "args": {}})
+    batch_file.write_text(line + "\n" + line + "\n")
+    content, _ = _call_tool(
+        monkeypatch,
+        "xverif_batch",
+        {"batch_file": str(batch_file), "output_file": str(output_file)},
+        {"XVERIF_MCP_BATCH_MAX_REQUESTS": "1"},
+    )
+    payload = json.loads(content[0].text)
+    assert payload["error"]["code"] == "BATCH_REQUEST_LIMIT_EXCEEDED"
+    assert not output_file.exists()
+
+
+def test_batch_input_and_output_byte_budgets_leave_no_partial_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    batch_file = tmp_path / "batch.ndjson"
+    output_file = tmp_path / "output.ndjson"
+    batch_file.write_text(json.dumps({"tool": "xverif_ping", "args": {}}) + "\n")
+    content, _ = _call_tool(
+        monkeypatch,
+        "xverif_batch",
+        {"batch_file": str(batch_file), "output_file": str(output_file)},
+        {"XVERIF_MCP_BATCH_MAX_INPUT_BYTES": "1"},
+    )
+    payload = json.loads(content[0].text)
+    assert payload["error"]["code"] == "BATCH_INPUT_LIMIT_EXCEEDED"
+    assert not output_file.exists()
+
+    content, _ = _call_tool(
+        monkeypatch,
+        "xverif_batch",
+        {"batch_file": str(batch_file), "output_file": str(output_file)},
+        {"XVERIF_MCP_BATCH_MAX_OUTPUT_BYTES": "1"},
+    )
+    payload = json.loads(content[0].text)
+    assert payload["error"]["code"] == "BATCH_OUTPUT_LIMIT_EXCEEDED"
+    assert not output_file.exists()
+    assert not list(tmp_path.glob(".output.ndjson.stage-*"))

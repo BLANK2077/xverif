@@ -2,6 +2,8 @@
 
 import inspect
 import json
+import os
+import tempfile
 import time
 from copy import deepcopy
 from contextlib import asynccontextmanager
@@ -281,10 +283,10 @@ def _batch_error(code: str, message: str, **details: Any) -> dict[str, Any]:
     return error
 
 
-def _append_result(output_file: str, tool: str | None, ok: bool,
-                   error: dict[str, Any] | None, elapsed_ms: int,
-                   response: str | None = None,
-                   line_number: int | None = None) -> None:
+def _batch_result_bytes(tool: str | None, ok: bool,
+                        error: dict[str, Any] | None, elapsed_ms: int,
+                        response: str | None = None,
+                        line_number: int | None = None) -> bytes:
     entry: dict = {
         "tool": tool,
         "ok": ok,
@@ -295,8 +297,9 @@ def _append_result(output_file: str, tool: str | None, ok: bool,
         entry["response"] = response
     if line_number is not None:
         entry["line_number"] = line_number
-    with open(output_file, "a", encoding="utf-8") as f:
-        f.write(strict_json_dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
+    return (
+        strict_json_dumps(entry, ensure_ascii=False, sort_keys=True) + "\n"
+    ).encode("utf-8")
 
 
 async def _execute_one(
@@ -395,6 +398,10 @@ class _BatchRequestError(ValueError):
         self.error = _batch_error(code, message, **details)
 
 
+class _BatchOutputLimitError(ValueError):
+    pass
+
+
 def _validate_batch_request(value: Any) -> tuple[str, dict[str, Any]]:
     if type(value) is not dict:
         raise _BatchRequestError(
@@ -452,28 +459,125 @@ async def xverif_batch(batch_file: str, output_file: str) -> dict:
     Returns ``{total, ok_count, failed_count, output_file}``.
     """
     stats = {"total": 0, "ok": 0, "failed": 0}
-    if not Path(batch_file).is_file():
+    input_path = Path(batch_file)
+    if not input_path.is_file():
         return _tool_error("FILE_NOT_FOUND",
                            f"batch file not found: {batch_file}")
 
-    try:
-        with open(batch_file, "r", encoding="utf-8") as f:
-            for line_number, line in enumerate(f, start=1):
-                line = line.strip()
-                if not line:
-                    continue
+    resolved_output, policy_error = _resolve_policy_artifact_path(
+        "xverif_batch", output_file,
+    )
+    if policy_error is not None:
+        return policy_error
+    assert resolved_output is not None
+    output_path = Path(resolved_output)
+    if not output_path.parent.is_dir():
+        return _tool_error(
+            "BATCH_OUTPUT_WRITE_FAILED",
+            "batch output parent directory does not exist",
+            output_file=str(output_path),
+        )
 
+    try:
+        with input_path.open("rb") as input_stream:
+            input_stat = os.fstat(input_stream.fileno())
+            if input_stat.st_size > MCP_TOOL_POLICY.batch_max_input_bytes:
+                return _tool_error(
+                    "BATCH_INPUT_LIMIT_EXCEEDED",
+                    "batch input exceeds XVERIF_MCP_BATCH_MAX_INPUT_BYTES",
+                    limit_bytes=MCP_TOOL_POLICY.batch_max_input_bytes,
+                    actual_bytes=input_stat.st_size,
+                )
+            if output_path.exists() or output_path.is_symlink():
+                try:
+                    output_stat = output_path.stat()
+                except OSError:
+                    output_stat = None
+                if output_stat is not None and (
+                    output_stat.st_dev,
+                    output_stat.st_ino,
+                ) == (input_stat.st_dev, input_stat.st_ino):
+                    return _tool_error(
+                        "BATCH_INPUT_OUTPUT_SAME_FILE",
+                        "batch input and output resolve to the same filesystem object",
+                        batch_file=str(input_path),
+                        output_file=str(output_path),
+                    )
+                return _tool_error(
+                    "BATCH_OUTPUT_EXISTS",
+                    "batch output already exists; output is create-new only",
+                    output_file=str(output_path),
+                )
+            frozen = input_stream.read(MCP_TOOL_POLICY.batch_max_input_bytes + 1)
+        if len(frozen) > MCP_TOOL_POLICY.batch_max_input_bytes:
+            return _tool_error(
+                "BATCH_INPUT_LIMIT_EXCEEDED",
+                "batch input exceeds XVERIF_MCP_BATCH_MAX_INPUT_BYTES",
+                limit_bytes=MCP_TOOL_POLICY.batch_max_input_bytes,
+                actual_bytes=len(frozen),
+            )
+        try:
+            text = frozen.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            return _tool_error(
+                "BATCH_INPUT_INVALID_UTF8",
+                "batch input must be valid UTF-8",
+                error_type=type(exc).__name__,
+            )
+        lines = [
+            (line_number, line.strip())
+            for line_number, line in enumerate(text.splitlines(), start=1)
+            if line.strip()
+        ]
+        if len(lines) > MCP_TOOL_POLICY.batch_max_requests:
+            return _tool_error(
+                "BATCH_REQUEST_LIMIT_EXCEEDED",
+                "batch request count exceeds XVERIF_MCP_BATCH_MAX_REQUESTS",
+                limit_requests=MCP_TOOL_POLICY.batch_max_requests,
+                actual_requests=len(lines),
+            )
+    except OSError as exc:
+        return _tool_error(
+            "BATCH_INPUT_READ_FAILED",
+            f"cannot freeze batch input: {exc}",
+            batch_file=str(input_path),
+            error_type=type(exc).__name__,
+        )
+
+    stage_fd = -1
+    stage_name = ""
+    output_bytes = 0
+    try:
+        stage_fd, stage_name = tempfile.mkstemp(
+            prefix=f".{output_path.name}.stage-",
+            dir=output_path.parent,
+        )
+        with os.fdopen(stage_fd, "wb") as stage:
+            stage_fd = -1
+
+            def append_result(payload: bytes) -> None:
+                nonlocal output_bytes
+                proposed = output_bytes + len(payload)
+                if proposed > MCP_TOOL_POLICY.batch_max_output_bytes:
+                    raise _BatchOutputLimitError
+                stage.write(payload)
+                output_bytes = proposed
+
+            for line_number, line in lines:
                 try:
                     req = strict_json_loads(line)
-                except (json.JSONDecodeError, ValueError) as e:
-                    _append_result(
-                        output_file, None, False,
+                except (json.JSONDecodeError, ValueError) as exc:
+                    append_result(_batch_result_bytes(
+                        None,
+                        False,
                         _batch_error(
-                            "INVALID_JSON", "batch line is not strict JSON",
-                            error_type=type(e).__name__,
+                            "INVALID_JSON",
+                            "batch line is not strict JSON",
+                            error_type=type(exc).__name__,
                         ),
-                        0, line_number=line_number,
-                    )
+                        0,
+                        line_number=line_number,
+                    ))
                     stats["failed"] += 1
                     stats["total"] += 1
                     continue
@@ -486,33 +590,71 @@ async def xverif_batch(batch_file: str, output_file: str) -> dict:
                 try:
                     tool_name, tool_args = _validate_batch_request(req)
                 except _BatchRequestError as exc:
-                    _append_result(
-                        output_file, tool_hint, False, exc.error, 0,
+                    append_result(_batch_result_bytes(
+                        tool_hint, False, exc.error, 0,
                         line_number=line_number,
-                    )
+                    ))
                     stats["failed"] += 1
                     stats["total"] += 1
                     continue
 
                 ok, error, elapsed_ms, response = await _execute_one(tool_name, tool_args)
-                _append_result(output_file, tool_name, ok, error, elapsed_ms, response,
-                               line_number=line_number)
+                append_result(_batch_result_bytes(
+                    tool_name, ok, error, elapsed_ms, response,
+                    line_number=line_number,
+                ))
                 if ok:
                     stats["ok"] += 1
                 else:
                     stats["failed"] += 1
                 stats["total"] += 1
+            stage.flush()
+            os.fsync(stage.fileno())
+
+        try:
+            os.link(stage_name, output_path)
+        except FileExistsError:
+            return _tool_error(
+                "BATCH_OUTPUT_EXISTS",
+                "batch output was created concurrently; no result was overwritten",
+                output_file=str(output_path),
+            )
+        os.unlink(stage_name)
+        stage_name = ""
+        directory_fd = os.open(output_path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except _BatchOutputLimitError:
+        return _tool_error(
+            "BATCH_OUTPUT_LIMIT_EXCEEDED",
+            "batch result exceeds XVERIF_MCP_BATCH_MAX_OUTPUT_BYTES",
+            limit_bytes=MCP_TOOL_POLICY.batch_max_output_bytes,
+            bytes_before_rejected_result=output_bytes,
+        )
     except OSError as exc:
-        return _tool_error("BATCH_OUTPUT_WRITE_FAILED",
-                           f"cannot write batch results to {output_file}: {exc}",
-                           output_file=output_file,
-                           error_type=type(exc).__name__)
+        return _tool_error(
+            "BATCH_OUTPUT_WRITE_FAILED",
+            f"cannot publish batch results: {exc}",
+            output_file=str(output_path),
+            error_type=type(exc).__name__,
+        )
+    finally:
+        if stage_fd >= 0:
+            os.close(stage_fd)
+        if stage_name:
+            try:
+                os.unlink(stage_name)
+            except FileNotFoundError:
+                pass
     return {
         "ok": True,
         "total": stats["total"],
         "ok_count": stats["ok"],
         "failed_count": stats["failed"],
-        "output_file": output_file,
+        "output_file": str(output_path),
+        "output_bytes": output_bytes,
     }
 
 

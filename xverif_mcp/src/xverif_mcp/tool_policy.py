@@ -22,6 +22,13 @@ GROUP_ENV = {
 MUTATION_ENV = "XVERIF_MCP_ENABLE_MUTATION"
 ARTIFACT_WRITE_ENV = "XVERIF_MCP_ENABLE_ARTIFACT_WRITE"
 ARTIFACT_ROOT_ENV = "XVERIF_MCP_ARTIFACT_ROOT"
+BATCH_MAX_INPUT_BYTES_ENV = "XVERIF_MCP_BATCH_MAX_INPUT_BYTES"
+BATCH_MAX_REQUESTS_ENV = "XVERIF_MCP_BATCH_MAX_REQUESTS"
+BATCH_MAX_OUTPUT_BYTES_ENV = "XVERIF_MCP_BATCH_MAX_OUTPUT_BYTES"
+
+DEFAULT_BATCH_MAX_INPUT_BYTES = 16 * 1024 * 1024
+DEFAULT_BATCH_MAX_REQUESTS = 10_000
+DEFAULT_BATCH_MAX_OUTPUT_BYTES = 64 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -32,6 +39,9 @@ class ToolPolicy:
     mutation_enabled: bool = False
     artifact_write_enabled: bool = False
     artifact_root: Path | None = None
+    batch_max_input_bytes: int = DEFAULT_BATCH_MAX_INPUT_BYTES
+    batch_max_requests: int = DEFAULT_BATCH_MAX_REQUESTS
+    batch_max_output_bytes: int = DEFAULT_BATCH_MAX_OUTPUT_BYTES
 
     def group_enabled(self, group: str) -> bool:
         return dict(self.groups).get(group, False)
@@ -55,6 +65,11 @@ class ToolPolicy:
             "mutation_enabled": self.mutation_enabled,
             "artifact_write_enabled": self.artifact_write_enabled,
             "artifact_root": str(self.artifact_root) if self.artifact_root else None,
+            "batch_limits": {
+                "max_input_bytes": self.batch_max_input_bytes,
+                "max_requests": self.batch_max_requests,
+                "max_output_bytes": self.batch_max_output_bytes,
+            },
         }
 
     def resolve_artifact_path(self, raw_path: str) -> Path:
@@ -90,6 +105,22 @@ def _strict_env_flag(environ: Mapping[str, str], name: str, default: bool) -> bo
     raise ConfigError(name, raw, "'0' or '1'")
 
 
+def _strict_env_positive_int(
+    environ: Mapping[str, str],
+    name: str,
+    default: int,
+) -> int:
+    raw = environ.get(name)
+    if raw is None:
+        return default
+    if not raw or raw != raw.strip() or not raw.isascii() or not raw.isdecimal():
+        raise ConfigError(name, raw, "a positive base-10 integer")
+    value = int(raw, 10)
+    if value <= 0:
+        raise ConfigError(name, raw, "a positive base-10 integer")
+    return value
+
+
 def resolve_tool_policy(environ: Mapping[str, str] | None = None) -> ToolPolicy:
     snapshot = dict(os.environ if environ is None else environ)
     mutation_enabled = _strict_env_flag(snapshot, MUTATION_ENV, False)
@@ -118,6 +149,21 @@ def resolve_tool_policy(environ: Mapping[str, str] | None = None) -> ToolPolicy:
         mutation_enabled=mutation_enabled,
         artifact_write_enabled=artifact_write_enabled,
         artifact_root=artifact_root,
+        batch_max_input_bytes=_strict_env_positive_int(
+            snapshot,
+            BATCH_MAX_INPUT_BYTES_ENV,
+            DEFAULT_BATCH_MAX_INPUT_BYTES,
+        ),
+        batch_max_requests=_strict_env_positive_int(
+            snapshot,
+            BATCH_MAX_REQUESTS_ENV,
+            DEFAULT_BATCH_MAX_REQUESTS,
+        ),
+        batch_max_output_bytes=_strict_env_positive_int(
+            snapshot,
+            BATCH_MAX_OUTPUT_BYTES_ENV,
+            DEFAULT_BATCH_MAX_OUTPUT_BYTES,
+        ),
     )
 
 

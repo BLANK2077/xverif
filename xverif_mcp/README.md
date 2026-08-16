@@ -229,6 +229,11 @@ xverif_debug_query(session_id="case_a", action="value.at", args={...},
 
 每一条非空 NDJSON 行必须是带 string `tool` 和 object `args` 的 JSON object。格式错误行不会执行 tool，会在结果中写入带 `line_number` 的失败记录，然后继续处理后续行。
 
+batch 在执行任何 tool 前冻结完整输入，并检查输入字节数和非空请求数。输入与输出若通过同一路径、
+symlink 或 hardlink 指向同一 filesystem object，会返回 `BATCH_INPUT_OUTPUT_SAME_FILE`。输出使用
+create-new 合同：目标必须不存在，所有结果先写入同目录 staging，检查输出字节预算并 fsync 后再
+no-clobber 发布；超预算、写入失败或并发冲突都不会覆盖旧文件或发布部分 NDJSON。
+
 **注意嵌套 args**：`xverif_debug_query` / `xverif_cov_query` 自身有 `args` 参数，
 在 batch 行中需要再嵌套一层：
 ```jsonl
@@ -377,6 +382,9 @@ tools/xverif-loop-client --socket <repo>/tmp/xverif-loop.sock --json \
 | `XVERIF_MCP_ENABLE_MUTATION` | 允许 session 生命周期、配置/list/cursor/exclusion 等状态变更，严格布尔 `0|1`，默认 `0` |
 | `XVERIF_MCP_ENABLE_ARTIFACT_WRITE` | 允许 batch、export 和通用响应文件写入，严格布尔 `0|1`，默认 `0` |
 | `XVERIF_MCP_ARTIFACT_ROOT` | artifact write 开启时必填的既有目录；所有写路径必须 containment 于该目录 |
+| `XVERIF_MCP_BATCH_MAX_INPUT_BYTES` | batch 输入 hard limit，严格正整数，默认 16777216（16 MiB） |
+| `XVERIF_MCP_BATCH_MAX_REQUESTS` | batch 非空请求行 hard limit，严格正整数，默认 10000 |
+| `XVERIF_MCP_BATCH_MAX_OUTPUT_BYTES` | batch 输出 hard limit，严格正整数，默认 67108864（64 MiB） |
 | `XVERIF_LSF_BSUB` | 覆盖 `bsub` 命令（默认 `bsub`） |
 | `XVERIF_LSF_SESSION_QUEUE` | session job 的 LSF 队列（默认 `interactive`） |
 | `XVERIF_LSF_SESSION_RESOURCE` | session job 的 LSF resource string（默认省略） |

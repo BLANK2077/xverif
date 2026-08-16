@@ -35,4 +35,4 @@ direct backend 使用 NPI 时，MCP server 的显式 `env` 必须包含当前站
 
 ## batch
 
-`xverif_batch` 需要 artifact write 权限；其中生命周期或 exclusion 调用还需要 mutation 权限。batch 行里的 tool 参数需要嵌套在 `args` 里；每行 `args` 必须是 object，错误行写入带 `line_number` 的失败记录且不执行 tool。所有 MCP tool 的 `xverif_output_path` 都受 artifact root containment 约束；写入失败不得把原 action 成功当作调用成功。
+`xverif_batch` 需要 artifact write 权限；其中生命周期或 exclusion 调用还需要 mutation 权限。batch 行里的 tool 参数需要嵌套在 `args` 里；每行 `args` 必须是 object。输入先冻结并受 16 MiB/10,000 条默认 hard limit 约束，输出受 64 MiB 默认 hard limit 约束；三项可通过 `XVERIF_MCP_BATCH_MAX_*` 严格正整数环境变量调整。输入输出同 inode（含 symlink/hardlink）会被拒绝，输出必须不存在并以同目录 staging no-clobber 发布。所有 MCP tool 的 `xverif_output_path` 都受 artifact root containment 约束；写入失败不得把原 action 成功当作调用成功。
