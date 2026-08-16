@@ -3,6 +3,7 @@
 import inspect
 import json
 import time
+from copy import deepcopy
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal, Optional
@@ -11,7 +12,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import CallToolResult, TextContent
 from pydantic import Field
 
-from xverif_loop.config import resolve_mcp_runtime_config
+from xverif_loop.config import ConfigError, resolve_mcp_runtime_config
 from xverif_loop.json_contract import strict_json_dumps
 from xverif_loop.logging import resolve_logger
 from xverif_mcp.import_paths import ensure_tool_import_paths
@@ -24,6 +25,7 @@ from xverif_mcp.adapters.xbit import bit_conv, bit_eval, bit_slice, bit_check
 from xverif_mcp.adapters.xentry import entry_decode, entry_explain, entry_validate
 from xverif_mcp.adapters.xloc import loc_resolve, loc_context, loc_stats, loc_annotate
 from xverif_mcp.adapters.xsva import sva_list, sva_scan, sva_parse, sva_explain
+from xverif_mcp.action_capabilities import xcov_capability, xdebug_capability
 from xverif_mcp.errors import error_payload
 from xverif_mcp.framing import strict_json_loads, validate_xout_text
 from xverif_mcp.tool_policy import filtered_catalog, resolve_tool_policy
@@ -132,6 +134,52 @@ def _output_serialization_failed(path: str, exc: Exception) -> CallToolResult:
     )
 
 
+def _artifact_policy_error(action: str, raw_path: str | None = None) -> dict:
+    extra: dict[str, Any] = {
+        "capability": "artifact_write",
+        "action": action,
+        "recoverable": True,
+        "error_layer": "mcp_policy",
+    }
+    if raw_path is not None:
+        extra["requested_path"] = raw_path
+    return _tool_error(
+        "MCP_ARTIFACT_WRITE_DISABLED",
+        "artifact writing is disabled or the requested path is outside XVERIF_MCP_ARTIFACT_ROOT",
+        **extra,
+    )
+
+
+def _mutation_policy_error(action: str) -> dict:
+    return _tool_error(
+        "MCP_MUTATION_DISABLED",
+        "state mutation is disabled; set XVERIF_MCP_ENABLE_MUTATION=1 to enable it",
+        capability="mutation",
+        action=action,
+        recoverable=True,
+        error_layer="mcp_policy",
+    )
+
+
+def _policy_call_result(payload: dict) -> CallToolResult:
+    return CallToolResult(
+        content=[TextContent(
+            type="text",
+            text=strict_json_dumps(payload, ensure_ascii=False),
+        )],
+        isError=True,
+    )
+
+
+def _resolve_policy_artifact_path(action: str, raw_path: Any) -> tuple[str | None, dict | None]:
+    if not MCP_TOOL_POLICY.artifact_write_enabled:
+        return None, _artifact_policy_error(action, str(raw_path) if raw_path is not None else None)
+    try:
+        return str(MCP_TOOL_POLICY.resolve_artifact_path(raw_path)), None
+    except ConfigError:
+        return None, _artifact_policy_error(action, str(raw_path) if raw_path is not None else None)
+
+
 def _wrap_with_output(fn):
     """Wrap a tool function so it accepts ``xverif_output_path`` and
     ``xverif_output_append`` keyword arguments.  When *output_path* is
@@ -151,12 +199,16 @@ def _wrap_with_output(fn):
             output_append = kwargs.pop("xverif_output_append", False)
             result = await fn(*args, **kwargs)
             if output_path:
+                resolved, policy_error = _resolve_policy_artifact_path(fn.__name__, output_path)
+                if policy_error is not None:
+                    return _policy_call_result(policy_error)
+                assert resolved is not None
                 try:
-                    _write_output(result, output_path, output_append)
+                    _write_output(result, resolved, output_append)
                 except OSError as exc:
-                    return _output_write_failed(result, output_path, exc)
+                    return _output_write_failed(result, resolved, exc)
                 except (TypeError, ValueError) as exc:
-                    return _output_serialization_failed(output_path, exc)
+                    return _output_serialization_failed(resolved, exc)
             return result
     else:
         def wrapper(*args, **kwargs):
@@ -164,12 +216,16 @@ def _wrap_with_output(fn):
             output_append = kwargs.pop("xverif_output_append", False)
             result = fn(*args, **kwargs)
             if output_path:
+                resolved, policy_error = _resolve_policy_artifact_path(fn.__name__, output_path)
+                if policy_error is not None:
+                    return _policy_call_result(policy_error)
+                assert resolved is not None
                 try:
-                    _write_output(result, output_path, output_append)
+                    _write_output(result, resolved, output_append)
                 except OSError as exc:
-                    return _output_write_failed(result, output_path, exc)
+                    return _output_write_failed(result, resolved, exc)
                 except (TypeError, ValueError) as exc:
-                    return _output_serialization_failed(output_path, exc)
+                    return _output_serialization_failed(resolved, exc)
             return result
 
     wrapper.__signature__ = new_sig
@@ -179,11 +235,21 @@ def _wrap_with_output(fn):
     return wrapper
 
 
-def xverif_tool(group: str, write: bool = False):
+def xverif_tool(
+    group: str,
+    *,
+    mutation: bool = False,
+    artifact_write: bool = False,
+):
     """Conditionally register a FastMCP tool according to env policy."""
     def decorator(fn):
-        fn = _wrap_with_output(fn)
-        if MCP_TOOL_POLICY.tool_enabled(group, write=write):
+        if MCP_TOOL_POLICY.artifact_write_enabled:
+            fn = _wrap_with_output(fn)
+        if MCP_TOOL_POLICY.tool_enabled(
+            group,
+            mutation=mutation,
+            artifact_write=artifact_write,
+        ):
             registered = mcp.tool()(fn)
             tool = mcp._tool_manager.get_tool(fn.__name__)
             if tool is None:  # pragma: no cover
@@ -371,7 +437,7 @@ def _validate_batch_request(value: Any) -> tuple[str, dict[str, Any]]:
     return tool_name, tool_args
 
 
-@xverif_tool("common")
+@xverif_tool("common", artifact_write=True)
 async def xverif_batch(batch_file: str, output_file: str) -> dict:
     """Execute multiple MCP tool requests from an NDJSON batch file serially.
 
@@ -533,7 +599,7 @@ def xverif_debug_get_schema(
     )
 
 
-@xverif_tool("debug")
+@xverif_tool("debug", mutation=True)
 def xverif_debug_session_open(
     name: str,
     daidir: Optional[str] = None,
@@ -567,7 +633,7 @@ def xverif_debug_session_doctor(
     return debug.session_doctor(session_id, verbose=verbose)
 
 
-@xverif_tool("debug")
+@xverif_tool("debug", mutation=True)
 def xverif_debug_session_close(
     session_id: str,
     mode: Literal["graceful", "force"] = "graceful",
@@ -578,7 +644,7 @@ def xverif_debug_session_close(
     return debug.session_close(session_id, mode=mode)
 
 
-@xverif_tool("debug")
+@xverif_tool("debug", mutation=True)
 def xverif_debug_session_gc(verbose: bool = False) -> dict:
     """Remove confirmed terminal xdebug tombstones; report unresolved sessions."""
     return debug.session_gc(verbose=verbose)
@@ -614,6 +680,85 @@ def _forbidden_batch_lifecycle_action(args: dict) -> tuple[str, str] | None:
             for index, nested in reversed(list(enumerate(child_requests)))
         )
     return None
+
+
+def _authorize_xdebug_action(
+    action: str,
+    args: dict[str, Any],
+) -> tuple[dict[str, Any] | None, dict | None]:
+    """Authorize one xdebug action and canonicalize all artifact paths."""
+    authorized = deepcopy(args)
+    capability = xdebug_capability(action, authorized)
+    if capability.mutation and not MCP_TOOL_POLICY.mutation_enabled:
+        return None, _mutation_policy_error(action)
+
+    if capability.artifact_write != "never":
+        output = authorized.get("output")
+        raw_path = output.get("path") if isinstance(output, dict) else None
+        if capability.artifact_write == "required" and not raw_path:
+            return None, _artifact_policy_error(action)
+        if raw_path:
+            resolved, error = _resolve_policy_artifact_path(action, raw_path)
+            if error is not None:
+                return None, error
+            assert isinstance(output, dict) and resolved is not None
+            output["path"] = resolved
+
+    if action == "batch":
+        requests = authorized.get("requests")
+        if isinstance(requests, list):
+            for child in requests:
+                if not isinstance(child, dict):
+                    continue
+                child_action = child.get("action")
+                child_args = child.get("args", {})
+                if not isinstance(child_action, str) or not isinstance(child_args, dict):
+                    continue
+                rewritten, error = _authorize_xdebug_action(child_action, child_args)
+                if error is not None:
+                    return None, error
+                child["args"] = rewritten
+    return authorized, None
+
+
+def _authorize_xcov_action(
+    action: str,
+    args: dict[str, Any],
+) -> tuple[dict[str, Any] | None, dict | None]:
+    """Authorize one xcov action and canonicalize its write destination."""
+    authorized = deepcopy(args)
+    capability = xcov_capability(action, authorized)
+    if capability.mutation and not MCP_TOOL_POLICY.mutation_enabled:
+        return None, _mutation_policy_error(action)
+    if capability.artifact_write == "never":
+        return authorized, None
+
+    raw_path: Any = None
+    setter = None
+    output = authorized.get("output")
+    if isinstance(output, dict):
+        raw_path = output.get("path")
+        setter = lambda value: output.update({"path": value, "allow_absolute_path": True})
+    elif action == "exclude.csv.compile":
+        raw_path = authorized.get("output_directory")
+        setter = lambda value: authorized.update({
+            "output_directory": value,
+            "allow_absolute_path": True,
+        })
+    elif action in {"exclude.csv.export", "exclude.csv.format"}:
+        raw_path = authorized.get("directory")
+        setter = lambda value: authorized.update({
+            "directory": value,
+            "allow_absolute_path": True,
+        })
+    if not raw_path or setter is None:
+        return None, _artifact_policy_error(action)
+    resolved, error = _resolve_policy_artifact_path(action, raw_path)
+    if error is not None:
+        return None, error
+    assert resolved is not None
+    setter(resolved)
+    return authorized, None
 
 
 @xverif_tool("debug")
@@ -679,6 +824,10 @@ def xverif_debug_query(
             recoverable=True, error_layer="wrapper",
         )
     action_args = args or {}
+    action_args, policy_error = _authorize_xdebug_action(action, action_args)
+    if policy_error is not None:
+        return policy_error
+    assert action_args is not None
     try:
         contract, variant = query_session_requirement(action, action_args)
     except XdebugContractError as exc:
@@ -769,7 +918,7 @@ def xverif_cov_get_schema(
     return cov.schema(action, kind)
 
 
-@xverif_tool("cov")
+@xverif_tool("cov", mutation=True)
 def xverif_cov_session_open(
     name: str,
     vdb: str,
@@ -801,7 +950,7 @@ def xverif_cov_session_doctor(
     return cov.session_doctor(session_id, verbose=verbose)
 
 
-@xverif_tool("cov")
+@xverif_tool("cov", mutation=True)
 def xverif_cov_session_close(
     session_id: str,
     confirm_discard_reasons: bool = False,
@@ -813,7 +962,7 @@ def xverif_cov_session_close(
     )
 
 
-@xverif_tool("cov")
+@xverif_tool("cov", mutation=True)
 def xverif_cov_session_kill(
     session_id: str,
 ) -> dict:
@@ -823,7 +972,7 @@ def xverif_cov_session_kill(
     return cov.session_kill(session_id)
 
 
-@xverif_tool("cov")
+@xverif_tool("cov", mutation=True)
 def xverif_cov_session_gc(verbose: bool = False) -> dict:
     """Remove confirmed terminal xcov tombstones; report unresolved sessions."""
     return cov.session_gc(verbose=verbose)
@@ -847,9 +996,13 @@ def xverif_cov_query(
                            "output_format must be 'xout', 'json', or 'envelope'")
     if is_forbidden_native_session_action(action):
         return forbidden_native_session_error(action, backend="cov")
+    action_args, policy_error = _authorize_xcov_action(action, args or {})
+    if policy_error is not None:
+        return policy_error
+    assert action_args is not None
     return cov.query(
         action=action,
-        args=args or {},
+        args=action_args,
         session_id=session_id,
         output_format=output_format,
     )
@@ -1280,9 +1433,21 @@ TOOL_CATALOG = [
      "description": "Generate a human-readable SVA property explanation."},
 ]
 
+_MUTATION_TOOLS = {
+    "xverif_debug_session_open",
+    "xverif_debug_session_close",
+    "xverif_debug_session_gc",
+    "xverif_cov_session_open",
+    "xverif_cov_session_close",
+    "xverif_cov_session_kill",
+    "xverif_cov_session_gc",
+}
+_ARTIFACT_WRITE_TOOLS = {"xverif_batch"}
+
 for _tool in TOOL_CATALOG:
     _tool.setdefault("group", _tool["category"])
-    _tool.setdefault("write", False)
+    _tool["mutation"] = _tool["name"] in _MUTATION_TOOLS
+    _tool["artifact_write"] = _tool["name"] in _ARTIFACT_WRITE_TOOLS
 
 
 def _xdebug_action_guide(payload: Any) -> str:

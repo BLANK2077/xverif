@@ -200,22 +200,22 @@ LSF queue/resource 的解析优先级固定为 session open 显式参数、
 
 ### 通用参数
 
-所有 MCP tool 自动支持以下可选参数，无需每个 tool 单独声明：
+只有 `XVERIF_MCP_ENABLE_ARTIFACT_WRITE=1` 时，MCP tool 才自动公开以下可选参数：
 
 | 参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `xverif_output_path` | `str \| None` | `None` | 指定文件路径时，tool 响应会额外写入该文件；失败时返回 `OUTPUT_WRITE_FAILED` |
+| `xverif_output_path` | `str \| None` | `None` | 指定文件路径时，tool 响应会额外写入该文件；相对路径基于 artifact root，绝对路径也必须位于 root 内 |
 | `xverif_output_append` | `bool` | `False` | True 为追加写入，False（默认）为覆盖写入 |
 
 示例：
 ```python
-# 将 code_coverage.holes 响应写入 <repo>/tmp/holes.json
+# server 启动时已设置 XVERIF_MCP_ARTIFACT_ROOT=<repo>/tmp/artifacts
 xverif_cov_query(action="code_coverage.holes", args={...},
-                 xverif_output_path="<repo>/tmp/holes.json")
+                 xverif_output_path="holes.json")
 
 # 追加模式
 xverif_debug_query(session_id="case_a", action="value.at", args={...},
-                   xverif_output_path="<repo>/tmp/wave.log",
+                   xverif_output_path="wave.log",
                    xverif_output_append=True)
 ```
 
@@ -374,6 +374,9 @@ tools/xverif-loop-client --socket <repo>/tmp/xverif-loop.sock --json \
 | `XVERIF_MCP_ENABLE_ENTRY` | 暴露 xentry 工具，严格布尔 `0|1`，默认 `1` |
 | `XVERIF_MCP_ENABLE_LOC` | 暴露 xloc 工具，严格布尔 `0|1`，默认 `1` |
 | `XVERIF_MCP_ENABLE_SVA` | 暴露 xsva 工具，严格布尔 `0|1`，默认 `1` |
+| `XVERIF_MCP_ENABLE_MUTATION` | 允许 session 生命周期、配置/list/cursor/exclusion 等状态变更，严格布尔 `0|1`，默认 `0` |
+| `XVERIF_MCP_ENABLE_ARTIFACT_WRITE` | 允许 batch、export 和通用响应文件写入，严格布尔 `0|1`，默认 `0` |
+| `XVERIF_MCP_ARTIFACT_ROOT` | artifact write 开启时必填的既有目录；所有写路径必须 containment 于该目录 |
 | `XVERIF_LSF_BSUB` | 覆盖 `bsub` 命令（默认 `bsub`） |
 | `XVERIF_LSF_SESSION_QUEUE` | session job 的 LSF 队列（默认 `interactive`） |
 | `XVERIF_LSF_SESSION_RESOURCE` | session job 的 LSF resource string（默认省略） |
@@ -469,7 +472,7 @@ xcov exclusion reason 只由 CSV sidecar 持久化。reason revision 尚未经
 
 ## 工具暴露开关
 
-每个工具组都有独立开关，只接受严格 `1` 或 `0`；其它值在启动时返回 typed config error。未设置时，read-only 工具组默认开启；写入类工具默认不暴露。
+每个工具组和写能力都有独立开关，只接受严格 `1` 或 `0`；其它值在启动时返回 typed config error。未设置时只读工具组默认开启，mutation 与 artifact write 默认关闭。固定写工具不会注册；动态 query 在转发前按 action capability 返回 typed policy error。export 的无 path preview 不属于 artifact write，仍可在只读模式使用。
 
 ```bash
 # 只暴露 xdebug + common
@@ -481,6 +484,15 @@ tools/xverif-mcp
 
 # 关闭 xsva
 XVERIF_MCP_ENABLE_SVA=0 tools/xverif-mcp
+
+# 显式允许 session/exclusion 等状态变更，但仍禁止写文件
+XVERIF_MCP_ENABLE_MUTATION=1 tools/xverif-mcp
+
+# 同时允许状态变更和受根目录约束的 artifact
+XVERIF_MCP_ENABLE_MUTATION=1 \
+XVERIF_MCP_ENABLE_ARTIFACT_WRITE=1 \
+XVERIF_MCP_ARTIFACT_ROOT=<repo>/tmp/artifacts \
+tools/xverif-mcp
 ```
 
 关闭某组后，该组工具不会注册到 FastMCP，因此不会出现在 MCP `tools/list` 中，也不能被 MCP client 直接调用。`xverif_tool_help` 使用同一策略查询已注册 MCP tool。

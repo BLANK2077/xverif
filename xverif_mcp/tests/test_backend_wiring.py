@@ -15,6 +15,26 @@ from xverif_loop.sessions.launchers import (
     LsfLauncher,
 )
 from xverif_loop.sessions.session_manager import McpSessionManager
+from xverif_mcp.tool_policy import resolve_tool_policy
+
+
+def test_tool_policy_defaults_to_true_read_only() -> None:
+    policy = resolve_tool_policy({"HOME": "/tmp"})
+    assert policy.mutation_enabled is False
+    assert policy.artifact_write_enabled is False
+    assert policy.artifact_root is None
+
+
+def test_tool_policy_requires_existing_artifact_root(tmp_path) -> None:
+    policy = resolve_tool_policy({
+        "XVERIF_MCP_ENABLE_ARTIFACT_WRITE": "1",
+        "XVERIF_MCP_ARTIFACT_ROOT": str(tmp_path),
+    })
+    assert policy.resolve_artifact_path("nested/result.json") == (
+        tmp_path / "nested/result.json"
+    )
+    with pytest.raises(Exception, match="contained"):
+        policy.resolve_artifact_path("../escape.json")
 
 
 @pytest.mark.parametrize(

@@ -30,12 +30,20 @@ POLICY_ENV = [
     "XVERIF_MCP_ENABLE_ENTRY",
     "XVERIF_MCP_ENABLE_LOC",
     "XVERIF_MCP_ENABLE_SVA",
+    "XVERIF_MCP_ENABLE_MUTATION",
+    "XVERIF_MCP_ENABLE_ARTIFACT_WRITE",
+    "XVERIF_MCP_ARTIFACT_ROOT",
 ]
 
 
 def _server(monkeypatch: pytest.MonkeyPatch, overrides: dict[str, str] | None = None):
     for name in POLICY_ENV:
         monkeypatch.delenv(name, raising=False)
+    # Most legacy integration cases exercise the fully enabled server. Tests
+    # for the public default override these flags explicitly.
+    monkeypatch.setenv("XVERIF_MCP_ENABLE_MUTATION", "1")
+    monkeypatch.setenv("XVERIF_MCP_ENABLE_ARTIFACT_WRITE", "1")
+    monkeypatch.setenv("XVERIF_MCP_ARTIFACT_ROOT", "/tmp")
     for name, value in (overrides or {}).items():
         monkeypatch.setenv(name, value)
     if "xverif_mcp.server" in sys.modules:
@@ -504,6 +512,31 @@ def test_tool_group_disable_common(monkeypatch: pytest.MonkeyPatch):
     assert "xverif_debug_query" in names
 
 
+def test_default_read_only_policy_hides_fixed_write_tools(monkeypatch: pytest.MonkeyPatch):
+    names = _tool_names(monkeypatch, {
+        "XVERIF_MCP_ENABLE_MUTATION": "0",
+        "XVERIF_MCP_ENABLE_ARTIFACT_WRITE": "0",
+    })
+    assert "xverif_ping" in names
+    assert "xverif_debug_query" in names
+    assert "xverif_cov_query" in names
+    assert "xverif_debug_session_open" not in names
+    assert "xverif_cov_session_close" not in names
+    assert "xverif_batch" not in names
+
+    server = _server(monkeypatch, {
+        "XVERIF_MCP_ENABLE_MUTATION": "0",
+        "XVERIF_MCP_ENABLE_ARTIFACT_WRITE": "0",
+    })
+
+    async def _run():
+        tools = await server.mcp.list_tools()
+        ping = next(tool for tool in tools if tool.name == "xverif_ping")
+        assert "xverif_output_path" not in ping.inputSchema.get("properties", {})
+
+    anyio.run(_run)
+
+
 def test_invalid_bool_policy_fails_closed_with_typed_config_error(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -511,6 +544,72 @@ def test_invalid_bool_policy_fails_closed_with_typed_config_error(
 
     with pytest.raises(ConfigError, match="XVERIF_MCP_ENABLE_SVA"):
         _server(monkeypatch, {"XVERIF_MCP_ENABLE_SVA": "maybe"})
+
+
+def test_read_only_policy_rejects_dynamic_mutation(monkeypatch: pytest.MonkeyPatch):
+    content, _ = _call_tool(
+        monkeypatch,
+        "xverif_debug_query",
+        {
+            "session_id": "s0",
+            "action": "apb.config.load",
+            "args": {"name": "apb0", "config": {}},
+        },
+        {"XVERIF_MCP_ENABLE_MUTATION": "0"},
+    )
+    payload = json.loads(content[0].text)
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "MCP_MUTATION_DISABLED"
+    assert payload["error"]["action"] == "apb.config.load"
+
+
+def test_artifact_policy_rewrites_relative_action_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    server = _server(monkeypatch, {
+        "XVERIF_MCP_ENABLE_ARTIFACT_WRITE": "1",
+        "XVERIF_MCP_ARTIFACT_ROOT": str(tmp_path),
+    })
+    monkeypatch.setattr(server.debug, "query", lambda **kwargs: kwargs)
+    content, _ = _call_server_tool(
+        server,
+        "xverif_debug_query",
+        {
+            "session_id": "s0",
+            "action": "apb.export",
+            "args": {
+                "name": "apb0",
+                "time_range": {"begin": "0ns", "end": "1ns"},
+                "output": {"path": "exports/apb0"},
+            },
+            "output_format": "json",
+        },
+    )
+    payload = json.loads(content[0].text)
+    assert payload["args"]["output"]["path"] == str(tmp_path / "exports/apb0")
+
+
+def test_artifact_policy_rejects_path_outside_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    content, _ = _call_tool(
+        monkeypatch,
+        "xverif_cov_query",
+        {
+            "session_id": "s0",
+            "action": "export.assert",
+            "args": {"output": {"path": "/outside/report.md"}},
+        },
+        {
+            "XVERIF_MCP_ENABLE_ARTIFACT_WRITE": "1",
+            "XVERIF_MCP_ARTIFACT_ROOT": str(tmp_path),
+        },
+    )
+    payload = json.loads(content[0].text)
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "MCP_ARTIFACT_WRITE_DISABLED"
 
 
 def test_tool_help_disabled_tool_is_hidden(monkeypatch: pytest.MonkeyPatch):
@@ -580,8 +679,8 @@ def test_output_path_invalid_dir_returns_structured_failure(monkeypatch: pytest.
     assert content.isError is True
     payload = json.loads(content.content[0].text)
     assert payload["ok"] is False
-    assert payload["error"]["code"] == "OUTPUT_WRITE_FAILED"
-    assert payload["error"]["output_path"] == "/nonexistent/dir/rsp.txt"
+    assert payload["error"]["code"] == "MCP_ARTIFACT_WRITE_DISABLED"
+    assert payload["error"]["requested_path"] == "/nonexistent/dir/rsp.txt"
     assert "data" not in payload
     assert content.structuredContent is None
 

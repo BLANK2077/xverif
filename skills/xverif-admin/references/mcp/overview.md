@@ -12,6 +12,12 @@
 
 如果不确定哪些工具暴露，先调用 `xverif_tools`。`XVERIF_MCP_ENABLE_*` 可能关闭部分工具组。
 
+MCP 默认是真正只读：`XVERIF_MCP_ENABLE_MUTATION` 与
+`XVERIF_MCP_ENABLE_ARTIFACT_WRITE` 都默认为 `0`。需要 open/close/kill/gc、配置/list/cursor、
+coverage exclusion 等状态变更时显式开启 mutation。需要 batch、export artifact 或
+`xverif_output_path` 时还要开启 artifact write，并把既有目录配置到
+`XVERIF_MCP_ARTIFACT_ROOT`；相对和绝对输出都不得逃逸该根目录。按当前任务所需的最小能力授权。
+
 连通性检查使用 `xverif_ping`。它不访问 backend、session、NPI 或 license，适合确认 MCP server 本身是否可调用。
 
 direct backend 使用 NPI 时，MCP server 的显式 `env` 必须包含当前站点所需的
@@ -29,4 +35,4 @@ direct backend 使用 NPI 时，MCP server 的显式 `env` 必须包含当前站
 
 ## batch
 
-`xverif_batch` 执行 NDJSON tool 请求文件，适合 open -> query -> close 的串行流程。batch 行里的 tool 参数需要嵌套在 `args` 里；每行 `args` 必须是 object，错误行写入带 `line_number` 的失败记录且不执行 tool。所有 MCP tool 的 `xverif_output_path` 写入失败会返回 `OUTPUT_WRITE_FAILED`，不得把原 action 成功当作调用成功。
+`xverif_batch` 需要 artifact write 权限；其中生命周期或 exclusion 调用还需要 mutation 权限。batch 行里的 tool 参数需要嵌套在 `args` 里；每行 `args` 必须是 object，错误行写入带 `line_number` 的失败记录且不执行 tool。所有 MCP tool 的 `xverif_output_path` 都受 artifact root containment 约束；写入失败不得把原 action 成功当作调用成功。
