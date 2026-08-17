@@ -11,12 +11,14 @@ Verifies:
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import shlex
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from jsonschema import Draft202012Validator
@@ -295,6 +297,22 @@ class TestOpenFailure:
 
 
 class TestStrictJsonlProtocol:
+    def test_reader_threads_treat_locally_closed_pipes_as_normal_shutdown(self):
+        runtime = _runtime()
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        stdout.close()
+        stderr.close()
+        handle = JsonlProcess(
+            argv=[],
+            proc=SimpleNamespace(stdout=stdout, stderr=stderr),
+            runtime=runtime,
+            logger=resolve_logger(runtime),
+        )
+
+        handle._read_stdout()
+        handle._read_stderr()
+
     def test_ready_rejects_non_json_stdout_without_echoing_it(self, tmp_path):
         fake = _make_fake_script(tmp_path / "polluted_ready", [
             "import sys, time",

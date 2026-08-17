@@ -143,43 +143,58 @@ class JsonlProcess:
 
     def _read_stdout(self) -> None:
         assert self.proc.stdout is not None
+        stream = self.proc.stdout
         from xverif_loop.lsf.bsub import (
             is_lsf_scheduler_framing as _is_framing,
             parse_lsf_job_id as _parse,
         )
-        for line in self.proc.stdout:
-            stripped = line.rstrip("\n")
-            jid = _parse(stripped)
-            if jid and not self.job_id:
-                self.job_id = jid
-                self._try_log_lsf(
-                    "job_id.detected",
-                    True,
-                    job_id=jid,
-                )
-            if self.log_launcher == "lsf" and (jid is not None or _is_framing(stripped)):
-                # LSF scheduler framing is never backend JSONL protocol data,
-                # including lines emitted after the job id was already seen.
-                self._try_log_lsf("scheduler.framing", True)
-                continue
-            self.stdout_queue.put(stripped)
-
-    def _read_stderr(self) -> None:
-        assert self.proc.stderr is not None
-        # Lazy import to avoid circular dependency
-        from xverif_loop.lsf.bsub import parse_lsf_job_id as _parse
-        for line in self.proc.stderr:
-            stripped = line.rstrip("\n")
-            self.stderr_tail.append(stripped)
-            if not self.job_id:
+        try:
+            for line in stream:
+                stripped = line.rstrip("\n")
                 jid = _parse(stripped)
-                if jid:
+                if jid and not self.job_id:
                     self.job_id = jid
                     self._try_log_lsf(
                         "job_id.detected",
                         True,
                         job_id=jid,
                     )
+                if self.log_launcher == "lsf" and (
+                    jid is not None or _is_framing(stripped)
+                ):
+                    # LSF scheduler framing is never backend JSONL protocol
+                    # data, including lines emitted after the job id was
+                    # already seen.
+                    self._try_log_lsf("scheduler.framing", True)
+                    continue
+                self.stdout_queue.put(stripped)
+        except ValueError:
+            if stream.closed:
+                return
+            raise
+
+    def _read_stderr(self) -> None:
+        assert self.proc.stderr is not None
+        stream = self.proc.stderr
+        # Lazy import to avoid circular dependency
+        from xverif_loop.lsf.bsub import parse_lsf_job_id as _parse
+        try:
+            for line in stream:
+                stripped = line.rstrip("\n")
+                self.stderr_tail.append(stripped)
+                if not self.job_id:
+                    jid = _parse(stripped)
+                    if jid:
+                        self.job_id = jid
+                        self._try_log_lsf(
+                            "job_id.detected",
+                            True,
+                            job_id=jid,
+                        )
+        except ValueError:
+            if stream.closed:
+                return
+            raise
 
     def wait_ready(self, protocol: str, timeout_sec: float = 30.0) -> Json:
         self._log_stdio("ready.wait.begin", True, protocol=protocol, timeout_sec=timeout_sec)
