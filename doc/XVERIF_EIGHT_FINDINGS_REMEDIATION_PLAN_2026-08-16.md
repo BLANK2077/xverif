@@ -5,7 +5,7 @@
 - 日期：2026-08-16
 - 基线：`2f80afb`
 - 分支：`master`
-- 当前阶段：P07 MCP 可抢占生命周期完成，准备进入 P08 全量验收
+- 当前阶段：P08 已完成；八项修复、旧缓存全仓验收与 skill 安装均已收口
 - 用户已有改动：`AGENTS.md`，本任务不得修改、暂存或提交该文件。
 - GitHub 边界：PR #3 与 issue #2 暂不处理，不移植、不回复、不关闭、不合并。
 
@@ -31,7 +31,7 @@
 3. batch 默认限制输入 16 MiB、10,000 条、输出 64 MiB，并以 no-clobber 原子方式发布。
 4. AXI/APB/stream 导出在失败、冲突和并发下不覆盖旧结果，不在返回后遗留部分 artifact set。
 5. blocked query 不再阻塞同 session 的 kill；close/doctor 使用有界状态快照。
-6. 关联 focused suites、schema/skill 检查、fast、host regression、host nightly 和 fixture validation 通过；若环境阻塞，必须保留原入口并明确记录，不 fallback。
+6. 关联 focused suites、schema/skill 检查、fast、host regression 和 host nightly 通过。用户在 fixture validation 运行期间明确要求停止重建/校验，最终验收改为只消费旧有已发布缓存的全仓 host nightly；缓存缺失必须失败，不 prepare、不 fallback。
 
 ## 3. 分阶段提交计划
 
@@ -44,8 +44,8 @@
 | P04 | XDEBUG-EXPORT-01 | 导出：统一协议 artifact 原子发布 | completed (`7b3a78a`) |
 | P05 | XSVA-COR-01 | 修复：规范 sampled function 证据信号提取 | completed (`d5324af`) |
 | P06 | XCOV-CACHE-01 | 合同：明确 URG cache 并发软容量语义 | completed (`493c17c`) |
-| P07 | MCP-LIFE-01 | 生命周期：支持阻塞查询下的可抢占恢复 | completed（待提交） |
-| P08 | 全量验证、skill 安装和报告收口 | 文档：完成八项评审修复最终验收 | pending |
+| P07 | MCP-LIFE-01 | 生命周期：支持阻塞查询下的可抢占恢复 | completed (`c81e4fc`、`519588f`) |
+| P08 | 全量验证、skill 安装和报告收口 | 文档：完成八项评审修复最终验收 | completed（本提交） |
 
 ## 4. 公共合同
 
@@ -73,7 +73,7 @@ tool/action capability 必须显式声明：
 - XSVA：`xsva.core`、`xsva.cli`、`xsva.vcs`。
 - XCOV：`xcov.unit`、`xcov.urg_backend`。
 - Skill：`skills.xverif`、`skills.xverif_admin`、`skills.public_docs`。
-- 全仓：fast、host regression、host nightly、全量 fixture validation。
+- 全仓：fast、host regression、只消费旧有已发布缓存的 host nightly。fixture validation 已按用户指令停止，不再作为本轮验收入口。
 
 所有 NPI、FSDB、VDB、VCS、VIP 和真实 MCP process 验证使用 host 正式入口。每次提交前检查 `git status --short` 与 staged 白名单，不使用 `git add .`。
 
@@ -96,3 +96,11 @@ tool/action capability 必须显式声明：
 | 2026-08-16 | P06 | URG cache 明确为已发布 entry 快照的 best-effort soft admission；不同 key 并发可超限，后续 cold admission 关闭，warm hit 与显式维护合同不变 | host `xcov.unit`: 170 passed；host `xcov.urg_backend`: 7 passed；`skills.xverif`: 16 passed；`skills.public_docs`: 4 passed |
 | 2026-08-16 | P07 | query request lane 与 lifecycle state lock 分离；kill 原子摘除 handle 并抢占终止阻塞 transport，generation guard 阻止旧 query 覆盖最终状态 | `xverif_mcp.process`: 155 passed |
 | 2026-08-16 | P07 | close 在 request lane busy 时立即返回 `SESSION_BUSY` 并保留 session；doctor 不等待 busy lane，按 backend 能力走 fixed native admin 或明确 health unknown | `xverif_mcp.unit`: 180 passed；新增 blocked query 对 kill/close/doctor 竞态用例通过 |
+| 2026-08-17 | P07 | 子进程清理期间关闭 stdout/stderr 与 reader 线程迭代的竞态按正常退出处理，非关闭状态的 `ValueError` 仍向上抛出 | `xverif_mcp.process`: 156 passed；commit `519588f` |
+| 2026-08-17 | P08 | MCP 权限、artifact root 与 batch 真实工作流测试同步到严格默认合同 | `xverif_mcp.action_smoke`: 1 passed；`xdebug.mcp_direct`: 4 passed；`xdebug.mcp_fake_lsf`: 3 passed；`xcov.mcp_integration`: 17 passed；`xverif_mcp.real_fullchain`: 1 passed；commit `8a96499` |
+| 2026-08-17 | P08 | 全仓确定性回归在 host 正式入口通过 | host regression：1226 passed |
+| 2026-08-17 | P08 | fixture validation 运行到 17/29 时按用户指令中断；中断中的 AXI 未发布新版本，既有 `current.json` 仍指向完整旧版本，`.staging` 与 `.claims` 为空 | 用户将最终验收改为“停止建立，使用旧的缓存”；不再执行 prepare/validation |
+| 2026-08-17 | P08 | 生命周期告警修复后的全仓 fast 通过 | fast：595 passed；结果目录 `.xverif-test-results/20260817-104420-24n6h58z` |
+| 2026-08-17 | P08 | 只消费旧有已发布 fixture 缓存的全仓 host nightly 通过；无 pytest warning | 1328 passed，2 个可选 real-LSF 用例因宿主缺少 `bsub`/`bjobs`/`bkill` 跳过；结果目录 `.xverif-test-results/20260817-104536-hieontu_` |
+| 2026-08-17 | P08 | xverif 与 xverif-admin skill 安装并与 Codex/Claude 安装目录核对一致 | `make install-xverif-skill`、`make install-xverif-admin-skill`；排除安装 manifest 与 `__pycache__` 后 `diff -qr` 通过 |
+| 2026-08-17 | P08 | GitHub 边界保持不变 | PR #3 与 issue #2 未回复、未修改、未关闭、未合并；本任务未 push |
