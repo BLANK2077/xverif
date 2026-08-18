@@ -47,7 +47,7 @@ session open/close 工具，而真实 lifecycle 测试又统一显式设置为 `
 | --- | --- | --- | --- |
 | P0 | 推送 `666e18d`、建立计划与 fixture 基线 | completed | 本计划提交 |
 | P1 | 补齐纯策略、默认工具注册和 fake dispatch 测试 | completed | 本阶段测试提交 |
-| P2 | 让真实 MCP lifecycle 测试消费 mutation 公共默认值 | pending | pending |
+| P2 | 让真实 MCP lifecycle 测试消费 mutation 公共默认值 | completed | 本阶段真实链路提交 |
 | P3 | focused suite 验收、fixture 哈希复核和报告收口 | pending | pending |
 
 ### P1：无 Fixture 测试
@@ -79,4 +79,8 @@ session open/close 工具，而真实 lifecycle 测试又统一显式设置为 `
 - 2026-08-18：P1 已补入六变量解析矩阵、公共默认工具目录、无 mutation 环境变量的 fake session open dispatch 和 server 初始化失败合同，等待正式 suite 验证。
 - 2026-08-18：fast `xverif_mcp.unit` 通过，`215 passed`；结果目录 `.xverif-test-results/20260818-210615-1oa2uxnq`。
 - 2026-08-18：host regression `xverif_mcp.process` 通过，`164 passed`；结果目录 `.xverif-test-results/20260818-210631-d1j5l928`。
+- 2026-08-18：P2 已从 xcov integration、action smoke 和 real fullchain 删除 mutation 显式开启；artifact 写测试继续使用隔离授权，等待真实 focused suites 验证。
+- 2026-08-18：host regression `xverif_mcp.action_smoke` 通过，`1 passed`；结果目录 `.xverif-test-results/20260818-210752-6x6hioz7`。
+- 2026-08-18：host nightly `xcov.mcp_integration` 通过，`17 passed`；结果目录 `.xverif-test-results/20260818-210812-jwp4d31k`。
+- 2026-08-18：host nightly `xverif_mcp.real_fullchain` 通过，`1 passed`；结果目录 `.xverif-test-results/20260818-210917-8rvglrjm`。
 - P1/P2/P3 的测试结果和提交 ID 在实施后追加到本节。

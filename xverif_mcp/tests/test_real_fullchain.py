@@ -44,7 +44,6 @@ def test_real_mcp_wire_reaches_xdebug_and_xcov(
         "XVERIF_LOOP_LOG_DIR": str(tmp_path / "loop-logs"),
         "XVERIF_TEST_TMPDIR": str(tmp_path / "state"),
         "XVERIF_XCOV_EXPORT_ROOTS": str(tmp_path),
-        "XVERIF_MCP_ENABLE_MUTATION": "1",
         "XVERIF_MCP_ENABLE_ARTIFACT_WRITE": "1",
         "XVERIF_MCP_ARTIFACT_ROOT": str(tmp_path),
     })

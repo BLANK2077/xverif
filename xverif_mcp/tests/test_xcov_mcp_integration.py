@@ -48,7 +48,6 @@ def _server(monkeypatch, overrides=None):
     for name in POLICY_ENV:
         monkeypatch.delenv(name, raising=False)
     resolved_overrides = overrides or {}
-    monkeypatch.setenv("XVERIF_MCP_ENABLE_MUTATION", "1")
     export_roots = resolved_overrides.get("XVERIF_XCOV_EXPORT_ROOTS")
     if export_roots:
         monkeypatch.setenv("XVERIF_MCP_ENABLE_ARTIFACT_WRITE", "1")
