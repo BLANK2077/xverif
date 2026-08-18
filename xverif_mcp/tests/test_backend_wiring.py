@@ -18,9 +18,9 @@ from xverif_loop.sessions.session_manager import McpSessionManager
 from xverif_mcp.tool_policy import resolve_tool_policy
 
 
-def test_tool_policy_defaults_to_true_read_only() -> None:
+def test_tool_policy_defaults_mutation_on_artifact_write_off() -> None:
     policy = resolve_tool_policy({"HOME": "/tmp"})
-    assert policy.mutation_enabled is False
+    assert policy.mutation_enabled is True
     assert policy.artifact_write_enabled is False
     assert policy.artifact_root is None
 

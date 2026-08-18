@@ -12,9 +12,9 @@
 
 如果不确定哪些工具暴露，先调用 `xverif_tools`。`XVERIF_MCP_ENABLE_*` 可能关闭部分工具组。
 
-MCP 默认是真正只读：`XVERIF_MCP_ENABLE_MUTATION` 与
-`XVERIF_MCP_ENABLE_ARTIFACT_WRITE` 都默认为 `0`。需要 open/close/kill/gc、配置/list/cursor、
-coverage exclusion 等状态变更时显式开启 mutation。需要 batch、export artifact 或
+`XVERIF_MCP_ENABLE_MUTATION` 默认开启（`1`），open/close/kill/gc、配置/list/cursor、
+coverage exclusion 等状态变更默认可用；需要只读部署时显式设为 `0`。
+`XVERIF_MCP_ENABLE_ARTIFACT_WRITE` 默认关闭（`0`）。需要 batch、export artifact 或
 `xverif_output_path` 时还要开启 artifact write，并把既有目录配置到
 `XVERIF_MCP_ARTIFACT_ROOT`；相对和绝对输出都不得逃逸该根目录。按当前任务所需的最小能力授权。
 

@@ -36,7 +36,7 @@ class ToolPolicy:
     """One immutable tool-exposure snapshot."""
 
     groups: tuple[tuple[str, bool], ...]
-    mutation_enabled: bool = False
+    mutation_enabled: bool = True
     artifact_write_enabled: bool = False
     artifact_root: Path | None = None
     batch_max_input_bytes: int = DEFAULT_BATCH_MAX_INPUT_BYTES
@@ -123,7 +123,7 @@ def _strict_env_positive_int(
 
 def resolve_tool_policy(environ: Mapping[str, str] | None = None) -> ToolPolicy:
     snapshot = dict(os.environ if environ is None else environ)
-    mutation_enabled = _strict_env_flag(snapshot, MUTATION_ENV, False)
+    mutation_enabled = _strict_env_flag(snapshot, MUTATION_ENV, True)
     artifact_write_enabled = _strict_env_flag(snapshot, ARTIFACT_WRITE_ENV, False)
     configured_root = snapshot.get(ARTIFACT_ROOT_ENV)
     artifact_root: Path | None = None
