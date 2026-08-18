@@ -46,7 +46,7 @@ session open/close 工具，而真实 lifecycle 测试又统一显式设置为 `
 | 阶段 | 内容 | 状态 | 提交 |
 | --- | --- | --- | --- |
 | P0 | 推送 `666e18d`、建立计划与 fixture 基线 | completed | 本计划提交 |
-| P1 | 补齐纯策略、默认工具注册和 fake dispatch 测试 | pending | pending |
+| P1 | 补齐纯策略、默认工具注册和 fake dispatch 测试 | completed | 本阶段测试提交 |
 | P2 | 让真实 MCP lifecycle 测试消费 mutation 公共默认值 | pending | pending |
 | P3 | focused suite 验收、fixture 哈希复核和报告收口 | pending | pending |
 
@@ -76,4 +76,7 @@ session open/close 工具，而真实 lifecycle 测试又统一显式设置为 `
 - 2026-08-18：宿主推送 `master` 成功，`origin/master` 指向 `666e18dad2872f8908d9cf0abfd89e04a8cd8336`。
 - 2026-08-18：记录三个 fixture 的冻结基线；未执行 prepare 或 fixture validation。
 - 2026-08-18：建立 Goal，目标包含六变量合同、五个正式 focused suites、fixture 不变验收和禁止 fallback 约束。
+- 2026-08-18：P1 已补入六变量解析矩阵、公共默认工具目录、无 mutation 环境变量的 fake session open dispatch 和 server 初始化失败合同，等待正式 suite 验证。
+- 2026-08-18：fast `xverif_mcp.unit` 通过，`215 passed`；结果目录 `.xverif-test-results/20260818-210615-1oa2uxnq`。
+- 2026-08-18：host regression `xverif_mcp.process` 通过，`164 passed`；结果目录 `.xverif-test-results/20260818-210631-d1j5l928`。
 - P1/P2/P3 的测试结果和提交 ID 在实施后追加到本节。

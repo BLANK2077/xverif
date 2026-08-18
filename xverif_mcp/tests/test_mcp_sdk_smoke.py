@@ -39,14 +39,19 @@ POLICY_ENV = [
 ]
 
 
-def _server(monkeypatch: pytest.MonkeyPatch, overrides: dict[str, str] | None = None):
+def _server(
+    monkeypatch: pytest.MonkeyPatch,
+    overrides: dict[str, str] | None = None,
+    *,
+    artifact_write: bool = True,
+):
     for name in POLICY_ENV:
         monkeypatch.delenv(name, raising=False)
-    # Most legacy integration cases exercise the fully enabled server. Tests
-    # for the public default override these flags explicitly.
-    monkeypatch.setenv("XVERIF_MCP_ENABLE_MUTATION", "1")
-    monkeypatch.setenv("XVERIF_MCP_ENABLE_ARTIFACT_WRITE", "1")
-    monkeypatch.setenv("XVERIF_MCP_ARTIFACT_ROOT", "/tmp")
+    # Lifecycle tests intentionally consume the public mutation default. Tests
+    # that exercise file output opt in to the independent artifact capability.
+    if artifact_write:
+        monkeypatch.setenv("XVERIF_MCP_ENABLE_ARTIFACT_WRITE", "1")
+        monkeypatch.setenv("XVERIF_MCP_ARTIFACT_ROOT", "/tmp")
     for name, value in (overrides or {}).items():
         monkeypatch.setenv(name, value)
     if "xverif_mcp.server" in sys.modules:
@@ -88,6 +93,54 @@ def _call_server_tool(server, name: str, args: dict | None = None):
 def test_mcp_server_initialize(monkeypatch: pytest.MonkeyPatch):
     server = _server(monkeypatch)
     assert server.mcp.name == "xverif"
+
+
+def test_public_defaults_register_lifecycle_without_artifact_tools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = _server(monkeypatch, artifact_write=False)
+
+    async def _schemas():
+        return {tool.name: tool.inputSchema for tool in await server.mcp.list_tools()}
+
+    schemas = anyio.run(_schemas)
+    assert "xverif_debug_session_open" in schemas
+    assert "xverif_debug_session_close" in schemas
+    assert "xverif_cov_session_open" in schemas
+    assert "xverif_cov_session_close" in schemas
+    assert "xverif_batch" not in schemas
+    assert "xverif_output_path" not in schemas["xverif_ping"]["properties"]
+    assert server.MCP_TOOL_POLICY.mutation_enabled is True
+    assert server.MCP_TOOL_POLICY.artifact_write_enabled is False
+
+
+def test_public_defaults_dispatch_session_open_without_mutation_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = _server(monkeypatch, artifact_write=False)
+
+    class FakeDebugAdapter:
+        def session_open(self, **kwargs):
+            return {
+                "ok": True,
+                "session": {
+                    "session_id": kwargs["name"],
+                    "state": "alive",
+                },
+            }
+
+    monkeypatch.setattr(server, "debug", FakeDebugAdapter())
+    content, _ = _call_server_tool(
+        server,
+        "xverif_debug_session_open",
+        {"name": "default_policy", "fsdb": "/tmp/default.fsdb"},
+    )
+    payload = json.loads(content[0].text)
+    assert payload["ok"] is True
+    assert payload["session"] == {
+        "session_id": "default_policy",
+        "state": "alive",
+    }
 
 
 def test_stateful_cleanup_logs_and_continues_after_failure(monkeypatch: pytest.MonkeyPatch):
@@ -515,7 +568,7 @@ def test_tool_group_disable_common(monkeypatch: pytest.MonkeyPatch):
     assert "xverif_debug_query" in names
 
 
-def test_default_read_only_policy_hides_fixed_write_tools(monkeypatch: pytest.MonkeyPatch):
+def test_explicit_read_only_policy_hides_fixed_write_tools(monkeypatch: pytest.MonkeyPatch):
     names = _tool_names(monkeypatch, {
         "XVERIF_MCP_ENABLE_MUTATION": "0",
         "XVERIF_MCP_ENABLE_ARTIFACT_WRITE": "0",
@@ -547,6 +600,44 @@ def test_invalid_bool_policy_fails_closed_with_typed_config_error(
 
     with pytest.raises(ConfigError, match="XVERIF_MCP_ENABLE_SVA"):
         _server(monkeypatch, {"XVERIF_MCP_ENABLE_SVA": "maybe"})
+
+
+@pytest.mark.parametrize(
+    ("env_name", "invalid"),
+    [
+        ("XVERIF_MCP_ENABLE_MUTATION", "yes"),
+        ("XVERIF_MCP_ENABLE_ARTIFACT_WRITE", "yes"),
+        ("XVERIF_MCP_BATCH_MAX_INPUT_BYTES", "0"),
+        ("XVERIF_MCP_BATCH_MAX_REQUESTS", "-1"),
+        ("XVERIF_MCP_BATCH_MAX_OUTPUT_BYTES", "many"),
+    ],
+)
+def test_new_policy_environment_errors_fail_server_initialization(
+    monkeypatch: pytest.MonkeyPatch,
+    env_name: str,
+    invalid: str,
+) -> None:
+    from xverif_loop.config import ConfigError
+
+    with pytest.raises(ConfigError, match=env_name):
+        _server(
+            monkeypatch,
+            {env_name: invalid},
+            artifact_write=False,
+        )
+
+
+def test_artifact_write_without_root_fails_server_initialization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xverif_loop.config import ConfigError
+
+    with pytest.raises(ConfigError, match="XVERIF_MCP_ARTIFACT_ROOT"):
+        _server(
+            monkeypatch,
+            {"XVERIF_MCP_ENABLE_ARTIFACT_WRITE": "1"},
+            artifact_write=False,
+        )
 
 
 def test_read_only_policy_rejects_dynamic_mutation(monkeypatch: pytest.MonkeyPatch):
