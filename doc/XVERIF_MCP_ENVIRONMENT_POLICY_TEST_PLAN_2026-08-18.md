@@ -45,10 +45,10 @@ session open/close 工具，而真实 lifecycle 测试又统一显式设置为 `
 
 | 阶段 | 内容 | 状态 | 提交 |
 | --- | --- | --- | --- |
-| P0 | 推送 `666e18d`、建立计划与 fixture 基线 | completed | 本计划提交 |
-| P1 | 补齐纯策略、默认工具注册和 fake dispatch 测试 | completed | 本阶段测试提交 |
-| P2 | 让真实 MCP lifecycle 测试消费 mutation 公共默认值 | completed | 本阶段真实链路提交 |
-| P3 | focused suite 验收、fixture 哈希复核和报告收口 | pending | pending |
+| P0 | 推送 `666e18d`、建立计划与 fixture 基线 | completed | `b1a89ec` |
+| P1 | 补齐纯策略、默认工具注册和 fake dispatch 测试 | completed | `cec8ac9` |
+| P2 | 让真实 MCP lifecycle 测试消费 mutation 公共默认值 | completed | `45fcef6` |
+| P3 | focused suite 验收、fixture 哈希复核和报告收口 | completed | 本验收提交 |
 
 ### P1：无 Fixture 测试
 
@@ -83,4 +83,6 @@ session open/close 工具，而真实 lifecycle 测试又统一显式设置为 `
 - 2026-08-18：host regression `xverif_mcp.action_smoke` 通过，`1 passed`；结果目录 `.xverif-test-results/20260818-210752-6x6hioz7`。
 - 2026-08-18：host nightly `xcov.mcp_integration` 通过，`17 passed`；结果目录 `.xverif-test-results/20260818-210812-jwp4d31k`。
 - 2026-08-18：host nightly `xverif_mcp.real_fullchain` 通过，`1 passed`；结果目录 `.xverif-test-results/20260818-210917-8rvglrjm`。
+- 2026-08-18：验收后再次核对三个 fixture 的 `current.json`；SHA-256、fingerprint 和 version 与第 3 节冻结基线逐项一致，确认本任务未重建或切换 fixture cache。
+- 2026-08-18：全部五个正式 focused suites 通过，P0/P1/P2 分阶段提交完成；工作树仅保留用户既有 `AGENTS.md` 改动。
 - P1/P2/P3 的测试结果和提交 ID 在实施后追加到本节。
