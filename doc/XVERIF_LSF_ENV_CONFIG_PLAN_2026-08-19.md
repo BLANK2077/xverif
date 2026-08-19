@@ -124,5 +124,27 @@ replace。默认配置文件加入 `.gitignore`。
 | LSF 远端继承 | 已完成 | `98b4959` | 仅 SDK-free opt-in `-env all`；计算节点 pre-exec 指纹校验 |
 | 捕获脚本 | 已完成 | `98b4959` | repo/wheel entry、allowlist、敏感过滤、no-clobber/force |
 | 测试 | 已完成 | `98b4959` | unit 227、process 173、wheel 1、真实缓存 1、xcov unit 170 |
-| 文档与 skill | 进行中 | 待填写 | README、协议与 skill 已同步；待安装 diff 验收 |
-| 最终验收 | 进行中 | - | 未调用 fixture prepare；待记录缓存指针与最终 status |
+| 文档与 skill | 已完成 | `95f57dc` | README、协议与 skill 已同步；Codex/Claude 安装目录排除 manifest 后 `diff -qr` 一致 |
+| 最终验收 | 已完成 | 待填写 | 未调用 fixture prepare；两个消费 fixture 的 current 指针均保持 2026-08-17 既有时间 |
+
+### 最终验证记录
+
+- `xverif_mcp.unit`：227 passed。
+- `xverif_mcp.process`：173 passed；包含 MCP 不读取 SDK-free 指纹、MCP bsub
+  argv 不含 `-env` 的差分合同。
+- `xverif_mcp.runtime_package`：1 passed；clean wheel 包含三个 SDK-free console
+  entry。
+- `xverif_mcp.sdk_free_lsf_real_data`：1 passed；消费既有
+  `xdebug.ai_complex_wave` 与 `xcov.comprehensive` fixture。
+- `xcov.unit`：170 passed；`make -C xdebug xdebug` 通过。
+- `skills.xverif_admin`：1 passed；`skills.xverif`：16 passed。
+- `xdebug.static`：118 passed、1 failed。失败项要求本次未修改的
+  `skills/xverif/agents/openai.yaml` 含 `available_values`，与 SDK-free 环境配置
+  无关，未在本任务越界修复。
+- `xdebug.ai_complex_wave/current.json` 的 mtime 保持
+  `2026-08-17 10:06:50 +0800`，SHA-256 为
+  `a2eb266105909f1941f2e8e4f1043f96701865b728fff16f42fdac7cd17612ac`。
+- `xcov.comprehensive/current.json` 的 mtime 保持
+  `2026-08-17 09:58:35 +0800`，SHA-256 为
+  `757d4aa181908d7eea88729f1f52c2551e2c49c245d13eeb4ab5c440934fa247`。
+- 全程未执行 `pytest --xverif-prepare`，未重建 fixture cache。
