@@ -149,8 +149,17 @@ LSF 命令和资源继续使用 `XVERIF_LSF_BSUB`、`XVERIF_LSF_BKILL`、
 | --- | --- | --- | --- |
 | 计划书 | 已完成 | `fefcbb8` | 文档-only 提交，未纳入用户 `AGENTS.md` 改动 |
 | Goal | 已完成 | - | 已建立并固化入口、测试、cache 和 no-fallback 验收标准 |
-| 内部 manager | 已完成 | `1f1507e`、`225f3c6` | 透明启动、listen ready、活动请求保活、空闲退出、native request 路由和并发首启锁已实现 |
+| 内部 manager | 已完成 | `1f1507e`、`225f3c6`、`885eead` | 透明启动、listen ready、活动请求保活、空闲退出和 native request 路由已实现；并发首启通过 UDS bind/listen 仲裁，不引入额外跨进程 flock |
 | 原生兼容 CLI | 已完成 | `1f1507e` | `xdebug_lsf`/`xcov_lsf` 已增加，旧 server/client 入口已移除 |
 | SDK-free 测试 | 已完成 | `1f1507e`、`225f3c6` | unit 215/215，process 170/170，runtime package 1/1，真实 cache fake-LSF 1/1；覆盖双工具 JSON/XOUT、stdin/file、help、log、并发首启和 stdio-loop 拒绝 |
-| 文档与 skill | 已完成 | 待填写 | README、agent 协议、xverif/xverif-admin source 与生成型 surface 已同步；skill suites 16/16、1/1 |
-| 最终验收 | 进行中 | - | 待安装 skill、diff 验收、复核 cache 指针并提交最终记录 |
+| 文档与 skill | 已完成 | `0fc8cab` | README、agent 协议、xverif/xverif-admin source 与生成型 surface 已同步；skill suites 16/16、1/1；Codex/Claude 四份安装均与 source 一致 |
+| 最终验收 | 已完成 | 待填写 | process 170/170，runtime package + 真实缓存 fake-LSF 2/2；testinfra 回到实施前相同 2 项基线失败；两个 fixture current 指针未变化 |
+
+最终 cache 指针：
+
+- `xdebug.ai_complex_wave`：`a5da8054a5d15693369316da2fb212b16fc10e5e065bc3fe560800ce7e14ee17-prepare-oviayaji`
+- `xcov.comprehensive`：`6c6c9c1557c9604260b4d1198cdd690be24b075d8528c9fe634b6fae62d9182b-prepare-1mgdsmek`
+
+本轮未调用 `--xverif-prepare`。`testinfra.unit` 的剩余两项失败均为本任务前
+已存在的工作树/基线问题：ignored xcov cache manifest 含机器绝对路径，以及
+`test_mcp_sdk_smoke.py` 既有 `FakeDebugAdapter` policy 违规；未在本任务中修改或过滤。
