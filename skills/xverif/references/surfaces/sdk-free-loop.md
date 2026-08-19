@@ -1,12 +1,22 @@
-# SDK-free Loop Surface
+# SDK-free LSF CLI Surface
 
-只有没有 MCP SDK 或必须脚本化/托管 LSF stdio-loop 时使用。该 surface 使用 `method/params` JSONL，所有 query/doctor/close/kill method 的 session 参数名统一且只允许 `session_id`；旧 `session`/`name` 字段严格拒绝。原生 xdebug envelope 仍在 `target.session_id` 中选择 session，不与 loop params 混用。
+只有在当前 AI 没有可用 xverif MCP，且 xdebug/xcov 必须经 LSF 运行时
+才使用该 surface。如果无 LSF 限制，直接使用原生 CLI。
 
-协议、readiness、UDS 和 LSF 细节统一转到 `xverif-admin`；普通 action 语义仍回到对应 capability。
+入口：
 
-`cov.query.params` 只接受 `session_id/action/args/output_format`；coverage limits 与
-artifact output 必须继续位于 action 内层 `args.limits` / `args.output`，不能作为
-loop params 或 native top-level 字段传入。
+```bash
+tools/xdebug_lsf --json -
+tools/xcov_lsf --json -
+```
 
-`debug.session.open` 与 `cov.session.open` 同样可传 `run_manifest`；其校验语义与 MCP
-session-open 完全相同，不会因 SDK-free surface 而跳过 provenance gate。
+LSF CLI 与原生工具使用同一份 `xdebug.v1` / `xcov.v1` envelope：
+session 仍在 `target.session_id` 中选择，action 参数仍放在 `args`。不要构造
+`method/params`，不要显式启动 server/client，不要传 `--stdio-loop`。
+
+`session.open` 的 FSDB/DAIDIR/VDB、`run_manifest`、xcov exclusion/cache 参数和
+xdebug ownership token 均按原生 schema 传入，不因 LSF surface 改变 provenance
+或资源身份门禁。
+
+协议、readiness、日志、timeout 和 LSF 配置详见 `xverif-admin`。任何失败
+都不自动转 MCP、direct backend 或其它 transport。

@@ -44,7 +44,7 @@ frontend CLI 接受单个 JSON request，输出 JSON 或 XOUT。
 - 机器可读输出只能出现在 stdout。
 - log、debug、daemon lifecycle 信息写入 log 或 stderr。
 - JSON parse 失败先返回 `INVALID_JSON` 相关错误，不猜测波形或设计问题。
-- MCP xdebug 不暴露原生 envelope raw request；需要完整 `xdebug.v1` envelope 时使用 CLI/SDK-free 入口。
+- MCP xdebug 不暴露原生 envelope raw request；需要完整 `xdebug.v1` envelope 时使用原生 CLI，或在无 MCP 且必须经 LSF 时使用 `xdebug_lsf`。
 
 ## Stdio-loop 协议
 
@@ -56,7 +56,7 @@ frontend CLI 接受单个 JSON request，输出 JSON 或 XOUT。
 用途：
 
 - 长生命周期进程复用。
-- MCP/SDK-free wrapper 可通过 stdio-loop 发送多条请求。
+- MCP 与 SDK-free LSF CLI 的内部 manager 可通过 stdio-loop 发送多条请求。
 
 要求：
 
@@ -130,10 +130,13 @@ MCP 是 xdebug 的外层工具暴露，不是替代 xdebug 原生 schema 的 sou
 
 ## SDK-free Wrapper 边界
 
-SDK-free wrapper 面向没有 MCP SDK 或需要脚本化 LSF stdio-loop 的场景。
+SDK-free wrapper 只面向没有 MCP 且必须经 LSF 的场景。公开入口为
+`xdebug_lsf` / `xcov_lsf`，请求 envelope 与对应原生 CLI 完全相同；内部 manager、
+UDS 和 stdio-loop 不作为用户入口。
 
 规则：
 
 - wrapper 不重新定义 action schema。
+- wrapper 不公开 `method/params`、server/client、socket 参数或 `--stdio-loop`。
 - wrapper 不手写 xdebug file transport 内部目录协议。
 - wrapper failure 必须保留底层 xdebug error context。

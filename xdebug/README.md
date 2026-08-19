@@ -289,7 +289,7 @@ AI MCP client
 | `XVERIF_MCP_BACKEND=lsf` | 启用 LSF backend |
 | `XVERIF_LSF_BSUB` | 覆盖 `bsub` 命令，便于站点 wrapper 或测试 fake runner |
 | `XVERIF_MCP_TIMEOUT_SEC` | 单次请求超时（默认 120s） |
-| `PYTHON` | 指定运行 MCP/loop wrapper 的 Python，建议使用 Python 3.11+ |
+| `PYTHON` | 指定运行 MCP/LSF CLI wrapper 的 Python，建议使用 Python 3.11+ |
 | `XVERIF_HOME` | 指向仓库根目录，便于计算节点找到 `tools/xdebug` |
 
 本地开发可用 fake LSF 跑 smoke，不需要真实 LSF：
@@ -304,15 +304,14 @@ PYTHON=python3 XVERIF_MCP_FAKE_LSF=1 tools/xverif-lsf-doctor --fake
 PYTHON=python3 tools/xverif-lsf-doctor
 ```
 
-如果用户明确说”LSF 计算节点只能集群内部 TCP，登录机不能直连计算节点端口”，MCP 场景优先用 `XVERIF_MCP_BACKEND=lsf`。如果不能使用 MCP SDK，但仍希望由 Python wrapper 维护 LSF `--stdio-loop` session，使用 `tools/xverif-loop-server` / `tools/xverif-loop-client` 和 `XVERIF_LOOP_BACKEND=lsf`。如果不用 MCP/loop wrapper、只走 xdebug 原生命令，则优先使用上面的 `transport:”file”`。
+如果用户明确说“LSF 计算节点只能集群内部 TCP，登录机不能直连计算节点端口”，已有 MCP 时优先用 `XVERIF_MCP_BACKEND=lsf`。没有 MCP 且必须经 LSF 时，直接把原生 `xdebug.v1` envelope 交给 `tools/xdebug_lsf`。如果没有 LSF 限制，使用原生 `tools/xdebug`，不经过 Python wrapper。
 
-非 MCP UDS wrapper 示例：
+非 MCP LSF 单入口示例：
 
 ```bash
-XVERIF_LOOP_BACKEND=lsf XVERIF_LOOP_SOCKET=<repo>/tmp/xverif-loop.sock tools/xverif-loop-server
-
-tools/xverif-loop-client --socket <repo>/tmp/xverif-loop.sock --json \
-  '{"id":"1","method":"debug.session.open","params":{"name":"s0","fsdb":"waves.fsdb"}}'
+tools/xdebug_lsf --json - <<'EOF'
+{"api_version":"xdebug.v1","action":"session.open","target":{"fsdb":"waves.fsdb"},"args":{"name":"s0"}}
+EOF
 ```
 
 重复调试建议先打开 session，再用 `target.session_id` 访问：
@@ -986,7 +985,7 @@ xdebug log bundle --session <id> --out debug_bundle.redacted.tgz --redact
 - `XDEBUG_LOG_PATH_MODE=full|basename|hash` / `XDEBUG_LOG_REDACT=1`：控制日志路径字段脱敏。
 - `XDEBUG_LOG_MAX_BYTES` / `XDEBUG_LOG_MAX_FILES`：启用单文件大小滚动。
 - `XVERIF_MCP_LOG_DIR`：覆盖 MCP structured log 根目录，默认 `~/.xverif/mcp`。
-- `XVERIF_LOOP_LOG_DIR`：覆盖非 MCP UDS wrapper structured log 根目录，默认 `~/.xverif/loop-wrapper`。
+- `XVERIF_LSF_CLI_LOG_DIR`：覆盖 SDK-free LSF CLI structured log 根目录，默认 `~/.xverif/lsf-cli`。
 
 定位工具问题时推荐顺序：
 
@@ -995,7 +994,7 @@ xdebug log bundle --session <id> --out debug_bundle.redacted.tgz --redact
 3. 如果是 `session.open`、`SESSION_UNHEALTHY` 或 `INTERNAL_ENGINE_FAILED`，再看 engine `lifecycle.ndjson`；NPI init/load/open 失败继续查看 `npi_startup.log`。
 4. 如果怀疑 socket/TCP/ping/daemon 连接问题，看 `transport.ndjson`。
 5. 如果是 MCP/LSF 启动、ready timeout、stdout pollution 或 cleanup 问题，看 `~/.xverif/mcp/sessions/<alias>/*.ndjson`。
-6. 如果是非 MCP UDS wrapper 的请求解析、socket、LSF 或 cleanup 问题，看 `~/.xverif/loop-wrapper/logs/uds.ndjson` 和 `~/.xverif/loop-wrapper/sessions/<alias>/*.ndjson`。
+6. 如果是 SDK-free LSF CLI 的请求解析、内部 UDS、LSF 或 cleanup 问题，看 `~/.xverif/lsf-cli/logs/uds.ndjson` 和 `~/.xverif/lsf-cli/sessions/<alias>/*.ndjson`。
 
 日志相关 focused 回归入口：
 
@@ -1016,5 +1015,5 @@ pytest --xverif-gate regression --xverif-suite xdebug.session
 - [../skills/xverif/references/xdebug/response-fields.md](../skills/xverif/references/xdebug/response-fields.md)：CLI 响应字段字典。
 - [../skills/xverif/references/xdebug/recipes.md](../skills/xverif/references/xdebug/recipes.md)：CLI 常见 debug workflow。
 - [../skills/xverif-admin/references/mcp/lsf.md](../skills/xverif-admin/references/mcp/lsf.md)：MCP LSF backend 说明。
-- [../skills/xverif-admin/references/sdk-free-loop/uds-jsonl.md](../skills/xverif-admin/references/sdk-free-loop/uds-jsonl.md)：SDK-free UDS JSONL 说明。
+- [../skills/xverif-admin/references/sdk-free-loop/overview.md](../skills/xverif-admin/references/sdk-free-loop/overview.md)：SDK-free LSF 原生兼容入口。
 - [../skills/xverif/references/xdebug/rc-generate.md](../skills/xverif/references/xdebug/rc-generate.md)：CLI nWave `signal.rc` 生成说明。

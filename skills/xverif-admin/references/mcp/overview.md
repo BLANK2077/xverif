@@ -1,6 +1,7 @@
 # xverif MCP 总览
 
-`tools/xverif-mcp` 是基于 FastMCP 的统一入口。交互式 AI 工具调用优先使用 MCP，除非用户无法使用 MCP SDK 或明确需要脚本化 SDK-free wrapper。
+`tools/xverif-mcp` 是基于 FastMCP 的统一入口。交互式 AI 工具调用优先使用 MCP；
+只有没有 MCP 且必须经 LSF 时，才使用 `xdebug_lsf` / `xcov_lsf`。
 
 ## 工具组
 

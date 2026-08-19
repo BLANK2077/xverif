@@ -89,14 +89,15 @@ xverif-mcp
 ```bash
 tools/xverif-mcp
 tools/xverif-lsf-doctor
-tools/xverif-loop-server
-tools/xverif-loop-client
+tools/xdebug_lsf
+tools/xcov_lsf
 ```
 
-`tools/xverif-loop-server` / `tools/xverif-loop-client` 是不依赖 MCP SDK 的
-UDS JSONL wrapper，只覆盖 stateful `xdebug`/`xcov` session open/list/query/close。
-它复用同一套 stdio-loop session manager 和 direct/LSF launcher，适合不能安装
-MCP SDK 或不想走 MCP 协议、但仍需要 LSF 维护 `--stdio-loop` 后端的场景。
+`tools/xdebug_lsf` / `tools/xcov_lsf` 是不依赖 MCP SDK 的单文件入口，只用于
+“没有 MCP 且必须经 LSF”的场景。它们分别接受与原生 xdebug/xcov 完全相同的
+request envelope，透明托管内部 UDS manager 与 LSF stdio-loop；用户不启动
+server/client、不指定 socket，也不传 `--stdio-loop`。没有 LSF 限制时直接使用
+`tools/xdebug` / `tools/xcov`，无需 Python wrapper。
 
 ## MCP 配置
 
@@ -332,32 +333,28 @@ AI MCP client
        -> tools/xsva public JSON / command-specific XOUT
 ```
 
-非 MCP wrapper 链路：
+SDK-free LSF CLI 链路：
 
 ```text
-JSONL client
-  -> xverif-loop-server Unix domain socket
-  -> LoopWrapperService
+tools/xdebug_lsf / tools/xcov_lsf + native request envelope
+  -> transparent local Unix domain socket manager
+  -> LoopWrapperService (internal)
        -> McpSessionManager (xdebug)
-       -> DirectLauncher: tools/xdebug --stdio-loop
        -> LsfLauncher:    bsub -I tools/xdebug --stdio-loop
        -> McpSessionManager (xcov)
-       -> DirectLauncher: tools/xcov --stdio-loop
        -> LsfLauncher:    bsub -I tools/xcov --stdio-loop
 ```
 
 示例：
 
 ```bash
-XVERIF_LOOP_BACKEND=lsf \
-XVERIF_LOOP_SOCKET=<repo>/tmp/xverif-loop.sock \
-tools/xverif-loop-server
+tools/xdebug_lsf --json - <<'EOF'
+{"api_version":"xdebug.v1","request_id":"1","action":"session.open","target":{"fsdb":"waves.fsdb"},"args":{"name":"s0"}}
+EOF
 
-tools/xverif-loop-client --socket <repo>/tmp/xverif-loop.sock --json \
-  '{"id":"1","method":"debug.session.open","params":{"name":"s0","fsdb":"waves.fsdb"}}'
-
-tools/xverif-loop-client --socket <repo>/tmp/xverif-loop.sock --json \
-  '{"id":"2","method":"debug.query","params":{"session_id":"s0","action":"value.at","args":{"signal":"top.clk"},"output_format":"json"}}'
+tools/xdebug_lsf --json - <<'EOF'
+{"api_version":"xdebug.v1","request_id":"2","action":"value.at","target":{"session_id":"s0"},"args":{"signal":"top.clk","time":"10ns"}}
+EOF
 ```
 
 ## 环境变量
@@ -402,18 +399,18 @@ tools/xverif-loop-client --socket <repo>/tmp/xverif-loop.sock --json \
 | `XVERIF_XCOV_URG_STARTUP_TIMEOUT_SEC` | 内层 URG job PEND→running 超时，默认 120s |
 | `XVERIF_XCOV_URG_RUN_TIMEOUT_SEC` | 内层 URG running 超时，默认 600s |
 | `XVERIF_MCP_FAKE_LSF` | 仅 MCP namespace 的显式 fake LSF，严格布尔 `0|1` |
-| `XVERIF_LOOP_BACKEND` | 非 MCP UDS wrapper backend，只接受 `direct`（默认）或 `lsf` |
-| `XVERIF_LOOP_SOCKET` | 非 MCP UDS wrapper socket 路径，默认 `<repo>/tmp/xverif-loop-<uid>.sock` |
-| `XVERIF_LOOP_LOG_DIR` | 非 MCP UDS wrapper structured log 根目录，默认 `~/.xverif/loop-wrapper` |
-| `XVERIF_LOOP_STARTUP_TIMEOUT_SEC` | 非 MCP UDS wrapper session open 超时 |
-| `XVERIF_LOOP_REQUEST_TIMEOUT_SEC` | 非 MCP UDS wrapper query 请求超时 |
-| `XVERIF_LOOP_CLOSE_TIMEOUT_SEC` | 非 MCP UDS wrapper session close 超时 |
-| `XVERIF_LOOP_BKILL_TIMEOUT_SEC` | 非 MCP UDS wrapper bkill 超时 |
-| `XVERIF_LOOP_FAKE_LSF` | 仅 UDS wrapper namespace 的显式 fake LSF，严格布尔 `0|1` |
+| `XVERIF_LSF_CLI_SOCKET` | SDK-free LSF CLI 内部 socket 路径；不提供公开 `--socket` 参数 |
+| `XVERIF_LSF_CLI_LOG_DIR` | SDK-free LSF CLI structured log 根目录，默认 `~/.xverif/lsf-cli` |
+| `XVERIF_LSF_CLI_STARTUP_TIMEOUT_SEC` | SDK-free LSF session open 超时 |
+| `XVERIF_LSF_CLI_REQUEST_TIMEOUT_SEC` | SDK-free LSF query 请求超时 |
+| `XVERIF_LSF_CLI_CLOSE_TIMEOUT_SEC` | SDK-free LSF session close 超时 |
+| `XVERIF_LSF_CLI_BKILL_TIMEOUT_SEC` | SDK-free LSF bkill 超时 |
+| `XVERIF_LSF_CLI_IDLE_TIMEOUT_SEC` | 内部 manager 无活动 session/request 后退出等待，默认 5 秒 |
+| `XVERIF_LSF_CLI_FAKE_LSF` | 仅 SDK-free LSF CLI namespace 的显式 fake LSF，严格布尔 `0|1` |
 | `VERDI_HOME` | Verdi 安装目录 |
 | `LD_LIBRARY_PATH` | 需包含 `<verdi-install>/share/NPI/lib/LINUX64` |
 
-所有 timeout 变量只接受无首尾空白的有限正数；backend、布尔或 timeout 配置非法时启动立即返回 typed config error。MCP 与 UDS wrapper 的 fake LSF 开关互不别名，也不会在启动、请求或 cleanup 失败时自动切换 backend。
+所有 timeout 变量只接受无首尾空白的有限正数；布尔或 timeout 配置非法时立即返回明确错误。MCP 与 SDK-free LSF CLI 的 fake LSF 开关互不别名，也不会在启动、请求或 cleanup 失败时自动切换 backend。
 
 当外层 xcov session 和内层 URG 都使用 LSF 时，外层始终是一个长期
 `bsub -I tools/xcov --stdio-loop`，每个 cold URG 则是独立 `bsub -K`。两个 queue/resource
@@ -432,13 +429,13 @@ xdebug/xcov stateful session 会写结构化 MCP 日志：
 pid、job_id/job_name、request_id、stderr_tail 和 cleanup 结果。
 `owner` 是 fork-safe 的 `pid-start_nonce`，每个 runtime 进程实例只写自己的 shard。
 
-非 MCP UDS wrapper 会写结构化日志：
+SDK-free LSF CLI 会写结构化日志：
 
-- server：`~/.xverif/loop-wrapper/owners/<owner>/logs/server.ndjson`
-- UDS protocol：`~/.xverif/loop-wrapper/owners/<owner>/logs/uds.ndjson`
-- session lifecycle：`~/.xverif/loop-wrapper/sessions/<alias>/owners/<owner>/session.ndjson`
-- stdio-loop protocol：`~/.xverif/loop-wrapper/sessions/<alias>/owners/<owner>/stdio.ndjson`
-- LSF launcher / job / cleanup：`~/.xverif/loop-wrapper/sessions/<alias>/owners/<owner>/lsf.ndjson`
+- manager：`~/.xverif/lsf-cli/owners/<owner>/logs/server.ndjson`
+- UDS protocol：`~/.xverif/lsf-cli/owners/<owner>/logs/uds.ndjson`
+- session lifecycle：`~/.xverif/lsf-cli/sessions/<alias>/owners/<owner>/session.ndjson`
+- stdio-loop protocol：`~/.xverif/lsf-cli/sessions/<alias>/owners/<owner>/stdio.ndjson`
+- LSF launcher / job / cleanup：`~/.xverif/lsf-cli/sessions/<alias>/owners/<owner>/lsf.ndjson`
 
 xdebug session 工具使用明确前缀：
 

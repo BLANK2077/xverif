@@ -1,7 +1,7 @@
 ---
 name: xverif-admin
 description: >
-  用于 xverif 的安装配置、MCP direct/LSF backend、SDK-free loop、
+  用于 xverif 的安装配置、MCP direct/LSF backend、SDK-free LSF CLI、
   UDS/TCP/file transport、session tombstone/gc、timeout、环境变量、license
   和 server 启动排障。普通波形、coverage、bit 或协议查询使用 xverif。
 ---
@@ -18,7 +18,7 @@ description: >
 | stateful session 生命周期 | [stateful sessions](references/mcp/stateful-sessions.md) |
 | MCP LSF backend | [MCP LSF](references/mcp/lsf.md) |
 | MCP 排障 | [MCP troubleshooting](references/mcp/troubleshooting.md) |
-| SDK-free loop | [SDK-free overview](references/sdk-free-loop/overview.md) |
+| SDK-free LSF CLI | [SDK-free overview](references/sdk-free-loop/overview.md) |
 | UDS JSONL | [UDS JSONL](references/sdk-free-loop/uds-jsonl.md) |
 | SDK-free LSF | [SDK-free LSF](references/sdk-free-loop/lsf.md) |
 | xdebug transport | [transport](references/xdebug-transport.md) |
@@ -30,3 +30,5 @@ description: >
 - 不自动 retry、reopen 或切换 direct/LSF、UDS/TCP/file。
 - SESSION_LOST 先检查 terminal source、tombstone 和 doctor，再由用户决定 cleanup/reopen。
 - NPI、真实 FSDB/VDB、LSF、license、MCP stdio-loop 和 transport 实机动作在沙箱外执行。
+- 路由固定为：已注入 MCP 时使用 MCP；无 MCP 且必须 LSF 时使用
+  `xdebug_lsf` / `xcov_lsf`；不需要 LSF 时使用原生工具。

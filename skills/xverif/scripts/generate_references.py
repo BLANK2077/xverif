@@ -174,13 +174,12 @@ def surface_examples() -> str:
               "target": {"session_id": session}, "args": args}
     mcp = {"tool": "xverif_debug_query", "args": {
         "session_id": session, "action": action, "args": args}}
-    loop = {"method": "debug.query", "params": {
-        "session_id": session, "action": action, "args": args}}
+    lsf = native
     blocks = [
         "# 生成的 Surface 示例", "",
         f"Canonical source: `{EXAMPLES.relative_to(ROOT)}`。", "",
     ]
-    for title, value in (("CLI", native), ("MCP", mcp), ("SDK-free loop", loop)):
+    for title, value in (("CLI", native), ("MCP", mcp), ("SDK-free LSF CLI", lsf)):
         blocks.extend([f"## {title}", "", "```json",
                        json.dumps(value, indent=2, ensure_ascii=False), "```", ""])
     return "\n".join(blocks)

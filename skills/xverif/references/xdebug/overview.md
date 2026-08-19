@@ -24,7 +24,8 @@ tools/xdebug --json -
 
 默认优先使用 token-efficient `xout`，首要目标是减少 AI/LLM 上下文开销；便于阅读是附带收益。只有脚本需要稳定读取字段、校验 JSON response schema、读取未投影嵌套字段，或用户明确要求 JSON 时，才请求 JSON；机器字段比较必须请求 JSON。XOUT 是 action-specific 领域文本，不反解析为 JSON，也不添加 `XOUT_BEGIN/XOUT_END`。
 
-如果需要 MCP tool 参数、MCP session 或 SDK-free loop wrapper，使用 `xverif-mcp`。
+如果已有 MCP，使用 `xverif-mcp`；没有 MCP 且必须经 LSF 时，把同一 envelope
+交给 `tools/xdebug_lsf`。无 LSF 限制时仍使用原生 `tools/xdebug`。
 
 ## target 决策
 

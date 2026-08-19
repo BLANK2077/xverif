@@ -17,12 +17,14 @@ xcov 查询 VCS/Verdi coverage database（`simv.vdb`、`merged.vdb`）。它负�
 ```bash
 tools/xcov --json -
 tools/xcov --stdio-loop
+tools/xcov_lsf --json -  # 仅无 MCP 且必须经 LSF 时
 ```
 
-一个 native stdio-loop 最多一个 live xcov session；需要多个 VDB session 时，由 MCP/loop
-manager 为每个 session 启动独立 `tools/xcov --stdio-loop`（LSF 下即独立 `bsub -I` job）。
+一个 native stdio-loop 最多一个 live xcov session；需要多个 VDB session 时，由 MCP 或
+`xcov_lsf` 内部 manager 为每个 session 启动独立 loop（LSF 下即独立 `bsub -I` job）。
 
-本文件只讲原生 `xcov.v1` JSON envelope。MCP tool 参数、MCP session 和 SDK-free loop wrapper 请使用 `xverif-mcp`。
+本文件只讲原生 `xcov.v1` JSON envelope。MCP tool 参数和 MCP session 请使用
+`xverif-mcp`；SDK-free LSF 的同 envelope 入口见 `xverif-admin`。
 
 普通 coverage 查询与三类 gap 导出固定使用 URG，不加载 NPI。只有 exclusion
 处理才惰性加载 pynpi、打开 VDB 并执行必要遍历；真实 exclusion 需要 Synopsys

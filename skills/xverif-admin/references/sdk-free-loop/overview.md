@@ -1,52 +1,50 @@
-# SDK-free xdebug/xcov loop wrapper 总览
+# SDK-free xdebug/xcov LSF CLI 总览
 
-SDK-free loop wrapper 是非 MCP 的 Python UDS JSONL server/client，用于维护长期 `tools/xdebug --stdio-loop` 或 `tools/xcov --stdio-loop` session。它不需要 MCP SDK，适合脚本、批处理、或必须 LSF 但无法使用 MCP 的场景。
+SDK-free LSF CLI 只用于“没有可用 xverif MCP，且必须经 LSF 运行”的
+场景。它使用 Python 在登录节点透明托管内部 manager，再通过
+`bsub -I tools/xdebug --stdio-loop` 或 `bsub -I tools/xcov --stdio-loop`
+与计算节点通信，不要求登录节点直连计算节点 UDS/TCP。
 
-入口：
+公开入口：
 
 ```bash
-tools/xverif-loop-server
-tools/xverif-loop-client
+tools/xdebug_lsf
+tools/xcov_lsf
 ```
 
-## 何时优先使用
+## 路由顺序
 
-- 必须使用 LSF，但不能安装或不能使用 MCP SDK。
-- 需要 shell/python 脚本直接驱动 xdebug 或 xcov session。
-- 需要非交互批处理保持一个长期 `--stdio-loop` backend。
-- 不希望把 MCP 当脚本 API。
+1. AI 已配置 xverif MCP：直接使用 MCP。
+2. 无 MCP 且必须使用 LSF：使用 `xdebug_lsf` / `xcov_lsf`。
+3. 无 LSF 限制：使用原生 `tools/xdebug` / `tools/xcov`。
 
-如果已有 MCP client 且 SDK 可用，交互式 AI 调用仍优先 MCP。只做一次性完整 JSON request 时，用 `xverif` 中的 raw xdebug/xcov CLI 即可。
+不因失败自动切换入口、backend 或 transport。SDK-free 公开入口固定使用
+LSF，不提供 direct 模式。
+
+## 请求合同
+
+`xdebug_lsf` 与 `xdebug`、`xcov_lsf` 与 `xcov` 使用同一份原生
+JSON request envelope：
+
+```bash
+tools/xdebug_lsf --json - <<'EOF'
+{"api_version":"xdebug.v1","request_id":"q1","action":"value.at","target":{"session_id":"s0"},"args":{"signal":"top.data","time":"10ns"}}
+EOF
+```
+
+```bash
+tools/xcov_lsf --json - <<'EOF'
+{"api_version":"xcov.v1","request_id":"q2","action":"code_coverage.summary","target":{"session_id":"cov0"},"args":{"group_by":"metric","metrics":["line","toggle"]}}
+EOF
+```
+
+不再公开 `method/params` wrapper envelope，也不需要用户显式启动 server、
+指定 socket 或调用 client。`--stdio-loop` 是内部协议，两个 LSF CLI
+都明确拒绝该公开参数。
 
 ## 能力边界
 
-SDK-free wrapper 覆盖与 MCP SDK 对称的 stateful xdebug/xcov session：
-
-- `debug.session.open`
-- `debug.session.list`
-- `debug.session.doctor`
-- `debug.session.close`
-- `debug.session.close`（`mode=graceful|force`）
-- `debug.session.gc`
-- `debug.query`
-- `cov.session.open/list/doctor/close/kill/gc/query`
-
-它不覆盖 xbit/xentry/xloc/xsva，也不等价于完整 MCP 工具集。
-
-## 与 raw CLI 的区别
-
-raw CLI：
-
-```text
-tools/xdebug --json -   # 每次一个短进程
-tools/xcov --json -     # 每次一个短进程
-```
-
-SDK-free wrapper：
-
-```text
-client -> UDS socket -> xverif-loop-server -> tools/xdebug --stdio-loop
-client -> UDS socket -> xverif-loop-server -> tools/xcov --stdio-loop
-```
-
-wrapper 负责 canonical `session_id`、session manager、tombstone、stdio-loop 进程和 LSF job cleanup。open 的 backend `session_id` 必须与请求 `name` 完全一致；query/doctor/close/kill 都只接受精确 `session_id`，旧 `session`/`name` 字段严格拒绝。query 禁止 native lifecycle action；doctor 只读，partial cleanup 保留诊断证据且不切换 transport/backend。
+- session-bound 请求复用长期 LSF stdio-loop。
+- `actions/schema` 和无 session 请求使用临时 LSF stdio-loop，请求后立即清理。
+- manager 只在存在 live/unresolved session 或活动请求时保持，空闲后自动退出。
+- xbit/xentry/xloc/xsva 不需要该 wrapper，继续使用各自原生入口。

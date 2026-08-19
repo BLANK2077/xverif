@@ -42,22 +42,22 @@ Canonical source: `skills/xverif/specs/examples.yaml`。
 }
 ```
 
-## SDK-free loop
+## SDK-free LSF CLI
 
 ```json
 {
-  "method": "debug.query",
-  "params": {
-    "session_id": "case_a",
-    "action": "value.at",
-    "args": {
-      "list": "ready_path",
-      "times": [
-        "100ns",
-        "120ns"
-      ],
-      "clock": "top.clk"
-    }
+  "api_version": "xdebug.v1",
+  "action": "value.at",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {
+    "list": "ready_path",
+    "times": [
+      "100ns",
+      "120ns"
+    ],
+    "clock": "top.clk"
   }
 }
 ```

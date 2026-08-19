@@ -34,7 +34,8 @@ job。xcov native loop 只允许一个 live VDB session，多 session 由 manage
 `XVERIF_LSF_BSUB` 或 `XVERIF_LSF_BKILL` 时仍以对应设置为准。
 
 布尔值只接受精确的 `0` 或 `1`；timeout 只接受无首尾空白的有限正数。
-非法配置直接产生 typed config error。MCP 不读取 `XVERIF_LOOP_FAKE_LSF`，
+非法配置直接产生 typed config error。MCP 不读取 SDK-free LSF CLI 的
+`XVERIF_LSF_CLI_FAKE_LSF`，
 启动、ready、请求或 cleanup 失败也不会切换到 fake/direct 等其它 backend。
 
 MCP server 子进程不会自动继承 IDE/shell 外的环境。必须在 MCP 配置里显式列出计算节点需要的 Verdi、NPI、license、PATH、LSF 变量。

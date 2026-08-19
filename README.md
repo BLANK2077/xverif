@@ -110,6 +110,7 @@ tools/xsva explain --file xsva/tests/golden_ir/path_expand/input.sva --property 
 ```bash
 printf '%s\n' '{"api_version":"xcov.v1","action":"session.open","target":{"vdb":"fake"},"args":{"name":"cov0","fake":true}}' | tools/xcov --json -
 tools/xcov --stdio-loop
+tools/xcov_lsf --json request.json   # 仅无 MCP 且必须经 LSF 时
 ```
 
 Real NPI coverage queries require a locally licensed Synopsys environment. The project does not bundle or grant rights to the coverage runtime.
@@ -201,7 +202,7 @@ Dependency checks are isolated by suite. The `fast` gate is hermetic and starts 
 - xsimdebug live VCS/Xcelium skill: [`skills/xsimdebug/SKILL.md`](skills/xsimdebug/SKILL.md)
 - xdebug CLI reference: [`skills/xverif/references/xdebug/overview.md`](skills/xverif/references/xdebug/overview.md)
 - xdebug JSON API reference: [`skills/xverif/references/xdebug/json-api.md`](skills/xverif/references/xdebug/json-api.md)
-- SDK-free loop wrapper: [`skills/xverif-admin/references/sdk-free-loop/overview.md`](skills/xverif-admin/references/sdk-free-loop/overview.md)
+- SDK-free LSF CLI: [`skills/xverif-admin/references/sdk-free-loop/overview.md`](skills/xverif-admin/references/sdk-free-loop/overview.md)
 - MCP reference: [`skills/xverif-admin/references/mcp/overview.md`](skills/xverif-admin/references/mcp/overview.md)
 - xbit user guide: [`xbit/README.md`](xbit/README.md)
 - xentry user guide: [`xentry/README.md`](xentry/README.md)
