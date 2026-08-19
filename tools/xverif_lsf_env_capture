@@ -3,8 +3,6 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$script_dir/.." && pwd)"
-export XVERIF_HOME="${XVERIF_HOME:-$root}"
-export PYTHONPATH="$root/xverif_mcp/src:$root${PYTHONPATH:+:${PYTHONPATH}}"
 export XVERIF_LSF_CLI_ENTRY_DIR="$script_dir"
 
 python_bin="${PYTHON:-python3}"
@@ -13,4 +11,4 @@ command -v "$python_bin" >/dev/null 2>&1 || {
   exit 2
 }
 
-exec "$python_bin" -c 'from xverif_loop.native_cli import xdebug_main; raise SystemExit(xdebug_main())' "$@"
+exec "$python_bin" "$root/xverif_mcp/src/xverif_loop/env_config.py" "$@"

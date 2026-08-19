@@ -74,6 +74,9 @@ def _bounded_input_lines():
 def stdio_loop(dispatcher: Dispatcher) -> int:
     ready = {"type": "ready", "protocol": "xcov-stdio-loop", "version": 1,
              "pid": os.getpid()}
+    verified = os.environ.get("XVERIF_LSF_ENV_VERIFIED_FINGERPRINT")
+    if verified:
+        ready["environment_fingerprint"] = verified
     _protocol_write(json.dumps(ready, separators=(",", ":")) + "\n")
     log_transport_event("adhoc", "ready", True, ready)
     for line in _bounded_input_lines():

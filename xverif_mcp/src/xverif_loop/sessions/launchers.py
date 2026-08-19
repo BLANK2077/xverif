@@ -1,7 +1,7 @@
 """Launchers for --stdio-loop backend processes (direct and LSF)."""
 from __future__ import annotations
 
-import os
+from pathlib import Path
 import shlex
 import subprocess
 import sys
@@ -11,7 +11,6 @@ from typing import Any, Optional
 
 from xverif_loop.lsf.bsub import BsubOptions, BsubRunner
 from xverif_loop.lsf.protocol import JsonlProcess
-
 from xverif_loop.config import RuntimeConfig
 from xverif_loop.logging import StructuredLogger, argv_hash
 
@@ -30,6 +29,7 @@ class LaunchConfig:
     resource: Optional[str] = None
     job_name: Optional[str] = None
     startup_timeout_sec: float = 60.0
+    lsf_environment_fingerprint: Optional[str] = None
 
 
 class LauncherTerminationError(RuntimeError):
@@ -151,6 +151,27 @@ def _loop_cmd(cfg: LaunchConfig) -> list[str]:
     return cmd
 
 
+def wrap_lsf_environment_command(
+    command: list[str],
+    *,
+    protocol: str | None,
+    environment_fingerprint: str | None,
+) -> list[str]:
+    if environment_fingerprint is None:
+        return command
+    package_root = str(Path(__file__).resolve().parents[2])
+    bootstrap = (
+        "import sys; sys.path.insert(0, sys.argv.pop(1)); "
+        "from xverif_loop.remote_env import main; raise SystemExit(main())"
+    )
+    wrapped = [sys.executable, "-c", bootstrap, package_root]
+    if protocol:
+        wrapped.extend(["--protocol", protocol])
+    wrapped.append("--")
+    wrapped.extend(command)
+    return wrapped
+
+
 class Launcher:
     mode: str = "unknown"
 
@@ -196,7 +217,15 @@ class LsfLauncher(Launcher):
         self.bsub = bsub
 
     def start(self, cfg: LaunchConfig) -> JsonlProcess:
-        cmd = _loop_cmd(cfg)
+        cmd = wrap_lsf_environment_command(
+            _loop_cmd(cfg),
+            protocol=(
+                "xdebug-stdio-loop"
+                if cfg.backend == "xdebug"
+                else "xcov-stdio-loop"
+            ),
+            environment_fingerprint=cfg.lsf_environment_fingerprint,
+        )
         cfg.logger.lsf(cfg.alias, "launcher.lsf.start", True,
                        backend=cfg.backend, launcher=self.mode,
                        queue=cfg.queue, resource=cfg.resource,
@@ -207,6 +236,7 @@ class LsfLauncher(Launcher):
                 queue=cfg.queue,
                 resource=cfg.resource,
                 job_name=cfg.job_name,
+                propagate_environment=cfg.lsf_environment_fingerprint is not None,
             ),
             runtime=cfg.runtime,
             logger=cfg.logger,
@@ -216,6 +246,7 @@ class LsfLauncher(Launcher):
                 "launcher": self.mode,
             },
         )
+        proc.expected_environment_fingerprint = cfg.lsf_environment_fingerprint
         return proc
 
     def terminate(self, handle: JsonlProcess) -> Json:

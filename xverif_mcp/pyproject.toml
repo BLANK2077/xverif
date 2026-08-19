@@ -16,6 +16,7 @@ dependencies = [
 xverif-mcp = "xverif_mcp.server:main"
 xdebug_lsf = "xverif_loop.native_cli:xdebug_main"
 xcov_lsf = "xverif_loop.native_cli:xcov_main"
+xverif_lsf_env_capture = "xverif_loop.env_config:capture_main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

@@ -40,6 +40,7 @@ Json = Dict[str, Any]
 METHOD_PARAM_CONTRACTS: dict[str, dict[str, Any]] = {
     "server.ping": {"required": {}, "optional": {}, "any_of": ()},
     "server.shutdown": {"required": {}, "optional": {}, "any_of": ()},
+    "server.shutdown_if_idle": {"required": {}, "optional": {}, "any_of": ()},
     "native.request": {
         "required": {"tool": str, "request": dict, "output_format": str},
         "optional": {},
@@ -253,6 +254,7 @@ class LoopWrapperService:
         request_timeout_sec: Optional[float] = None,
         runtime: RuntimeConfig | None = None,
         logger: StructuredLogger | None = None,
+        sdk_free_lsf_manager: bool = False,
     ) -> None:
         self.runtime = (
             runtime or resolve_loop_wrapper_runtime_config()
@@ -263,6 +265,11 @@ class LoopWrapperService:
         )
         self.logger = logger or resolve_logger(self.runtime)
         self.mode = self.runtime.backend
+        lsf_environment_fingerprint = (
+            os.environ.get("XVERIF_LSF_ENV_FINGERPRINT")
+            if sdk_free_lsf_manager
+            else None
+        )
         self.debug = McpSessionManager(
             runtime=self.runtime,
             xdebug_bin=xdebug_bin or default_xdebug_bin(),
@@ -272,6 +279,7 @@ class LoopWrapperService:
             target_key="fsdb",
             recovery_tool="debug.session.open",
             logger=self.logger,
+            lsf_environment_fingerprint=lsf_environment_fingerprint,
         )
         self.cov = McpSessionManager(
             runtime=self.runtime,
@@ -282,8 +290,27 @@ class LoopWrapperService:
             target_key="vdb",
             recovery_tool="cov.session.open",
             logger=self.logger,
+            lsf_environment_fingerprint=lsf_environment_fingerprint,
         )
+        self.sdk_free_lsf_manager = sdk_free_lsf_manager
         self.logger.server("wrapper.service.init", True, launcher=self.mode)
+        self.config_fingerprint = (
+            os.environ.get("XVERIF_LSF_CLI_CONFIG_FINGERPRINT")
+            if sdk_free_lsf_manager
+            else None
+        )
+        if sdk_free_lsf_manager and self.config_fingerprint is not None:
+            self.logger.server(
+                "sdk_free.lsf_environment.loaded",
+                True,
+                config_path=os.environ.get("XVERIF_LSF_CLI_LOADED_CONFIG_PATH"),
+                variable_names=[
+                    name
+                    for name in os.environ.get("XVERIF_LSF_ENV_KEYS", "").split(",")
+                    if name
+                ],
+                config_fingerprint=self.config_fingerprint,
+            )
 
     def dispatch(self, request: Any) -> Json:
         req_id = (
@@ -307,8 +334,25 @@ class LoopWrapperService:
 
     def _dispatch_method(self, method: str, params: Json) -> Any:
         if method == "server.ping":
-            return {"ok": True, "pong": True, "mode": self.mode}
+            result = {
+                "ok": True,
+                "pong": True,
+                "mode": self.mode,
+            }
+            if self.sdk_free_lsf_manager:
+                result.update({
+                    "config_fingerprint": self.config_fingerprint,
+                    "has_live_or_unresolved_sessions": self.has_live_or_unresolved_sessions(),
+                })
+            return result
         if method == "server.shutdown":
+            return {"ok": True, "shutdown": True}
+        if method == "server.shutdown_if_idle" and self.sdk_free_lsf_manager:
+            if self.has_live_or_unresolved_sessions():
+                return _error(
+                    "CONFIG_MISMATCH",
+                    "active SDK-free LSF sessions use a different environment config",
+                )
             return {"ok": True, "shutdown": True}
         if method == "native.request":
             return {
@@ -557,6 +601,11 @@ class LoopWrapperService:
             job_name=f"xverif_{alias}",
             startup_timeout_sec=self.runtime.startup_timeout_sec,
             logger=self.logger,
+            lsf_environment_fingerprint=(
+                os.environ.get("XVERIF_LSF_ENV_FINGERPRINT")
+                if self.sdk_free_lsf_manager
+                else None
+            ),
         )
         handle = None
         try:
@@ -586,11 +635,16 @@ class LoopWrapperService:
                 pass
             return transport
         except Exception as exc:
+            error_code = (
+                "LSF_ENV_MISMATCH"
+                if "LSF_ENV_MISMATCH" in str(exc)
+                else "LSF_STDIO_LOOP_FAILED"
+            )
             return self._transport_error(
                 tool=tool,
                 request=request,
                 error={
-                    "code": "LSF_STDIO_LOOP_FAILED",
+                    "code": error_code,
                     "message": f"temporary LSF stdio-loop failed: {exc}",
                 },
             )
@@ -749,6 +803,12 @@ class LoopWrapperServer:
                 sock.close()
             except OSError:
                 pass
+        if self._created_socket:
+            try:
+                Path(self.socket_path).unlink()
+            except FileNotFoundError:
+                pass
+            self._created_socket = False
 
     def _handle_client(
         self,
@@ -836,7 +896,7 @@ class LoopWrapperServer:
                     continue
                 rsp = self.service.dispatch(request)
                 if (
-                    method == "server.shutdown"
+                    method in {"server.shutdown", "server.shutdown_if_idle"}
                     and rsp.get("ok") is True
                 ):
                     self.logger.try_uds(

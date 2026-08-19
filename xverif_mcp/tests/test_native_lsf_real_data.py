@@ -26,6 +26,14 @@ def _env(tmp_path: Path) -> dict[str, str]:
         "XVERIF_LSF_CLI_REQUEST_TIMEOUT_SEC": "180",
         "PYTHON": str(ROOT / ".conda-xverif" / "bin" / "python"),
     })
+    config = tmp_path / "xverif_lsf.env.json"
+    config.write_text(json.dumps({
+        "schema_version": "xverif-lsf-env.v1",
+        "variables": {"XVERIF_REAL_DATA_ENV_MARKER": "compute-node-verified"},
+    }), encoding="utf-8")
+    config.chmod(0o600)
+    env["XVERIF_LSF_CLI_CONFIG"] = str(config)
+    env["FAKE_BSUB_REQUIRE_ENV_ALL"] = "1"
     return env
 
 

@@ -361,6 +361,7 @@ suites:
       paths:
         - xverif_mcp/tests/test_backend_wiring.py
         - xverif_mcp/tests/test_import_adapters.py
+        - xverif_mcp/tests/test_lsf_env_config.py
         - xverif_mcp/tests/test_session_capabilities.py
         - xverif_mcp/tests/test_session_errors.py
         - xverif_mcp/tests/test_schema_projection.py

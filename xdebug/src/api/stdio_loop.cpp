@@ -6,6 +6,7 @@
 #include "api/xout_renderer.h"
 #include "logging/action_log.h"
 
+#include <cstdlib>
 #include <iostream>
 #include <set>
 #include <string>
@@ -24,13 +25,22 @@ bool write_jsonl(const Json& obj) {
     return std::cout.good();
 }
 
+std::string environment_fingerprint() {
+    const char* verified = std::getenv("XVERIF_LSF_ENV_VERIFIED_FINGERPRINT");
+    if (verified != nullptr && *verified != '\0') return std::string(verified);
+    return std::string();
+}
+
 Json ready_envelope(int pid) {
-    return {
+    Json ready = {
         {"type", "ready"},
         {"protocol", "xdebug-stdio-loop"},
         {"version", 1},
         {"pid", pid},
     };
+    const std::string fingerprint = environment_fingerprint();
+    if (!fingerprint.empty()) ready["environment_fingerprint"] = fingerprint;
+    return ready;
 }
 
 Json quit_envelope(const std::string& id) {

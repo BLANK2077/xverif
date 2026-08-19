@@ -11,6 +11,12 @@ import sys
 import time
 from typing import Any
 
+from xverif_loop.env_config import (
+    CONFIG_FINGERPRINT_ENV,
+    ENV_FINGERPRINT_ENV,
+    EnvironmentConfigError,
+    load_environment_config,
+)
 from xverif_loop.config import (
     default_xcov_bin,
     default_xdebug_bin,
@@ -18,6 +24,7 @@ from xverif_loop.config import (
 )
 from xverif_loop.json_contract import strict_json_dumps, strict_json_loads
 from xverif_loop.lsf.bsub import BsubOptions, BsubRunner
+from xverif_loop.sessions.launchers import wrap_lsf_environment_command
 from xverif_loop.wrapper import (
     LoopWrapperServer,
     LoopWrapperService,
@@ -26,6 +33,10 @@ from xverif_loop.wrapper import (
 
 
 Json = dict[str, Any]
+
+
+class ManagerConfigMismatch(RuntimeError):
+    """A live manager was started from a different environment config."""
 
 
 _ENV_MAP = {
@@ -82,7 +93,7 @@ def manager_main(argv: list[str] | None = None) -> int:
         os.chmod(socket_path.parent, 0o700)
     server = LoopWrapperServer(
         str(socket_path),
-        service=LoopWrapperService(mode="lsf"),
+        service=LoopWrapperService(mode="lsf", sdk_free_lsf_manager=True),
         ready_fd=ns.ready_fd,
         idle_timeout_sec=_idle_timeout(),
     )
@@ -90,7 +101,7 @@ def manager_main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _ping(socket_path: str) -> bool:
+def _manager_status(socket_path: str) -> Json | None:
     try:
         response = send_requests(
             socket_path,
@@ -98,25 +109,57 @@ def _ping(socket_path: str) -> bool:
             timeout_sec=0.5,
         )[0]
     except (OSError, RuntimeError, TimeoutError):
-        return False
+        return None
     result = response.get("result") if isinstance(response, dict) else None
-    return bool(
+    if not (
         response.get("ok") is True
         and isinstance(result, dict)
         and result.get("pong") is True
         and result.get("mode") == "lsf"
-    )
+    ):
+        return None
+    return result
+
+
+def _ping(socket_path: str) -> bool:
+    return _manager_status(socket_path) is not None
+
+
+def _retire_mismatched_manager(socket_path: str, status: Json) -> None:
+    actual = status.get("config_fingerprint")
+    expected = os.environ.get(CONFIG_FINGERPRINT_ENV)
+    if actual == expected:
+        return
+    response = send_requests(
+        socket_path,
+        [{"id": "config-change", "method": "server.shutdown_if_idle", "params": {}}],
+        timeout_sec=2.0,
+    )[0]
+    if response.get("ok") is not True:
+        error = response.get("error") if isinstance(response, dict) else None
+        code = error.get("code") if isinstance(error, dict) else "CONFIG_MISMATCH"
+        raise ManagerConfigMismatch(
+            f"{code}: active SDK-free LSF sessions use a different environment config"
+        )
 
 
 def _ensure_manager(socket_path: str) -> None:
-    if _ping(socket_path):
-        return
+    status = _manager_status(socket_path)
+    if status is not None:
+        if status.get("config_fingerprint") == os.environ.get(CONFIG_FINGERPRINT_ENV):
+            return
+        _retire_mismatched_manager(socket_path, status)
     read_fd, write_fd = os.pipe()
+    package_root = str(Path(__file__).resolve().parents[1])
     command = [
         sys.executable,
-        "-m",
-        "xverif_loop.native_cli",
-        "--manager",
+        "-c",
+        (
+            "import sys; sys.path.insert(0, sys.argv.pop(1)); "
+            "from xverif_loop.native_cli import manager_main; "
+            "raise SystemExit(manager_main())"
+        ),
+        package_root,
         "--socket",
         socket_path,
         "--ready-fd",
@@ -156,8 +199,11 @@ def _ensure_manager(socket_path: str) -> None:
                 break
     finally:
         os.close(read_fd)
-    if _ping(socket_path):
-        return
+    status = _manager_status(socket_path)
+    if status is not None:
+        if status.get("config_fingerprint") == os.environ.get(CONFIG_FINGERPRINT_ENV):
+            return
+        _retire_mismatched_manager(socket_path, status)
     if proc.poll() is None:
         proc.terminate()
     raise RuntimeError("LSF CLI manager did not publish listen readiness")
@@ -256,14 +302,21 @@ def _run_lsf_passthrough(tool: str, argv: list[str]) -> int:
     runtime = resolve_loop_wrapper_runtime_config()
     native = default_xdebug_bin() if tool == "xdebug" else default_xcov_bin()
     command = BsubRunner(runtime.lsf_bsub_command).build(
-        [native, *argv],
+        wrap_lsf_environment_command(
+            [native, *argv],
+            protocol=None,
+            environment_fingerprint=os.environ.get(ENV_FINGERPRINT_ENV),
+        ),
         BsubOptions(
             queue=runtime.session_queue,
             resource=runtime.session_resource,
             job_name=f"xverif_{tool}_admin_{os.getpid()}",
+            propagate_environment=bool(
+                os.environ.get(ENV_FINGERPRINT_ENV)
+            ),
         ),
     )
-    completed = subprocess.run(command, check=False)
+    completed = subprocess.run(command, check=False, env=dict(os.environ))
     return completed.returncode
 
 
@@ -274,6 +327,14 @@ def xdebug_main(argv: list[str] | None = None) -> int:
         return 2
     if len(args) == 1 and args[0] in {"-h", "-help"}:
         return _print_native_help("xdebug")
+    try:
+        load_environment_config()
+    except (OSError, EnvironmentConfigError) as exc:
+        return _emit_transport(
+            "xdebug",
+            {"ok": False, "json": _native_error("xdebug", "", "CONFIG_ERROR", str(exc))},
+            "json" if "--json" in args else "xout",
+        )
     if args and args[0] == "log":
         return _run_lsf_passthrough("xdebug", args)
     output_format = "xout"
@@ -291,6 +352,12 @@ def xdebug_main(argv: list[str] | None = None) -> int:
     try:
         request = _read_request(input_arg)
         return _run_native_request("xdebug", request, output_format)
+    except ManagerConfigMismatch as exc:
+        return _emit_transport(
+            "xdebug",
+            {"ok": False, "json": _native_error("xdebug", "", "CONFIG_MISMATCH", str(exc))},
+            output_format,
+        )
     except Exception as exc:
         return _emit_transport(
             "xdebug",
@@ -306,6 +373,14 @@ def xcov_main(argv: list[str] | None = None) -> int:
         return 2
     if args == ["-h"] or args == ["--help"]:
         return _print_native_help("xcov")
+    try:
+        load_environment_config()
+    except (OSError, EnvironmentConfigError) as exc:
+        return _emit_transport(
+            "xcov",
+            {"ok": False, "json": _native_error("xcov", "", "CONFIG_ERROR", str(exc))},
+            "json" if "--json" in args else "xout",
+        )
     output_format = "xout"
     input_arg: str | None = None
     index = 0
@@ -330,6 +405,12 @@ def xcov_main(argv: list[str] | None = None) -> int:
     try:
         request = _read_request(input_arg)
         return _run_native_request("xcov", request, output_format)
+    except ManagerConfigMismatch as exc:
+        return _emit_transport(
+            "xcov",
+            {"ok": False, "json": _native_error("xcov", "", "CONFIG_MISMATCH", str(exc))},
+            output_format,
+        )
     except Exception as exc:
         return _emit_transport(
             "xcov",

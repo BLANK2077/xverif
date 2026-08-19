@@ -20,7 +20,30 @@ def _fake_tool(path: Path, *, tool: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         f"""#!/usr/bin/env python3
-import json, os, sys
+import hashlib, json, os, sys
+
+def environment_fingerprint():
+    verified = os.environ.get("XVERIF_LSF_ENV_VERIFIED_FINGERPRINT")
+    if verified:
+        return verified
+    raw_keys = os.environ.get("XVERIF_LSF_ENV_KEYS", "")
+    if not raw_keys:
+        return None
+    payload = bytearray()
+    for name in sorted(name for name in raw_keys.split(",") if name):
+        name_bytes = name.encode("utf-8")
+        payload.extend(str(len(name_bytes)).encode("ascii"))
+        payload.extend(b":")
+        payload.extend(name_bytes)
+        if name not in os.environ:
+            payload.extend(b"0")
+            continue
+        value_bytes = os.environ[name].encode("utf-8")
+        payload.extend(b"1")
+        payload.extend(str(len(value_bytes)).encode("ascii"))
+        payload.extend(b":")
+        payload.extend(value_bytes)
+    return hashlib.sha256(payload).hexdigest()
 
 if len(sys.argv) > 1 and sys.argv[1] == "log":
     print("{tool} fake log " + " ".join(sys.argv[2:]))
@@ -31,7 +54,11 @@ if "--stdio-loop" not in sys.argv:
         raise SystemExit(0)
     raise SystemExit(2)
 
-print(json.dumps({{"type":"ready","protocol":{protocol!r},"version":1,"pid":os.getpid()}}), flush=True)
+ready = {{"type":"ready","protocol":{protocol!r},"version":1,"pid":os.getpid()}}
+fingerprint = environment_fingerprint()
+if fingerprint:
+    ready["environment_fingerprint"] = fingerprint
+print(json.dumps(ready), flush=True)
 for line in sys.stdin:
     request = json.loads(line)
     action = request.get("action", "")
@@ -53,7 +80,9 @@ for line in sys.stdin:
                    "summary": {{"removed": True}}}}
     else:
         payload = {{"ok": True, "api_version": {api_version!r}, "action": action,
-                   "summary": {{"fake": True}}, "data": {{"tool": {tool!r}}}}}
+                   "summary": {{"fake": True}},
+                   "data": {{"tool": {tool!r},
+                            "environment_marker": os.environ.get("SDK_FREE_TEST_MARKER")}}}}
     xout = "@{tool}.v1 ok action=" + action + "\\n"
     envelope = {{"id": request_id, "request_id": request_id, "ok": True,
                 "payload_format": "json" if request.get("payload_format") == "json" else "xout",
@@ -88,6 +117,14 @@ def _environment(tmp_path: Path) -> dict[str, str]:
         ]),
     })
     return env
+
+
+def _write_env_config(path: Path, marker: str) -> None:
+    path.write_text(json.dumps({
+        "schema_version": "xverif-lsf-env.v1",
+        "variables": {"SDK_FREE_TEST_MARKER": marker},
+    }), encoding="utf-8")
+    path.chmod(0o600)
 
 
 def _run(tool: str, request: dict, env: dict[str, str], *extra: str) -> subprocess.CompletedProcess[str]:
@@ -274,3 +311,76 @@ def test_native_lsf_concurrent_first_calls_share_one_manager(tmp_path: Path) -> 
     for result in results:
         assert result.returncode == 0, result.stderr + result.stdout
         assert json.loads(result.stdout)["action"] == "actions"
+
+
+def test_native_lsf_config_reaches_both_compute_node_backends(tmp_path: Path) -> None:
+    env = _environment(tmp_path)
+    config = tmp_path / "xverif_lsf.env.json"
+    _write_env_config(config, "captured-terminal")
+    env["XVERIF_LSF_CLI_CONFIG"] = str(config)
+    env["FAKE_BSUB_REQUIRE_ENV_ALL"] = "1"
+    env["SDK_FREE_TEST_MARKER"] = "ambient"
+    for tool in ("xdebug", "xcov"):
+        result = _run(tool, {
+            "api_version": f"{tool}.v1",
+            "request_id": f"{tool}-env",
+            "action": "actions",
+        }, env)
+        assert result.returncode == 0, result.stderr + result.stdout
+        assert json.loads(result.stdout)["data"]["environment_marker"] == "captured-terminal"
+
+
+def test_native_lsf_rejects_compute_node_environment_mismatch(tmp_path: Path) -> None:
+    env = _environment(tmp_path)
+    config = tmp_path / "xverif_lsf.env.json"
+    _write_env_config(config, "expected")
+    env["XVERIF_LSF_CLI_CONFIG"] = str(config)
+    env["FAKE_BSUB_REQUIRE_ENV_ALL"] = "1"
+    env["FAKE_BSUB_MUTATE_ENV"] = "SDK_FREE_TEST_MARKER"
+    result = _run("xdebug", {
+        "api_version": "xdebug.v1",
+        "request_id": "mismatch-open",
+        "action": "session.open",
+        "target": {"fsdb": "waves.fsdb"},
+        "args": {"name": "mismatch_case"},
+    }, env)
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["error"]["code"] == "LSF_ENV_MISMATCH"
+
+
+def test_native_lsf_config_change_refuses_live_manager_session(tmp_path: Path) -> None:
+    env = _environment(tmp_path)
+    config = tmp_path / "xverif_lsf.env.json"
+    _write_env_config(config, "first")
+    env["XVERIF_LSF_CLI_CONFIG"] = str(config)
+    env["FAKE_BSUB_REQUIRE_ENV_ALL"] = "1"
+    opened = _run("xdebug", {
+        "api_version": "xdebug.v1",
+        "request_id": "config-open",
+        "action": "session.open",
+        "target": {"fsdb": "waves.fsdb"},
+        "args": {"name": "config_case"},
+    }, env)
+    assert opened.returncode == 0, opened.stderr + opened.stdout
+
+    _write_env_config(config, "second")
+    mismatched = _run("xdebug", {
+        "api_version": "xdebug.v1",
+        "request_id": "config-query",
+        "action": "value.at",
+        "target": {"session_id": "config_case"},
+        "args": {},
+    }, env)
+    assert mismatched.returncode == 1
+    assert json.loads(mismatched.stdout)["error"]["code"] == "CONFIG_MISMATCH"
+
+    _write_env_config(config, "first")
+    closed = _run("xdebug", {
+        "api_version": "xdebug.v1",
+        "request_id": "config-close",
+        "action": "session.close",
+        "target": {"session_id": "config_case"},
+        "args": {},
+    }, env)
+    assert closed.returncode == 0, closed.stderr + closed.stdout

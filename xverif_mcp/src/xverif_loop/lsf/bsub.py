@@ -37,6 +37,7 @@ class BsubOptions:
     queue: Optional[str] = None
     resource: Optional[str] = None
     job_name: Optional[str] = None
+    propagate_environment: bool = False
 
     def extra_args(self) -> List[str]:
         """Extra flags to pass to bsub before the command."""
@@ -47,6 +48,8 @@ class BsubOptions:
             extras.extend(["-q", self.queue])
         if self.resource:
             extras.extend(["-R", self.resource])
+        if self.propagate_environment:
+            extras.extend(["-env", "all"])
         return extras
 
 
@@ -62,6 +65,10 @@ class BsubRunner:
         interactive = {"-I", "-Is", "-Ip"}
         if not any(flag in base for flag in interactive):
             base.append("-I")
+        if opts.propagate_environment and "-env" in base:
+            raise ValueError(
+                "XVERIF_LSF_BSUB must not set -env; xverif requires explicit '-env all'"
+            )
         base.extend(opts.extra_args())
         base.extend(list(command))
         return base

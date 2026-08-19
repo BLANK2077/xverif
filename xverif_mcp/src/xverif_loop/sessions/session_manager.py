@@ -93,7 +93,8 @@ class McpSessionManager:
                  ready_protocol: str = "xdebug-stdio-loop",
                  target_key: str = "fsdb",
                  recovery_tool: str = "xverif_debug_session_open",
-                 logger: StructuredLogger) -> None:
+                 logger: StructuredLogger,
+                 lsf_environment_fingerprint: Optional[str] = None) -> None:
         self.runtime = runtime
         self.logger = logger
         self.mode = runtime.backend
@@ -103,6 +104,7 @@ class McpSessionManager:
         self.ready_protocol = ready_protocol
         self.target_key = target_key
         self.recovery_tool = recovery_tool
+        self.lsf_environment_fingerprint = lsf_environment_fingerprint
         self._session_queue = runtime.session_queue
         self._session_resource = runtime.session_resource
         if self.mode == "direct":
@@ -253,6 +255,7 @@ class McpSessionManager:
                 run_manifest=run_manifest, logger=self.logger,
                 native_open_args=dict(native_open_args or {}),
                 native_open_request_id=native_open_request_id,
+                lsf_environment_fingerprint=self.lsf_environment_fingerprint,
             )
         except BaseException:
             with self._manager_lock:

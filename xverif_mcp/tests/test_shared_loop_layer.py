@@ -83,7 +83,57 @@ def test_runtime_packaging_is_separate_from_testinfra() -> None:
         "xverif-mcp": "xverif_mcp.server:main",
         "xdebug_lsf": "xverif_loop.native_cli:xdebug_main",
         "xcov_lsf": "xverif_loop.native_cli:xcov_main",
+        "xverif_lsf_env_capture": "xverif_loop.env_config:capture_main",
     }
+
+
+def test_lsf_environment_propagation_is_sdk_free_opt_in_only() -> None:
+    from xverif_loop.lsf.bsub import BsubOptions, BsubRunner
+
+    runner = BsubRunner("bsub -Is")
+    assert runner.build(["tool", "--stdio-loop"]) == [
+        "bsub", "-Is", "tool", "--stdio-loop",
+    ]
+    assert runner.build(
+        ["tool", "--stdio-loop"],
+        BsubOptions(propagate_environment=True),
+    ) == [
+        "bsub", "-Is", "-env", "all", "tool", "--stdio-loop",
+    ]
+    with pytest.raises(ValueError, match="must not set -env"):
+        BsubRunner("bsub -Is -env none").build(
+            ["tool", "--stdio-loop"],
+            BsubOptions(propagate_environment=True),
+        )
+
+
+def test_mcp_shared_wrapper_status_contract_does_not_expose_sdk_free_config(
+    monkeypatch,
+) -> None:
+    from xverif_loop.wrapper import LoopWrapperService
+
+    monkeypatch.setenv("XVERIF_LSF_CLI_CONFIG_FINGERPRINT", "sdk-free-only")
+    service = LoopWrapperService(
+        mode="lsf",
+        xdebug_bin="false",
+        xcov_bin="false",
+    )
+    assert service.dispatch({
+        "id": "ping",
+        "method": "server.ping",
+        "params": {},
+    }) == {
+        "id": "ping",
+        "ok": True,
+        "result": {"ok": True, "pong": True, "mode": "lsf"},
+    }
+    shutdown = service.dispatch({
+        "id": "shutdown",
+        "method": "server.shutdown_if_idle",
+        "params": {},
+    })
+    assert shutdown["ok"] is False
+    assert shutdown["error"]["code"] == "UNKNOWN_METHOD"
 
 
 def test_runtime_defaults_use_user_xverif_home(monkeypatch, tmp_path: Path) -> None:

@@ -27,13 +27,23 @@ def _split_command(argv: List[str]) -> List[str]:
             args.pop(0)
             break
         flag = args.pop(0)
-        if flag in {"-q", "-R", "-J"} and args:
+        if flag in {"-q", "-R", "-J", "-env"} and args:
             args.pop(0)
     return args
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    command = _split_command(argv or sys.argv[1:])
+    raw_args = list(argv or sys.argv[1:])
+    if os.environ.get("FAKE_BSUB_REQUIRE_ENV_ALL"):
+        try:
+            env_index = raw_args.index("-env")
+        except ValueError:
+            print("fake_bsub: missing -env all", file=sys.stderr)
+            return 78
+        if env_index + 1 >= len(raw_args) or raw_args[env_index + 1] != "all":
+            print("fake_bsub: invalid -env contract", file=sys.stderr)
+            return 78
+    command = _split_command(raw_args)
     if not command:
         print("fake_bsub: missing command", file=sys.stderr)
         return 2
@@ -57,7 +67,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     if os.environ.get("FAKE_BSUB_EXIT_BEFORE_READY"):
         return 77
 
-    proc = subprocess.Popen(command)
+    child_env = dict(os.environ)
+    drop_name = child_env.get("FAKE_BSUB_DROP_ENV")
+    if drop_name:
+        child_env.pop(drop_name, None)
+    mutate_name = child_env.get("FAKE_BSUB_MUTATE_ENV")
+    if mutate_name:
+        child_env[mutate_name] = "fake-bsub-mutated"
+    proc = subprocess.Popen(command, env=child_env)
 
     def _terminate_child(signum, frame):  # type: ignore[no-untyped-def]
         del frame

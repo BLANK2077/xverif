@@ -758,6 +758,7 @@ class TestLsfStructuredLog:
     def test_fake_lsf_logs_bsub_job_and_cleanup(self, tmp_path, monkeypatch):
         fake = _fake_loop_script(tmp_path)
         monkeypatch.setenv("FAKE_BSUB_STDOUT_NOISE_BEFORE_READY", "1")
+        monkeypatch.setenv("XVERIF_LSF_ENV_FINGERPRINT", "sdk-free-only")
         monkeypatch.setenv("FAKE_BSUB_SCHEDULER_FRAMING", "1")
         monkeypatch.setenv(
             "XVERIF_LSF_BKILL",
@@ -774,6 +775,8 @@ class TestLsfStructuredLog:
         )
         r = s.open()
         assert r.get("ok"), r
+        assert s.handle is not None
+        assert "-env" not in s.handle.argv
         s.close()
 
         lsf_events = _session_events(tmp_path, "lsf_log", "lsf")
@@ -823,6 +826,7 @@ class TestLsfStructuredLog:
             assert first_session.handle.proc.pid != second_session.handle.proc.pid
             assert first_session.handle.argv[-2:] == [fake, "--stdio-loop"]
             first_argv = first_session.handle.argv
+            assert "-env" not in first_argv
             assert first_argv[first_argv.index("-q") + 1] == "cov_queue"
             assert first_argv[first_argv.index("-R") + 1] == "select[mem>1024]"
             assert first_argv[first_argv.index("-J") + 1] == first_session.job_name

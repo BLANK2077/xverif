@@ -68,5 +68,8 @@ def test_sdk_free_loop_runtime_installs_in_clean_venv(tmp_path: Path) -> None:
     )
     _run([str(venv / "bin" / "xdebug_lsf"), "-help"], cwd=tmp_path, env=env)
     _run([str(venv / "bin" / "xcov_lsf"), "--help"], cwd=tmp_path, env=env)
+    capture = venv / "bin" / "xverif_lsf_env_capture"
+    assert capture.exists()
+    _run([str(capture), "--dry-run"], cwd=tmp_path, env=env)
     assert not (venv / "bin" / "xverif-loop-server").exists()
     assert not (venv / "bin" / "xverif-loop-client").exists()

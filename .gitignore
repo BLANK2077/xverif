@@ -81,6 +81,7 @@ __pycache__/
 .xverif-test-cache/
 .xverif-test-results/
 .xverif/
+/tools/xverif_lsf.env.json
 
 xdebug/build/
 xverif_mcp/build/

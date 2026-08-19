@@ -175,6 +175,7 @@ class XdebugLoopSession:
     queue: Optional[str] = None
     resource: Optional[str] = None
     job_name: Optional[str] = None
+    lsf_environment_fingerprint: Optional[str] = None
     scheduler_status: str = "not_started"
     submitted_queue: Optional[str] = None
     submitted_resource: Optional[str] = None
@@ -495,6 +496,7 @@ class XdebugLoopSession:
                            tool_bin=self.xdebug_bin,
                            queue=self.queue, resource=self.resource,
                            job_name=self.job_name,
+                           lsf_environment_fingerprint=self.lsf_environment_fingerprint,
                            startup_timeout_sec=self.runtime.startup_timeout_sec,
                            logger=self.logger)
         native_open_started = False
@@ -699,9 +701,14 @@ class XdebugLoopSession:
                 cleanup=cleanup,
                 scheduler=self.scheduler_json(),
             )
+            environment_mismatch = "LSF_ENV_MISMATCH" in str(exc)
             result = _error(
-                "SESSION_OPEN_FAILED",
-                "session.open failed before native dispatch",
+                "LSF_ENV_MISMATCH" if environment_mismatch else "SESSION_OPEN_FAILED",
+                (
+                    "LSF compute-node environment did not match the submitted config"
+                    if environment_mismatch
+                    else "session.open failed before native dispatch"
+                ),
                 error_type=type(exc).__name__,
                 cleanup_complete=(
                     cleanup.get("subprocess")

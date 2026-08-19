@@ -47,6 +47,7 @@ class JsonlProcess:
     log_launcher: Optional[str] = None
     _stdout_thread: Optional[threading.Thread] = None
     _stderr_thread: Optional[threading.Thread] = None
+    expected_environment_fingerprint: Optional[str] = None
 
     @classmethod
     def start(
@@ -225,6 +226,20 @@ class JsonlProcess:
                 self._log_stdio("ready.invalid_envelope", False)
                 raise ProtocolError("ready envelope must be a JSON object")
             if msg.get("type") == "ready" and msg.get("protocol") == protocol:
+                expected_environment = self.expected_environment_fingerprint
+                if expected_environment is not None:
+                    observed_environment = msg.get("environment_fingerprint")
+                    if observed_environment != expected_environment:
+                        self._log_stdio(
+                            "ready.environment_mismatch",
+                            False,
+                            protocol=protocol,
+                            expected_fingerprint=expected_environment,
+                            observed_fingerprint=observed_environment,
+                        )
+                        raise ProtocolError(
+                            "LSF_ENV_MISMATCH: compute-node environment fingerprint differs"
+                        )
                 self._log_stdio("ready.ok", True, protocol=protocol, message=msg)
                 return msg
             self._log_stdio("ready.unexpected_envelope", False)
