@@ -118,11 +118,11 @@ replace。默认配置文件加入 `.gitignore`。
 
 | 阶段 | 状态 | Commit | 验证/备注 |
 | --- | --- | --- | --- |
-| 计划书 | 已完成 | 待填写 | 不纳入用户已有 `AGENTS.md` 改动 |
-| Goal | 待开始 | - | - |
-| 配置加载 | 待开始 | - | - |
-| LSF 远端继承 | 待开始 | - | - |
-| 捕获脚本 | 待开始 | - | - |
-| 测试 | 待开始 | - | - |
-| 文档与 skill | 待开始 | - | - |
-| 最终验收 | 待开始 | - | - |
+| 计划书 | 已完成 | `be0259d`, `9f4baa5` | 已明确仅限 SDK-free；不纳入用户已有 `AGENTS.md` 改动 |
+| Goal | 已完成 | - | 已建立实现与验收目标 |
+| 配置加载 | 已完成 | `98b4959` | 严格 JSON、0600/owner/regular-file、覆盖语义与双指纹 |
+| LSF 远端继承 | 已完成 | `98b4959` | 仅 SDK-free opt-in `-env all`；计算节点 pre-exec 指纹校验 |
+| 捕获脚本 | 已完成 | `98b4959` | repo/wheel entry、allowlist、敏感过滤、no-clobber/force |
+| 测试 | 已完成 | `98b4959` | unit 227、process 173、wheel 1、真实缓存 1、xcov unit 170 |
+| 文档与 skill | 进行中 | 待填写 | README、协议与 skill 已同步；待安装 diff 验收 |
+| 最终验收 | 进行中 | - | 未调用 fixture prepare；待记录缓存指针与最终 status |

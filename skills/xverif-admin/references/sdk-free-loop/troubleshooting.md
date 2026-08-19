@@ -26,3 +26,9 @@
 - query timeout：先缩小 time_range/limits，再考虑增大 `XVERIF_LSF_CLI_REQUEST_TIMEOUT_SEC`。
 - UDS bind 失败：检查 `XVERIF_LSF_CLI_SOCKET` 所在目录权限及同名路径类型；不要手工启动 manager 或 client。
 - `--stdio-loop` 被拒绝：这是预期行为；该参数只由 wrapper 内部提交到计算节点。
+- `CONFIG_ERROR`：检查 `xverif_lsf.env.json` 的 JSON、owner、普通文件类型和
+  `0600` 权限；不要改成 symlink 或放宽权限。
+- `LSF_ENV_MISMATCH`：登录节点 effective environment 未完整到达计算节点；
+  检查站点 bsub wrapper 是否保留 `-env all`，不要改用 direct/MCP fallback。
+- `CONFIG_MISMATCH`：旧 manager 仍有活动或未解决 session；先按原配置完成
+  close/doctor/cleanup，再使用新配置。

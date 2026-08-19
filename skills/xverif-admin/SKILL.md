@@ -32,3 +32,5 @@ description: >
 - NPI、真实 FSDB/VDB、LSF、license、MCP stdio-loop 和 transport 实机动作在沙箱外执行。
 - 路由固定为：已注入 MCP 时使用 MCP；无 MCP 且必须 LSF 时使用
   `xdebug_lsf` / `xcov_lsf`；不需要 LSF 时使用原生工具。
+- 终端环境捕获、入口同目录配置、`-env all` 和远端环境指纹只属于 SDK-free
+  LSF；不得把这些行为扩展到 MCP direct/LSF。

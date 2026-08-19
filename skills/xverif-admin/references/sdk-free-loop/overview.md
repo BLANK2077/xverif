@@ -10,6 +10,7 @@ SDK-free LSF CLI 只用于“没有可用 xverif MCP，且必须经 LSF 运行�
 ```bash
 tools/xdebug_lsf
 tools/xcov_lsf
+tools/xverif_lsf_env_capture
 ```
 
 ## 路由顺序
@@ -41,6 +42,20 @@ EOF
 不再公开 `method/params` wrapper envelope，也不需要用户显式启动 server、
 指定 socket 或调用 client。`--stdio-loop` 是内部协议，两个 LSF CLI
 都明确拒绝该公开参数。
+
+## 终端环境配置
+
+两个入口默认读取自身同目录的 `xverif_lsf.env.json`。在已完成 EDA、license、
+Python 和 LSF 初始化的终端生成配置：
+
+```bash
+tools/xverif_lsf_env_capture --dry-run
+tools/xverif_lsf_env_capture
+```
+
+默认不覆盖已有文件；更新时显式使用 `--force`。站点变量用重复的
+`--include NAME` 加入。也可设置 `XVERIF_LSF_CLI_CONFIG=/absolute/path.json`
+覆盖默认路径。配置只影响 SDK-free 入口；MCP 不读取它。
 
 ## 能力边界
 

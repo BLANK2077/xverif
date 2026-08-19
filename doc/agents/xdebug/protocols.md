@@ -140,3 +140,6 @@ UDS 和 stdio-loop 不作为用户入口。
 - wrapper 不公开 `method/params`、server/client、socket 参数或 `--stdio-loop`。
 - wrapper 不手写 xdebug file transport 内部目录协议。
 - wrapper failure 必须保留底层 xdebug error context。
+- 入口同目录的 `xverif_lsf.env.json` 及其 `bsub -env all`、远端环境指纹、
+  manager 配置指纹只属于 SDK-free wrapper。MCP direct/LSF 不读取配置，不改变
+  bsub argv 或 ready envelope 要求。

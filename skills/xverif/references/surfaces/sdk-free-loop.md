@@ -8,6 +8,7 @@
 ```bash
 tools/xdebug_lsf --json -
 tools/xcov_lsf --json -
+tools/xverif_lsf_env_capture --dry-run
 ```
 
 LSF CLI 与原生工具使用同一份 `xdebug.v1` / `xcov.v1` envelope：
@@ -20,3 +21,6 @@ xdebug ownership token 均按原生 schema 传入，不因 LSF surface 改变 pr
 
 协议、readiness、日志、timeout 和 LSF 配置详见 `xverif-admin`。任何失败
 都不自动转 MCP、direct backend 或其它 transport。
+
+入口同目录 `xverif_lsf.env.json` 的生成、权限、`bsub -env all` 和计算节点
+环境指纹合同也见 `xverif-admin`；该配置不适用于 MCP。

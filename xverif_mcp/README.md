@@ -91,6 +91,7 @@ tools/xverif-mcp
 tools/xverif-lsf-doctor
 tools/xdebug_lsf
 tools/xcov_lsf
+tools/xverif_lsf_env_capture
 ```
 
 `tools/xdebug_lsf` / `tools/xcov_lsf` 是不依赖 MCP SDK 的单文件入口，只用于
@@ -98,6 +99,13 @@ tools/xcov_lsf
 request envelope，透明托管内部 UDS manager 与 LSF stdio-loop；用户不启动
 server/client、不指定 socket，也不传 `--stdio-loop`。没有 LSF 限制时直接使用
 `tools/xdebug` / `tools/xcov`，无需 Python wrapper。
+
+两个 SDK-free 入口会默认检查入口同目录的 `xverif_lsf.env.json`。可先在已经
+配置好 EDA、license 和 LSF 的终端运行 `tools/xverif_lsf_env_capture` 生成该
+文件；随后 wrapper 用配置覆盖继承环境，并仅在 SDK-free 提交中加入
+`bsub -env all`。计算节点会在启动 native stdio-loop 前校验环境指纹，避免
+登录节点配置未完整传到 LSF job。MCP direct/LSF backend 不读取这个文件，
+不启用 `-env all` 或环境指纹合同。
 
 ## MCP 配置
 
@@ -340,9 +348,9 @@ tools/xdebug_lsf / tools/xcov_lsf + native request envelope
   -> transparent local Unix domain socket manager
   -> LoopWrapperService (internal)
        -> McpSessionManager (xdebug)
-       -> LsfLauncher:    bsub -I tools/xdebug --stdio-loop
+       -> LsfLauncher:    bsub -I -env all <environment verifier> tools/xdebug --stdio-loop
        -> McpSessionManager (xcov)
-       -> LsfLauncher:    bsub -I tools/xcov --stdio-loop
+       -> LsfLauncher:    bsub -I -env all <environment verifier> tools/xcov --stdio-loop
 ```
 
 示例：
@@ -356,6 +364,20 @@ tools/xdebug_lsf --json - <<'EOF'
 {"api_version":"xdebug.v1","request_id":"2","action":"value.at","target":{"session_id":"s0"},"args":{"signal":"top.clk","time":"10ns"}}
 EOF
 ```
+
+环境配置生成与检查：
+
+```bash
+tools/xverif_lsf_env_capture --dry-run
+tools/xverif_lsf_env_capture
+chmod 600 tools/xverif_lsf.env.json
+tools/xdebug_lsf --json request.json
+```
+
+默认生成不覆盖已有文件；确认更新时显式加 `--force`。站点自定义变量用重复的
+`--include NAME` 加入。变量名包含 `TOKEN`、`PASSWORD`、`SECRET` 或 `COOKIE`
+时默认排除。JSON 只允许 `schema_version` 和 string-valued `variables`，并拒绝
+symlink、非当前用户 owner 和非 `0600` 文件。
 
 ## 环境变量
 
@@ -407,6 +429,7 @@ EOF
 | `XVERIF_LSF_CLI_BKILL_TIMEOUT_SEC` | SDK-free LSF bkill 超时 |
 | `XVERIF_LSF_CLI_IDLE_TIMEOUT_SEC` | 内部 manager 无活动 session/request 后退出等待，默认 5 秒 |
 | `XVERIF_LSF_CLI_FAKE_LSF` | 仅 SDK-free LSF CLI namespace 的显式 fake LSF，严格布尔 `0|1` |
+| `XVERIF_LSF_CLI_CONFIG` | 覆盖 SDK-free 环境配置路径；默认入口同目录 `xverif_lsf.env.json` |
 | `VERDI_HOME` | Verdi 安装目录 |
 | `LD_LIBRARY_PATH` | 需包含 `<verdi-install>/share/NPI/lib/LINUX64` |
 
@@ -436,6 +459,10 @@ SDK-free LSF CLI 会写结构化日志：
 - session lifecycle：`~/.xverif/lsf-cli/sessions/<alias>/owners/<owner>/session.ndjson`
 - stdio-loop protocol：`~/.xverif/lsf-cli/sessions/<alias>/owners/<owner>/stdio.ndjson`
 - LSF launcher / job / cleanup：`~/.xverif/lsf-cli/sessions/<alias>/owners/<owner>/lsf.ndjson`
+
+配置日志只记录配置路径证据、变量名和整体指纹，不记录变量值。远端环境不一致
+返回 `LSF_ENV_MISMATCH`；配置改变但旧 manager 仍有 live/unresolved session
+返回 `CONFIG_MISMATCH`，不会杀掉旧 session 或切换 backend。
 
 xdebug session 工具使用明确前缀：
 

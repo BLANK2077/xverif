@@ -314,6 +314,12 @@ tools/xdebug_lsf --json - <<'EOF'
 EOF
 ```
 
+SDK-free `xdebug_lsf` 与 `xcov_lsf` 默认读取入口同目录的
+`xverif_lsf.env.json`。可在已初始化 EDA/LSF 的终端运行
+`tools/xverif_lsf_env_capture` 生成权限为 `0600` 的共享配置。存在配置时仅
+SDK-free submission 使用 `bsub -env all`，并在计算节点 exec native tool 前
+校验环境指纹；MCP direct/LSF 不读取该文件且 bsub/ready 合同不变。
+
 重复调试建议先打开 session，再用 `target.session_id` 访问：
 
 ```json
@@ -986,6 +992,8 @@ xdebug log bundle --session <id> --out debug_bundle.redacted.tgz --redact
 - `XDEBUG_LOG_MAX_BYTES` / `XDEBUG_LOG_MAX_FILES`：启用单文件大小滚动。
 - `XVERIF_MCP_LOG_DIR`：覆盖 MCP structured log 根目录，默认 `~/.xverif/mcp`。
 - `XVERIF_LSF_CLI_LOG_DIR`：覆盖 SDK-free LSF CLI structured log 根目录，默认 `~/.xverif/lsf-cli`。
+- `XVERIF_LSF_CLI_CONFIG`：覆盖 SDK-free 环境配置路径；默认入口同目录
+  `xverif_lsf.env.json`。
 
 定位工具问题时推荐顺序：
 
