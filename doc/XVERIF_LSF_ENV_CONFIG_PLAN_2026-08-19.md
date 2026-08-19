@@ -11,6 +11,14 @@ effective environment，并确保该环境不仅在登录节点生效，还由 L
 相关的环境变量安全生成到入口同目录。配置、加载、LSF 提交和远端 ready
 握手均 fail closed，不增加 direct/MCP fallback。
 
+### 1.1 作用范围硬边界
+
+本修改只作用于 SDK-free `xdebug_lsf`、`xcov_lsf`、它们自动启动的内部
+manager，以及由该 manager 提交的 LSF job。MCP direct/LSF backend 不读取
+该配置，不增加 `-env all`，不启用环境指纹校验，不改变 bsub argv、ready
+合同、环境继承或 session 生命周期。共享底层代码只能增加默认关闭的能力，
+且必须用差分测试证明 MCP 未启用该能力。
+
 ## 2. 固定公共合同
 
 ### 2.1 配置文件
@@ -61,9 +69,9 @@ replace。默认配置文件加入 `.gitignore`。
 
 ## 3. LSF 环境继承硬合同
 
-- effective environment 在 manager 生命周期内冻结，显式传给 manager、bsub、
+- SDK-free effective environment 在内部 manager 生命周期内冻结，显式传给 manager、bsub、
   bkill、xdebug log 和所有 stdio-loop/native 子进程。
-- SDK-free LSF submission 显式添加 `bsub -env all`。自定义
+- 仅 SDK-free LSF submission 显式添加 `bsub -env all`。自定义
   `XVERIF_LSF_BSUB` 若携带任何 `-env` 直接报配置错误，避免 `none` 或部分
   变量覆盖传播合同。
 - 对配置中的变量按名称排序并使用长度分隔编码计算 SHA-256。登录节点保存
@@ -74,6 +82,8 @@ replace。默认配置文件加入 `.gitignore`。
 - manager ping 发布配置指纹。一致时复用；不一致且无 live/opening/unresolved
   session 时正常关闭旧 manager 后重启；存在活动或未解决 session 时返回
   `CONFIG_MISMATCH`，不杀 session、不混用环境。
+- MCP launcher 不读取上述内部指纹变量；其传播开关保持关闭，stdio-loop
+  ready 不要求环境指纹。
 
 ## 4. 分阶段提交
 
@@ -92,6 +102,8 @@ replace。默认配置文件加入 `.gitignore`。
 
 - 无配置时 xdebug/xcov 行为不变；共享配置覆盖 inherited environment。
 - fake bsub 断言 argv 含 `-env all`，并验证 submission env 到计算节点。
+- MCP LSF argv 差分测试必须证明同一 open 请求仍使用修改前的 bsub 参数，
+  不含 SDK-free `-env all`，且 MCP ready 不要求环境指纹。
 - fake LSF 删除或修改任一受管变量时必须 `LSF_ENV_MISMATCH`，不得创建 session。
 - 覆盖 JSON/XOUT、stdin/file、xdebug log、manager 复用/切换和 clean wheel。
 - 覆盖损坏 JSON、重复 key、未知字段、非 string、symlink、owner、mode、
