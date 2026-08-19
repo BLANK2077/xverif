@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import os
 from pathlib import Path
 import select
@@ -111,6 +112,17 @@ def _ping(socket_path: str) -> bool:
 def _ensure_manager(socket_path: str) -> None:
     if _ping(socket_path):
         return
+    lock_path = Path(f"{socket_path}.startup.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+    with os.fdopen(lock_fd, "r+") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        if _ping(socket_path):
+            return
+        _start_manager(socket_path)
+
+
+def _start_manager(socket_path: str) -> None:
     read_fd, write_fd = os.pipe()
     command = [
         sys.executable,

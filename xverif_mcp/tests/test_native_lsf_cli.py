@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from pathlib import Path
@@ -21,6 +22,9 @@ def _fake_tool(path: Path, *, tool: str) -> None:
         f"""#!/usr/bin/env python3
 import json, os, sys
 
+if len(sys.argv) > 1 and sys.argv[1] == "log":
+    print("{tool} fake log " + " ".join(sys.argv[2:]))
+    raise SystemExit(0)
 if "--stdio-loop" not in sys.argv:
     if any(arg in sys.argv for arg in ("-h", "-help", "--help")):
         print("{tool} fake help")
@@ -182,3 +186,91 @@ def test_native_lsf_stateless_requests_use_temporary_loops(tmp_path: Path) -> No
         payload = json.loads(result.stdout)
         assert payload["ok"] is True
         assert payload["action"] == "actions"
+
+
+def test_native_lsf_xout_and_file_inputs_match_native_surface(tmp_path: Path) -> None:
+    env = _environment(tmp_path)
+    request = {
+        "api_version": "xdebug.v1",
+        "request_id": "xout-file",
+        "action": "actions",
+    }
+    request_path = tmp_path / "request.json"
+    request_path.write_text(json.dumps(request), encoding="utf-8")
+    debug = subprocess.run(
+        [str(ROOT / "tools" / "xdebug_lsf"), str(request_path)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        cwd=ROOT,
+        timeout=20,
+        check=False,
+    )
+    assert debug.returncode == 0, debug.stderr
+    assert debug.stdout == "@xdebug.v1 ok action=actions\n"
+
+    request["api_version"] = "xcov.v1"
+    request_path.write_text(json.dumps(request), encoding="utf-8")
+    cov = subprocess.run(
+        [str(ROOT / "tools" / "xcov_lsf"), "--request", str(request_path)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        cwd=ROOT,
+        timeout=20,
+        check=False,
+    )
+    assert cov.returncode == 0, cov.stderr
+    assert cov.stdout == "@xcov.v1 ok action=actions\n"
+
+
+def test_native_lsf_help_is_local_and_xdebug_log_uses_lsf(tmp_path: Path) -> None:
+    env = _environment(tmp_path)
+    socket_path = Path(env["XVERIF_LSF_CLI_SOCKET"])
+    for tool, help_arg in (("xdebug", "-h"), ("xcov", "--help")):
+        helped = subprocess.run(
+            [str(ROOT / "tools" / f"{tool}_lsf"), help_arg],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            cwd=ROOT,
+            timeout=10,
+            check=False,
+        )
+        assert helped.returncode == 0, helped.stderr
+        assert helped.stdout == f"{tool} fake help\n"
+        assert not socket_path.exists()
+
+    logged = subprocess.run(
+        [str(ROOT / "tools" / "xdebug_lsf"), "log", "doctor", "--session", "s0"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        cwd=ROOT,
+        timeout=20,
+        check=False,
+    )
+    assert logged.returncode == 0, logged.stderr
+    assert "xdebug fake log doctor --session s0" in logged.stdout
+    assert not socket_path.exists()
+
+
+def test_native_lsf_concurrent_first_calls_share_one_manager(tmp_path: Path) -> None:
+    env = _environment(tmp_path)
+
+    def call(index: int) -> subprocess.CompletedProcess[str]:
+        return _run("xdebug", {
+            "api_version": "xdebug.v1",
+            "request_id": f"parallel-{index}",
+            "action": "actions",
+        }, env)
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(call, range(4)))
+    for result in results:
+        assert result.returncode == 0, result.stderr + result.stdout
+        assert json.loads(result.stdout)["action"] == "actions"
