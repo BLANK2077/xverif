@@ -150,6 +150,8 @@ class McpSessionManager:
                      daidir: Optional[str] = None,
                      queue: Optional[str] = None, resource: Optional[str] = None,
                      run_manifest: Optional[str] = None,
+                     native_open_args: Optional[Json] = None,
+                     native_open_request_id: Optional[str] = None,
                      **kwargs: Any) -> Json:
         observability_cursor = self.logger.failure_cursor()
         for option_name, option_value in (("queue", queue), ("resource", resource)):
@@ -249,6 +251,8 @@ class McpSessionManager:
                 target_key=self.target_key,
                 recovery_tool=self.recovery_tool,
                 run_manifest=run_manifest, logger=self.logger,
+                native_open_args=dict(native_open_args or {}),
+                native_open_request_id=native_open_request_id,
             )
         except BaseException:
             with self._manager_lock:
@@ -331,6 +335,33 @@ class McpSessionManager:
             {"ok": True, "session": session.public_json()},
             observability_cursor,
         )
+
+    def managed_session(self, session_id: str) -> Optional[XdebugLoopSession]:
+        with self._manager_lock:
+            return self.sessions.get(session_id)
+
+    def finish_native_close(self, session_id: str) -> Json:
+        """Terminate a loop after its native close response was received."""
+
+        with self._manager_lock:
+            session = self.sessions.get(session_id)
+        if session is None:
+            return _error("SESSION_NOT_FOUND", f"session_id not found: {session_id}")
+        cleanup = session.close(force=True)
+        self._evict_session(
+            session,
+            tombstone_state=("closed" if cleanup.get("ok") else session.state),
+        )
+        return cleanup
+
+    def has_live_or_unresolved_sessions(self) -> bool:
+        with self._manager_lock:
+            if self.sessions or self._opening:
+                return True
+            return any(
+                session.state not in {"closed"}
+                for session in self.tombstones.values()
+            )
 
     def query(self, session_id: Optional[str], action: str,
               args: Optional[Json] = None, output_format: str = "xout",

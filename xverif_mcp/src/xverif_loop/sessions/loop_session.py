@@ -190,6 +190,9 @@ class XdebugLoopSession:
         default=None,
         repr=False,
     )
+    native_open_args: Json = field(default_factory=dict, repr=False)
+    native_open_request_id: Optional[str] = field(default=None, repr=False)
+    _last_open_transport: Optional[Json] = field(default=None, repr=False)
     _seq: int = 0
     _lifecycle_lock: threading.RLock = field(
         default_factory=threading.RLock,
@@ -453,10 +456,15 @@ class XdebugLoopSession:
         observability_cursor = self.logger.failure_cursor()
         t0 = time.monotonic()
         capability = lifecycle_capability(self.backend)
+        supplied_token = self.native_open_args.get("ownership_token")
         self._ownership_token = (
-            secrets.token_hex(32)
-            if capability.supports_conditional_cleanup_token
-            else None
+            supplied_token
+            if isinstance(supplied_token, str) and supplied_token
+            else (
+                secrets.token_hex(32)
+                if capability.supports_conditional_cleanup_token
+                else None
+            )
         )
         try:
             self.logger.session(
@@ -509,12 +517,18 @@ class XdebugLoopSession:
                 self._capture_scheduler_handle(self.handle)
             self.pid = int(ready.get("pid") or 0)
             open_req: Json = {
-                "request_id": f"open-{_safe_name(self.alias)}",
+                "request_id": (
+                    self.native_open_request_id
+                    or f"open-{_safe_name(self.alias)}"
+                ),
                 "api_version": self.api_version,
                 "action": lifecycle_capability(self.backend).native_open_action,
                 "target": {},
                 "args": {"name": self.alias},
             }
+            for key, value in self.native_open_args.items():
+                if key not in {"name", "ownership_token", "transport"}:
+                    open_req["args"][key] = value
             _attach_trace_id(open_req, self.backend, self.alias)
             if capability.managed_transport:
                 open_req["args"]["transport"] = capability.managed_transport
@@ -534,6 +548,7 @@ class XdebugLoopSession:
                 open_req,
                 timeout=self.runtime.startup_timeout_sec,
             )
+            self._last_open_transport = rsp
             if not rsp.get("ok"):
                 self.scheduler_status = "open_rejected"
                 result = self._finish_dispatched_open(
@@ -1440,6 +1455,25 @@ class XdebugLoopSession:
                     else timeout
                 ),
             )
+
+    @_redacted_operation
+    def request_native(self, request: Json, output_format: str) -> Json:
+        """Send one already validated native envelope without re-wrapping it."""
+
+        req = dict(request)
+        if self.backend == "xdebug":
+            req["payload_format"] = (
+                "json" if output_format == "json" else "xout"
+            )
+        return self._call_raw(req)
+
+    @_redacted_operation
+    def last_open_transport(self) -> Optional[Json]:
+        return (
+            dict(self._last_open_transport)
+            if isinstance(self._last_open_transport, dict)
+            else None
+        )
 
     @_redacted_operation
     def public_json(self, verbose: bool = False) -> Json:

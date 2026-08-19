@@ -9,6 +9,7 @@ import stat
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 
@@ -25,6 +26,8 @@ from xverif_loop.logging import (
     resolve_logger,
 )
 from xverif_loop.json_contract import strict_json_dumps, strict_json_loads
+from xverif_loop.lsf.bsub import BsubRunner
+from xverif_loop.sessions.launchers import LaunchConfig, LsfLauncher
 from xverif_loop.sessions.session_manager import McpSessionManager
 from xverif_loop.xdebug_errors import (
     forbidden_native_session_error,
@@ -37,6 +40,11 @@ Json = Dict[str, Any]
 METHOD_PARAM_CONTRACTS: dict[str, dict[str, Any]] = {
     "server.ping": {"required": {}, "optional": {}, "any_of": ()},
     "server.shutdown": {"required": {}, "optional": {}, "any_of": ()},
+    "native.request": {
+        "required": {"tool": str, "request": dict, "output_format": str},
+        "optional": {},
+        "any_of": (),
+    },
     "debug.session.open": {
         "required": {"name": str},
         "optional": {
@@ -302,6 +310,15 @@ class LoopWrapperService:
             return {"ok": True, "pong": True, "mode": self.mode}
         if method == "server.shutdown":
             return {"ok": True, "shutdown": True}
+        if method == "native.request":
+            return {
+                "ok": True,
+                "transport": self._dispatch_native_request(
+                    tool=_required_str(params, "tool"),
+                    request=params["request"],
+                    output_format=_required_str(params, "output_format"),
+                ),
+            }
         if method == "debug.session.open":
             name = _required_str(params, "name")
             return self.debug.open_session(
@@ -399,13 +416,211 @@ class LoopWrapperService:
             )
         return _error("UNKNOWN_METHOD", f"unsupported method: {method}")
 
+    def _manager_for_tool(self, tool: str) -> McpSessionManager:
+        if tool == "xdebug":
+            return self.debug
+        if tool == "xcov":
+            return self.cov
+        raise TypeError("native.request tool must be xdebug or xcov")
+
+    def _transport_error(
+        self,
+        *,
+        tool: str,
+        request: Json,
+        error: Json,
+    ) -> Json:
+        payload = {
+            "api_version": request.get(
+                "api_version", "xdebug.v1" if tool == "xdebug" else "xcov.v1"
+            ),
+            "ok": False,
+            "action": request.get("action", ""),
+            "error": error,
+        }
+        return {
+            "ok": False,
+            "payload_format": "json",
+            "json": payload,
+            "error": error,
+        }
+
+    def _dispatch_native_request(
+        self,
+        *,
+        tool: str,
+        request: Json,
+        output_format: str,
+    ) -> Json:
+        if output_format not in {"json", "xout"}:
+            raise TypeError("native.request output_format must be json or xout")
+        manager = self._manager_for_tool(tool)
+        action = request.get("action")
+        if not isinstance(action, str) or not action:
+            return self._transient_native_request(tool, request, output_format)
+        target = request.get("target") if isinstance(request.get("target"), dict) else {}
+        args = request.get("args") if isinstance(request.get("args"), dict) else {}
+        open_action = "session.open"
+        if action == open_action:
+            name = args.get("name")
+            if not isinstance(name, str) or not name:
+                return self._transient_native_request(tool, request, output_format)
+            open_result = manager.open_session(
+                name=name,
+                fsdb=(target.get("fsdb") if tool == "xdebug" else target.get("vdb")),
+                daidir=(target.get("daidir") if tool == "xdebug" else None),
+                run_manifest=target.get("run_manifest"),
+                native_open_args=args,
+                native_open_request_id=(
+                    request.get("request_id")
+                    if isinstance(request.get("request_id"), str)
+                    else None
+                ),
+            )
+            if not open_result.get("ok"):
+                return self._transport_error(
+                    tool=tool,
+                    request=request,
+                    error=open_result.get("error", {
+                        "code": "SESSION_OPEN_FAILED",
+                        "message": "managed session open failed",
+                    }),
+                )
+            session = manager.managed_session(name)
+            transport = session.last_open_transport() if session else None
+            if transport is None:
+                return self._transport_error(
+                    tool=tool,
+                    request=request,
+                    error={
+                        "code": "BACKEND_RESPONSE_MISSING",
+                        "message": "native session.open response is unavailable",
+                    },
+                )
+            return transport
+
+        session_id = target.get("session_id")
+        if isinstance(session_id, str) and session_id:
+            session = manager.managed_session(session_id)
+            if session is None:
+                return self._transport_error(
+                    tool=tool,
+                    request=request,
+                    error={
+                        "code": "SESSION_NOT_FOUND",
+                        "message": f"session_id not found: {session_id}",
+                    },
+                )
+            try:
+                transport = session.request_native(request, output_format)
+            except Exception as exc:
+                return self._transport_error(
+                    tool=tool,
+                    request=request,
+                    error={
+                        "code": "SESSION_LOST",
+                        "message": f"stdio-loop request failed: {exc}",
+                    },
+                )
+            if action == "session.close" and transport.get("ok"):
+                cleanup = manager.finish_native_close(session_id)
+                if not cleanup.get("ok"):
+                    return self._transport_error(
+                        tool=tool,
+                        request=request,
+                        error={
+                            "code": "SESSION_CLEANUP_PARTIAL_FAILURE",
+                            "message": "native close succeeded but LSF cleanup failed",
+                        },
+                    )
+            return transport
+        return self._transient_native_request(tool, request, output_format)
+
+    def _transient_native_request(
+        self,
+        tool: str,
+        request: Json,
+        output_format: str,
+    ) -> Json:
+        backend = tool
+        tool_bin = default_xdebug_bin() if tool == "xdebug" else default_xcov_bin()
+        launcher = LsfLauncher(BsubRunner(self.runtime.lsf_bsub_command))
+        alias = f"adhoc_{tool}_{uuid.uuid4().hex[:12]}"
+        cfg = LaunchConfig(
+            alias=alias,
+            xdebug_bin=tool_bin,
+            tool_bin=tool_bin,
+            runtime=self.runtime,
+            backend=backend,
+            queue=self.runtime.session_queue,
+            resource=self.runtime.session_resource,
+            job_name=f"xverif_{alias}",
+            startup_timeout_sec=self.runtime.startup_timeout_sec,
+            logger=self.logger,
+        )
+        handle = None
+        try:
+            handle = launcher.start(cfg)
+            ready_protocol = (
+                "xdebug-stdio-loop" if tool == "xdebug" else "xcov-stdio-loop"
+            )
+            handle.wait_ready(ready_protocol, self.runtime.startup_timeout_sec)
+            native = dict(request)
+            if tool == "xdebug":
+                native["payload_format"] = output_format
+            transport = handle.request(
+                native,
+                timeout_sec=self.runtime.request_timeout_sec,
+            )
+            quit_request = {
+                "request_id": f"quit-{alias}",
+                "api_version": "xdebug.v1" if tool == "xdebug" else "xcov.v1",
+                "action": "stdio.quit",
+            }
+            try:
+                handle.request(
+                    quit_request,
+                    timeout_sec=max(0.1, self.runtime.close_timeout_sec / 2),
+                )
+            except Exception:
+                pass
+            return transport
+        except Exception as exc:
+            return self._transport_error(
+                tool=tool,
+                request=request,
+                error={
+                    "code": "LSF_STDIO_LOOP_FAILED",
+                    "message": f"temporary LSF stdio-loop failed: {exc}",
+                },
+            )
+        finally:
+            if handle is not None:
+                try:
+                    launcher.terminate(handle)
+                except Exception:
+                    pass
+
+    def has_live_or_unresolved_sessions(self) -> bool:
+        return (
+            self.debug.has_live_or_unresolved_sessions()
+            or self.cov.has_live_or_unresolved_sessions()
+        )
+
     def close_all(self) -> None:
         self.debug.close_all()
         self.cov.close_all()
 
 
 class LoopWrapperServer:
-    def __init__(self, socket_path: str, service: Optional[LoopWrapperService] = None) -> None:
+    def __init__(
+        self,
+        socket_path: str,
+        service: Optional[LoopWrapperService] = None,
+        *,
+        ready_fd: Optional[int] = None,
+        idle_timeout_sec: Optional[float] = None,
+    ) -> None:
         self.socket_path = socket_path
         self.service = service or LoopWrapperService()
         self.logger = self.service.logger
@@ -416,6 +631,10 @@ class LoopWrapperServer:
         self._ready = threading.Event()
         self._startup_finished = threading.Event()
         self._startup_error: Optional[BaseException] = None
+        self._ready_fd = ready_fd
+        self._idle_timeout_sec = idle_timeout_sec
+        self._last_activity = time.monotonic()
+        self._active_requests = 0
 
     def wait_until_ready(self, timeout_sec: float) -> None:
         if not self._startup_finished.wait(timeout_sec):
@@ -465,12 +684,25 @@ class LoopWrapperServer:
                     True,
                     socket_path=self.socket_path,
                 )
+                self._last_activity = time.monotonic()
                 self._ready.set()
                 self._startup_finished.set()
+                if self._ready_fd is not None:
+                    os.write(self._ready_fd, b"READY\n")
+                    os.close(self._ready_fd)
+                    self._ready_fd = None
                 while not self._stop.is_set():
                     try:
                         conn, _ = srv.accept()
                     except socket.timeout:
+                        if (
+                            self._idle_timeout_sec is not None
+                            and time.monotonic() - self._last_activity
+                            >= self._idle_timeout_sec
+                            and self._active_requests == 0
+                            and not self.service.has_live_or_unresolved_sessions()
+                        ):
+                            self._stop.set()
                         continue
                     except OSError as exc:
                         if self._stop.is_set():
@@ -574,6 +806,8 @@ class LoopWrapperServer:
                     and request.get("id")
                     else None
                 )
+                self._last_activity = time.monotonic()
+                self._active_requests += 1
                 method = (
                     request.get("method")
                     if type(request) is dict
@@ -597,6 +831,8 @@ class LoopWrapperServer:
                             operation_started=False,
                         ),
                     )
+                    self._last_activity = time.monotonic()
+                    self._active_requests -= 1
                     continue
                 rsp = self.service.dispatch(request)
                 if (
@@ -634,6 +870,7 @@ class LoopWrapperServer:
                             backend_result=rsp,
                         )
                     self._write_response(writer, rsp)
+                    self._active_requests -= 1
                     break
                 self.logger.try_uds(
                     "uds.request.end",
@@ -653,6 +890,8 @@ class LoopWrapperServer:
                         backend_result=rsp,
                     )
                 self._write_response(writer, rsp)
+                self._last_activity = time.monotonic()
+                self._active_requests -= 1
 
     def _write_response(self, writer: Any, response: Json) -> None:
         try:

@@ -147,10 +147,10 @@ LSF 命令和资源继续使用 `XVERIF_LSF_BSUB`、`XVERIF_LSF_BKILL`、
 
 | 阶段 | 状态 | Commit | 验证/备注 |
 | --- | --- | --- | --- |
-| 计划书 | 进行中 | 待填写 | 首次写入 |
-| Goal | 待开始 | - | 计划书提交后建立 |
-| 内部 manager | 待开始 | - | - |
-| 原生兼容 CLI | 待开始 | - | - |
-| SDK-free 测试 | 待开始 | - | - |
+| 计划书 | 已完成 | `fefcbb8` | 文档-only 提交，未纳入用户 `AGENTS.md` 改动 |
+| Goal | 已完成 | - | 已建立并固化入口、测试、cache 和 no-fallback 验收标准 |
+| 内部 manager | 已完成 | 待填写 | 透明启动、listen ready、活动请求保活、空闲退出和 native request 路由已实现 |
+| 原生兼容 CLI | 已完成 | 待填写 | `xdebug_lsf`/`xcov_lsf` 已增加，旧 server/client 入口已移除 |
+| SDK-free 测试 | 已完成 | 待填写 | unit 215/215，process 167/167，runtime package 1/1，真实 cache fake-LSF 1/1 |
 | 文档与 skill | 待开始 | - | - |
 | 最终验收 | 待开始 | - | - |

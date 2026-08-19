@@ -32,6 +32,7 @@ def test_sdk_free_loop_runtime_installs_in_clean_venv(tmp_path: Path) -> None:
     wheel_dir = tmp_path / "wheelhouse"
     env = dict(os.environ)
     env.pop("PYTHONPATH", None)
+    env["XVERIF_HOME"] = str(ROOT)
     # Build in the test environment, then install only the wheel in the clean
     # venv.  New Python venvs need not bundle setuptools, so source installs
     # would test a build frontend rather than the distributed runtime.
@@ -65,5 +66,7 @@ def test_sdk_free_loop_runtime_installs_in_clean_venv(tmp_path: Path) -> None:
         cwd=tmp_path,
         env=env,
     )
-    _run([str(venv / "bin" / "xverif-loop-server"), "--help"], cwd=tmp_path, env=env)
-    _run([str(venv / "bin" / "xverif-loop-client"), "--help"], cwd=tmp_path, env=env)
+    _run([str(venv / "bin" / "xdebug_lsf"), "-help"], cwd=tmp_path, env=env)
+    _run([str(venv / "bin" / "xcov_lsf"), "--help"], cwd=tmp_path, env=env)
+    assert not (venv / "bin" / "xverif-loop-server").exists()
+    assert not (venv / "bin" / "xverif-loop-client").exists()

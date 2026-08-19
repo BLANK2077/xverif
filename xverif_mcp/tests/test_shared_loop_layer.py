@@ -81,8 +81,8 @@ def test_runtime_packaging_is_separate_from_testinfra() -> None:
     assert runtime_project["project"]["name"] == "xverif-mcp"
     assert runtime_project["project"]["scripts"] == {
         "xverif-mcp": "xverif_mcp.server:main",
-        "xverif-loop-server": "xverif_loop.wrapper:server_main",
-        "xverif-loop-client": "xverif_loop.wrapper:client_main",
+        "xdebug_lsf": "xverif_loop.native_cli:xdebug_main",
+        "xcov_lsf": "xverif_loop.native_cli:xcov_main",
     }
 
 

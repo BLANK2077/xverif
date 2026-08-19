@@ -381,6 +381,7 @@ suites:
         - xverif_mcp/tests/test_direct_output_formats.py
         - xverif_mcp/tests/test_loop_session.py
         - xverif_mcp/tests/test_loop_wrapper_uds.py
+        - xverif_mcp/tests/test_native_lsf_cli.py
         - xverif_mcp/tests/test_mcp_sdk_smoke.py
         - xverif_mcp/tests/test_stdio_loop_session_lifecycle.py
     capabilities: [child_process, mcp_process]
@@ -400,6 +401,19 @@ suites:
     deterministic: true
     cost: {class: medium, estimate_sec: 20}
     timeouts: {execute_sec: 180, cleanup_sec: 20}
+
+  - id: xverif_mcp.sdk_free_lsf_real_data
+    owner: xverif_mcp
+    level: system
+    intent: [contract, lifecycle, integration]
+    domains: [session, fake-lsf, waveform, coverage]
+    runner: {kind: pytest, path: xverif_mcp/tests/test_native_lsf_real_data.py}
+    fixtures: [xdebug.ai_complex_wave, xcov.comprehensive]
+    capabilities: [child_process, npi, fsdb, fake_lsf]
+    hermetic: false
+    deterministic: true
+    cost: {class: medium, estimate_sec: 30}
+    timeouts: {execute_sec: 300, cleanup_sec: 30}
 
   - id: xverif_mcp.action_smoke
     owner: xverif_mcp
