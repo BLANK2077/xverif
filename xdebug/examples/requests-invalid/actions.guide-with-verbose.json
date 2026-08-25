@@ -1,0 +1,10 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "actions",
+  "args": {
+    "output": {
+      "view": "guide",
+      "verbose": true
+    }
+  }
+}

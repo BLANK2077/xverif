@@ -2545,6 +2545,87 @@ def action_descriptor_schema() -> dict[str, Any]:
     return closed(properties, properties)
 
 
+def actions_summary_schema() -> dict[str, Any]:
+    properties = {
+        "action_count": {"type": "integer", "minimum": 0},
+        "total_action_count": {"type": "integer", "minimum": 1},
+        "verbose": {"type": "boolean"},
+        "filtered": {"type": "boolean"},
+        "view": {"const": "guide"},
+        "guide_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10_000,
+        },
+        "guide_limit_bytes": {"const": 10_000},
+    }
+    schema = closed(
+        properties,
+        ("action_count", "total_action_count", "filtered"),
+    )
+    schema["oneOf"] = [
+        {
+            "required": ["verbose"],
+            "not": {
+                "anyOf": [
+                    {"required": ["view"]},
+                    {"required": ["guide_bytes"]},
+                    {"required": ["guide_limit_bytes"]},
+                ]
+            },
+        },
+        {
+            "required": ["view", "guide_bytes", "guide_limit_bytes"],
+            "not": {"required": ["verbose"]},
+        },
+    ]
+    return schema
+
+
+def actions_data_schema() -> dict[str, Any]:
+    modes = closed(
+        {
+            category: array({"type": "string"})
+            for category in ("design", "waveform", "combined", "builtin", "session")
+        },
+        ("design", "waveform", "combined", "builtin", "session"),
+    )
+    schema = closed(
+        {
+            "actions": array({
+                "anyOf": [
+                    {"type": "string"},
+                    action_descriptor_schema(),
+                ]
+            }),
+            "modes": modes,
+            "guide": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 10_000,
+            },
+            "filters": actions_filter_schema(),
+        },
+        ("filters",),
+    )
+    schema["oneOf"] = [
+        {
+            "required": ["actions", "modes"],
+            "not": {"required": ["guide"]},
+        },
+        {
+            "required": ["guide"],
+            "not": {
+                "anyOf": [
+                    {"required": ["actions"]},
+                    {"required": ["modes"]},
+                ]
+            },
+        },
+    ]
+    return schema
+
+
 def issue_schema() -> dict[str, Any]:
     return closed(
         {
@@ -2605,6 +2686,11 @@ def explicit_schema(action: str, pointer: str) -> dict[str, Any] | None:
     )
     if session_schema_override is not None:
         return session_schema_override
+    if action == "actions":
+        if pointer == SUMMARY_POINTER:
+            return actions_summary_schema()
+        if pointer == DATA_POINTER:
+            return actions_data_schema()
     if action == "event.find":
         if pointer == SUMMARY_POINTER:
             return event_find_summary_schema()
@@ -2787,6 +2873,27 @@ def explicit_schema(action: str, pointer: str) -> dict[str, Any] | None:
 
 
 def success_response_conditions(action: str) -> list[dict[str, Any]]:
+    if action == "actions":
+        return [{
+            "if": {
+                "properties": {
+                    "summary": {"required": ["view"]},
+                },
+                "required": ["summary"],
+            },
+            "then": {
+                "properties": {
+                    "data": {"required": ["guide"]},
+                },
+                "required": ["data"],
+            },
+            "else": {
+                "properties": {
+                    "data": {"required": ["actions", "modes"]},
+                },
+                "required": ["data"],
+            },
+        }]
     if action == "session.open":
         run_manifest_is_present = {
             "properties": {

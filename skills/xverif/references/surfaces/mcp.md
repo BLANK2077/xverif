@@ -5,8 +5,10 @@
 - xcov：`xverif_cov_session_open(name, vdb, run_manifest=None)` → `xverif_cov_query(session_id, action, args, output_format)` → `xverif_cov_session_close(session_id, confirm_discard_reasons=False)`。coverage limits 与 export output 只放 action 内层 `args`。dirty exclusion reason 会拒绝普通 close 并保留 session；先持久化 CSV，或明确确认丢弃。
 - action 参数只放内层 `args`；不传原生 `api_version/target/output` envelope。
 - 任何 xdebug 任务先调用一次无参数 `xverif_tools`，完整读取它返回的全部 action
-  名称和精简 purpose。不要按 category/keyword 反复调用；该 tool 故意不提供过滤参数。
-- 选定 action 后调用 `xverif_debug_get_schema` 获取状态、精确参数和使用指导。对关键普通信号、Stream、AXI、
+  名称和精简 purpose。该 tool 原样返回 native `actions` guide，每行仅
+  `name: description_en`，不含 status/`use_when`，并受 10,000 UTF-8 字节硬门禁约束。
+  不要按 category/keyword 反复调用；该 tool 故意不提供过滤参数。
+- 选定 action 后调用 `xverif_debug_get_schema` 获取精确参数和使用指导。对关键普通信号、Stream、AXI、
   APB 接口，先按 schema 生成 JSON，分别经 `list.load`、
   `stream.config.load`、`axi.config.load`、`apb.config.load` 加载，再用
   list/show/validate、config.list/get、describe 或 query 确认。

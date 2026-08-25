@@ -10,20 +10,13 @@
   "summary": {
     "action_count": 1,
     "total_action_count": 73,
-    "verbose": false,
-    "filtered": true
+    "filtered": true,
+    "view": "guide",
+    "guide_bytes": 114,
+    "guide_limit_bytes": 10000
   },
   "data": {
-    "actions": [
-      "schema"
-    ],
-    "modes": {
-      "design": [],
-      "waveform": [],
-      "combined": [],
-      "builtin": ["schema"],
-      "session": []
-    },
+    "guide": "xdebug actions: 1. Select one, then query its schema.\nschema: Return the request or response schema for an action.",
     "filters": {
       "keyword": "schema"
     }

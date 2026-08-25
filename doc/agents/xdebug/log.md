@@ -135,3 +135,11 @@
   标识；常见 license 变量均缺失时只给 advisory，不提前 hard fail。
 - `env.snapshot` 增加 license environment presence，明确禁止记录 license value；
   log doctor/tail、schema、xdebug/xverif-admin 文档和回归测试同步更新。
+
+## 2026-08-25
+
+- 将精简 action guide 下沉到 native `actions` 的 `args.output.view="guide"`：每行仅
+  `name: description_en`，不含 status/`use_when`，并由 runtime 执行 10,000 UTF-8
+  byte hard limit。
+- MCP `xverif_tools` 改为原样返回 native guide；SDK-free LSF CLI 透明转发相同
+  envelope，不新增 wrapper 参数或格式化逻辑。

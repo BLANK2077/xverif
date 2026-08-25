@@ -13,10 +13,12 @@
       },
       "examples": {
         "request": [
-          "examples/requests/actions.basic.json"
+          "examples/requests/actions.basic.json",
+          "examples/requests/actions.guide.json"
         ],
         "response": [
-          "examples/responses/actions.basic.json"
+          "examples/responses/actions.basic.json",
+          "examples/responses/actions.guide.json"
         ]
       },
       "description_en": "List the public xdebug action catalog.",

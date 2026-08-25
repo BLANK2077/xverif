@@ -1592,7 +1592,7 @@ for _tool in TOOL_CATALOG:
     _tool["artifact_write"] = _tool["name"] in _ARTIFACT_WRITE_TOOLS
 
 
-XVERIF_TOOLS_MAX_CHARS = 10_000
+XVERIF_TOOLS_MAX_BYTES = 10_000
 
 
 def _xdebug_action_guide(payload: Any) -> str:
@@ -1600,40 +1600,28 @@ def _xdebug_action_guide(payload: Any) -> str:
         raise RuntimeError(
             "xverif_tools could not load the canonical xdebug action catalog"
         )
+    summary = payload.get("summary")
     data = payload.get("data")
-    actions = data.get("actions") if isinstance(data, dict) else None
-    if not isinstance(actions, list) or not actions:
+    guide = data.get("guide") if isinstance(data, dict) else None
+    if not isinstance(summary, dict) or not isinstance(guide, str) or not guide:
         raise RuntimeError(
-            "xverif_tools received a malformed xdebug action catalog"
+            "xverif_tools received a malformed native xdebug action guide"
         )
-    lines = [
-        (
-            f"xdebug actions: {len(actions)}. Select one, then call "
-            "xverif_debug_get_schema(action)."
-        )
-    ]
-    names: set[str] = set()
-    for index, entry in enumerate(actions):
-        if not isinstance(entry, dict):
-            raise RuntimeError(f"xverif_tools action entry {index} is not an object")
-        name = entry.get("name")
-        description = entry.get("description_en")
-        if (
-            not isinstance(name, str)
-            or not name
-            or name in names
-            or not isinstance(description, str)
-            or not description
-        ):
-            raise RuntimeError(
-                f"xverif_tools action entry {index} violates the guide contract"
-            )
-        names.add(name)
-        lines.append(f"{name}: {description}")
-    guide = "\n".join(lines)
-    if len(guide) > XVERIF_TOOLS_MAX_CHARS:
+    action_count = summary.get("action_count")
+    guide_bytes = summary.get("guide_bytes")
+    guide_limit_bytes = summary.get("guide_limit_bytes")
+    actual_bytes = len(guide.encode("utf-8"))
+    if (
+        summary.get("view") != "guide"
+        or not isinstance(action_count, int)
+        or action_count <= 0
+        or guide.count("\n") != action_count
+        or guide_bytes != actual_bytes
+        or guide_limit_bytes != XVERIF_TOOLS_MAX_BYTES
+        or actual_bytes > XVERIF_TOOLS_MAX_BYTES
+    ):
         raise RuntimeError(
-            "xverif_tools action guide exceeds the 10000-character limit"
+            "xverif_tools native action guide violates the bounded guide contract"
         )
     return guide
 
@@ -1646,7 +1634,7 @@ def xverif_tools() -> str:
     runtime action name and concise purpose. Then call
     xverif_debug_get_schema(action) for exact arguments and usage guidance.
     """
-    return _xdebug_action_guide(debug.actions(verbose=True))
+    return _xdebug_action_guide(debug.actions(view="guide"))
 
 
 @xverif_tool("common")

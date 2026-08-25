@@ -82,6 +82,7 @@ for line in sys.stdin:
         payload = {{"ok": True, "api_version": {api_version!r}, "action": action,
                    "summary": {{"fake": True}},
                    "data": {{"tool": {tool!r},
+                            "request_args": request.get("args", {{}}),
                             "environment_marker": os.environ.get("SDK_FREE_TEST_MARKER")}}}}
     xout = "@{tool}.v1 ok action=" + action + "\\n"
     envelope = {{"id": request_id, "request_id": request_id, "ok": True,
@@ -223,6 +224,17 @@ def test_native_lsf_stateless_requests_use_temporary_loops(tmp_path: Path) -> No
         payload = json.loads(result.stdout)
         assert payload["ok"] is True
         assert payload["action"] == "actions"
+
+    guide = _run("xdebug", {
+        "api_version": "xdebug.v1",
+        "request_id": "xdebug-guide",
+        "action": "actions",
+        "args": {"output": {"view": "guide"}},
+    }, env)
+    assert guide.returncode == 0, guide.stderr + guide.stdout
+    assert json.loads(guide.stdout)["data"]["request_args"] == {
+        "output": {"view": "guide"},
+    }
 
 
 def test_native_lsf_xout_and_file_inputs_match_native_surface(tmp_path: Path) -> None:

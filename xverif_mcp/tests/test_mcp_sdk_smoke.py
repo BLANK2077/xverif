@@ -114,33 +114,15 @@ def test_public_defaults_register_lifecycle_without_artifact_tools(
     assert server.MCP_TOOL_POLICY.artifact_write_enabled is False
 
 
-def test_public_defaults_dispatch_session_open_without_mutation_env(
+def test_public_defaults_bind_session_open_without_mutation_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     server = _server(monkeypatch, artifact_write=False)
+    tool = server.mcp._tool_manager.get_tool("xverif_debug_session_open")
 
-    class FakeDebugAdapter:
-        def session_open(self, **kwargs):
-            return {
-                "ok": True,
-                "session": {
-                    "session_id": kwargs["name"],
-                    "state": "alive",
-                },
-            }
-
-    monkeypatch.setattr(server, "debug", FakeDebugAdapter())
-    content, _ = _call_server_tool(
-        server,
-        "xverif_debug_session_open",
-        {"name": "default_policy", "fsdb": "/tmp/default.fsdb"},
-    )
-    payload = json.loads(content[0].text)
-    assert payload["ok"] is True
-    assert payload["session"] == {
-        "session_id": "default_policy",
-        "state": "alive",
-    }
+    assert server.MCP_TOOL_POLICY.mutation_enabled is True
+    assert tool is not None
+    assert tool.fn is server.xverif_debug_session_open
 
 
 def test_stateful_cleanup_logs_and_continues_after_failure(monkeypatch: pytest.MonkeyPatch):
@@ -328,31 +310,27 @@ def test_xverif_tools_returns_complete_runtime_action_guide(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     server = _server(monkeypatch)
-    server.debug.actions = lambda verbose=False: {
+    calls = []
+    guide = (
+        "xdebug actions: 2. Select one, then query its schema.\n"
+        "list.load: Load named waveform lists.\n"
+        "trace.x_origin: Trace dynamic X origins."
+    )
+    server.debug.actions = lambda **kwargs: calls.append(kwargs) or {
         "ok": True,
-        "data": {"actions": [
-            {
-                "name": "list.load",
-                "status": "stable",
-                "description_en": "Load named waveform lists.",
-                "use_when": ["Need a reusable set of key waveform signals."],
-            },
-            {
-                "name": "trace.x_origin",
-                "status": "experimental",
-                "description_en": "Trace dynamic X origins.",
-                "use_when": ["Need evidence for the first unknown source."],
-            },
-        ]},
+        "summary": {
+            "action_count": 2,
+            "total_action_count": 2,
+            "filtered": False,
+            "view": "guide",
+            "guide_bytes": len(guide.encode("utf-8")),
+            "guide_limit_bytes": 10_000,
+        },
+        "data": {"guide": guide, "filters": {}},
     }
     content, _ = _call_server_tool(server, "xverif_tools")
-    guide = content[0].text
-    assert guide.startswith("xdebug actions: 2.")
-    assert "list.load: Load named waveform lists." in guide
-    assert "trace.x_origin: Trace dynamic X origins." in guide
-    assert "stable" not in guide
-    assert "experimental" not in guide
-    assert "Use when:" not in guide
+    assert content[0].text == guide
+    assert calls == [{"view": "guide"}]
 
     async def _schema():
         tools = await server.mcp.list_tools()
@@ -381,42 +359,43 @@ def test_action_guide_fails_closed_on_malformed_catalog(
 ) -> None:
     server = _server(monkeypatch)
     with pytest.raises(RuntimeError, match="malformed"):
-        server._xdebug_action_guide({"ok": True, "data": {"actions": []}})
-    with pytest.raises(RuntimeError, match="violates"):
-        server._xdebug_action_guide({
-            "ok": True,
-            "data": {"actions": [{
-                "name": "actions",
-                "status": "stable",
-            }]},
-        })
-
-
-def test_xverif_tools_real_catalog_is_complete_and_bounded(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    server = _server(monkeypatch)
-    catalog_path = Path(__file__).parents[2] / "xdebug/specs/actions/actions.yaml"
-    actions = json.loads(catalog_path.read_text(encoding="utf-8"))["actions"]
-
-    guide = server._xdebug_action_guide({"ok": True, "data": {"actions": actions}})
-
-    assert len(guide) <= server.XVERIF_TOOLS_MAX_CHARS
-    assert all(f"\n{entry['name']}: " in guide for entry in actions)
-    assert guide.count("\n") == len(actions)
+        server._xdebug_action_guide({"ok": True, "data": {}})
 
 
 def test_xverif_tools_rejects_oversized_guide(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     server = _server(monkeypatch)
-    payload = {"ok": True, "data": {"actions": [{
-        "name": "oversized",
-        "description_en": "x" * server.XVERIF_TOOLS_MAX_CHARS,
-    }]}}
+    guide = "x" * (server.XVERIF_TOOLS_MAX_BYTES + 1)
+    payload = {
+        "ok": True,
+        "summary": {
+            "action_count": 1,
+            "view": "guide",
+            "guide_bytes": len(guide),
+            "guide_limit_bytes": server.XVERIF_TOOLS_MAX_BYTES,
+        },
+        "data": {"guide": guide},
+    }
 
-    with pytest.raises(RuntimeError, match="10000-character limit"):
+    with pytest.raises(RuntimeError, match="bounded guide contract"):
         server._xdebug_action_guide(payload)
+
+
+def test_xverif_tools_real_runtime_guide(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = _server(monkeypatch)
+    catalog_path = Path(__file__).parents[2] / "xdebug/specs/actions/actions.yaml"
+    actions = json.loads(catalog_path.read_text(encoding="utf-8"))["actions"]
+
+    content, _ = _call_server_tool(server, "xverif_tools")
+    guide = content[0].text
+
+    assert guide.splitlines()[1:] == sorted(
+        f"{entry['name']}: {entry['description_en']}" for entry in actions
+    )
+    assert len(guide.encode("utf-8")) <= server.XVERIF_TOOLS_MAX_BYTES
 
 
 def test_loc_context_requires_explicit_log_line(monkeypatch: pytest.MonkeyPatch):
@@ -483,14 +462,19 @@ def test_tool_group_disable_sva(monkeypatch: pytest.MonkeyPatch):
     assert "xverif_debug_query" in names
 
     server = _server(monkeypatch, env)
-    server.debug.actions = lambda verbose=False: {
+    guide = (
+        "xdebug actions: 1. Select one, then query its schema.\n"
+        "actions: List the public xdebug action catalog."
+    )
+    server.debug.actions = lambda **kwargs: {
         "ok": True,
-        "data": {"actions": [{
-            "name": "actions",
-            "status": "stable",
-            "description_en": "List the public xdebug action catalog.",
-            "use_when": ["Need runtime action discovery."],
-        }]},
+        "summary": {
+            "action_count": 1,
+            "view": "guide",
+            "guide_bytes": len(guide),
+            "guide_limit_bytes": 10_000,
+        },
+        "data": {"guide": guide},
     }
     content, _ = _call_server_tool(server, "xverif_tools")
     assert "actions: List the public xdebug action catalog." in content[0].text

@@ -33,6 +33,17 @@ tools/xdebug_lsf --json - <<'EOF'
 EOF
 ```
 
+SDK-free 也可直接取得与 MCP/原生 CLI 共用的 action guide：
+
+```bash
+tools/xdebug_lsf --json - <<'EOF'
+{"api_version":"xdebug.v1","action":"actions","args":{"output":{"view":"guide"}}}
+EOF
+```
+
+guide 每行仅含 `name: description_en`，不含 status/`use_when`；native runtime
+执行 10,000 UTF-8 字节硬门禁。wrapper 不增加专用参数，也不二次格式化。
+
 ```bash
 tools/xcov_lsf --json - <<'EOF'
 {"api_version":"xcov.v1","request_id":"q2","action":"code_coverage.summary","target":{"session_id":"cov0"},"args":{"group_by":"metric","metrics":["line","toggle"]}}

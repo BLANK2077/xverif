@@ -126,6 +126,8 @@ MCP 是 xdebug 的外层工具暴露，不是替代 xdebug 原生 schema 的 sou
 
 - MCP debug session open 后，query 使用 `session_id`。
 - MCP adapter 参数必须映射到原生 xdebug public contract。
+- MCP `xverif_tools` 必须请求 native `actions` 的 `output.view="guide"` 并原样返回
+  `data.guide`；MCP 层不重新拼接 action 描述或实施另一套长度门禁。
 - MCP tests 覆盖 direct、stdio-loop、fake LSF、real LSF 等层级。
 
 ## SDK-free Wrapper 边界
@@ -137,6 +139,8 @@ UDS 和 stdio-loop 不作为用户入口。
 规则：
 
 - wrapper 不重新定义 action schema。
+- wrapper 透明转发 `actions` 的 `args.output.view="guide"`；不增加 guide 专用 flag、
+  pseudo action 或二次格式化。
 - wrapper 不公开 `method/params`、server/client、socket 参数或 `--stdio-loop`。
 - wrapper 不手写 xdebug file transport 内部目录协议。
 - wrapper failure 必须保留底层 xdebug error context。

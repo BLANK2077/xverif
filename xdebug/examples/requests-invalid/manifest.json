@@ -2,6 +2,12 @@
   "version": 1,
   "witnesses": [
     {
+      "action": "actions",
+      "path": "examples/requests-invalid/actions.guide-with-verbose.json",
+      "description": "Invalid: guide view and legacy verbose output are mutually exclusive.",
+      "violates": ["args.output not: view and verbose cannot both be present"]
+    },
+    {
       "action": "value.at",
       "path": "examples/requests-invalid/value.at.missing-source.json",
       "description": "Invalid: omits every value-source selector.",

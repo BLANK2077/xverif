@@ -40,12 +40,19 @@ class XverifDebugAdapter:
     def actions(
         self,
         verbose: bool = False,
+        view: Optional[str] = None,
         category: Optional[list[str]] = None,
         requires: Optional[list[str]] = None,
         purposes: Optional[list[str]] = None,
         keyword: Optional[str] = None,
     ) -> Json:
-        args: Json = {"output": {"verbose": True}} if verbose else {}
+        if verbose and view is not None:
+            raise ValueError("actions verbose and view are mutually exclusive")
+        args: Json = {}
+        if view is not None:
+            args["output"] = {"view": view}
+        elif verbose:
+            args["output"] = {"verbose": True}
         filters: Json = {}
         if category is not None:
             filters["category"] = category

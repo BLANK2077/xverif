@@ -18,6 +18,8 @@ using xdebug_core::DiagnosticErrorBuilder;
 
 namespace {
 
+const std::size_t kActionGuideMaxBytes = 10000;
+
 std::set<std::string> actions_for_category(const std::string& category) {
     std::set<std::string> out;
     std::vector<ActionSpec> specs = default_action_registry().list_specs();
@@ -92,6 +94,16 @@ Json filtered_modes(const std::vector<ActionSpec>& specs) {
                   {"session", Json::array()}};
     for (const auto& spec : specs) modes[spec.category].push_back(spec.name);
     return modes;
+}
+
+std::string concise_action_guide(const std::vector<ActionSpec>& specs) {
+    std::ostringstream out;
+    out << "xdebug actions: " << specs.size()
+        << ". Select one, then query its schema.";
+    for (const auto& spec : specs) {
+        out << "\n" << spec.name << ": " << spec.description_en;
+    }
+    return out.str();
 }
 
 std::string schema_root() {
@@ -292,8 +304,17 @@ std::string render_catalog_actions_xout(const Json& response) {
     const Json summary = response.value("summary", Json::object());
     const Json data = response.value("data", Json::object());
     out.emit_section("summary");
-    for (const char* key : {"action_count", "total_action_count", "verbose", "filtered"}) {
+    for (const char* key : {"action_count", "total_action_count", "verbose", "filtered",
+                            "view", "guide_bytes", "guide_limit_bytes"}) {
         if (summary.contains(key)) out.emit_kv(key, summary[key]);
+    }
+    if (summary.value("view", std::string()) == "guide") {
+        const std::string guide = data.value("guide", std::string());
+        out.emit_section("guide");
+        std::istringstream lines(guide);
+        std::string line;
+        while (std::getline(lines, line)) out.emit_row({line});
+        return out.str();
     }
     const bool verbose = summary.value("verbose", false);
     const Json actions = data.value("actions", Json::array());
@@ -542,9 +563,35 @@ Json catalog_actions_response(const Json& request) {
     Json response = make_response(request, "actions");
     Json args = request.value("args", Json::object());
     Json output = args.value("output", Json::object());
+    const std::string view = output.value("view", std::string());
     const bool verbose = output.value("verbose", false);
     Json filter = args.value("filter", Json::object());
     std::vector<ActionSpec> specs = filtered_specs(filter);
+    if (view == "guide") {
+        const std::string guide = concise_action_guide(specs);
+        if (guide.size() > kActionGuideMaxBytes) {
+            return make_error(
+                request,
+                "actions",
+                "ACTION_GUIDE_TOO_LARGE",
+                "action guide exceeds the 10000-byte limit",
+                false);
+        }
+        response["summary"] = {
+            {"action_count", specs.size()},
+            {"total_action_count", default_action_registry().list_specs().size()},
+            {"filtered", !filter.empty()},
+            {"view", "guide"},
+            {"guide_bytes", guide.size()},
+            {"guide_limit_bytes", kActionGuideMaxBytes}
+        };
+        response["data"] = {
+            {"guide", guide},
+            {"filters", filter}
+        };
+        response["__xout"] = render_catalog_actions_xout(response);
+        return response;
+    }
     Json actions = filtered_action_payload(specs, verbose);
     response["summary"] = {
         {"action_count", actions.size()},

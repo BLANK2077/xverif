@@ -8,8 +8,8 @@
     spec.handler_kind = "actions";
     spec.request_schema = "schemas/v1/actions/actions.request.schema.json";
     spec.response_schema = "schemas/v1/actions/actions.response.schema.json";
-    spec.request_examples = {"examples/requests/actions.basic.json"};
-    spec.response_examples = {"examples/responses/actions.basic.json"};
+    spec.request_examples = {"examples/requests/actions.basic.json", "examples/requests/actions.guide.json"};
+    spec.response_examples = {"examples/responses/actions.basic.json", "examples/responses/actions.guide.json"};
     spec.args.required = {};
     spec.description_en = "List the public xdebug action catalog.";
     spec.description_zh = "列出当前运行时公开 action catalog。";

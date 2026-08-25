@@ -109,7 +109,10 @@
 
 `actions` catalog 的公开过滤字段固定为 `category`、`requires`、`purposes` 和
 `keyword`；`status` 只作为 descriptor metadata，不是过滤条件。默认返回 compact
-action name，`args.output.verbose=true` 返回字段恒定存在的完整 descriptor。
+action name，`args.output.verbose=true` 返回字段恒定存在的完整 descriptor；
+`args.output.view="guide"` 返回按 action 名排序的 `name: description_en` 文本，不含
+status 或 `use_when`。`view` 与 `verbose` 互斥，guide 必须在 native runtime 中按
+UTF-8 字节执行 10,000-byte hard limit，超限明确失败，禁止截断或 fallback。
 
 ## 更新 docs 和 skill
 

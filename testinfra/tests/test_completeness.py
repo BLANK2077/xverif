@@ -9,7 +9,13 @@ from testinfra.xverif_test.catalog import Catalog
 
 
 ROOT = Path(__file__).resolve().parents[2]
-IGNORED_TREE_PARTS = {".conda-xverif", ".xverif-test-cache", ".xverif-test-results", "tmp"}
+IGNORED_TREE_PARTS = {
+    ".conda-xverif",
+    ".xverif",
+    ".xverif-test-cache",
+    ".xverif-test-results",
+    "tmp",
+}
 GENERATED_TREE_PARTS = {
     ".git",
     ".pytest_cache",
@@ -226,12 +232,16 @@ def test_machine_path_exception_is_limited_to_exact_xout_evidence() -> None:
 def test_source_walk_prunes_generated_trees_before_descent(tmp_path: Path) -> None:
     source = tmp_path / "src/test_visible.py"
     ignored = tmp_path / "build/nested/test_hidden.py"
+    runtime_cache = tmp_path / ".xverif/cache/manifest.json"
     source.parent.mkdir()
     ignored.parent.mkdir(parents=True)
+    runtime_cache.parent.mkdir(parents=True)
     source.write_text("visible = True\n", encoding="utf-8")
     ignored.write_text("hidden = True\n", encoding="utf-8")
+    runtime_cache.write_text('{"path":"<runtime-cache>"}\n', encoding="utf-8")
 
-    files = _walk_files(tmp_path, frozenset({"build"}))
+    files = _walk_files(tmp_path, frozenset({"build", ".xverif"}))
 
     assert source in files
     assert ignored not in files
+    assert runtime_cache not in files

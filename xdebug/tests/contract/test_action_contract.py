@@ -116,6 +116,46 @@ def test_runtime_catalog_default_is_compact_without_duplicate_names(
 
 
 @pytest.mark.contract
+def test_runtime_catalog_guide_is_complete_concise_and_bounded(
+    cli_runner: CliRunner,
+    xdebug_root: Path,
+) -> None:
+    result = cli_runner.run(
+        {
+            "api_version": "xdebug.v1",
+            "action": "actions",
+            "args": {"output": {"view": "guide"}},
+        },
+        output_format="json",
+    )
+    assert result.ok, result.response
+    specs = _load_json(xdebug_root / "specs/actions/actions.yaml")["actions"]
+    guide = result.response["data"]["guide"]
+    lines = guide.splitlines()
+
+    assert lines[0] == (
+        f"xdebug actions: {len(specs)}. Select one, then query its schema."
+    )
+    assert lines[1:] == sorted(
+        f"{spec['name']}: {spec['description_en']}" for spec in specs
+    )
+    assert "[stable]" not in guide
+    assert "[experimental]" not in guide
+    assert "Use when:" not in guide
+    assert result.response["summary"] == {
+        "action_count": len(specs),
+        "total_action_count": len(specs),
+        "filtered": False,
+        "view": "guide",
+        "guide_bytes": len(guide.encode("utf-8")),
+        "guide_limit_bytes": 10_000,
+    }
+    assert len(guide.encode("utf-8")) <= 10_000
+    assert result.response["data"]["filters"] == {}
+    assert set(result.response["data"]) == {"guide", "filters"}
+
+
+@pytest.mark.contract
 def test_runtime_catalog_filters_and_bilingual_keyword_search(
     cli_runner: CliRunner,
 ) -> None:
@@ -2409,6 +2449,15 @@ def test_ai_usability_high_risk_request_shapes_are_strict(
         "args": {"filter": {"category": ["waveform"],
                             "purposes": ["query", "inspect"], "keyword": "AXI"}},
     })
+    actions.validate({
+        "api_version": "xdebug.v1", "action": "actions",
+        "args": {"output": {"view": "guide"}},
+    })
+    with pytest.raises(jsonschema.ValidationError):
+        actions.validate({
+            "api_version": "xdebug.v1", "action": "actions",
+            "args": {"output": {"view": "guide", "verbose": True}},
+        })
     with pytest.raises(jsonschema.ValidationError):
         actions.validate({
             "api_version": "xdebug.v1", "action": "actions",

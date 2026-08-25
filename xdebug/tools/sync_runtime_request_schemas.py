@@ -457,12 +457,21 @@ OUTPUT_SCHEMAS_BY_ACTION: dict[str, dict[str, Any]] = {
     "actions": {
         "type": "object",
         "properties": {
+            "view": {
+                "type": "string",
+                "enum": ["guide"],
+                "description": (
+                    "Return the concise action-name and purpose guide. "
+                    "Omit this field for the existing compact or verbose views."
+                ),
+            },
             "verbose": {
                 "type": "boolean",
                 "default": False,
                 "description": "Return full action descriptors instead of the compact action-name list.",
             },
         },
+        "not": {"required": ["view", "verbose"]},
         "additionalProperties": False,
     },
     "session.list": {

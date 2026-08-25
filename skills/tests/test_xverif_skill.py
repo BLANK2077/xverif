@@ -132,7 +132,8 @@ def test_xdebug_discovery_and_loaded_config_workflow_are_mandatory() -> None:
     mcp = (SKILL / "references/surfaces/mcp.md").read_text(encoding="utf-8")
     combined = main + "\n" + mcp
     for term in (
-        "先且只调用一次 `xverif_tools`", "完整读取", "list.load",
+        "先读取一次完整 action guide", "MCP 调用无参数", "`xverif_tools`",
+        "`args.output.view=\"guide\"`", "不含 status", "list.load",
         "stream.config.load", "axi.config.load", "apb.config.load",
         "`signal`、`list`、`apb`、`stream`、`axi`", "recommended_actions",
         "不为多个信号或多个时间点反复调用 `xverif_batch`",

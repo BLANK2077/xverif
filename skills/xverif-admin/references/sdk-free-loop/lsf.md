@@ -27,8 +27,8 @@ bsub -I tools/xcov --stdio-loop
 {
   "schema_version": "xverif-lsf-env.v1",
   "variables": {
-    "VERDI_HOME": "/tools/verdi",
-    "PATH": "/tools/lsf/bin:/usr/bin",
+    "VERDI_HOME": "<verdi-root>",
+    "PATH": "<lsf-root>/bin:/usr/bin",
     "SNPSLMD_LICENSE_FILE": "27000@license-server"
   }
 }

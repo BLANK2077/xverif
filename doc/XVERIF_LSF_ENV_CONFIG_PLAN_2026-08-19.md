@@ -31,9 +31,9 @@ manager，以及由该 manager 提交的 LSF job。MCP direct/LSF backend 不读
 {
   "schema_version": "xverif-lsf-env.v1",
   "variables": {
-    "VERDI_HOME": "/tools/verdi",
-    "PATH": "/tools/lsf/bin:/usr/bin",
-    "LD_LIBRARY_PATH": "/tools/verdi/share/NPI/lib/LINUX64",
+    "VERDI_HOME": "<verdi-root>",
+    "PATH": "<lsf-root>/bin:/usr/bin",
+    "LD_LIBRARY_PATH": "<verdi-root>/share/NPI/lib/LINUX64",
     "SNPSLMD_LICENSE_FILE": "27000@license-server"
   }
 }
