@@ -347,9 +347,12 @@ def test_xverif_tools_returns_complete_runtime_action_guide(
     }
     content, _ = _call_server_tool(server, "xverif_tools")
     guide = content[0].text
-    assert guide.startswith("xdebug actions (2 total).")
-    assert "list.load [stable]" in guide
-    assert "trace.x_origin [experimental]" in guide
+    assert guide.startswith("xdebug actions: 2.")
+    assert "list.load: Load named waveform lists." in guide
+    assert "trace.x_origin: Trace dynamic X origins." in guide
+    assert "stable" not in guide
+    assert "experimental" not in guide
+    assert "Use when:" not in guide
 
     async def _schema():
         tools = await server.mcp.list_tools()
@@ -385,9 +388,35 @@ def test_action_guide_fails_closed_on_malformed_catalog(
             "data": {"actions": [{
                 "name": "actions",
                 "status": "stable",
-                "description_en": "List actions.",
             }]},
         })
+
+
+def test_xverif_tools_real_catalog_is_complete_and_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = _server(monkeypatch)
+    catalog_path = Path(__file__).parents[2] / "xdebug/specs/actions/actions.yaml"
+    actions = json.loads(catalog_path.read_text(encoding="utf-8"))["actions"]
+
+    guide = server._xdebug_action_guide({"ok": True, "data": {"actions": actions}})
+
+    assert len(guide) <= server.XVERIF_TOOLS_MAX_CHARS
+    assert all(f"\n{entry['name']}: " in guide for entry in actions)
+    assert guide.count("\n") == len(actions)
+
+
+def test_xverif_tools_rejects_oversized_guide(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = _server(monkeypatch)
+    payload = {"ok": True, "data": {"actions": [{
+        "name": "oversized",
+        "description_en": "x" * server.XVERIF_TOOLS_MAX_CHARS,
+    }]}}
+
+    with pytest.raises(RuntimeError, match="10000-character limit"):
+        server._xdebug_action_guide(payload)
 
 
 def test_loc_context_requires_explicit_log_line(monkeypatch: pytest.MonkeyPatch):
@@ -464,7 +493,7 @@ def test_tool_group_disable_sva(monkeypatch: pytest.MonkeyPatch):
         }]},
     }
     content, _ = _call_server_tool(server, "xverif_tools")
-    assert "actions [stable]" in content[0].text
+    assert "actions: List the public xdebug action catalog." in content[0].text
 
 
 def test_tool_group_disable_debug(monkeypatch: pytest.MonkeyPatch):

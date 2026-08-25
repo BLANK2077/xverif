@@ -44,7 +44,7 @@ from xverif_mcp.xdebug_contracts import (
 # FastMCP application
 # ---------------------------------------------------------------------------
 
-INSTRUCTIONS = """Use xverif for deterministic chip verification: design/FSDB debug, coverage, bit math, entry decode, log locations, and SVA semantics. MCP details load via Tool Search. Before xdebug, call xverif_tools once for all action names, status, and purposes, then xverif_debug_get_schema(action); never guess. Resource-backed xdebug: session_open -> query -> session_close; requires:none forbids session_id. xcov query requires session_id. Never auto-retry/reopen/fallback or switch backend, transport, or data source.
+INSTRUCTIONS = """Use xverif for deterministic chip verification: design/FSDB debug, coverage, bit math, entry decode, log locations, and SVA semantics. MCP details load via Tool Search. Before xdebug, call xverif_tools once for all action names and purposes, then xverif_debug_get_schema(action); never guess. Resource-backed xdebug: session_open -> query -> session_close; requires:none forbids session_id. xcov query requires session_id. Never auto-retry/reopen/fallback or switch backend, transport, or data source.
 
 | xdebug task | Action families |
 |---|---|
@@ -1457,7 +1457,7 @@ TOOL_CATALOG = [
      "description": "Ping the xverif MCP server."},
     {"name": "xverif_tools", "category": "common", "backend": "builtin",
      "stateful": False, "requires_session": False,
-     "description": "Return the complete xdebug action guide with every action's status, purpose, and use cases."},
+     "description": "Return every xdebug action name and concise purpose."},
     {"name": "xverif_tool_help", "category": "common", "backend": "builtin",
      "stateful": False, "requires_session": False,
      "description": "Get help for a specific tool."},
@@ -1592,6 +1592,9 @@ for _tool in TOOL_CATALOG:
     _tool["artifact_write"] = _tool["name"] in _ARTIFACT_WRITE_TOOLS
 
 
+XVERIF_TOOLS_MAX_CHARS = 10_000
+
+
 def _xdebug_action_guide(payload: Any) -> str:
     if not isinstance(payload, dict) or payload.get("ok") is not True:
         raise RuntimeError(
@@ -1605,9 +1608,8 @@ def _xdebug_action_guide(payload: Any) -> str:
         )
     lines = [
         (
-            f"xdebug actions ({len(actions)} total). "
-            "Read this complete list before selecting an action, then call "
-            "xverif_debug_get_schema(action) for the exact request contract."
+            f"xdebug actions: {len(actions)}. Select one, then call "
+            "xverif_debug_get_schema(action)."
         )
     ]
     names: set[str] = set()
@@ -1615,28 +1617,25 @@ def _xdebug_action_guide(payload: Any) -> str:
         if not isinstance(entry, dict):
             raise RuntimeError(f"xverif_tools action entry {index} is not an object")
         name = entry.get("name")
-        status = entry.get("status")
         description = entry.get("description_en")
-        use_when = entry.get("use_when")
         if (
             not isinstance(name, str)
             or not name
             or name in names
-            or status not in {"stable", "experimental"}
             or not isinstance(description, str)
             or not description
-            or not isinstance(use_when, list)
-            or not use_when
-            or not all(isinstance(item, str) and item for item in use_when)
         ):
             raise RuntimeError(
                 f"xverif_tools action entry {index} violates the guide contract"
             )
         names.add(name)
-        lines.append(
-            f"{name} [{status}] — {description} Use when: {'; '.join(use_when)}"
+        lines.append(f"{name}: {description}")
+    guide = "\n".join(lines)
+    if len(guide) > XVERIF_TOOLS_MAX_CHARS:
+        raise RuntimeError(
+            "xverif_tools action guide exceeds the 10000-character limit"
         )
-    return "\n".join(lines)
+    return guide
 
 
 @xverif_tool("common")
@@ -1644,8 +1643,8 @@ def xverif_tools() -> str:
     """Return the complete xdebug action guide.
 
     Call this once before choosing any xdebug action. The result contains every
-    runtime action name, stable/experimental status, purpose, and all declared
-    use cases. Then call xverif_debug_get_schema(action) for exact arguments.
+    runtime action name and concise purpose. Then call
+    xverif_debug_get_schema(action) for exact arguments and usage guidance.
     """
     return _xdebug_action_guide(debug.actions(verbose=True))
 

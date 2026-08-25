@@ -530,7 +530,7 @@ tools/xverif-mcp
 
 关闭某组后，该组工具不会注册到 FastMCP，因此不会出现在 MCP `tools/list` 中，也不能被 MCP client 直接调用。`xverif_tool_help` 使用同一策略查询已注册 MCP tool。
 
-`xverif_tools` 是无参数的 xdebug action discovery 入口：每行包含 action 名、stable/experimental 状态、英文 purpose 和全部 `use_when`。选择 action 后再调用 `xverif_debug_get_schema(action)`，不要按 category/keyword 反复筛选。
+`xverif_tools` 是无参数的 xdebug action discovery 入口：每行只包含 action 名和精简英文 purpose，完整返回受 10,000 字符硬门禁约束。选择 action 后再调用 `xverif_debug_get_schema(action)` 获取精确参数和使用指导，不要按 category/keyword 反复筛选。
 
 ## 测试
 

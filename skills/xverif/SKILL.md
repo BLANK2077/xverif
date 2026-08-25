@@ -46,8 +46,8 @@ description: >
 
 1. 明确问题和必须保留的证据。
 2. 任何 xdebug 任务先且只调用一次 `xverif_tools`，完整读取它返回的全部 action
-   名称、stable/experimental 状态、purpose 和 use cases；不能按记忆、前缀或局部
-   搜索猜 action。随后读取对应 capability/workflow；离线全量索引用于复核。
+   名称和精简 purpose；不能按记忆、前缀或局部搜索猜 action。随后查询选定 action
+   schema 获取状态、精确参数和使用指导，并读取对应 capability/workflow；离线全量索引用于复核。
 3. 优先 MCP；原生 envelope、shell 或一次性脚本使用 CLI。AI/MCP/交互查询默认
    使用 token-efficient XOUT；只有精确字段编程、schema 校验、结构化持久化或
    用户明确要求时才请求 JSON。具体包装见 surface 与输出格式 reference。
