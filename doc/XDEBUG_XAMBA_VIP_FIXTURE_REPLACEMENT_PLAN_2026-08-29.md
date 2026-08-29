@@ -2,7 +2,7 @@
 
 版本：2026-08-29
 
-状态：P1 APB 已完成，P2 AXI 进行中
+状态：P1 APB、P2 AXI 已完成，P3 优化建议进行中
 
 工作仓库：`<xverif-repo>`
 
@@ -229,6 +229,6 @@ XVERIF_TEST_EXECUTION_ENV=host \
 | --- | --- | --- | --- | --- |
 | P0 计划冻结 | 已完成 | `fabd2a2` | 仓库、catalog、fixture、XAMBA filelist/API 已只读盘点 | 提交仅含本计划书 |
 | P1 APB | 已完成 | 待提交 | `testinfra.unit` 55 passed；prepare 通过且二次 0.0s cache hit；nightly focused 1 passed | 使用 `filelists/apb5.f` 和公开 `xam_i6_apb_reply_test`；以 `-debug_access+all` 启用 FSDB |
-| P2 AXI | 进行中 | - | - | - |
-| P3 优化建议 | 待开始 | - | - | - |
+| P2 AXI | 已完成 | 待提交 | `testinfra.unit` 56 passed；prepare 通过且二次 0.0s cache hit；nightly focused 1 passed | 使用 `filelists/axi4.f` 和公开 `xam_i4_axi_random_test`；64 笔 mixed operation 与 pin-handshake oracle 对齐 |
+| P3 优化建议 | 进行中 | - | - | - |
 | P4 总验收 | 待开始 | - | - | - |

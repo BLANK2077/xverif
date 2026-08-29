@@ -306,6 +306,28 @@ fixtures:
       - argv: [python3, "{repo}/testinfra/leaf/probe_fixture.py", --resources, "{resources}", --xdebug, "{repo}/tools/xdebug", --fsdb-glob, out/regression/test/axi_multi_id_test/waves.fsdb, --daidir-glob, out/regression/build/simv.daidir, --text-glob, out/regression/test/axi_multi_id_test/sim.log, --uvm-zero]
     tool_env: [VERDI_HOME]
 
+  - id: xdebug.axi_xamba_vip
+    build_capabilities: [make, vcs, npi]
+    source_dir: xdebug/testdata/waveform/axi_xamba_vip_real
+    inputs: [Makefile, README.md, manifest.json, "tb/**/*.sv"]
+    builder:
+      argv: [make, run, "OUTPUT_ROOT={resources}/out"]
+      cwd: "{source}"
+      default_env:
+        XAMBA_UVM_VIP_ROOT: "{home}/work/xamba_uvm_vip"
+        XAMBA_UVM_VIP_REVISION: dc653589484006d5d08506265df8e37521039384
+      timeout_sec: 2400
+    outputs:
+      - {name: fsdb, path: out/waves.fsdb, kind: file, min_bytes: 1024}
+      - {name: daidir, path: out/simv.daidir, kind: dir}
+      - {name: simulation_log, path: out/sim.log, kind: file, min_bytes: 1}
+      - {name: handshake_oracle, path: out/axi_handshake.jsonl, kind: file, min_bytes: 1}
+      - {name: run_manifest, path: out/xamba-run-manifest.txt, kind: file, min_bytes: 1}
+    probes:
+      - argv: [python3, "{repo}/testinfra/leaf/probe_fixture.py", --resources, "{resources}", --xdebug, "{repo}/tools/xdebug", --fsdb-glob, out/waves.fsdb, --daidir-glob, out/simv.daidir, --text-glob, out/axi_handshake.jsonl]
+      - argv: [python3, "{repo}/testinfra/leaf/probe_fixture.py", --resources, "{resources}", --text-glob, out/sim.log, --uvm-zero]
+    tool_env: [VERDI_HOME]
+
   - id: xdebug.design_uart
     build_capabilities: [vcs, npi]
     source_dir: xdebug/testdata/design/uart

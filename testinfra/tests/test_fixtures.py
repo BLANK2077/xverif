@@ -218,6 +218,28 @@ def test_apb_xamba_fixture_uses_checked_in_filelist_contract() -> None:
     assert "apb_vip_real" not in makefile
 
 
+def test_axi_xamba_fixture_uses_checked_in_filelist_contract() -> None:
+    registry = FixtureRegistry.load(
+        ROOT / "testinfra/fixtures.v1.yaml",
+        ROOT / "testinfra/schemas/fixtures.v1.schema.json",
+    )
+    spec = registry.by_id("xdebug.axi_xamba_vip")
+
+    assert spec.source_dir == "xdebug/testdata/waveform/axi_xamba_vip_real"
+    assert spec.builder["argv"] == [
+        "make", "run", "OUTPUT_ROOT={resources}/out",
+    ]
+    assert spec.builder["default_env"] == {
+        "XAMBA_UVM_VIP_ROOT": "{home}/work/xamba_uvm_vip",
+        "XAMBA_UVM_VIP_REVISION":
+            "dc653589484006d5d08506265df8e37521039384",
+    }
+    makefile = (ROOT / spec.source_dir / "Makefile").read_text(encoding="utf-8")
+    assert "FILELIST := filelists/axi4.f" in makefile
+    assert "xam_i4_axi_random_test" in makefile
+    assert "axi_vip_real" not in makefile
+
+
 def test_design_hierarchy_fixture_preserves_validated_npi_experiment_recipe() -> None:
     registry = FixtureRegistry.load(
         ROOT / "testinfra/fixtures.v1.yaml",

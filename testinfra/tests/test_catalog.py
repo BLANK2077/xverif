@@ -41,6 +41,8 @@ def test_gate_selection_is_monotonic() -> None:
     assert "xdebug.apb_vip" in nightly
     assert "xdebug.apb_xamba_vip" not in regression
     assert "xdebug.apb_xamba_vip" in nightly
+    assert "xdebug.axi_xamba_vip" not in regression
+    assert "xdebug.axi_xamba_vip" in nightly
     assert "xdebug.cpp_unit" in regression
     assert "skills.x_npi_real" in regression
     assert "skills.x_npi_real" in nightly

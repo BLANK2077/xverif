@@ -787,6 +787,19 @@ suites:
     cost: {class: slow, estimate_sec: 90}
     timeouts: {execute_sec: 420, cleanup_sec: 30}
 
+  - id: xdebug.axi_xamba_vip
+    owner: xdebug
+    level: system
+    intent: [contract, semantics]
+    domains: [waveform, axi, vip]
+    runner: {kind: pytest, path: xdebug/tests/synthetic/test_axi_xamba_vip_real.py}
+    fixtures: [xdebug.axi_xamba_vip]
+    capabilities: [npi, fsdb, daidir]
+    hermetic: false
+    deterministic: true
+    cost: {class: slow, estimate_sec: 180}
+    timeouts: {execute_sec: 900, cleanup_sec: 30}
+
   - id: xdebug.native_xout_report
     owner: xdebug
     level: unit
