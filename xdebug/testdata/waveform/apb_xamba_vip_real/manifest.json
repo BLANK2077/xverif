@@ -1,0 +1,26 @@
+{
+  "name": "apb_xamba_vip_real",
+  "kind": "synthetic-vip",
+  "vip": "XAMBA UVM VIP",
+  "xamba_revision": "dc653589484006d5d08506265df8e37521039384",
+  "filelist": "filelists/apb5.f",
+  "top": "xdebug_apb_xamba_fixture_top",
+  "interface": "xdebug_apb_xamba_fixture_top.dut.apb_reply_if",
+  "testcase": "xam_i6_apb_reply_test",
+  "seed": 11,
+  "resources": {
+    "fsdb": "out/waves.fsdb",
+    "daidir": "out/simv.daidir",
+    "simulation_log": "out/sim.log",
+    "run_manifest": "out/xamba-run-manifest.txt"
+  },
+  "expected": {
+    "transactions": 412,
+    "writes": 206,
+    "reads": 206,
+    "pass_marker": "XAM_I6_APB_REPLY_PASS"
+  },
+  "required_env": [
+    "XAMBA_UVM_VIP_ROOT"
+  ]
+}
