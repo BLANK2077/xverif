@@ -2,7 +2,7 @@
 
 版本：2026-08-29
 
-状态：P1 APB、P2 AXI 已完成，P3 优化建议进行中
+状态：P0–P4 已完成，全部验收门禁通过
 
 工作仓库：`<xverif-repo>`
 
@@ -228,7 +228,20 @@ XVERIF_TEST_EXECUTION_ENV=host \
 | 阶段 | 状态 | Commit | 验证证据 | 备注 |
 | --- | --- | --- | --- | --- |
 | P0 计划冻结 | 已完成 | `fabd2a2` | 仓库、catalog、fixture、XAMBA filelist/API 已只读盘点 | 提交仅含本计划书 |
-| P1 APB | 已完成 | 待提交 | `testinfra.unit` 55 passed；prepare 通过且二次 0.0s cache hit；nightly focused 1 passed | 使用 `filelists/apb5.f` 和公开 `xam_i6_apb_reply_test`；以 `-debug_access+all` 启用 FSDB |
-| P2 AXI | 已完成 | 待提交 | `testinfra.unit` 56 passed；prepare 通过且二次 0.0s cache hit；nightly focused 1 passed | 使用 `filelists/axi4.f` 和公开 `xam_i4_axi_random_test`；64 笔 mixed operation 与 pin-handshake oracle 对齐 |
-| P3 优化建议 | 进行中 | - | - | - |
-| P4 总验收 | 待开始 | - | - | - |
+| P1 APB | 已完成 | `45e85ba` | `testinfra.unit` 55 passed；prepare 通过且二次 0.0s cache hit；nightly focused 1 passed | 使用 `filelists/apb5.f` 和公开 `xam_i6_apb_reply_test`；以 `-debug_access+all` 启用 FSDB |
+| P2 AXI | 已完成 | `f85b9ac` | `testinfra.unit` 56 passed；prepare 通过且二次 0.0s cache hit；nightly focused 1 passed | 使用 `filelists/axi4.f` 和公开 `xam_i4_axi_random_test`；64 笔 mixed operation 与 pin-handshake oracle 对齐 |
+| P3 优化建议 | 已完成 | XAMBA `137edb8` | `verify_export.sh` 通过；`make audit-all` 的 layout/clean-room/trace/release 全通过 | 仅新增文档，未修改 VIP 实现与构建合同 |
+| P4 总验收 | 已完成 | 本文档收口提交 | `testinfra.unit` 56 passed；新旧四套 nightly suite 共存；APB/AXI prepare 均 0.0s cache hit；两个 focused suite 均 1 passed | 旧 SVT fixture/test 零差异；未重建缓存，未推送远端 |
+
+### 8.1 最终验收记录
+
+- 静态合同：`testinfra.unit` 共 56 项全部通过；
+- catalog 共存：nightly plan 同时选中 `xdebug.apb_vip`、`xdebug.axi_vip`、
+  `xdebug.apb_xamba_vip` 和 `xdebug.axi_xamba_vip`；
+- fixture 缓存：APB 和 AXI 最终 prepare 均在 0.0s 内命中已有 generation，未重新调用 VCS；
+- 真实 runtime：APB focused suite 1 passed，AXI focused suite 1 passed；
+- XAMBA 审计：`XAM_LAYOUT_PASS`、clean-room audit、`XAM_TRACE_PASS`、
+  `XAM_RELEASE_PASS` 全部通过；
+- 范围：原 SVT APB/AXI fixture 目录和对应 pytest 相对 P0 冻结点零差异；
+  xverif 中既有 xwiki/AGENTS 未提交改动未被纳入本任务提交；
+- 交付：两个仓库均仅本地提交，未执行远端推送。
