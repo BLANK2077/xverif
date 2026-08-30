@@ -2,28 +2,24 @@
   "name": "axi_xamba_vip_real",
   "kind": "synthetic-vip",
   "vip": "XAMBA UVM VIP",
-  "xamba_revision": "dc653589484006d5d08506265df8e37521039384",
-  "filelist": "filelists/axi4.f",
+  "xamba_revision": "5fcd0c28da22bd10939f152b18e0a927c1d54834",
+  "filelist": "filelists/xamba_axi4_vip.f",
   "top": "xdebug_axi_xamba_fixture_top",
   "interface": "xdebug_axi_xamba_fixture_top.dut.probe_full_if",
-  "testcase": "xam_i4_axi_random_test",
+  "testcase": "xdebug_axi_xamba_fixture_test",
   "seed": 7,
-  "operation_seeds": {
-    "suite": 7,
-    "operation": 101,
-    "timing": 103,
-    "reply": 107
-  },
   "resources": {
     "fsdb": "out/waves.fsdb",
     "daidir": "out/simv.daidir",
     "simulation_log": "out/sim.log",
     "handshake_oracle": "out/axi_handshake.jsonl",
-    "run_manifest": "out/xamba-run-manifest.txt"
+    "run_manifest": "out/xamba-run-manifest.txt",
+    "extra_sources_manifest": "out/xamba-extra-sources.manifest",
+    "resolved_filelist": "out/xamba-resolved.f"
   },
   "expected": {
     "transactions": 64,
-    "pass_marker": "XAM_I4_AXI_RANDOM_PASS"
+    "pass_marker": "XDEBUG_XAMBA_AXI_FIXTURE_PASS"
   },
   "required_env": [
     "XAMBA_UVM_VIP_ROOT"

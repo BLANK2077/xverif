@@ -92,10 +92,16 @@ def test_axi_xamba_vip_waveform_actions(
     sim_log = resources_root / resources["simulation_log"]
     oracle_path = resources_root / resources["handshake_oracle"]
     run_manifest = resources_root / resources["run_manifest"]
+    extra_sources_manifest = resources_root / resources["extra_sources_manifest"]
+    resolved_filelist = resources_root / resources["resolved_filelist"]
 
     assert fsdb.is_file() and fsdb.stat().st_size > 1024
     assert daidir.is_dir()
     assert run_manifest.is_file()
+    assert "count=2" in extra_sources_manifest.read_text(encoding="utf-8")
+    resolved_text = resolved_filelist.read_text(encoding="utf-8")
+    assert "/tb_clean/" not in resolved_text
+    assert "/src_clean/axi/xam_axi_pkg.sv" in resolved_text
     oracle = [
         json.loads(line)
         for line in oracle_path.read_text(encoding="utf-8").splitlines()

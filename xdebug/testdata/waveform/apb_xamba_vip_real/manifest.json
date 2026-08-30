@@ -2,23 +2,25 @@
   "name": "apb_xamba_vip_real",
   "kind": "synthetic-vip",
   "vip": "XAMBA UVM VIP",
-  "xamba_revision": "dc653589484006d5d08506265df8e37521039384",
-  "filelist": "filelists/apb5.f",
+  "xamba_revision": "5fcd0c28da22bd10939f152b18e0a927c1d54834",
+  "filelist": "filelists/xamba_apb5_vip.f",
   "top": "xdebug_apb_xamba_fixture_top",
   "interface": "xdebug_apb_xamba_fixture_top.dut.apb_reply_if",
-  "testcase": "xam_i6_apb_reply_test",
+  "testcase": "xdebug_apb_xamba_fixture_test",
   "seed": 11,
   "resources": {
     "fsdb": "out/waves.fsdb",
     "daidir": "out/simv.daidir",
     "simulation_log": "out/sim.log",
-    "run_manifest": "out/xamba-run-manifest.txt"
+    "run_manifest": "out/xamba-run-manifest.txt",
+    "extra_sources_manifest": "out/xamba-extra-sources.manifest",
+    "resolved_filelist": "out/xamba-resolved.f"
   },
   "expected": {
-    "transactions": 412,
-    "writes": 206,
-    "reads": 206,
-    "pass_marker": "XAM_I6_APB_REPLY_PASS"
+    "transactions": 64,
+    "writes": 32,
+    "reads": 32,
+    "pass_marker": "XDEBUG_XAMBA_APB_FIXTURE_PASS"
   },
   "required_env": [
     "XAMBA_UVM_VIP_ROOT"

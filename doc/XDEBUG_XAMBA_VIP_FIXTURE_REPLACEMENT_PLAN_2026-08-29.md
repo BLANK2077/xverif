@@ -2,7 +2,7 @@
 
 版本：2026-08-29
 
-状态：P0–P4 已完成，全部验收门禁通过
+状态：P0–P5 已完成，全部验收门禁通过
 
 工作仓库：`<xverif-repo>`
 
@@ -245,3 +245,44 @@ XVERIF_TEST_EXECUTION_ENV=host \
 - 范围：原 SVT APB/AXI fixture 目录和对应 pytest 相对 P0 冻结点零差异；
   xverif 中既有 xwiki/AGENTS 未提交改动未被纳入本任务提交；
 - 交付：两个仓库均仅本地提交，未执行远端推送。
+
+## 9. P5：迁移到 product-only filelist（2026-08-30）
+
+用户已明确要求 XAMBA 提供单一产品 filelist，并要求 xverif 改用该入口。该授权替代第 2.2 节中
+“不修改 XAMBA filelist/构建脚本”的旧阶段约束；P0–P4 的历史结论不改写。
+
+本阶段实施范围：
+
+- XAMBA 新增全量、AXI4、AXI4-Lite、APB5 四份只含 `src_clean/` 的 consumer filelist；
+- XAMBA 新增 class/package 归属门禁和 `EXTRA_SOURCES` 内容哈希合同；
+- APB/AXI fixture 分别切换到 `filelists/xamba_apb5_vip.f` 与
+  `filelists/xamba_axi4_vip.f`；
+- fixture 自己提供 package/top，并只调用 XAMBA 公开 interface、pin source 和 endpoint class，
+  不再实例化 `xam_apb_compile_top`、`xam_axi_compile_top` 或编译 `tb_clean/`；
+- 发布 resolved filelist 与附加源摘要，pytest 明确断言不存在 `/tb_clean/`。
+
+验收标准：
+
+1. XAMBA `make audit-consumer-contract` 和 `make audit-all` 通过，所有 class 均有 package owner；
+2. 同一 `EXTRA_SOURCES` 内容命中同一 compile key，内容变化产生新 key；
+3. 两套 fixture 只重建各自变化后的 generation，随后再次 prepare 必须命中缓存；
+4. APB/AXI nightly focused suite 均通过，UVM warning/error/fatal 为零，协议计数与 oracle 一致；
+5. 不修改或清理原 SVT fixture/cache，不纳入 xverif 工作树中的 xwiki、NPI 等无关改动。
+
+完成证据：
+
+- XAMBA 提交：`5fcd0c28da22bd10939f152b18e0a927c1d54834`；
+- APB compile key：`13c56669eb4314edde9aff8e619fe743b17cccc0c4dd4210afc176c0221b57db`；
+- AXI fixture top 内容变化后，compile key 从
+  `93a671b42d8c67cdd5faaacf55e980438efc4ee2898a07f65f71c8d785d7b994` 变为
+  `db2d150565dea5cf3f328afb9e707ed9c0878fc2e86a0bd9667671ffc87c1a6c`，随后两套 fixture
+  均命中 XAMBA compile cache；
+- xverif generation fingerprint：APB
+  `05c16a52c99491286afecda1bd88dbcb992f340c627cbca5d6304985cc8a262e`、AXI
+  `fbca46529549b7ac93228fce67a20a7487e03645bf5b111877d3c9dd3deb0ed8`；第二次 prepare
+  两者均经 `cache_validation` 命中，耗时 0.0 秒；
+- `testinfra.unit`：56 passed；正式 nightly focused suite：APB/AXI 2 passed；
+- APB/AXI 均完成 64 笔事务（32 write、32 read），UVM warning/error/fatal 为零；AXI oracle
+  记录 256 个 channel handshake，xdebug/NPI 协议查询与 oracle 一致；
+- xverif 本阶段提交只纳入本节列出的 fixture、registry、manifest、测试和计划文件，未纳入工作树中
+  原有的 xwiki、NPI toolchain、README 等无关改动；未执行远端推送。

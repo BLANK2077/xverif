@@ -210,11 +210,14 @@ def test_apb_xamba_fixture_uses_checked_in_filelist_contract() -> None:
     assert spec.builder["default_env"] == {
         "XAMBA_UVM_VIP_ROOT": "{home}/work/xamba_uvm_vip",
         "XAMBA_UVM_VIP_REVISION":
-            "dc653589484006d5d08506265df8e37521039384",
+            "5fcd0c28da22bd10939f152b18e0a927c1d54834",
     }
     makefile = (ROOT / spec.source_dir / "Makefile").read_text(encoding="utf-8")
-    assert "FILELIST := filelists/apb5.f" in makefile
-    assert "xam_i6_apb_reply_test" in makefile
+    assert "FILELIST := filelists/xamba_apb5_vip.f" in makefile
+    assert "TEST := xdebug_apb_xamba_fixture_test" in makefile
+    assert "EXTRA_SOURCES := $(FIXTURE_PACKAGE) $(FIXTURE_TOP)" in makefile
+    assert "! grep -q '/tb_clean/'" in makefile
+    assert "xam_apb_compile_top" not in makefile
     assert "apb_vip_real" not in makefile
 
 
@@ -232,11 +235,14 @@ def test_axi_xamba_fixture_uses_checked_in_filelist_contract() -> None:
     assert spec.builder["default_env"] == {
         "XAMBA_UVM_VIP_ROOT": "{home}/work/xamba_uvm_vip",
         "XAMBA_UVM_VIP_REVISION":
-            "dc653589484006d5d08506265df8e37521039384",
+            "5fcd0c28da22bd10939f152b18e0a927c1d54834",
     }
     makefile = (ROOT / spec.source_dir / "Makefile").read_text(encoding="utf-8")
-    assert "FILELIST := filelists/axi4.f" in makefile
-    assert "xam_i4_axi_random_test" in makefile
+    assert "FILELIST := filelists/xamba_axi4_vip.f" in makefile
+    assert "TEST := xdebug_axi_xamba_fixture_test" in makefile
+    assert "EXTRA_SOURCES := $(FIXTURE_PACKAGE) $(FIXTURE_TOP)" in makefile
+    assert "! grep -q '/tb_clean/'" in makefile
+    assert "xam_axi_compile_top" not in makefile
     assert "axi_vip_real" not in makefile
 
 
