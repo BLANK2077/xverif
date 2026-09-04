@@ -39,6 +39,14 @@ frontend 不直接承载 NPI 重逻辑；NPI/FSDB/engine 能力集中在内部 e
 - 不要在 CLI 层手写 action-specific 参数规则；参数合同应来自 schema。
 - 不要让日志污染 JSON stdout。
 - 新增公共输出字段时同时考虑 JSON 和 XOUT。
+- XOUT 第一段由 `text_response_builder` 的共享 summary 投影和 handler 的局部投影共同
+  负责：共享层处理 canonical 完整性、嵌套 output/range 和可证明的同义去重；领域层只
+  选择本 action 的必要首段字段，不在公共 renderer 中建立 action-name switch。
+- 第一段不是强制 `summary`。若 summary 只重复紧随其后的完整 config/stream 等领域
+  section，handler 可通过 `include_xout_summary()` 省略整段，但不得丢失 session identity、
+  output path、verdict、finding 总览或 incomplete/truncated 证据。
+- `project_xout_summary()` 只生成 XOUT 渲染副本，不得修改原 response；JSON、schema 和
+  examples 不因展示精简而变化。第二段及以后继续沿用现有领域 renderer 和顺序。
 - `session.open.target.run_manifest` 是可选的 provenance gate：提供时必须在 engine
   启动前完成 published state、canonical path、size 和 SHA-256 校验；不得通过自动
   reopen、固定 sleep 或其他 transport 绕过失败。

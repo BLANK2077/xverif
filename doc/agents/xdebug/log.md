@@ -1,5 +1,12 @@
 # xdebug 架构说明书维护日志
 
+## 2026-09-04
+
+- 统一 XOUT 第一段的 summary 投影：补齐 canonical output path、session identity、范围与
+  完整性证据，并按字段语义和值关系删除同义字段；投影只作用于 XOUT 副本，不改变 JSON。
+- 允许 config/stream 领域段在 summary 完全重复时直接成为第一段；73 个公开 action 均由
+  native XOUT 合同声明首段必要字段，专用 renderer 继续保持既有后续段落与视觉风格。
+
 ## 2026-08-16
 
 - 新增公共 atomic artifact publisher，APB、AXI、stream exporter 统一使用同目录暂存、

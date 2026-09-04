@@ -36,9 +36,24 @@ JSON”。需要更多证据时，先按 action schema 调整查询范围、line
 - 成功的 `value.at` XOUT 使用 action header 和 `values` 矩阵；完整
   `summary`、`entries`、`samples` 保留在 JSON response 中。
 
+## 第一段读取规则
+
+- action header 后的第一个 section 是首段，但首段不强制命名为 `summary`。当 summary
+  只重复下一段的完整领域对象时，可以省略 summary，由 `config`、`stream`、`values`
+  等领域 section 直接成为首段。
+- 首段只承诺当前结论所需的对象身份、直接结果、继续操作入口、查询语义和完整性证据；
+  不逐字段复制 JSON summary，也不重复可由保留字段直接推导的同义值。
+- export 类 action 的首段应给出 response 已发布的 canonical output path；session
+  open/doctor/close 应给出目标 session identity。不要从 request 猜测路径或 session。
+- `requested_range`、`scanned_range` 在首段紧凑显示为 `begin..end`；嵌套 output 字段
+  使用 `output.path`、`output.meta_path` 等点号名称。这些只是 XOUT 投影，不改变 JSON。
+- 不要依赖固定的首段字段全集或固定的 `summary:` 标题解析 XOUT；需要稳定字段编程时
+  显式请求 JSON。
+
 ## 完整性
 
 无论选择 XOUT 还是 JSON，都必须读取 action 发布的
 `scan_complete`、`analysis_complete`、`response_truncated`、`total_count`、
 `returned_count` 和 `truncation_scopes`。XOUT renderer 不得私自隐藏 action 已返回
-的行；action 自身通过公开合同决定分析和响应边界。
+的行；action 自身通过公开合同决定分析和响应边界。首段可以省略重复计数，但不能省略
+会改变结论可信度的 incomplete/truncated 状态及其 scope。

@@ -22,14 +22,20 @@ XOUT 现有视觉风格的前提下，逐项优化 73 个公开 action 的 XOUT 
 | 阶段 | 状态 | 产物/证据 |
 |---|---|---|
 | 基线评审 | 已完成 | 73 个 action 的真实 host/NPI XOUT 已采集并逐条检查 |
-| 计划与验收设计 | 进行中 | 本文；Goal 已建立 |
-| renderer 设计验证 | 未开始 | 首段边界与字段投影单元测试 |
-| 分阶段实现 | 未开始 | 公共首段、专用首段、session/export 补强 |
-| 静态与单元验证 | 未开始 | 生成一致性、schema、C++ unit、报告合同 |
-| 真实 NPI 验证 | 未开始 | focused suites 与 73-action native XOUT |
-| 最终复核 | 未开始 | 逐 action 新旧对照、缓存未变证明、遗留风险 |
+| 计划与验收设计 | 已完成 | 本文；Goal 已建立 |
+| renderer 设计验证 | 已完成 | 共享投影与同义去重 C++ unit 通过 |
+| 分阶段实现 | 已完成 | 公共/专用首段、session/export、8 个整段删除均已提交 |
+| 静态与单元验证 | 已完成 | 生成/schema、C++ unit、static、report contract 均通过 |
+| 真实 NPI 验证 | 已完成 | focused suites 与 73-action native XOUT 全部通过 |
+| 最终复核 | 已完成 | 逐 action 报告、缓存字节级未变证明、遗留风险已记录 |
 
 进度更新必须写回本节，不另建失去上下文的临时状态文件。
+
+最终评审见 `doc/XDEBUG_XOUT_FIRST_SECTION_REVIEW_REPORT_2026-09-04.md`。完整 regression
+因既有 `xdebug.stream_differential_tool` fixture cache miss 在 preflight 阶段未启动；遵守
+本计划没有执行 prepare。fast gate 的唯一失败来自任务开始前未跟踪 wave-mcp 报告中的
+本机绝对路径，649 个其余用例通过。fixture 指针与 manifest 的前后 316 项 SHA-256
+清单完全相同。
 
 ## 3. 已确认基线
 
