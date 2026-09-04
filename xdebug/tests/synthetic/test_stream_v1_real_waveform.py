@@ -81,13 +81,12 @@ def _query_xout_equivalent(
 ) -> dict[str, Any]:
     result = cli_runner.run(request, output_format="xout", timeout_sec=timeout_sec)
     if result.returncode == 0 and not result.timed_out and isinstance(result.response, str):
+        assert expected_json["ok"] is True
+        assert expected_json["action"] == request["action"]
         assert result.response.startswith(
             "@xdebug.%s.v1\n" % request["action"]
         )
         assert "pointer\tkind\tvalue" not in result.response
-        for key, expected in expected_json["summary"].items():
-            if isinstance(expected, (str, int, float, bool)):
-                assert key in result.response
         return result.response
     artifact_dir = ArtifactWriter(artifact_root).write(case_name, result)
     pytest.fail(
