@@ -160,6 +160,18 @@ public:
     const char* action_name() const override { return "stream.export"; }
     bool needs_design() const override { return false; }
     bool needs_waveform() const override { return true; }
+
+protected:
+    Json project_xout_summary(const Json& summary) const override {
+        return project_xout_summary_fields(
+            summary,
+            {"stream", "kind", "status", "clock", "edge", "sample_point",
+             "row_count", "output", "requested_range", "scanned_range",
+             "scan_complete", "analysis_complete", "response_truncated",
+             "total_count", "returned_count", "truncation_scopes"});
+    }
+
+public:
     Json run(
         ContractBoundRequest& request,
         EngineActionContext& ctx) const override {

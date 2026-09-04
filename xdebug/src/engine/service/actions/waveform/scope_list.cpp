@@ -612,7 +612,13 @@ public:
     }
 
     std::string render_xout(const Json& response) const override {
-        return render_tabular_xout(action_name(), response);
+        Json projected = response;
+        projected["summary"] = project_xout_summary_fields(
+            response.value("summary", Json::object()),
+            {"path", "source", "level", "kind", "scan_complete",
+             "analysis_complete", "response_truncated", "total_count",
+             "returned_count", "truncation_scopes"});
+        return render_tabular_xout(action_name(), projected);
     }
 };
 

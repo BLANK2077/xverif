@@ -37,6 +37,18 @@ public:
     const char* action_name() const override { return "list.export"; }
     bool needs_design() const override { return false; }
     bool needs_waveform() const override { return true; }
+
+protected:
+    Json project_xout_summary(const Json& summary) const override {
+        return project_xout_summary_fields(
+            summary,
+            {"name", "status", "format", "row_count", "begin", "end",
+             "output", "scan_complete", "analysis_complete",
+             "response_truncated", "total_count", "returned_count",
+             "truncation_scopes"});
+    }
+
+public:
     Json run(ContractBoundRequest& r, EngineActionContext& ctx) const override {
         auto a = r.args();
         std::string n = a.value("name", "");

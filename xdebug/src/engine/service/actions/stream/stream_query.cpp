@@ -133,8 +133,45 @@ std::string render_stream_query_xout(const Json& response) {
     // Keep the response contract untouched.  Only the private XOUT projection
     // removes value-object metadata and restores the compact stream tables used
     // before the generic renderer replaced the domain-specific frontend.
-    return render_tabular_xout(
-        "stream.query", compact_stream_xout_value(response));
+    Json compact = compact_stream_xout_value(response);
+    const Json summary = compact.value("summary", Json::object());
+    const Json data = compact.value("data", Json::object());
+    Json first = Json::object();
+    auto copy_summary = [&](const char* key) {
+        if (summary.contains(key)) first[key] = summary[key];
+    };
+    copy_summary("stream");
+    copy_summary("query");
+    if (data.is_object() && data.contains("found")) first["found"] = data["found"];
+    const Json packet = data.value("packet", Json());
+    if (packet.is_object() && packet.contains("packet_index"))
+        first["packet_index"] = packet["packet_index"];
+    for (const char* key : {"clock", "edge", "sample_point", "filter_applied"})
+        copy_summary(key);
+    const std::string query = summary.value("query", std::string());
+    if (query == "summary") {
+        for (const char* key : {
+                 "transfer_count", "stall_cycles", "stall_windows",
+                 "complete_packet_count", "partial_packet_count",
+                 "packet_count_status", "control_xz_count", "data_xz_count",
+                 "ready_bp_conflict_count", "packet_stable_mismatch_count"}) {
+            copy_summary(key);
+        }
+    } else if (summary.contains("packet_count_status") &&
+               query.find("packet") != std::string::npos) {
+        copy_summary("packet_count_status");
+    }
+    for (const char* key : {
+             "unresolved_filter_count", "matched_packet_count",
+             "matched_transfer_count", "retained_packet_count",
+             "requested_range", "scanned_range", "scan_complete",
+             "analysis_complete", "response_truncated", "total_count",
+             "returned_count", "truncation_scopes"}) {
+        copy_summary(key);
+    }
+    compact["summary"] = first;
+    if (compact["data"].is_object()) compact["data"].erase("found");
+    return render_tabular_xout("stream.query", compact);
 }
 
 Json stream_query_example(const std::string& stream = "req_stream",

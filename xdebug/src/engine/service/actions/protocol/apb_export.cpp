@@ -214,7 +214,17 @@ public:
     }
 
     std::string render_xout(const Json& response) const override {
-        return render_tabular_xout(action_name(), response);
+        Json projected = response;
+        projected["summary"] = project_xout_summary_fields(
+            response.value("summary", Json::object()),
+            {"name", "direction", "status", "matched_transaction_count",
+             "matched_write_count", "matched_read_count",
+             "unresolved_filter_count", "preview_row_count", "row_count",
+             "requested_range", "scanned_range", "output",
+             "scan_complete", "analysis_complete", "response_truncated",
+             "total_count", "returned_count", "truncation_scopes",
+             "value_width_complete", "width_diagnostics"});
+        return render_tabular_xout(action_name(), projected);
     }
 };
 

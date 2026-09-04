@@ -36,6 +36,7 @@ public:
     const char* action_name() const override { return "event.config.load"; }
     bool needs_design() const override { return false; }
     bool needs_waveform() const override { return true; }
+    bool include_xout_summary() const override { return false; }
     Json run(ContractBoundRequest& request, EngineActionContext& ctx) const override {
         using namespace xdebug_waveform;
         auto args = request.args();

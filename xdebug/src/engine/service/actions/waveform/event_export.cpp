@@ -68,6 +68,19 @@ public:
     const char* action_name() const override { return export_mode_ ? "event.export" : "event.find"; }
     bool needs_design() const override { return false; }
     bool needs_waveform() const override { return true; }
+
+protected:
+    Json project_xout_summary(const Json& summary) const override {
+        if (!export_mode_) return summary;
+        return project_xout_summary_fields(
+            summary,
+            {"status", "clock", "first", "last", "output",
+             "scan_complete", "analysis_complete", "response_truncated",
+             "total_count", "returned_count", "truncation_scopes",
+             "value_width_complete"});
+    }
+
+public:
     Json run(ContractBoundRequest& request, EngineActionContext& ctx) const override {
         using namespace xdebug_waveform;
         auto args = request.args();

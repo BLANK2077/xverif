@@ -96,6 +96,21 @@ public:
     const char* action_name() const override { return "axi.analysis"; }
     bool needs_design() const override { return false; }
     bool needs_waveform() const override { return true; }
+
+protected:
+    Json project_xout_summary(const Json& summary) const override {
+        return project_xout_summary_fields(
+            summary,
+            {"name", "analysis", "direction", "completed_read_count",
+             "completed_write_count", "incomplete_read_count",
+             "incomplete_write_count", "samples", "min", "max", "avg",
+             "p50", "p95", "p99", "finding_count", "scanned_range",
+             "scan_complete", "analysis_complete", "response_truncated",
+             "total_count", "returned_count", "truncation_scopes",
+             "value_width_complete"});
+    }
+
+public:
     Json run(
         ContractBoundRequest& request,
         EngineActionContext& ctx) const override {

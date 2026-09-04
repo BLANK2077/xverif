@@ -10,7 +10,14 @@ import pytest
 
 from runner.raw_cli import RawCliResult, RawCliRunner
 
-from .cases import CASES, ERROR_CASES, EXTERNAL_PROTECTION_CASES, NativeXoutCase
+from .cases import (
+    CASES,
+    ERROR_CASES,
+    EXTERNAL_PROTECTION_CASES,
+    FIRST_SECTION_REQUIRED,
+    SUMMARY_OMITTED_ACTIONS,
+    NativeXoutCase,
+)
 from .report import verify_report, write_report
 
 
@@ -23,6 +30,19 @@ RESOURCE_PATHS = {
     "S": ("xdebug.stream_v1", "out/waves.fsdb", "out/simv.daidir"),
     "E": ("xdebug.xif_event", "out/waves/xif_event_multi_if_test.fsdb", "out/simv.daidir"),
 }
+
+
+def _first_xout_section(text: str) -> str:
+    lines = text.splitlines()
+    section_indexes = [
+        index for index, line in enumerate(lines)
+        if index > 0 and line and not line.startswith(" ") and line.endswith(":")
+    ]
+    if not section_indexes:
+        return "\n".join(lines[1:])
+    begin = section_indexes[0]
+    end = section_indexes[1] if len(section_indexes) > 1 else len(lines)
+    return "\n".join(lines[begin:end])
 
 
 class MatrixRuntime:
@@ -264,6 +284,7 @@ def test_all_runtime_actions_emit_native_xout(
     try:
         assert len(CASES) == 73
         assert len({item.action for item in CASES}) == 73
+        assert set(FIRST_SECTION_REQUIRED) == {item.action for item in CASES}
         for case in CASES:
             runtime.ensure(case)
             request = runtime.primary_request(case)
@@ -278,6 +299,25 @@ def test_all_runtime_actions_emit_native_xout(
                 ("@xdebug.%s.v1\n" % case.action).encode("utf-8")
             ), result.stdout[:200]
             text = result.stdout_text()
+            first_section = _first_xout_section(text)
+            for required in FIRST_SECTION_REQUIRED[case.action]:
+                if required not in first_section:
+                    semantic_failures.append(
+                        f"{case.action}: first section missing {required!r}"
+                    )
+            if case.action in SUMMARY_OMITTED_ACTIONS and first_section.startswith("summary:"):
+                semantic_failures.append(
+                    f"{case.action}: redundant summary section was not omitted"
+                )
+            for redundant in (
+                "output_written", "all_passed", "termination_detail",
+                "checked_value_count", "full_scan_count",
+            ):
+                if redundant in first_section:
+                    semantic_failures.append(
+                        f"{case.action}: first section retained redundant field "
+                        f"{redundant!r}"
+                    )
             for required in case.required_text:
                 if required not in text:
                     semantic_failures.append(

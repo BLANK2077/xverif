@@ -206,16 +206,24 @@ public:
         xdebug::TextResponseBuilder out("xdebug");
         out.emit_header(action_name());
         const Json summary = response.value("summary", Json::object());
-        out.emit_section("summary");
-        out.emit_kv("recommended",
-                    summary.value("recommended_root", Json(nullptr)).is_null()
-                        ? "none (" + summary.value("recommended_reason", std::string("unknown")) + ")"
-                        : summary.value("recommended_root", std::string()));
-        out.emit_kv("source", summary.value("source", std::string("auto")));
-        out.emit_kv("roots", summary.value("root_count", 0));
-        out.emit_kv("matched", summary.value("matched_count", 0));
-        out.emit_kv("wave", summary.value("wave_count", 0));
-        out.emit_kv("design", summary.value("design_count", 0));
+        Json first = {
+            {"recommended",
+             summary.value("recommended_root", Json(nullptr)).is_null()
+                 ? Json("none (" + summary.value(
+                       "recommended_reason", std::string("unknown")) + ")")
+                 : summary.value("recommended_root", Json(nullptr))},
+            {"source", summary.value("source", std::string("auto"))},
+            {"roots", summary.value("root_count", 0)},
+            {"matched", summary.value("matched_count", 0)},
+            {"wave", summary.value("wave_count", 0)},
+            {"design", summary.value("design_count", 0)}
+        };
+        for (const char* key : {"scan_complete", "analysis_complete",
+                                "response_truncated", "total_count",
+                                "returned_count", "truncation_scopes"}) {
+            if (summary.contains(key)) first[key] = summary[key];
+        }
+        xdebug::emit_xout_summary(out, first);
 
         const Json data = response.value("data", Json::object());
         const Json roots = data.value("roots", Json::array());

@@ -27,6 +27,18 @@ public:
     const char* action_name() const override { return "axi.export"; }
     bool needs_design() const override { return false; }
     bool needs_waveform() const override { return true; }
+
+protected:
+    Json project_xout_summary(const Json& summary) const override {
+        return project_xout_summary_fields(
+            summary,
+            {"name", "status", "write_count", "read_count", "output",
+             "requested_range", "scanned_range", "scan_complete",
+             "analysis_complete", "response_truncated", "total_count",
+             "returned_count", "truncation_scopes"});
+    }
+
+public:
     Json run(
         ContractBoundRequest& request,
         EngineActionContext& ctx) const override {
