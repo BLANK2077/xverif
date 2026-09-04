@@ -189,9 +189,7 @@ std::string render_statistics_xout(const std::string& action,
     xdebug::TextResponseBuilder out("xdebug");
     out.emit_header(action);
     const Json summary = response.value("summary", Json::object());
-    out.emit_section("summary");
-    for (Json::const_iterator it = summary.begin(); it != summary.end(); ++it)
-        out.emit_kv(it.key(), it.value());
+    xdebug::emit_xout_summary(out, summary);
 
     const Json data = response.value("data", Json::object());
     const Json filter = data.value("filter", Json::object());

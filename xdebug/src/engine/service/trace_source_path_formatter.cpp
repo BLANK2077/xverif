@@ -806,21 +806,7 @@ std::string render_source_path_xout(const std::string& action, const Json& respo
     xdebug::TextResponseBuilder out("xdebug");
     out.emit_header(action);
     Json summary = response.value("summary", Json::object());
-    if (summary.is_object() && !summary.empty()) {
-        out.emit_section("summary");
-        for (auto it = summary.begin(); it != summary.end(); ++it) {
-            if (xdebug::is_xout_scalar_json(it.value())) out.emit_kv(it.key(), it.value());
-        }
-        const Json truncation_scopes = summary.value("truncation_scopes", Json());
-        if (truncation_scopes.is_array() && truncation_scopes.empty()) {
-            out.emit_kv("truncation_scopes", "[empty]");
-        } else if (truncation_scopes.is_array()) {
-            out.emit_section("truncation_scopes");
-            for (const auto& scope : truncation_scopes) {
-                if (scope.is_string()) out.emit_row({scope.get<std::string>()});
-            }
-        }
-    }
+    xdebug::emit_xout_summary(out, summary);
     const Json data = response.value("data", Json::object());
     std::string text = out.str();
     const Json query = data.value("query", Json());

@@ -57,6 +57,8 @@ XOUT 现有视觉风格的前提下，逐项优化 73 个公开 action 的 XOUT 
   不重写错误协议。
 - 第一段边界：从首个 section 标题开始，到下一个同级 section 标题前结束。
 - 若 action 当前只有一个 section，允许对该 section 精简，但不得因此隐藏唯一业务答案。
+- 第一段不是强制结构：若删除后，紧随其后的领域 section 已完整表达结果且不会丢失
+  完整性、对象身份、产物路径或不完整原因，则直接删除第一段，让原第二段成为第一段。
 
 ## 5. 首段字段选择规则
 
@@ -82,6 +84,20 @@ XOUT 现有视觉风格的前提下，逐项优化 73 个公开 action 的 XOUT 
 - `full_scan_count:1` 在 `scan_complete:true` 已充分表达完整性时不显示；
 - `known:true`、可由 literal 推导的 width/bits，以及完整值诊断中的空数组不进入首段；
 - 零值诊断只有在“没有异常”本身就是 action 结论时才保留，否则移到既有后续证据或省略。
+
+整段删除规则：
+
+- success/header 已证明调用成功，第一段若只重复 action 名已表达的 `found/loaded`，且下一段
+  直接给出同名完整 config，可删除；
+- 第一段若只重复下一段对象的 name/clock/handshake 等字段，可删除；
+- 第一段含任一 canonical 完整性字段、session id、output path、verdict、finding 总览或
+  下一段无法直接复原的计数时，不得删除；
+- 初始删除候选为 `apb.config.list/load`、`axi.config.list/load`、
+  `event.config.list/load`、`stream.config.get`、`stream.describe`；
+- `actions` 的总数、`schema` 的目标 action/kind、config collection 的 count 仍有助于判断
+  响应范围，不因“可以人工数表格”而删除；
+- `expr.normalize` 与 `signal.canonicalize` 暂不机械删除：其 parser 来源/confidence、match
+  scope 是否可由下一段完全替代，必须通过真实输出逐字段证明后再决定。
 
 ## 6. 架构方案
 
@@ -132,8 +148,8 @@ XOUT 现有视觉风格的前提下，逐项优化 73 个公开 action 的 XOUT 
 | # | action | 决策 | 首段必要内容与处理 |
 |---:|---|---|---|
 | 1 | actions | 精简 | 保留分组与 action 数；无过滤时 `action_count`/`total_action_count` 只留一个 |
-| 2 | apb.config.list | 保留 | name、found/数量、配置来源 |
-| 3 | apb.config.load | 保留 | name、loaded、关键接口身份 |
+| 2 | apb.config.list | 删除首段 | 下一段 config 已含 name 和完整接口；success/header 已表达 found |
+| 3 | apb.config.load | 删除首段 | 下一段 config 已含 name 和完整接口；action/header 已表达 load |
 | 4 | apb.export | 精简+补强 | name、status、output path/format、canonical completeness；删除同义 row/full-scan 字段 |
 | 5 | apb.query | 保留 | name、筛选范围、canonical completeness |
 | 6 | apb.statistics | 精简 | name、核心统计、canonical completeness；删除同义 scanned/full-scan 字段 |
@@ -141,8 +157,8 @@ XOUT 现有视觉风格的前提下，逐项优化 73 个公开 action 的 XOUT 
 | 8 | apb.transfer_window | 保留 | transfer identity、窗口范围、完整性 |
 | 9 | axi.analysis | 精简 | analysis、关键 latency/anomaly 结果、canonical completeness；压缩零诊断 |
 | 10 | axi.channel_stall | 保留 | channel、stall 结论/峰值、范围和完整性 |
-| 11 | axi.config.list | 保留 | name、found/数量、配置来源 |
-| 12 | axi.config.load | 保留 | name、loaded、关键接口身份 |
+| 11 | axi.config.list | 删除首段 | 下一段 config 已含 name 和完整接口；success/header 已表达 found |
+| 12 | axi.config.load | 删除首段 | 下一段 config 已含 name 和完整接口；action/header 已表达 load |
 | 13 | axi.export | 补强+精简 | name、status、write/read/meta path、format、canonical completeness；删除 output_written/row/full-scan 重复 |
 | 14 | axi.latency_outlier | 保留 | direction/method、outlier 数、完整性 |
 | 15 | axi.outstanding_timeline | 补强 | name、peak/final outstanding、canonical completeness、非空 truncation scopes |
@@ -152,8 +168,8 @@ XOUT 现有视觉风格的前提下，逐项优化 73 个公开 action 的 XOUT 
 | 19 | axi.transaction.cursor | 精简 | cursor op/position；删除边界状态重复 |
 | 20 | batch | 保留 | 请求总数、成功/失败总览 |
 | 21 | counter.statistics | 补强 | signal/counter、edge/effective sample point、核心统计、完整性 |
-| 22 | event.config.list | 补强 | name/filter、found/数量，不只显示 status |
-| 23 | event.config.load | 补强 | name、loaded、clock/edge 或加载数量 |
+| 22 | event.config.list | 删除首段 | 下一段 config 已含 name/clock/edge；单条查询无需重复 found |
+| 23 | event.config.load | 删除首段 | 下一段 config 已含 name/clock/edge；action/header 已表达 load |
 | 24 | event.export | 补强+精简 | name、status、output path/format、sampling identity、canonical completeness；去同义 row/output 字段 |
 | 25 | event.find | 补强 | name/expression、edge/sample point、first/last/范围、canonical completeness |
 | 26 | expr.eval_at | 精简 | expression/time 与明确 value/verdict；避免含义不清的 `status:true` |
@@ -184,10 +200,10 @@ XOUT 现有视觉风格的前提下，逐项优化 73 个公开 action 的 XOUT 
 | 51 | signal.stability | 保留 | signal/range、stable/verdict、变化证据和完整性 |
 | 52 | signal.statistics | 补强 | signal/clock、edge/sample point、核心 cycle 统计和完整性 |
 | 53 | signal.xz_verify | 精简 | signal/range、expected/observed/verdict、canonical completeness；去同义 checked/total/returned |
-| 54 | stream.config.get | 保留 | stream、found、关键配置身份 |
+| 54 | stream.config.get | 删除首段 | 下一段 stream 已含 name 和完整配置 |
 | 55 | stream.config.list | 保留 | stream count/filter |
 | 56 | stream.config.load | 保留 | mode、loaded/replaced counts、推荐动作 |
-| 57 | stream.describe | 保留 | stream、clock/handshake/packet 配置 |
+| 57 | stream.describe | 删除首段 | 下一段 config 已覆盖 stream/clock/handshake/packet 配置 |
 | 58 | stream.export | 补强+精简 | stream/kind、status、path/meta/format、canonical completeness；不在首段铺满协议统计 |
 | 59 | stream.query | 重排+精简 | query、packet/index/range/found 先于全局流统计；只留解释目标所需统计与完整性 |
 | 60 | stream.validate | 保留 | stream、valid、主要 violation counts、完整性 |
@@ -290,15 +306,16 @@ FSDB、daidir 测试统一设置 `XVERIF_TEST_EXECUTION_ENV=host`。
 ### 功能与输出
 
 1. 73 个 action 均有首段 expected/forbidden 断言，且本矩阵逐条关闭。
-2. 首段保留直接结论、必要身份、继续操作入口和适用的 canonical 完整性证据。
-3. `response_truncated=true` 时 XOUT 明确显示非空 `truncation_scopes`；不可作全量结论。
-4. `session.open` 可直接取得 session_id；close/doctor 可识别目标 session。
-5. 所有成功写文件 action 显示 canonical output path；多产物导出显示必要子路径。
-6. `stream.query packet_at` 首先显示被请求 packet 的 found/index/range，再显示必要统计。
-7. `trace.driver/load analysis_complete=false` 时首段同时显示不完整原因。
-8. 同义字段对不再同时出现；删除字段必须能由保留字段直接推导或确认与结论无关。
-9. 第一段之外的领域证据、表格顺序和格式无非预期变化。
-10. JSON response、schema 和 examples 的结构化合同零漂移。
+2. 对首段删除候选，删除后原第二段成为第一段且具备自解释性；测试禁止残留空 summary。
+3. 首段保留直接结论、必要身份、继续操作入口和适用的 canonical 完整性证据。
+4. `response_truncated=true` 时 XOUT 明确显示非空 `truncation_scopes`；不可作全量结论。
+5. `session.open` 可直接取得 session_id；close/doctor 可识别目标 session。
+6. 所有成功写文件 action 显示 canonical output path；多产物导出显示必要子路径。
+7. `stream.query packet_at` 首先显示被请求 packet 的 found/index/range，再显示必要统计。
+8. `trace.driver/load analysis_complete=false` 时首段同时显示不完整原因。
+9. 同义字段对不再同时出现；删除字段必须能由保留字段直接推导或确认与结论无关。
+10. 第一段之外的领域证据、表格顺序和格式无非预期变化。
+11. JSON response、schema 和 examples 的结构化合同零漂移。
 
 ### 质量与测试
 

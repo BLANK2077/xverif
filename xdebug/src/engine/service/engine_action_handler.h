@@ -5,6 +5,7 @@
 
 #include "json.hpp"
 
+#include <initializer_list>
 #include <string>
 
 namespace xdebug_waveform { struct AnalysisCacheError; }
@@ -30,11 +31,21 @@ public:
     // The base implementation covers ordinary summary/data responses; handlers
     // override this method for domain-specific source windows and tables.
     virtual std::string render_xout(const Json& response) const;
+
+protected:
+    // A config action may omit a summary that only repeats the immediately
+    // following complete config object.
+    virtual bool include_xout_summary() const { return true; }
+    virtual Json project_xout_summary(const Json& summary) const {
+        return summary;
+    }
 };
 
 std::string render_tabular_xout(const std::string& action,
                                 const Json& response);
 std::string append_common_blocks_xout(std::string text, const Json& response);
+Json project_xout_summary_fields(
+    const Json& summary, std::initializer_list<const char*> keys);
 
 Json make_handler_error(const std::string& code, const std::string& message);
 Json make_handler_error(const std::string& code, const std::string& message,

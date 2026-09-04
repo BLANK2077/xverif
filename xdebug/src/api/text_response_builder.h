@@ -57,4 +57,10 @@ bool is_xout_scalar_json(const Json& value);
 bool is_xout_field_map_json(const Json& value);
 std::string json_to_xout_value(const Json& value);
 
+// Render the compact first section shared by frontend and engine responses.
+// This is an XOUT-only projection: it never mutates the JSON response.
+void emit_xout_summary(TextResponseBuilder& out, const Json& summary);
+void emit_xout_first_section(TextResponseBuilder& out, const Json& response,
+                             bool include_summary = true);
+
 } // namespace xdebug

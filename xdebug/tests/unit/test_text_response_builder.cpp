@@ -40,6 +40,57 @@ int main() {
     assert(text.find("data:\n  signal: top.clk\n  time  : 10ns") != std::string::npos);
     assert(text.find("value : 'h1") != std::string::npos);
 
+    Json compact_summary_response = {
+        {"api_version", "xdebug.v1"},
+        {"ok", true},
+        {"action", "demo.summary"},
+        {"summary", {
+            {"status", "written"},
+            {"output_written", true},
+            {"row_count", 2},
+            {"total_count", 2},
+            {"returned_count", 2},
+            {"scan_complete", true},
+            {"analysis_complete", true},
+            {"response_truncated", true},
+            {"truncation_scopes", Json::array({"response_rows"})},
+            {"requested_range", {{"begin", "0ns"}, {"end", "20ns"}}},
+            {"output", {{"path", "artifacts/out"},
+                        {"meta_path", "artifacts/out.meta.json"},
+                        {"file_format", "tsv"}}}
+        }},
+        {"data", Json::object()}
+    };
+    text = render_xout_response(compact_summary_response);
+    assert(text.find("status            : written") != std::string::npos);
+    assert(text.find("output_written") == std::string::npos);
+    assert(text.find("row_count") == std::string::npos);
+    assert(text.find("total_count       : 2") != std::string::npos);
+    assert(text.find("returned_count    : 2") != std::string::npos);
+    assert(text.find("truncation_scopes : response_rows") != std::string::npos);
+    assert(text.find("requested_range   : 0ns..20ns") != std::string::npos);
+    assert(text.find("output.path       : artifacts/out") != std::string::npos);
+    assert(text.find("output.meta_path  : artifacts/out.meta.json") != std::string::npos);
+    assert(text.find("output.file_format: tsv") != std::string::npos);
+
+    Json session_open_response = {
+        {"api_version", "xdebug.v1"},
+        {"ok", true},
+        {"action", "session.open"},
+        {"session", {{"session_id", "wave0"}, {"mode", "waveform"},
+                     {"transport", "uds"}, {"fsdb", "waves.fsdb"},
+                     {"socket_path", "private.sock"}}},
+        {"summary", {{"status", "opened"}}},
+        {"data", Json::object()}
+    };
+    text = render_xout_response(session_open_response);
+    assert(text.find("status    : opened") != std::string::npos);
+    assert(text.find("session_id: wave0") != std::string::npos);
+    assert(text.find("mode      : waveform") != std::string::npos);
+    assert(text.find("transport : uds") != std::string::npos);
+    assert(text.find("fsdb      : waves.fsdb") != std::string::npos);
+    assert(text.find("socket_path") == std::string::npos);
+
     Json sized_value = {
         {"value", "32'h4000000c"},
         {"bits", "01000000000000000000000000001100"},

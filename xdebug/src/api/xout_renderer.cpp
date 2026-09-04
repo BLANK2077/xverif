@@ -27,11 +27,7 @@ std::string scalar_text(const Json& object, const std::string& key) {
 }
 
 void emit_summary(TextResponseBuilder& out, const Json& response) {
-    if (!response.contains("summary") || !response["summary"].is_object()) return;
-    out.emit_section("summary");
-    for (auto it = response["summary"].begin(); it != response["summary"].end(); ++it) {
-        if (should_emit_scalar_key(it.key(), it.value())) out.emit_kv(it.key(), it.value());
-    }
+    emit_xout_first_section(out, response);
 }
 
 void emit_warnings(TextResponseBuilder& out, const Json& response) {

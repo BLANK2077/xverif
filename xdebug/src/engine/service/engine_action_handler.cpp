@@ -157,6 +157,16 @@ std::string append_common_blocks_xout(std::string text, const Json& response) {
     return text;
 }
 
+Json project_xout_summary_fields(
+    const Json& summary, std::initializer_list<const char*> keys) {
+    Json projected = Json::object();
+    if (!summary.is_object()) return projected;
+    for (const char* key : keys) {
+        if (summary.contains(key)) projected[key] = summary[key];
+    }
+    return projected;
+}
+
 // Helper: recursively render a JSON value.
 static void render_data_value(xdebug::TextResponseBuilder& out,
                               const std::string& key, const Json& val) {
@@ -198,15 +208,11 @@ std::string EngineActionHandler::render_xout(const Json& response) const {
     out.emit_header(action_name());
 
     // ── summary ──
-    if (response.contains("summary") && response["summary"].is_object()) {
-        out.emit_section("summary");
-        for (auto it = response["summary"].begin();
-             it != response["summary"].end(); ++it) {
-            if (should_emit_scalar_key(it.key(), it.value())) {
-                out.emit_kv(it.key(), it.value());
-            }
-        }
-    }
+    Json first_response = response;
+    first_response["summary"] = project_xout_summary(
+        response.value("summary", Json::object()));
+    xdebug::emit_xout_first_section(
+        out, first_response, include_xout_summary());
 
     // ── data ── recursive tree
     const Json& data = response.value("data", Json::object());
@@ -235,12 +241,7 @@ std::string render_tabular_xout(const std::string& action,
     const Json data = response.value("data", Json::object());
     const Json summary = response.contains("summary")
         ? response["summary"] : data.value("summary", Json::object());
-    if (summary.is_object() && !summary.empty()) {
-        out.emit_section("summary");
-        for (auto it = summary.begin(); it != summary.end(); ++it) {
-            render_data_value(out, it.key(), it.value());
-        }
-    }
+    xdebug::emit_xout_summary(out, summary);
     if (!data.is_object()) return out.str();
     for (auto it = data.begin(); it != data.end(); ++it) {
         if (it.key() == "summary") continue;

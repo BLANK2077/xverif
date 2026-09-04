@@ -304,10 +304,13 @@ std::string render_catalog_actions_xout(const Json& response) {
     const Json summary = response.value("summary", Json::object());
     const Json data = response.value("data", Json::object());
     out.emit_section("summary");
-    for (const char* key : {"action_count", "total_action_count", "verbose", "filtered",
-                            "view", "guide_bytes", "guide_limit_bytes"}) {
+    if (summary.contains("action_count")) out.emit_kv("action_count", summary["action_count"]);
+    if (summary.value("verbose", false)) out.emit_kv("verbose", true);
+    if (summary.value("filtered", false)) out.emit_kv("filtered", true);
+    for (const char* key : {"view", "guide_bytes", "guide_limit_bytes"})
         if (summary.contains(key)) out.emit_kv(key, summary[key]);
-    }
+    if (summary.value("filtered", false) && summary.contains("total_action_count"))
+        out.emit_kv("total_action_count", summary["total_action_count"]);
     if (summary.value("view", std::string()) == "guide") {
         const std::string guide = data.value("guide", std::string());
         out.emit_section("guide");

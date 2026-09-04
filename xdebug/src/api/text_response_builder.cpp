@@ -105,6 +105,99 @@ bool is_field_map(const Json& value) {
     return true;
 }
 
+bool has_scalar_value(const Json& object, const char* key) {
+    return object.is_object() && object.contains(key) &&
+           is_xout_scalar_json(object[key]);
+}
+
+bool scalar_values_equal(const Json& object, const char* lhs, const char* rhs) {
+    return has_scalar_value(object, lhs) && has_scalar_value(object, rhs) &&
+           object[lhs] == object[rhs];
+}
+
+bool status_is(const Json& summary, const char* value) {
+    return summary.is_object() && summary.value("status", std::string()) == value;
+}
+
+bool omit_redundant_summary_key(const Json& summary, const std::string& key,
+                                const Json& value) {
+    if (key == "known" && value.is_boolean() && value.get<bool>()) return true;
+    if (key == "output_written" && summary.contains("status")) return true;
+    if (key == "all_passed" && summary.contains("verdict")) return true;
+    if (key == "termination_detail" &&
+        scalar_values_equal(summary, "termination", "termination_detail")) return true;
+    if (key == "total_action_count" &&
+        !summary.value("filtered", false) &&
+        scalar_values_equal(summary, "action_count", "total_action_count")) return true;
+    if (key == "row_count" &&
+        (scalar_values_equal(summary, "row_count", "returned_count") ||
+         scalar_values_equal(summary, "row_count", "total_count"))) return true;
+    if (key == "checked_value_count" &&
+        scalar_values_equal(summary, "checked_value_count", "total_count") &&
+        scalar_values_equal(summary, "checked_value_count", "returned_count")) return true;
+    if (key == "full_scan_count" && value.is_number() && value == 1 &&
+        summary.value("scan_complete", false)) return true;
+    if (key == "analysis_quality" && summary.contains("analysis_complete")) return true;
+    if ((key == "scanned_transaction_count" ||
+         key == "matched_transaction_count") &&
+        !summary.value("filter_applied", false) &&
+        summary.contains("total_count") && value == summary["total_count"])
+        return true;
+    if ((key == "at_begin" || key == "at_end") &&
+        (summary.value("op", std::string()) == "begin" ||
+         summary.value("op", std::string()) == "end")) return true;
+    if (key == "always_matched" && summary.contains("verdict")) return true;
+    if (key == "added" && value.is_boolean() && value.get<bool>() &&
+        status_is(summary, "added")) return true;
+    if (key == "created" && value.is_boolean() && value.get<bool>() &&
+        status_is(summary, "created")) return true;
+    if (key == "deleted" && value.is_boolean() && value.get<bool>() &&
+        status_is(summary, "deleted")) return true;
+    return false;
+}
+
+std::string compact_range(const Json& range) {
+    if (!range.is_object()) return std::string();
+    std::string begin = range.value("begin", std::string());
+    std::string end = range.value("end", std::string());
+    if (begin.empty() || end.empty()) return std::string();
+    return begin + ".." + end;
+}
+
+std::string compact_scalar_array(const Json& values) {
+    if (!values.is_array() || values.empty()) return std::string();
+    std::string text;
+    for (const auto& value : values) {
+        if (!is_xout_scalar_json(value)) return std::string();
+        if (!text.empty()) text += ",";
+        text += json_to_xout_value(value);
+    }
+    return text;
+}
+
+void emit_output_summary(TextResponseBuilder& out, const Json& output) {
+    if (!output.is_object()) return;
+    static const char* keys[] = {
+        "path", "data_path", "write_path", "read_path", "meta_path",
+        "manifest_path", "file_format"
+    };
+    for (const char* key : keys) {
+        if (has_scalar_value(output, key))
+            out.emit_kv(std::string("output.") + key, output[key]);
+    }
+}
+
+void emit_session_identity(TextResponseBuilder& out, const Json& session,
+                           bool include_resources) {
+    if (!session.is_object()) return;
+    for (const char* key : {"session_id", "mode", "transport"}) {
+        if (has_scalar_value(session, key)) out.emit_kv(key, session[key]);
+    }
+    if (!include_resources) return;
+    for (const char* key : {"daidir", "fsdb"})
+        if (has_scalar_value(session, key)) out.emit_kv(key, session[key]);
+}
+
 std::string compact_field_map(const Json& value) {
     std::string out;
     if (!value.is_object()) return out;
@@ -453,6 +546,65 @@ bool is_xout_scalar_json(const Json& value) {
 
 bool is_xout_field_map_json(const Json& value) {
     return is_field_map(value);
+}
+
+void emit_xout_summary(TextResponseBuilder& out, const Json& summary) {
+    if (!summary.is_object() || summary.empty()) return;
+    out.emit_section("summary");
+    for (auto it = summary.begin(); it != summary.end(); ++it) {
+        if (omit_redundant_summary_key(summary, it.key(), it.value())) continue;
+        if (is_xout_scalar_json(it.value())) {
+            out.emit_kv(it.key(), it.value());
+            continue;
+        }
+        if (it.key() == "output") {
+            emit_output_summary(out, it.value());
+            continue;
+        }
+        if (it.key() == "requested_range" || it.key() == "scanned_range") {
+            const std::string range = compact_range(it.value());
+            if (!range.empty()) out.emit_kv(it.key(), range);
+            continue;
+        }
+        if (it.key() == "truncation_scopes") {
+            const std::string scopes = compact_scalar_array(it.value());
+            out.emit_kv(it.key(), scopes.empty() ? "[empty]" : scopes);
+            continue;
+        }
+        if ((it.key() == "min_value" || it.key() == "max_value") &&
+            it.value().is_object() && it.value().contains("value")) {
+            out.emit_kv(it.key(), json_to_xout_value(it.value()));
+        }
+    }
+}
+
+void emit_xout_first_section(TextResponseBuilder& out, const Json& response,
+                             bool include_summary) {
+    if (include_summary) emit_xout_summary(out, response.value("summary", Json::object()));
+    const Json data = response.value("data", Json::object());
+    const Json findings = data.value("findings", Json::array());
+    if (include_summary && findings.is_array() && !findings.empty()) {
+        out.emit_kv("finding_count", Json(findings.size()));
+        std::string highest;
+        for (const char* severity : {"error", "warning", "info"}) {
+            for (const auto& finding : findings) {
+                if (finding.is_object() &&
+                    finding.value("severity", std::string()) == severity) {
+                    highest = severity;
+                    break;
+                }
+            }
+            if (!highest.empty()) break;
+        }
+        if (!highest.empty()) out.emit_kv("highest_severity", highest);
+    }
+    const std::string action = response.value("action", std::string());
+    if (action == "session.open" || action == "session.doctor") {
+        emit_session_identity(out, response.value("session", Json::object()),
+                              action == "session.open");
+    } else if (action == "session.close") {
+        emit_session_identity(out, data.value("removed_session", Json::object()), false);
+    }
 }
 
 } // namespace xdebug
