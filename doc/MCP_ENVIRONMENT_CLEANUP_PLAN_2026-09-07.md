@@ -47,8 +47,8 @@
 
 - 计划阶段：已完成代码追踪、19 份 README 交叉检索、删除与兼容策略确认、regression/nightly gate plan 核对。
 - 阶段 1：已提交计划 `5a5f452`，随后建立执行 goal。
-- 阶段 2：实现、关联测试、README 和 xverif-admin references 已完成；正式矩阵合计 514 项全部通过，待提交。
-- 阶段 3：真实数据库验证已通过，待 skill 安装与最终记录提交。
+- 阶段 2：实现、关联测试、README 和 xverif-admin references 已完成；正式矩阵合计 514 项全部通过，实现提交 `21dd95f`。
+- 阶段 3：真实数据库验证、skill 安装及双端内容比对已完成，本记录作为最终验收提交。
 
 ## 实现与检查记录
 
@@ -75,3 +75,13 @@
 1. 新增 native batch 转发用例误带 session_id，按原生 requires:none 合同改为 one-shot 调用。
 2. 新增 SDK-free timeout 测试泄漏内部环境变量；改用独立 os.environ 副本，并在 AGENTS.md 追加复盘。
 3. 新增 coverage 拒绝用例误从顶层 error 取码；真实 xcov 失败保留 transport envelope，改为精确断言 json.error.code。
+
+## 最终交付
+
+- 正式验收共 514 项通过：组合门禁 486、真实 FSDB/VDB 与 direct/fake-LSF/SDK-free 9、coverage MCP 与 stdio 全链路 19；无未解决失败或环境阻塞。
+- 2026-09-07 执行 make install-xverif-admin-skill，安装至 $HOME/.codex/skills/xverif-admin 和 $HOME/.claude/skills/xverif-admin。
+- 两份安装分别执行 diff -qr，均 exit 0；按安装目标合同只排除 Python/test 缓存及安装时生成的 .xverif-skill-manifest。
+- 旧 skill 可从两个用户配置目录下的 xverif-admin-skill.bak.20260907-104850 恢复。
+- README.zh-CN.md、xdebug/README.md、AGENTS.md 的重叠修改按本次差异独立暂存；逆向消除本次修改后与进入任务时快照逐字节一致。其余用户修改留在工作树。
+- 已删除的 action_capabilities.py 可从实现提交的父提交恢复；旧配置不再被读取，部署迁移及路径变化见 MCP README。
+- 未推送远端，未创建 PR，未改 fixture/catalog/native schema，未重建 fixture。
