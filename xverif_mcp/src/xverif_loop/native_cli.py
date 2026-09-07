@@ -21,6 +21,7 @@ from xverif_loop.config import (
     default_xcov_bin,
     default_xdebug_bin,
     resolve_loop_wrapper_runtime_config,
+    resolve_env_timeout,
 )
 from xverif_loop.json_contract import strict_json_dumps, strict_json_loads
 from xverif_loop.lsf.bsub import BsubOptions, BsubRunner
@@ -40,7 +41,6 @@ class ManagerConfigMismatch(RuntimeError):
 
 
 _ENV_MAP = {
-    "XVERIF_LSF_CLI_TIMEOUT_SEC": "XVERIF_LOOP_TIMEOUT_SEC",
     "XVERIF_LSF_CLI_STARTUP_TIMEOUT_SEC": "XVERIF_LOOP_STARTUP_TIMEOUT_SEC",
     "XVERIF_LSF_CLI_REQUEST_TIMEOUT_SEC": "XVERIF_LOOP_REQUEST_TIMEOUT_SEC",
     "XVERIF_LSF_CLI_CLOSE_TIMEOUT_SEC": "XVERIF_LOOP_CLOSE_TIMEOUT_SEC",
@@ -66,18 +66,7 @@ def default_socket_path() -> str:
 
 
 def _idle_timeout() -> float:
-    raw = os.environ.get("XVERIF_LSF_CLI_IDLE_TIMEOUT_SEC", "5")
-    try:
-        value = float(raw)
-    except ValueError as exc:
-        raise ValueError(
-            "XVERIF_LSF_CLI_IDLE_TIMEOUT_SEC must be a finite positive number"
-        ) from exc
-    if value <= 0 or value == float("inf") or value != value:
-        raise ValueError(
-            "XVERIF_LSF_CLI_IDLE_TIMEOUT_SEC must be a finite positive number"
-        )
-    return value
+    return resolve_env_timeout("XVERIF_LSF_CLI_IDLE_TIMEOUT_SEC", 5.0)
 
 
 def manager_main(argv: list[str] | None = None) -> int:
@@ -144,6 +133,7 @@ def _retire_mismatched_manager(socket_path: str, status: Json) -> None:
 
 
 def _ensure_manager(socket_path: str) -> None:
+    startup_timeout = resolve_env_timeout("XVERIF_LSF_CLI_STARTUP_TIMEOUT_SEC", 180.0)
     status = _manager_status(socket_path)
     if status is not None:
         if status.get("config_fingerprint") == os.environ.get(CONFIG_FINGERPRINT_ENV):
@@ -184,9 +174,7 @@ def _ensure_manager(socket_path: str) -> None:
             env=dict(os.environ),
         )
     os.close(write_fd)
-    deadline = time.monotonic() + float(
-        os.environ.get("XVERIF_LSF_CLI_STARTUP_TIMEOUT_SEC", "180")
-    )
+    deadline = time.monotonic() + startup_timeout
     try:
         while time.monotonic() < deadline:
             ready, _, _ = select.select([read_fd], [], [], max(0.0, deadline - time.monotonic()))
@@ -259,6 +247,7 @@ def _emit_transport(tool: str, transport: Json, output_format: str) -> int:
 
 def _run_native_request(tool: str, request: Json, output_format: str) -> int:
     _configure_lsf_environment()
+    request_timeout = resolve_env_timeout("XVERIF_LSF_CLI_REQUEST_TIMEOUT_SEC", 360.0)
     socket_path = default_socket_path()
     _ensure_manager(socket_path)
     response = send_requests(
@@ -272,7 +261,7 @@ def _run_native_request(tool: str, request: Json, output_format: str) -> int:
                 "output_format": output_format,
             },
         }],
-        timeout_sec=float(os.environ.get("XVERIF_LSF_CLI_REQUEST_TIMEOUT_SEC", "360")),
+        timeout_sec=request_timeout,
     )[0]
     result = response.get("result") if isinstance(response, dict) else None
     transport = result.get("transport") if isinstance(result, dict) else None

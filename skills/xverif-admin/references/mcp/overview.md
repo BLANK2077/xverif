@@ -11,13 +11,11 @@
 - xsva：stateless public CLI adapter，保留 canonical analysis metadata。
 - common：`xverif_tools`、`xverif_tool_help`、`xverif_batch`。
 
-如果不确定哪些工具暴露，先调用 `xverif_tools`。`XVERIF_MCP_ENABLE_*` 可能关闭部分工具组。
-
-`XVERIF_MCP_ENABLE_MUTATION` 默认开启（`1`），open/close/kill/gc、配置/list/cursor、
-coverage exclusion 等状态变更默认可用；需要只读部署时显式设为 `0`。
-`XVERIF_MCP_ENABLE_ARTIFACT_WRITE` 默认关闭（`0`）。需要 batch、export artifact 或
-`xverif_output_path` 时还要开启 artifact write，并把既有目录配置到
-`XVERIF_MCP_ARTIFACT_ROOT`；相对和绝对输出都不得逃逸该根目录。按当前任务所需的最小能力授权。
+全部工具组、session 生命周期、配置/list/cursor、coverage exclusion 和文件写入始终可用。
+选择 xdebug action 前调用 `xverif_tools`，工具详情使用 `xverif_tool_help`。
+通用 `xverif_output_path` 相对 MCP 进程工作目录解析，也接受绝对路径；父目录需已存在。
+xdebug/xcov action 参数原样转发，输出路径遵守 native 合同；xcov 绝对导出仍需显式
+`allow_absolute_path` 和 `XVERIF_XCOV_EXPORT_ROOTS`，MCP 不自动注入许可。
 
 连通性检查使用 `xverif_ping`。它不访问 backend、session、NPI 或 license，适合确认 MCP server 本身是否可调用。
 
@@ -36,4 +34,4 @@ direct backend 使用 NPI 时，MCP server 的显式 `env` 必须包含当前站
 
 ## batch
 
-`xverif_batch` 需要 artifact write 权限；其中生命周期或 exclusion 调用还需要 mutation 权限。batch 行里的 tool 参数需要嵌套在 `args` 里；每行 `args` 必须是 object。输入先冻结并受 16 MiB/10,000 条默认 hard limit 约束，输出受 64 MiB 默认 hard limit 约束；三项可通过 `XVERIF_MCP_BATCH_MAX_*` 严格正整数环境变量调整。输入输出同 inode（含 symlink/hardlink）会被拒绝，输出必须不存在并以同目录 staging no-clobber 发布。所有 MCP tool 的 `xverif_output_path` 都受 artifact root containment 约束；写入失败不得把原 action 成功当作调用成功。
+`xverif_batch` 始终可用。batch 行里的 tool 参数需要嵌套在 `args` 里；每行 `args` 必须是 object。输入先冻结并受 16 MiB/10,000 条默认 hard limit 约束，输出受 64 MiB 默认 hard limit 约束；三项可通过 `XVERIF_MCP_BATCH_MAX_*` 严格正整数环境变量调整。输入输出同 inode（含 symlink/hardlink）会被拒绝，输出必须不存在并以同目录 staging no-clobber 发布。MCP 自身文件输出不限制根目录；写入失败不得把原 action 成功当作调用成功。

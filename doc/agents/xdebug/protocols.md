@@ -126,6 +126,9 @@ MCP 是 xdebug 的外层工具暴露，不是替代 xdebug 原生 schema 的 sou
 
 - MCP debug session open 后，query 使用 `session_id`。
 - MCP adapter 参数必须映射到原生 xdebug public contract。
+- MCP 全部工具组及状态修改、文件写入能力始终可用；工具 group/mutation/artifact_write 仅为描述元数据。
+- MCP 不改写 xdebug/xcov action 输出路径，不注入 allow_absolute_path；下游保持原生路径合同。
+- MCP 自身通用响应文件和 batch 输出相对 MCP cwd 解析；batch 仍执行输入冻结、上限和 no-clobber 发布。
 - MCP `xverif_tools` 必须请求 native `actions` 的 `output.view="guide"` 并原样返回
   `data.guide`；MCP 层不重新拼接 action 描述或实施另一套长度门禁。
 - MCP tests 覆盖 direct、stdio-loop、fake LSF、real LSF 等层级。

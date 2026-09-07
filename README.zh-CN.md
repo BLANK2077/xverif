@@ -57,7 +57,7 @@ tools/xverif-mcp
 
 `tools/xverif-mcp` 是统一 stdio MCP server（`python -m xverif_mcp.server`），xdebug 作为设计/波形 stateful backend，xcov 作为 coverage stateful backend，xbit/xentry/xloc/xsva 以 stateless CLI adapter 接入。
 如果 AI 客户端在登录机、NPI/FSDB 查询需要跑到 LSF 计算节点，可以设置 `XVERIF_MCP_BACKEND=lsf`，让 MCP wrapper 通过 `bsub -I` 启动集群内 per-session stdio-loop 进程。不同 session 并行，同一 session 串行。
-可用 `XVERIF_MCP_ENABLE_DEBUG/BIT/ENTRY/LOC/SVA` 等环境变量按工具组关闭 MCP 暴露面。
+MCP 始终提供全部工具组、状态修改和文件输出能力；配置项与旧版本迁移见 [MCP README](xverif_mcp/README.md)。
 如果不走 MCP 且本机无法直连计算节点 TCP 端口，xdebug 原生支持 `transport:"file"`，通过共享文件系统在 session 目录下交换 request/response。
 
 所有 MCP tool 通用支持 `xverif_output_path` / `xverif_output_append` 参数，可将响应同时写入文件；文件写入失败会返回 `OUTPUT_WRITE_FAILED`，不能把原 action 成功当作完整成功。

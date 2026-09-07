@@ -16,24 +16,19 @@ from xverif_loop.sessions.launchers import (
 )
 from xverif_loop.sessions.session_manager import McpSessionManager
 from xverif_mcp.tool_policy import (
-    ARTIFACT_ROOT_ENV,
-    ARTIFACT_WRITE_ENV,
     BATCH_MAX_INPUT_BYTES_ENV,
     BATCH_MAX_OUTPUT_BYTES_ENV,
     BATCH_MAX_REQUESTS_ENV,
     DEFAULT_BATCH_MAX_INPUT_BYTES,
     DEFAULT_BATCH_MAX_OUTPUT_BYTES,
     DEFAULT_BATCH_MAX_REQUESTS,
-    MUTATION_ENV,
     resolve_tool_policy,
 )
 
 
-def test_tool_policy_defaults_mutation_on_artifact_write_off() -> None:
+def test_tool_policy_defaults_publish_only_batch_limits() -> None:
     policy = resolve_tool_policy({"HOME": "/tmp"})
-    assert policy.mutation_enabled is True
-    assert policy.artifact_write_enabled is False
-    assert policy.artifact_root is None
+    assert set(policy.summary()) == {"batch_limits"}
     assert policy.batch_max_input_bytes == DEFAULT_BATCH_MAX_INPUT_BYTES
     assert policy.batch_max_requests == DEFAULT_BATCH_MAX_REQUESTS
     assert policy.batch_max_output_bytes == DEFAULT_BATCH_MAX_OUTPUT_BYTES
@@ -42,16 +37,6 @@ def test_tool_policy_defaults_mutation_on_artifact_write_off() -> None:
         "max_requests": 10_000,
         "max_output_bytes": 64 * 1024 * 1024,
     }
-
-
-@pytest.mark.parametrize("env_name", [MUTATION_ENV, ARTIFACT_WRITE_ENV])
-@pytest.mark.parametrize("invalid", ["", "true", "false", "2", " 1", "1 "])
-def test_tool_policy_rejects_noncanonical_boolean_values(
-    env_name: str,
-    invalid: str,
-) -> None:
-    with pytest.raises(ConfigError, match=env_name):
-        resolve_tool_policy({env_name: invalid})
 
 
 @pytest.mark.parametrize(
@@ -80,28 +65,6 @@ def test_tool_policy_accepts_explicit_positive_batch_limits() -> None:
     assert policy.batch_max_input_bytes == 11
     assert policy.batch_max_requests == 22
     assert policy.batch_max_output_bytes == 33
-
-
-def test_tool_policy_artifact_write_requires_existing_root(tmp_path) -> None:
-    with pytest.raises(ConfigError, match=ARTIFACT_ROOT_ENV):
-        resolve_tool_policy({ARTIFACT_WRITE_ENV: "1"})
-    with pytest.raises(ConfigError, match=ARTIFACT_ROOT_ENV):
-        resolve_tool_policy({
-            ARTIFACT_WRITE_ENV: "1",
-            ARTIFACT_ROOT_ENV: str(tmp_path / "missing"),
-        })
-
-
-def test_tool_policy_requires_existing_artifact_root(tmp_path) -> None:
-    policy = resolve_tool_policy({
-        "XVERIF_MCP_ENABLE_ARTIFACT_WRITE": "1",
-        "XVERIF_MCP_ARTIFACT_ROOT": str(tmp_path),
-    })
-    assert policy.resolve_artifact_path("nested/result.json") == (
-        tmp_path / "nested/result.json"
-    )
-    with pytest.raises(Exception, match="contained"):
-        policy.resolve_artifact_path("../escape.json")
 
 
 @pytest.mark.parametrize(

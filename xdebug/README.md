@@ -288,7 +288,7 @@ AI MCP client
 | --- | --- |
 | `XVERIF_MCP_BACKEND=lsf` | 启用 LSF backend |
 | `XVERIF_LSF_BSUB` | 覆盖 `bsub` 命令，便于站点 wrapper 或测试 fake runner |
-| `XVERIF_MCP_TIMEOUT_SEC` | 单次请求超时（默认 120s） |
+| `XVERIF_MCP_TIMEOUT_SEC` | MCP one-shot CLI 调用超时（默认 360s）；session 请求使用 `XVERIF_MCP_REQUEST_TIMEOUT_SEC` |
 | `PYTHON` | 指定运行 MCP/LSF CLI wrapper 的 Python，建议使用 Python 3.11+ |
 | `XVERIF_HOME` | 指向仓库根目录，便于计算节点找到 `tools/xdebug` |
 

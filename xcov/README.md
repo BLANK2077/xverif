@@ -82,18 +82,22 @@ xverif_cov_list_actions
 xverif_cov_get_schema
 ```
 
+MCP 始终提供 coverage 工具。MCP 原样传递导出参数，不改写相对路径，
+也不自动设置 `output.allow_absolute_path`；下述原生输出目录限制仍生效。
+
 环境变量：
 
 - `VCS_HOME`：必填；URG 只允许使用规范化后的 `$VCS_HOME/bin/urg`，不会从 `PATH`
   查找或改用其它安装。
 - `VERDI_HOME`：首次 exclusion 操作时必填；pynpi/cov/npisys 必须全部来自该安装的
   `share/NPI/python`，不会接受预加载的外部同名模块。
-- `XVERIF_MCP_ENABLE_COV=0`：隐藏 coverage 工具。
 - `XVERIF_XCOV_BIN`：覆盖 xcov 可执行文件。
 - `XVERIF_XCOV_PYTHON`：覆盖 xcov Python runtime。
 - `XVERIF_XCOV_VERDI_HOME`：覆盖 `VERDI_HOME`。
 - `XVERIF_XCOV_LOG_DIR`：覆盖日志目录。
 - `XVERIF_XCOV_LOG=0`：关闭日志。
+- `XVERIF_XCOV_BRANCH_MASK_HINT`：默认 `1`，为 branch bin 添加 `branch_mask` 解释信息；
+  `0`、`false`、`no`、`off`（忽略大小写）关闭，仅影响解释信息，不改变 coverage 计数。
 - `XVERIF_XCOV_EXPORT_ROOTS`：用 `os.pathsep` 分隔的绝对既存目录；只有同时设置
   `output.allow_absolute_path=true` 且目标位于这些根目录之一时，才允许绝对导出路径。
 - `XVERIF_XCOV_CACHE_DIR`：覆盖默认 `.xverif/xcov/cache` 根目录；summary entry

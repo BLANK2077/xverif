@@ -60,6 +60,8 @@ tools/xverif_lsf_env_capture --include SITE_EDA_ROOT --force
 - `XVERIF_LSF_CLI_FAKE_LSF=0|1`，仅用于测试
 - `XVERIF_LSF_CLI_CONFIG`，覆盖默认环境配置绝对路径
 
+SDK-free 仅提供上述阶段超时；MCP one-shot 的 `XVERIF_MCP_TIMEOUT_SEC` 不控制 SDK-free 请求。
+
 布尔值只接受精确 `0|1`，timeout 只接受无首尾空白的有限正数。
 无效配置、LSF 失败、stdio-loop 失败或 cleanup 失败都不转 direct/MCP/其它
 transport。

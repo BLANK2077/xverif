@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from xverif_loop.config import (
     default_tool_path,
-    resolve_mcp_runtime_config,
+    resolve_mcp_cli_timeout,
     validate_positive_timeout,
 )
 from .errors import bad_json, bad_xout, cli_failed, tool_timeout
@@ -20,7 +20,7 @@ Json = Dict[str, Any]
 class StatelessCliRunner:
     def __init__(self, timeout_sec: Optional[float] = None) -> None:
         self.timeout_sec = (
-            resolve_mcp_runtime_config().default_timeout_sec
+            resolve_mcp_cli_timeout()
             if timeout_sec is None
             else validate_positive_timeout(timeout_sec, source="timeout_sec")
         )

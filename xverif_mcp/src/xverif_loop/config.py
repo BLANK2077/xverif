@@ -27,7 +27,6 @@ class RuntimeEnvNames:
     """The exact public environment namespace owned by one runtime."""
 
     backend: str
-    timeout: str
     startup_timeout: str
     request_timeout: str
     close_timeout: str
@@ -43,7 +42,6 @@ class RuntimeConfig:
     owner: str
     env_names: RuntimeEnvNames
     backend: str
-    default_timeout_sec: float
     startup_timeout_sec: float
     request_timeout_sec: float
     close_timeout_sec: float
@@ -92,7 +90,6 @@ class RuntimeConfig:
 
 MCP_ENV_NAMES = RuntimeEnvNames(
     backend="XVERIF_MCP_BACKEND",
-    timeout="XVERIF_MCP_TIMEOUT_SEC",
     startup_timeout="XVERIF_MCP_STARTUP_TIMEOUT_SEC",
     request_timeout="XVERIF_MCP_REQUEST_TIMEOUT_SEC",
     close_timeout="XVERIF_MCP_CLOSE_TIMEOUT_SEC",
@@ -103,7 +100,6 @@ MCP_ENV_NAMES = RuntimeEnvNames(
 
 LOOP_WRAPPER_ENV_NAMES = RuntimeEnvNames(
     backend="XVERIF_LOOP_BACKEND",
-    timeout="XVERIF_LOOP_TIMEOUT_SEC",
     startup_timeout="XVERIF_LOOP_STARTUP_TIMEOUT_SEC",
     request_timeout="XVERIF_LOOP_REQUEST_TIMEOUT_SEC",
     close_timeout="XVERIF_LOOP_CLOSE_TIMEOUT_SEC",
@@ -255,7 +251,6 @@ def _resolve_runtime_config(
             snapshot.get(names.backend, "direct"),
             source=names.backend,
         ),
-        default_timeout_sec=_env_float(snapshot, names.timeout, 360.0),
         startup_timeout_sec=_env_float(
             snapshot,
             names.startup_timeout,
@@ -331,3 +326,15 @@ def default_xcov_bin() -> str:
 
 def default_tool_path(tool: str) -> str:
     return os.path.join(repo_root(), "tools", tool)
+
+
+def resolve_mcp_cli_timeout(environ: Mapping[str, str] | None = None) -> float:
+    """Resolve the MCP-only one-shot CLI timeout when constructing its runner."""
+    return resolve_env_timeout("XVERIF_MCP_TIMEOUT_SEC", 360.0, environ)
+
+
+def resolve_env_timeout(
+    name: str, default: float, environ: Mapping[str, str] | None = None,
+) -> float:
+    """Read one finite positive timeout without whitespace or silent defaults."""
+    return _env_float(os.environ if environ is None else environ, name, default)

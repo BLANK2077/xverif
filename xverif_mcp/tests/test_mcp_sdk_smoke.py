@@ -22,7 +22,7 @@ sys.modules.pop("mcp", None)
 pytest.importorskip("mcp")
 
 
-POLICY_ENV = [
+REMOVED_ENV = [
     "XVERIF_MCP_ENABLE_COMMON",
     "XVERIF_MCP_ENABLE_DEBUG",
     "XVERIF_MCP_ENABLE_COV",
@@ -33,6 +33,9 @@ POLICY_ENV = [
     "XVERIF_MCP_ENABLE_MUTATION",
     "XVERIF_MCP_ENABLE_ARTIFACT_WRITE",
     "XVERIF_MCP_ARTIFACT_ROOT",
+]
+
+POLICY_ENV = REMOVED_ENV + [
     "XVERIF_MCP_BATCH_MAX_INPUT_BYTES",
     "XVERIF_MCP_BATCH_MAX_REQUESTS",
     "XVERIF_MCP_BATCH_MAX_OUTPUT_BYTES",
@@ -42,16 +45,9 @@ POLICY_ENV = [
 def _server(
     monkeypatch: pytest.MonkeyPatch,
     overrides: dict[str, str] | None = None,
-    *,
-    artifact_write: bool = True,
 ):
     for name in POLICY_ENV:
         monkeypatch.delenv(name, raising=False)
-    # Lifecycle tests intentionally consume the public mutation default. Tests
-    # that exercise file output opt in to the independent artifact capability.
-    if artifact_write:
-        monkeypatch.setenv("XVERIF_MCP_ENABLE_ARTIFACT_WRITE", "1")
-        monkeypatch.setenv("XVERIF_MCP_ARTIFACT_ROOT", "/tmp")
     for name, value in (overrides or {}).items():
         monkeypatch.setenv(name, value)
     if "xverif_mcp.server" in sys.modules:
@@ -95,10 +91,10 @@ def test_mcp_server_initialize(monkeypatch: pytest.MonkeyPatch):
     assert server.mcp.name == "xverif"
 
 
-def test_public_defaults_register_lifecycle_without_artifact_tools(
+def test_public_defaults_register_lifecycle_and_artifact_tools(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    server = _server(monkeypatch, artifact_write=False)
+    server = _server(monkeypatch)
 
     async def _schemas():
         return {tool.name: tool.inputSchema for tool in await server.mcp.list_tools()}
@@ -108,19 +104,17 @@ def test_public_defaults_register_lifecycle_without_artifact_tools(
     assert "xverif_debug_session_close" in schemas
     assert "xverif_cov_session_open" in schemas
     assert "xverif_cov_session_close" in schemas
-    assert "xverif_batch" not in schemas
-    assert "xverif_output_path" not in schemas["xverif_ping"]["properties"]
-    assert server.MCP_TOOL_POLICY.mutation_enabled is True
-    assert server.MCP_TOOL_POLICY.artifact_write_enabled is False
+    assert "xverif_batch" in schemas
+    assert "xverif_output_path" in schemas["xverif_ping"]["properties"]
+    assert set(server.MCP_TOOL_POLICY.summary()) == {"batch_limits"}
 
 
 def test_public_defaults_bind_session_open_without_mutation_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    server = _server(monkeypatch, artifact_write=False)
+    server = _server(monkeypatch)
     tool = server.mcp._tool_manager.get_tool("xverif_debug_session_open")
 
-    assert server.MCP_TOOL_POLICY.mutation_enabled is True
     assert tool is not None
     assert tool.fn is server.xverif_debug_session_open
 
@@ -455,46 +449,21 @@ def test_debug_list_actions_forwards_catalog_filters(
                       "keyword": "AXI"}]
 
 
-def test_tool_group_disable_sva(monkeypatch: pytest.MonkeyPatch):
-    env = {"XVERIF_MCP_ENABLE_SVA": "0"}
-    names = _tool_names(monkeypatch, env)
-    assert "xverif_sva_explain_property" not in names
-    assert "xverif_debug_query" in names
-
-    server = _server(monkeypatch, env)
-    guide = (
-        "xdebug actions: 1. Select one, then query its schema.\n"
-        "actions: List the public xdebug action catalog."
-    )
-    server.debug.actions = lambda **kwargs: {
-        "ok": True,
-        "summary": {
-            "action_count": 1,
-            "view": "guide",
-            "guide_bytes": len(guide),
-            "guide_limit_bytes": 10_000,
-        },
-        "data": {"guide": guide},
-    }
-    content, _ = _call_server_tool(server, "xverif_tools")
-    assert "actions: List the public xdebug action catalog." in content[0].text
-
-
-def test_tool_group_disable_debug(monkeypatch: pytest.MonkeyPatch):
-    names = _tool_names(monkeypatch, {"XVERIF_MCP_ENABLE_DEBUG": "0"})
-    assert "xverif_debug_query" not in names
-    assert "xverif_debug_session_open" not in names
-    assert "xverif_wave_value_at" not in names
-    assert "xverif_waveform_render_list" not in names
-    assert "xverif_cov_query" in names
-    assert "xverif_bit_eval" in names
-
-
-def test_tool_group_disable_cov(monkeypatch: pytest.MonkeyPatch):
-    names = _tool_names(monkeypatch, {"XVERIF_MCP_ENABLE_COV": "0"})
-    assert "xverif_cov_query" not in names
-    assert "xverif_cov_session_open" not in names
-    assert "xverif_debug_query" in names
+@pytest.mark.parametrize("env_name", REMOVED_ENV)
+@pytest.mark.parametrize("value", ["0", "1", "invalid", ""])
+def test_removed_env_does_not_change_tools_or_schemas(monkeypatch, env_name, value):
+    def schemas(server):
+        async def read():
+            return {tool.name: tool.inputSchema for tool in await server.mcp.list_tools()}
+        return anyio.run(read)
+    expected = schemas(_server(monkeypatch))
+    actual = schemas(_server(monkeypatch, {env_name: value}))
+    assert actual == expected
+    assert {"xverif_ping", "xverif_debug_query", "xverif_cov_query", "xverif_batch",
+            "xverif_bit_eval", "xverif_entry_decode", "xverif_loc_resolve",
+            "xverif_sva_explain_property"} <= actual.keys()
+    for schema in actual.values():
+        assert {"xverif_output_path", "xverif_output_append"} <= schema["properties"].keys()
 
 
 def _resolve_smoke_test_vdb() -> str:
@@ -555,71 +524,8 @@ def test_cov_session_real_lifecycle(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.mark.parametrize(
-    ("env_name", "missing", "present"),
-    [
-        ("XVERIF_MCP_ENABLE_BIT", "xverif_bit_eval", "xverif_entry_decode"),
-        ("XVERIF_MCP_ENABLE_ENTRY", "xverif_entry_decode", "xverif_bit_eval"),
-        ("XVERIF_MCP_ENABLE_LOC", "xverif_loc_resolve", "xverif_bit_eval"),
-    ],
-)
-def test_tool_group_disable_stateless_groups(
-    monkeypatch: pytest.MonkeyPatch,
-    env_name: str,
-    missing: str,
-    present: str,
-):
-    names = _tool_names(monkeypatch, {env_name: "0"})
-    assert missing not in names
-    assert present in names
-
-
-def test_tool_group_disable_common(monkeypatch: pytest.MonkeyPatch):
-    names = _tool_names(monkeypatch, {"XVERIF_MCP_ENABLE_COMMON": "0"})
-    assert "xverif_ping" not in names
-    assert "xverif_tools" not in names
-    assert "xverif_tool_help" not in names
-    assert "xverif_debug_query" in names
-
-
-def test_explicit_read_only_policy_hides_fixed_write_tools(monkeypatch: pytest.MonkeyPatch):
-    names = _tool_names(monkeypatch, {
-        "XVERIF_MCP_ENABLE_MUTATION": "0",
-        "XVERIF_MCP_ENABLE_ARTIFACT_WRITE": "0",
-    })
-    assert "xverif_ping" in names
-    assert "xverif_debug_query" in names
-    assert "xverif_cov_query" in names
-    assert "xverif_debug_session_open" not in names
-    assert "xverif_cov_session_close" not in names
-    assert "xverif_batch" not in names
-
-    server = _server(monkeypatch, {
-        "XVERIF_MCP_ENABLE_MUTATION": "0",
-        "XVERIF_MCP_ENABLE_ARTIFACT_WRITE": "0",
-    })
-
-    async def _run():
-        tools = await server.mcp.list_tools()
-        ping = next(tool for tool in tools if tool.name == "xverif_ping")
-        assert "xverif_output_path" not in ping.inputSchema.get("properties", {})
-
-    anyio.run(_run)
-
-
-def test_invalid_bool_policy_fails_closed_with_typed_config_error(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    from xverif_loop.config import ConfigError
-
-    with pytest.raises(ConfigError, match="XVERIF_MCP_ENABLE_SVA"):
-        _server(monkeypatch, {"XVERIF_MCP_ENABLE_SVA": "maybe"})
-
-
-@pytest.mark.parametrize(
     ("env_name", "invalid"),
     [
-        ("XVERIF_MCP_ENABLE_MUTATION", "yes"),
-        ("XVERIF_MCP_ENABLE_ARTIFACT_WRITE", "yes"),
         ("XVERIF_MCP_BATCH_MAX_INPUT_BYTES", "0"),
         ("XVERIF_MCP_BATCH_MAX_REQUESTS", "-1"),
         ("XVERIF_MCP_BATCH_MAX_OUTPUT_BYTES", "many"),
@@ -636,99 +542,47 @@ def test_new_policy_environment_errors_fail_server_initialization(
         _server(
             monkeypatch,
             {env_name: invalid},
-            artifact_write=False,
         )
 
 
-def test_artifact_write_without_root_fails_server_initialization(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from xverif_loop.config import ConfigError
-
-    with pytest.raises(ConfigError, match="XVERIF_MCP_ARTIFACT_ROOT"):
-        _server(
-            monkeypatch,
-            {"XVERIF_MCP_ENABLE_ARTIFACT_WRITE": "1"},
-            artifact_write=False,
-        )
-
-
-def test_read_only_policy_rejects_dynamic_mutation(monkeypatch: pytest.MonkeyPatch):
-    content, _ = _call_tool(
-        monkeypatch,
-        "xverif_debug_query",
-        {
-            "session_id": "s0",
-            "action": "apb.config.load",
-            "args": {"name": "apb0", "config": {}},
-        },
-        {"XVERIF_MCP_ENABLE_MUTATION": "0"},
-    )
-    payload = json.loads(content[0].text)
-    assert payload["ok"] is False
-    assert payload["error"]["code"] == "MCP_MUTATION_DISABLED"
-    assert payload["error"]["action"] == "apb.config.load"
-
-
-def test_artifact_policy_rewrites_relative_action_path(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    server = _server(monkeypatch, {
-        "XVERIF_MCP_ENABLE_ARTIFACT_WRITE": "1",
-        "XVERIF_MCP_ARTIFACT_ROOT": str(tmp_path),
+@pytest.mark.parametrize(
+    ("backend", "action", "args"),
+    [
+        ("debug", "apb.config.load", {"name": "apb0", "config": {}}),
+        ("debug", "apb.export", {"name": "apb0", "output": {"path": "exports/apb0"}}),
+        ("debug", "batch", {"requests": [
+            {"action": "apb.export", "args": {"output": {"path": "../export"}}}]}),
+        ("cov", "exclude.add", {"name": "exclusion"}),
+        ("cov", "export.assert", {"output": {"path": "/outside/report.md"}}),
+        ("cov", "export.assert", {"output": {"path": "relative-report"}}),
+        ("cov", "export.assert", {"output": {"path": "/outside", "allow_absolute_path": True}}),
+        ("cov", "exclude.csv.compile", {"output_directory": "compiled"}),
+        ("cov", "exclude.csv.export", {"directory": "csv"}),
+        ("cov", "exclude.csv.format", {"directory": "formatted", "write": True}),
+    ],
+)
+def test_actions_reach_backend_without_policy_or_path_rewrite(monkeypatch, backend, action, args):
+    server = _server(monkeypatch, {name: "0" for name in REMOVED_ENV})
+    calls = []
+    adapter = server.debug if backend == "debug" else server.cov
+    monkeypatch.setattr(adapter, "query_one_shot" if action == "batch" else "query",
+                        lambda **kwargs: calls.append(kwargs) or {"ok": True})
+    content, _ = _call_server_tool(server, f"xverif_{backend}_query", {
+        **({} if action == "batch" else {"session_id": "s0"}),
+        "action": action, "args": args, "output_format": "json",
     })
-    monkeypatch.setattr(server.debug, "query", lambda **kwargs: kwargs)
-    content, _ = _call_server_tool(
-        server,
-        "xverif_debug_query",
-        {
-            "session_id": "s0",
-            "action": "apb.export",
-            "args": {
-                "name": "apb0",
-                "time_range": {"begin": "0ns", "end": "1ns"},
-                "output": {"path": "exports/apb0"},
-            },
-            "output_format": "json",
-        },
-    )
+    assert json.loads(content[0].text)["ok"] is True
+    assert len(calls) == 1
+    assert calls[0]["args"] == args
+
+
+def test_tool_help_has_only_resource_policy(monkeypatch):
+    content, _ = _call_tool(monkeypatch, "xverif_tool_help",
+                           {"name": "xverif_sva_explain_property"})
     payload = json.loads(content[0].text)
-    assert payload["args"]["output"]["path"] == str(tmp_path / "exports/apb0")
-
-
-def test_artifact_policy_rejects_path_outside_root(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    content, _ = _call_tool(
-        monkeypatch,
-        "xverif_cov_query",
-        {
-            "session_id": "s0",
-            "action": "export.assert",
-            "args": {"output": {"path": "/outside/report.md"}},
-        },
-        {
-            "XVERIF_MCP_ENABLE_ARTIFACT_WRITE": "1",
-            "XVERIF_MCP_ARTIFACT_ROOT": str(tmp_path),
-        },
-    )
-    payload = json.loads(content[0].text)
-    assert payload["ok"] is False
-    assert payload["error"]["code"] == "MCP_ARTIFACT_WRITE_DISABLED"
-
-
-def test_tool_help_disabled_tool_is_hidden(monkeypatch: pytest.MonkeyPatch):
-    content, _ = _call_tool(
-        monkeypatch,
-        "xverif_tool_help",
-        {"name": "xverif_sva_explain_property"},
-        {"XVERIF_MCP_ENABLE_SVA": "0"},
-    )
-    payload = json.loads(content[0].text)
-    assert payload["ok"] is False
-    assert payload["error"]["code"] == "TOOL_NOT_ENABLED"
+    assert payload["ok"] is True
+    assert set(payload["policy"]) == {"batch_limits"}
+    assert {"group", "mutation", "artifact_write"} <= payload["tool"].keys()
 
 
 def test_output_path_in_tool_schema(monkeypatch: pytest.MonkeyPatch):
@@ -786,8 +640,8 @@ def test_output_path_invalid_dir_returns_structured_failure(monkeypatch: pytest.
     assert content.isError is True
     payload = json.loads(content.content[0].text)
     assert payload["ok"] is False
-    assert payload["error"]["code"] == "MCP_ARTIFACT_WRITE_DISABLED"
-    assert payload["error"]["requested_path"] == "/nonexistent/dir/rsp.txt"
+    assert payload["error"]["code"] == "OUTPUT_WRITE_FAILED"
+    assert payload["error"]["output_path"] == "/nonexistent/dir/rsp.txt"
     assert "data" not in payload
     assert content.structuredContent is None
 
@@ -1028,3 +882,50 @@ def test_batch_input_and_output_byte_budgets_leave_no_partial_artifact(
     assert payload["error"]["code"] == "BATCH_OUTPUT_LIMIT_EXCEEDED"
     assert not output_file.exists()
     assert not list(tmp_path.glob(".output.ndjson.stage-*"))
+
+@pytest.mark.parametrize("path", ["", " ", " bad", "bad ", "bad\0path"])
+def test_invalid_output_path_is_a_write_failure(monkeypatch, path):
+    content, _ = _call_tool(monkeypatch, "xverif_ping", {"xverif_output_path": path})
+    assert content.isError
+    assert json.loads(content.content[0].text)["error"]["code"] == "OUTPUT_WRITE_FAILED"
+
+
+def test_relative_output_overwrites_in_server_cwd(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / "response.txt"
+    target.write_text("old output")
+    _call_tool(monkeypatch, "xverif_ping", {"xverif_output_path": "response.txt"},
+               {name: "invalid" for name in REMOVED_ENV})
+    assert "pong" in target.read_text()
+    assert "old output" not in target.read_text()
+
+
+def test_relative_batch_output_uses_server_cwd(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "requests.ndjson").write_text('{"tool":"xverif_ping","args":{}}\n')
+    content, _ = _call_tool(monkeypatch, "xverif_batch", {
+        "batch_file": "requests.ndjson", "output_file": "results.ndjson",
+    })
+    assert json.loads(content[0].text)["ok"] is True
+    assert json.loads((tmp_path / "results.ndjson").read_text())["ok"] is True
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_output_serialization_failure_preserves_existing_file(monkeypatch, tmp_path, asynchronous):
+    server = _server(monkeypatch)
+    def result():
+        return {"unserializable": object()}
+    async def async_result():
+        return result()
+    wrapped = server._wrap_with_output(async_result if asynchronous else result)
+    target = tmp_path / "existing.txt"
+    target.write_text("preserve")
+    if asynchronous:
+        async def call():
+            return await wrapped(xverif_output_path=str(target))
+        response = anyio.run(call)
+    else:
+        response = wrapped(xverif_output_path=str(target))
+    assert response.isError
+    assert json.loads(response.content[0].text)["error"]["code"] == "OUTPUT_SERIALIZATION_FAILED"
+    assert target.read_text() == "preserve"

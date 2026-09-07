@@ -70,12 +70,6 @@ def _load_server(
     monkeypatch.setenv("XVERIF_MCP_BACKEND", backend)
     monkeypatch.setenv("XVERIF_MCP_STARTUP_TIMEOUT_SEC", "30")
     monkeypatch.setenv("XVERIF_MCP_REQUEST_TIMEOUT_SEC", "60")
-    monkeypatch.setenv("XVERIF_MCP_ENABLE_MUTATION", "1")
-    monkeypatch.setenv("XVERIF_MCP_ENABLE_ARTIFACT_WRITE", "1")
-    monkeypatch.setenv(
-        "XVERIF_MCP_ARTIFACT_ROOT",
-        str(isolated_home.parent),
-    )
     pythonpath = str(MCP_SRC)
     if os.environ.get("PYTHONPATH"):
         pythonpath += os.pathsep + os.environ["PYTHONPATH"]

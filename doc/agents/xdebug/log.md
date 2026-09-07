@@ -1,5 +1,11 @@
 # xdebug 架构说明书维护日志
 
+## 2026-09-07 MCP 环境配置清理
+
+- MCP 始终注册全部工具并提供状态修改、通用输出和 batch；移除工具权限判断与输出根目录限制。
+- 下游 action 输出参数原样传递，保留原生路径校验及 managed session guard。
+- SDK-free 删除无效通用超时；MCP one-shot 默认 360 秒独立读取，阶段超时继续严格校验。
+
 ## 2026-09-04
 
 - 统一 XOUT 第一段的 summary 投影：补齐 canonical output path、session identity、范围与

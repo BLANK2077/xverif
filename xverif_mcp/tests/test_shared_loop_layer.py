@@ -339,7 +339,6 @@ def test_backend_config_is_exact_and_typed(monkeypatch, value: str) -> None:
 @pytest.mark.parametrize(
     ("field_name", "env_name"),
     [
-        ("default_timeout_sec", "XVERIF_MCP_TIMEOUT_SEC"),
         ("startup_timeout_sec", "XVERIF_MCP_STARTUP_TIMEOUT_SEC"),
         ("request_timeout_sec", "XVERIF_MCP_REQUEST_TIMEOUT_SEC"),
         ("close_timeout_sec", "XVERIF_MCP_CLOSE_TIMEOUT_SEC"),
@@ -1025,3 +1024,75 @@ def test_manager_never_downgrades_a_closed_tombstone(
     assert "precedence_case" not in manager.sessions
     assert manager.tombstones["precedence_case"] is closed
     assert manager.tombstones["precedence_case"].state == "closed"
+
+@pytest.mark.parametrize("value", ["", "0", "-1", "nan", "inf", " 1", "1 ", "bad"])
+def test_mcp_one_shot_timeout_is_strict(value, monkeypatch):
+    from xverif_loop.config import ConfigError
+    from xverif_mcp.runner import StatelessCliRunner
+    monkeypatch.setenv("XVERIF_MCP_TIMEOUT_SEC", value)
+    with pytest.raises(ConfigError, match="XVERIF_MCP_TIMEOUT_SEC"):
+        StatelessCliRunner()
+
+
+def test_mcp_one_shot_timeout_is_independent(monkeypatch):
+    from xverif_mcp.runner import StatelessCliRunner
+    monkeypatch.delenv("XVERIF_MCP_TIMEOUT_SEC", raising=False)
+    assert StatelessCliRunner().timeout_sec == 360
+    monkeypatch.setenv("XVERIF_MCP_REQUEST_TIMEOUT_SEC", "7")
+    monkeypatch.setenv("XVERIF_MCP_TIMEOUT_SEC", "23")
+    assert StatelessCliRunner().timeout_sec == 23
+
+
+@pytest.mark.parametrize("value", ["0", "invalid", ""])
+def test_removed_sdk_free_timeouts_have_no_effect(monkeypatch, value):
+    monkeypatch.setattr(os, "environ", dict(os.environ))
+    from xverif_loop.config import resolve_loop_wrapper_runtime_config
+    from xverif_loop.native_cli import _configure_lsf_environment
+    monkeypatch.setenv("XVERIF_LSF_CLI_TIMEOUT_SEC", value)
+    monkeypatch.setenv("XVERIF_LOOP_TIMEOUT_SEC", value)
+    expected = resolve_loop_wrapper_runtime_config()
+    _configure_lsf_environment()
+    actual = resolve_loop_wrapper_runtime_config()
+    assert not hasattr(actual, "default_timeout_sec")
+    assert actual.request_timeout_sec == expected.request_timeout_sec
+
+
+@pytest.mark.parametrize("value", ["", "0", "-1", "nan", "inf", " 1", "1 ", "bad"])
+def test_sdk_free_idle_timeout_is_strict(monkeypatch, value):
+    from xverif_loop.config import ConfigError
+    from xverif_loop.native_cli import _idle_timeout
+    monkeypatch.setenv("XVERIF_LSF_CLI_IDLE_TIMEOUT_SEC", value)
+    with pytest.raises(ConfigError, match="XVERIF_LSF_CLI_IDLE_TIMEOUT_SEC"):
+        _idle_timeout()
+
+@pytest.mark.parametrize("value", ["", "0", "-1", "nan", "inf", " 1", "1 ", "bad"])
+@pytest.mark.parametrize("phase", ["STARTUP", "REQUEST"])
+def test_sdk_free_invalid_timeout_does_not_start_manager(monkeypatch, phase, value):
+    monkeypatch.setattr(os, "environ", dict(os.environ))
+    from xverif_loop import native_cli
+    from xverif_loop.config import ConfigError
+    name = f"XVERIF_LSF_CLI_{phase}_TIMEOUT_SEC"
+    monkeypatch.setenv(name, value)
+    monkeypatch.setattr(native_cli, "_manager_status",
+                        lambda *args: pytest.fail("must validate before contacting manager"))
+    with pytest.raises(ConfigError, match=name):
+        if phase == "STARTUP":
+            native_cli._ensure_manager("/unused.sock")
+        else:
+            native_cli._run_native_request("xdebug", {"action": "actions"}, "json")
+
+
+@pytest.mark.parametrize("phase", ["STARTUP", "REQUEST", "CLOSE", "BKILL"])
+def test_sdk_free_stage_timeouts_remain_independent(monkeypatch, phase):
+    monkeypatch.setattr(os, "environ", dict(os.environ))
+    from xverif_loop import config, native_cli
+    for candidate in ["STARTUP", "REQUEST", "CLOSE", "BKILL"]:
+        monkeypatch.delenv(f"XVERIF_LSF_CLI_{candidate}_TIMEOUT_SEC", raising=False)
+        monkeypatch.delenv(f"XVERIF_LOOP_{candidate}_TIMEOUT_SEC", raising=False)
+    monkeypatch.setenv(f"XVERIF_LSF_CLI_{phase}_TIMEOUT_SEC", "17.5")
+    native_cli._configure_lsf_environment()
+    runtime = config.resolve_loop_wrapper_runtime_config()
+    for candidate, default in [("STARTUP", 180), ("REQUEST", 360), ("CLOSE", 30), ("BKILL", 30)]:
+        assert getattr(runtime, candidate.lower() + "_timeout_sec") == (
+            17.5 if candidate == phase else default
+        )

@@ -445,3 +445,9 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 - 错误现象：为定位 xsimdebug 文档行号，在双引号 `rg` 模式中包含 Markdown 反引号，shell 把其中的 `-l` 和 `-k` 当成命令替换执行。
 - 误判原因：组合多个搜索词时再次忽略了仓库已有的反引号搜索规则。
 - 以后规则：所有包含 Markdown 反引号的搜索模式一律使用单引号；只为组合多个 pattern 时使用多个 `-e`，不改用双引号包裹反引号。
+
+### 2026-09-07 环境错误复盘
+
+- 错误现象：新增 SDK-free timeout 单元测试调用环境映射函数后，将非法 XVERIF_LOOP_REQUEST_TIMEOUT_SEC 留在 pytest 进程，导致后续四项 session guard 检查失败。
+- 误判原因：只用 monkeypatch 管理公开变量，忽略被测函数直接向 os.environ 写入内部变量，teardown 不会自动撤销这些写入。
+- 以后规则：测试会捕获、映射或发布环境变量的函数时，先用 monkeypatch 将 os.environ 替换为独立副本；不能只跟踪输入变量而让派生变量跨测试泄漏。

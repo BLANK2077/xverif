@@ -1,5 +1,9 @@
 # xverif 八项 Review 问题修复计划与执行账本
 
+> 历史记录：本文的 MCP 工具权限开关和 artifact root 方案已由
+> [2026-09-07 清理计划](MCP_ENVIRONMENT_CLEANUP_PLAN_2026-09-07.md) 取代。
+> 旧环境变量仅保留作历史证据，当前配置与迁移以 [MCP README](../xverif_mcp/README.md) 为准。
+
 ## 1. 任务状态
 
 - 日期：2026-08-16

@@ -46,6 +46,32 @@
 ## 进度
 
 - 计划阶段：已完成代码追踪、19 份 README 交叉检索、删除与兼容策略确认、regression/nightly gate plan 核对。
-- 阶段 1：计划已落盘，待提交并建立 goal。
-- 阶段 2：待实现。
-- 阶段 3：待验收。
+- 阶段 1：已提交计划 `5a5f452`，随后建立执行 goal。
+- 阶段 2：实现、关联测试、README 和 xverif-admin references 已完成；正式矩阵合计 514 项全部通过，待提交。
+- 阶段 3：真实数据库验证已通过，待 skill 安装与最终记录提交。
+
+## 实现与检查记录
+
+- 生产 Python 中不再读取 10 个 MCP 权限/目录变量及 2 个 SDK-free 通用超时；只保留资源限制、有效超时和调度配置。
+- 删除 action_capabilities.py；保留 managed native lifecycle guard、工具描述性元数据、batch 三项上限和原子 no-clobber 合同。
+- MCP 工具帮助 policy 仅含 batch_limits；所有工具均公开通用输出参数。无效路径返回 OUTPUT_WRITE_FAILED，序列化失败不覆盖既有输出。
+- xcov 原生参数原样转发，真实测试覆盖相对路径使用原生导出根目录、绝对路径无显式许可被拒绝、有许可成功。
+- 已核对 skills/xverif-admin/SKILL.md 与 agents/openai.yaml：入口和路由说明仍适用，无需修改；更新三个 references。skills/xverif 主文件和相关输出说明无需修改，正式 suite 已覆盖。
+- 旧变量残留仅在删除行为测试、当前迁移说明及历史计划中；两份历史计划新增已被本计划取代的声明，不重写历史证据。
+- 原生 action/schema、fixture/catalog 和 C++ 源码均未修改；按已确认计划运行 focused 矩阵，不执行全仓 clean build 或 fixture prepare。
+
+## 验证记录
+
+| 检查 | 结果 | 证据目录 |
+| --- | --- | --- |
+| MCP unit 修复后重跑 | 245 passed | .xverif-test-results/20260907-104302-9r8zlq70 |
+| SDK-free 真实数据、action smoke、xdebug direct/fake LSF | 9 passed | .xverif-test-results/20260907-104339-_0mcdv2_ |
+| xcov MCP integration、真实 MCP stdio fullchain | 19 passed | .xverif-test-results/20260907-104429-3scj1n6z |
+| 最终 unit/process/runtime package/skill/public docs 组合 | 486 passed | .xverif-test-results/20260907-104601-6kgk6ol_ |
+
+所有上述进程与数据库检查均在 host 运行并显式设置 XVERIF_TEST_EXECUTION_ENV=host；缓存全部可用，没有 VCS fixture 重建或测试降级。
+
+早期失败均已定位修正：
+1. 新增 native batch 转发用例误带 session_id，按原生 requires:none 合同改为 one-shot 调用。
+2. 新增 SDK-free timeout 测试泄漏内部环境变量；改用独立 os.environ 副本，并在 AGENTS.md 追加复盘。
+3. 新增 coverage 拒绝用例误从顶层 error 取码；真实 xcov 失败保留 transport envelope，改为精确断言 json.error.code。

@@ -4,7 +4,7 @@
 需要 Verdi/VCS 环境和有效的 coverage VDB。
 
 运行方式：
-  XVERIF_TEST_EXECUTION_ENV=host pytest --xverif-gate regression \\
+  XVERIF_TEST_EXECUTION_ENV=host pytest --xverif-gate nightly \\
       --xverif-suite xcov.mcp_integration -v
 """
 
@@ -30,28 +30,9 @@ sys.path = [
 sys.modules.pop("mcp", None)
 pytest.importorskip("mcp")
 
-POLICY_ENV = [
-    "XVERIF_MCP_ENABLE_COMMON",
-    "XVERIF_MCP_ENABLE_DEBUG",
-    "XVERIF_MCP_ENABLE_COV",
-    "XVERIF_MCP_ENABLE_BIT",
-    "XVERIF_MCP_ENABLE_ENTRY",
-    "XVERIF_MCP_ENABLE_LOC",
-    "XVERIF_MCP_ENABLE_SVA",
-    "XVERIF_MCP_ENABLE_MUTATION",
-    "XVERIF_MCP_ENABLE_ARTIFACT_WRITE",
-    "XVERIF_MCP_ARTIFACT_ROOT",
-]
-
 
 def _server(monkeypatch, overrides=None):
-    for name in POLICY_ENV:
-        monkeypatch.delenv(name, raising=False)
     resolved_overrides = overrides or {}
-    export_roots = resolved_overrides.get("XVERIF_XCOV_EXPORT_ROOTS")
-    if export_roots:
-        monkeypatch.setenv("XVERIF_MCP_ENABLE_ARTIFACT_WRITE", "1")
-        monkeypatch.setenv("XVERIF_MCP_ARTIFACT_ROOT", export_roots)
     for name, value in resolved_overrides.items():
         monkeypatch.setenv(name, value)
     if "xverif_mcp.server" in sys.modules:
@@ -379,6 +360,18 @@ def test_cov_export_code_coverage(monkeypatch, test_vdb, xverif_home, tmp_path):
     })
 
     output_dir = str(tmp_path / "export_code")
+    denied, _ = _call_tool(server, "xverif_cov_query", {
+        "session_id": "mcp_int_export",
+        "action": "export.code_coverage",
+        "args": {"scopes": ["top.u_core0"], "metrics": ["line"],
+                 "output": {"path": output_dir}},
+        "output_format": "json",
+    })
+    denied_payload = json.loads(denied[0].text)
+    assert denied_payload["ok"] is False
+    assert denied_payload["json"]["error"]["code"] == "OUTPUT_PATH_UNSAFE"
+    assert not Path(output_dir).exists()
+
     content, _ = _call_tool(server, "xverif_cov_query", {
         "session_id": "mcp_int_export",
         "action": "export.code_coverage",
@@ -707,3 +700,34 @@ def test_cov_exclude_remove_rejects_removed_selector(monkeypatch, exclusion_vdb,
         "session_id": "mcp_excl_rm",
         "confirm_discard_reasons": True,
     })
+
+
+def test_cov_relative_export_uses_native_root(monkeypatch, test_vdb, xverif_home, tmp_path):
+    """MCP preserves relative paths; native xcov chooses its export root."""
+    cache = os.environ.get("XVERIF_XCOV_CACHE_DIR") or str(
+        Path.cwd() / ".xverif" / "xcov" / "cache"
+    )
+    monkeypatch.chdir(tmp_path)
+    server = _server(monkeypatch, {
+        "XVERIF_HOME": xverif_home, "XVERIF_MCP_BACKEND": "direct",
+        "XVERIF_XCOV_CACHE_DIR": cache,
+    })
+    opened, _ = _call_tool(server, "xverif_cov_session_open", {
+        "name": "native_relative", "vdb": test_vdb,
+    })
+    assert json.loads(opened[0].text)["ok"] is True
+    try:
+        content, _ = _call_tool(server, "xverif_cov_query", {
+            "session_id": "native_relative", "action": "export.code_coverage",
+            "args": {"scopes": ["top.u_core0"], "metrics": ["line"],
+                     "output": {"path": "relative-code"}},
+            "output_format": "json",
+        })
+        payload = json.loads(content[0].text)
+        assert payload["ok"] is True, payload
+        assert Path(payload["summary"]["output_dir"]).is_relative_to(
+            tmp_path / ".xverif" / "xcov_exports" / "relative-code"
+        )
+        assert not (tmp_path / "relative-code").exists()
+    finally:
+        _call_tool(server, "xverif_cov_session_close", {"session_id": "native_relative"})

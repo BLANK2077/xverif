@@ -5,7 +5,6 @@ import json
 import os
 import tempfile
 import time
-from copy import deepcopy
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal, Optional
@@ -14,7 +13,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import CallToolResult, TextContent
 from pydantic import Field
 
-from xverif_loop.config import ConfigError, resolve_mcp_runtime_config
+from xverif_loop.config import resolve_mcp_runtime_config
 from xverif_loop.json_contract import strict_json_dumps
 from xverif_loop.logging import resolve_logger
 from xverif_mcp.import_paths import ensure_tool_import_paths
@@ -27,10 +26,9 @@ from xverif_mcp.adapters.xbit import bit_conv, bit_eval, bit_slice, bit_check
 from xverif_mcp.adapters.xentry import entry_decode, entry_explain, entry_validate
 from xverif_mcp.adapters.xloc import loc_resolve, loc_context, loc_stats, loc_annotate
 from xverif_mcp.adapters.xsva import sva_list, sva_scan, sva_parse, sva_explain
-from xverif_mcp.action_capabilities import xcov_capability, xdebug_capability
 from xverif_mcp.errors import error_payload
 from xverif_mcp.framing import strict_json_loads, validate_xout_text
-from xverif_mcp.tool_policy import filtered_catalog, resolve_tool_policy
+from xverif_mcp.tool_policy import resolve_tool_policy
 from xverif_loop.xdebug_errors import (
     forbidden_native_session_error,
     is_forbidden_native_session_action,
@@ -110,7 +108,7 @@ def _write_output(result: Any, path: str, append: bool) -> None:
         f.write(encoded)
 
 
-def _output_write_failed(result: Any, path: str, exc: OSError) -> CallToolResult:
+def _output_write_failed(result: Any, path: str, exc: Exception) -> CallToolResult:
     payload = _tool_error(
         "OUTPUT_WRITE_FAILED",
         f"cannot write MCP tool output to {path}: {exc}",
@@ -136,50 +134,27 @@ def _output_serialization_failed(path: str, exc: Exception) -> CallToolResult:
     )
 
 
-def _artifact_policy_error(action: str, raw_path: str | None = None) -> dict:
-    extra: dict[str, Any] = {
-        "capability": "artifact_write",
-        "action": action,
-        "recoverable": True,
-        "error_layer": "mcp_policy",
-    }
-    if raw_path is not None:
-        extra["requested_path"] = raw_path
-    return _tool_error(
-        "MCP_ARTIFACT_WRITE_DISABLED",
-        "artifact writing is disabled or the requested path is outside XVERIF_MCP_ARTIFACT_ROOT",
-        **extra,
-    )
+def _resolve_output_path(raw_path: Any) -> str:
+    """Resolve an explicit MCP-owned output relative to the server cwd."""
+    if not isinstance(raw_path, str) or not raw_path or raw_path != raw_path.strip():
+        raise ValueError("output path must be a non-empty string without surrounding whitespace")
+    if "\x00" in raw_path:
+        raise ValueError("output path must not contain NUL")
+    return str(Path(raw_path).absolute())
 
 
-def _mutation_policy_error(action: str) -> dict:
-    return _tool_error(
-        "MCP_MUTATION_DISABLED",
-        "state mutation is disabled; set XVERIF_MCP_ENABLE_MUTATION=1 to enable it",
-        capability="mutation",
-        action=action,
-        recoverable=True,
-        error_layer="mcp_policy",
-    )
-
-
-def _policy_call_result(payload: dict) -> CallToolResult:
-    return CallToolResult(
-        content=[TextContent(
-            type="text",
-            text=strict_json_dumps(payload, ensure_ascii=False),
-        )],
-        isError=True,
-    )
-
-
-def _resolve_policy_artifact_path(action: str, raw_path: Any) -> tuple[str | None, dict | None]:
-    if not MCP_TOOL_POLICY.artifact_write_enabled:
-        return None, _artifact_policy_error(action, str(raw_path) if raw_path is not None else None)
+def _write_tool_output(result: Any, path: Any, append: bool) -> Any:
     try:
-        return str(MCP_TOOL_POLICY.resolve_artifact_path(raw_path)), None
-    except ConfigError:
-        return None, _artifact_policy_error(action, str(raw_path) if raw_path is not None else None)
+        resolved = _resolve_output_path(path)
+    except (TypeError, ValueError, OSError) as exc:
+        return _output_write_failed(result, str(path), exc)
+    try:
+        _write_output(result, resolved, append)
+    except OSError as exc:
+        return _output_write_failed(result, resolved, exc)
+    except (TypeError, ValueError) as exc:
+        return _output_serialization_failed(resolved, exc)
+    return result
 
 
 def _wrap_with_output(fn):
@@ -200,34 +175,16 @@ def _wrap_with_output(fn):
             output_path = kwargs.pop("xverif_output_path", None)
             output_append = kwargs.pop("xverif_output_append", False)
             result = await fn(*args, **kwargs)
-            if output_path:
-                resolved, policy_error = _resolve_policy_artifact_path(fn.__name__, output_path)
-                if policy_error is not None:
-                    return _policy_call_result(policy_error)
-                assert resolved is not None
-                try:
-                    _write_output(result, resolved, output_append)
-                except OSError as exc:
-                    return _output_write_failed(result, resolved, exc)
-                except (TypeError, ValueError) as exc:
-                    return _output_serialization_failed(resolved, exc)
+            if output_path is not None:
+                return _write_tool_output(result, output_path, output_append)
             return result
     else:
         def wrapper(*args, **kwargs):
             output_path = kwargs.pop("xverif_output_path", None)
             output_append = kwargs.pop("xverif_output_append", False)
             result = fn(*args, **kwargs)
-            if output_path:
-                resolved, policy_error = _resolve_policy_artifact_path(fn.__name__, output_path)
-                if policy_error is not None:
-                    return _policy_call_result(policy_error)
-                assert resolved is not None
-                try:
-                    _write_output(result, resolved, output_append)
-                except OSError as exc:
-                    return _output_write_failed(result, resolved, exc)
-                except (TypeError, ValueError) as exc:
-                    return _output_serialization_failed(resolved, exc)
+            if output_path is not None:
+                return _write_tool_output(result, output_path, output_append)
             return result
 
     wrapper.__signature__ = new_sig
@@ -243,26 +200,19 @@ def xverif_tool(
     mutation: bool = False,
     artifact_write: bool = False,
 ):
-    """Conditionally register a FastMCP tool according to env policy."""
+    """Register a tool; group and effect labels describe its behavior only."""
     def decorator(fn):
-        if MCP_TOOL_POLICY.artifact_write_enabled:
-            fn = _wrap_with_output(fn)
-        if MCP_TOOL_POLICY.tool_enabled(
-            group,
-            mutation=mutation,
-            artifact_write=artifact_write,
-        ):
-            registered = mcp.tool()(fn)
-            tool = mcp._tool_manager.get_tool(fn.__name__)
-            if tool is None:  # pragma: no cover
-                raise RuntimeError(f"registered MCP tool not found: {fn.__name__}")
-            arg_model = tool.fn_metadata.arg_model
-            arg_model.model_config["extra"] = "forbid"
-            arg_model.model_config["strict"] = True
-            arg_model.model_rebuild(force=True)
-            tool.parameters = arg_model.model_json_schema(by_alias=True)
-            return registered
-        return fn
+        fn = _wrap_with_output(fn)
+        registered = mcp.tool()(fn)
+        tool = mcp._tool_manager.get_tool(fn.__name__)
+        if tool is None:  # pragma: no cover
+            raise RuntimeError(f"registered MCP tool not found: {fn.__name__}")
+        arg_model = tool.fn_metadata.arg_model
+        arg_model.model_config["extra"] = "forbid"
+        arg_model.model_config["strict"] = True
+        arg_model.model_rebuild(force=True)
+        tool.parameters = arg_model.model_json_schema(by_alias=True)
+        return registered
     return decorator
 
 
@@ -464,13 +414,11 @@ async def xverif_batch(batch_file: str, output_file: str) -> dict:
         return _tool_error("FILE_NOT_FOUND",
                            f"batch file not found: {batch_file}")
 
-    resolved_output, policy_error = _resolve_policy_artifact_path(
-        "xverif_batch", output_file,
-    )
-    if policy_error is not None:
-        return policy_error
-    assert resolved_output is not None
-    output_path = Path(resolved_output)
+    try:
+        output_path = Path(_resolve_output_path(output_file))
+    except (TypeError, ValueError, OSError) as exc:
+        return _tool_error("BATCH_OUTPUT_WRITE_FAILED", str(exc),
+                           output_file=str(output_file))
     if not output_path.parent.is_dir():
         return _tool_error(
             "BATCH_OUTPUT_WRITE_FAILED",
@@ -824,85 +772,6 @@ def _forbidden_batch_lifecycle_action(args: dict) -> tuple[str, str] | None:
     return None
 
 
-def _authorize_xdebug_action(
-    action: str,
-    args: dict[str, Any],
-) -> tuple[dict[str, Any] | None, dict | None]:
-    """Authorize one xdebug action and canonicalize all artifact paths."""
-    authorized = deepcopy(args)
-    capability = xdebug_capability(action, authorized)
-    if capability.mutation and not MCP_TOOL_POLICY.mutation_enabled:
-        return None, _mutation_policy_error(action)
-
-    if capability.artifact_write != "never":
-        output = authorized.get("output")
-        raw_path = output.get("path") if isinstance(output, dict) else None
-        if capability.artifact_write == "required" and not raw_path:
-            return None, _artifact_policy_error(action)
-        if raw_path:
-            resolved, error = _resolve_policy_artifact_path(action, raw_path)
-            if error is not None:
-                return None, error
-            assert isinstance(output, dict) and resolved is not None
-            output["path"] = resolved
-
-    if action == "batch":
-        requests = authorized.get("requests")
-        if isinstance(requests, list):
-            for child in requests:
-                if not isinstance(child, dict):
-                    continue
-                child_action = child.get("action")
-                child_args = child.get("args", {})
-                if not isinstance(child_action, str) or not isinstance(child_args, dict):
-                    continue
-                rewritten, error = _authorize_xdebug_action(child_action, child_args)
-                if error is not None:
-                    return None, error
-                child["args"] = rewritten
-    return authorized, None
-
-
-def _authorize_xcov_action(
-    action: str,
-    args: dict[str, Any],
-) -> tuple[dict[str, Any] | None, dict | None]:
-    """Authorize one xcov action and canonicalize its write destination."""
-    authorized = deepcopy(args)
-    capability = xcov_capability(action, authorized)
-    if capability.mutation and not MCP_TOOL_POLICY.mutation_enabled:
-        return None, _mutation_policy_error(action)
-    if capability.artifact_write == "never":
-        return authorized, None
-
-    raw_path: Any = None
-    setter = None
-    output = authorized.get("output")
-    if isinstance(output, dict):
-        raw_path = output.get("path")
-        setter = lambda value: output.update({"path": value, "allow_absolute_path": True})
-    elif action == "exclude.csv.compile":
-        raw_path = authorized.get("output_directory")
-        setter = lambda value: authorized.update({
-            "output_directory": value,
-            "allow_absolute_path": True,
-        })
-    elif action in {"exclude.csv.export", "exclude.csv.format"}:
-        raw_path = authorized.get("directory")
-        setter = lambda value: authorized.update({
-            "directory": value,
-            "allow_absolute_path": True,
-        })
-    if not raw_path or setter is None:
-        return None, _artifact_policy_error(action)
-    resolved, error = _resolve_policy_artifact_path(action, raw_path)
-    if error is not None:
-        return None, error
-    assert resolved is not None
-    setter(resolved)
-    return authorized, None
-
-
 @xverif_tool("debug")
 def xverif_debug_query(
     action: str,
@@ -966,10 +835,6 @@ def xverif_debug_query(
             recoverable=True, error_layer="wrapper",
         )
     action_args = args or {}
-    action_args, policy_error = _authorize_xdebug_action(action, action_args)
-    if policy_error is not None:
-        return policy_error
-    assert action_args is not None
     try:
         contract, variant = query_session_requirement(action, action_args)
     except XdebugContractError as exc:
@@ -1138,10 +1003,7 @@ def xverif_cov_query(
                            "output_format must be 'xout', 'json', or 'envelope'")
     if is_forbidden_native_session_action(action):
         return forbidden_native_session_error(action, backend="cov")
-    action_args, policy_error = _authorize_xcov_action(action, args or {})
-    if policy_error is not None:
-        return policy_error
-    assert action_args is not None
+    action_args = args or {}
     return cov.query(
         action=action,
         args=action_args,
@@ -1644,12 +1506,9 @@ def xverif_tool_help(name: str) -> dict:
     Args:
         name: Exact tool name (e.g. "xverif_debug_query").
     """
-    for t in filtered_catalog(MCP_TOOL_POLICY, TOOL_CATALOG, include_write=True):
-        if t["name"] == name:
-            return {"ok": True, "tool": t, "policy": MCP_TOOL_POLICY.summary()}
     for t in TOOL_CATALOG:
         if t["name"] == name:
-            return _tool_error("TOOL_NOT_ENABLED", f"tool is disabled by MCP policy: {name}")
+            return {"ok": True, "tool": t, "policy": MCP_TOOL_POLICY.summary()}
     return _tool_error("TOOL_NOT_FOUND", f"tool not found: {name}")
 
 

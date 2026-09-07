@@ -167,7 +167,7 @@ server/client、不指定 socket，也不传 `--stdio-loop`。没有 LSF 限制�
 }
 ```
 
-> **关键**：MCP server 子进程**不会自动继承**父进程（shell / IDE）的环境变量。`bsub` 提交的 LSF job 从 MCP server 子进程继承环境，因此**所有**必须在计算节点上生效的变量都要显式列在 `.mcp.json` 的 `env` 中——包括 `VERDI_HOME`、`LD_LIBRARY_PATH`、LSF 路径、EDA license 等。`PATH` 尤其重要，必须确保 `bsub`、`bkill` 等命令在其中。
+> **环境继承**：由 IDE 或客户端启动的 MCP server 不一定继承当前交互 shell 的配置。请在客户端的 MCP `env` 中显式配置站点必需变量；server 启动工具子进程时使用自己实际获得的环境。LSF 作业还受站点提交策略影响，`PATH` 必须能找到 `bsub`、`bkill`。MCP 不读取 SDK-free 的 `xverif_lsf.env.json`。
 
 如果 FSDB/daidir 较大、LSF 排队或 Verdi/NPI 初始化较慢，配置 MCP 时也建议在
 `.mcp.json` 的 `env` 中显式提高 timeout。MCP 层主要看
@@ -211,16 +211,16 @@ LSF queue/resource 的解析优先级固定为 session open 显式参数、
 
 ### 通用参数
 
-只有 `XVERIF_MCP_ENABLE_ARTIFACT_WRITE=1` 时，MCP tool 才自动公开以下可选参数：
+所有 MCP tool 始终公开以下可选参数：
 
 | 参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `xverif_output_path` | `str \| None` | `None` | 指定文件路径时，tool 响应会额外写入该文件；相对路径基于 artifact root，绝对路径也必须位于 root 内 |
+| `xverif_output_path` | `str \| None` | `None` | 指定文件路径时，tool 响应会额外写入该文件；相对路径基于 MCP 进程工作目录，绝对路径直接使用；父目录必须已存在 |
 | `xverif_output_append` | `bool` | `False` | True 为追加写入，False（默认）为覆盖写入 |
 
 示例：
 ```python
-# server 启动时已设置 XVERIF_MCP_ARTIFACT_ROOT=<repo>/tmp/artifacts
+# 文件写入 MCP server 工作目录；也可显式使用绝对路径
 xverif_cov_query(action="code_coverage.holes", args={...},
                  xverif_output_path="holes.json")
 
@@ -230,7 +230,7 @@ xverif_debug_query(session_id="case_a", action="value.at", args={...},
                    xverif_output_append=True)
 ```
 
-写文件是该调用的一部分；写入失败返回 `OUTPUT_WRITE_FAILED`，`data.result` 保留原 action 结果供诊断，调用方不得把它当作完整成功。
+写文件是该调用的一部分；写入失败返回 `OUTPUT_WRITE_FAILED`，调用方不得把它当作完整成功；序列化失败返回 `OUTPUT_SERIALIZATION_FAILED`。
 
 ### 批量执行：`xverif_batch`
 
@@ -393,16 +393,6 @@ symlink、非当前用户 owner 和非 `0600` 文件。
 | `XDEBUG_SESSION_START_TIMEOUT_SEC` | xdebug 统一 engine daemon 启动等待超时（默认 300s） |
 | `XDEBUG_SESSION_IDLE_TIMEOUT_SEC` | xdebug 统一 engine session 空闲超时（默认 86400s） |
 | `XVERIF_MCP_LOG_DIR` | MCP structured log 根目录，默认 `~/.xverif/mcp` |
-| `XVERIF_MCP_ENABLE_COMMON` | 暴露 common 工具，严格布尔 `0|1`，默认 `1` |
-| `XVERIF_MCP_ENABLE_DEBUG` | 暴露 xdebug/session 工具，严格布尔 `0|1`，默认 `1` |
-| `XVERIF_MCP_ENABLE_COV` | 暴露 xcov coverage 工具，严格布尔 `0|1`，默认 `1` |
-| `XVERIF_MCP_ENABLE_BIT` | 暴露 xbit 工具，严格布尔 `0|1`，默认 `1` |
-| `XVERIF_MCP_ENABLE_ENTRY` | 暴露 xentry 工具，严格布尔 `0|1`，默认 `1` |
-| `XVERIF_MCP_ENABLE_LOC` | 暴露 xloc 工具，严格布尔 `0|1`，默认 `1` |
-| `XVERIF_MCP_ENABLE_SVA` | 暴露 xsva 工具，严格布尔 `0|1`，默认 `1` |
-| `XVERIF_MCP_ENABLE_MUTATION` | 允许 session 生命周期、配置/list/cursor/exclusion 等状态变更，严格布尔 `0|1`，默认 `1` |
-| `XVERIF_MCP_ENABLE_ARTIFACT_WRITE` | 允许 batch、export 和通用响应文件写入，严格布尔 `0|1`，默认 `0` |
-| `XVERIF_MCP_ARTIFACT_ROOT` | artifact write 开启时必填的既有目录；所有写路径必须 containment 于该目录 |
 | `XVERIF_MCP_BATCH_MAX_INPUT_BYTES` | batch 输入 hard limit，严格正整数，默认 16777216（16 MiB） |
 | `XVERIF_MCP_BATCH_MAX_REQUESTS` | batch 非空请求行 hard limit，严格正整数，默认 10000 |
 | `XVERIF_MCP_BATCH_MAX_OUTPUT_BYTES` | batch 输出 hard limit，严格正整数，默认 67108864（64 MiB） |
@@ -415,6 +405,7 @@ symlink、非当前用户 owner 和非 `0600` 文件。
 | `XVERIF_XCOV_VERDI_HOME` | 覆盖 xcov 使用的 Verdi 安装路径 |
 | `XVERIF_XCOV_LOG_DIR` | 覆盖 xcov 日志目录，默认 `~/.xverif/xcov` |
 | `XVERIF_XCOV_LOG=0` | 关闭 xcov 日志 |
+| `XVERIF_XCOV_BRANCH_MASK_HINT` | 默认 `1`，提供 branch bin 的 branch_mask 解释；`0/false/no/off` 关闭 |
 | `XVERIF_XCOV_URG_BACKEND` | xcov 内层 URG backend，只接受 `direct|lsf`，默认 `direct` |
 | `XVERIF_XCOV_URG_QUEUE` | 内层 `bsub -K` URG queue；backend=lsf 时必填，不继承 session queue |
 | `XVERIF_XCOV_URG_RESOURCE` | 可选内层 URG resource string |
@@ -504,31 +495,46 @@ xcov exclusion reason 只由 CSV sidecar 持久化。reason revision 尚未经
 或明确使用 `confirm_discard_reasons=true` 强制关闭。该确认值会原样传入 native
 `session.close`，响应同时报告是否丢弃及丢弃计数。
 
-## 工具暴露开关
+## 工具与输出行为
 
-每个工具组和写能力都有独立开关，只接受严格 `1` 或 `0`；其它值在启动时返回 typed config error。未设置时只读工具组与 mutation 默认开启，artifact write 默认关闭。固定写工具不会注册；动态 query 在转发前按 action capability 返回 typed policy error。export 的无 path preview 不属于 artifact write，仍可在只读模式使用。
+common/debug/cov/bit/entry/loc/sva 全部注册；session 生命周期、配置/list/cursor、
+coverage exclusion 和 batch 均可调用。工具目录的 group/mutation/artifact_write 是
+描述性元数据，不是权限开关。工具帮助的 policy 只包含 batch_limits。
 
-```bash
-# 只暴露 xdebug + common
-XVERIF_MCP_ENABLE_BIT=0 \
-XVERIF_MCP_ENABLE_ENTRY=0 \
-XVERIF_MCP_ENABLE_LOC=0 \
-XVERIF_MCP_ENABLE_SVA=0 \
-tools/xverif-mcp
+MCP 自身的 batch 输出和通用响应文件相对 server 工作目录解析，不限制输出根目录。
+batch 保留输入冻结、三项上限、同 inode 检查及原子 no-clobber 发布；通用响应文件
+按 xverif_output_append 选择追加或覆盖。
+xdebug/xcov action 的输出参数原样传递给 native backend：MCP 不改写路径，也不注入
+allow_absolute_path。xcov 相对路径使用其原生导出目录；绝对路径必须显式允许并符合
+XVERIF_XCOV_EXPORT_ROOTS，详见 [xcov README](../xcov/README.md)。
 
-# 关闭 xsva
-XVERIF_MCP_ENABLE_SVA=0 tools/xverif-mcp
+### 配置迁移
 
-# 显式关闭 session/exclusion 等状态变更，仍禁止写文件
-XVERIF_MCP_ENABLE_MUTATION=0 tools/xverif-mcp
+以下旧变量已停止读取，旧值（包括 0 或非法值）不会限制工具或阻止启动，请从部署配置删除：
 
-# 同时允许状态变更（默认已开启）和受根目录约束的 artifact
-XVERIF_MCP_ENABLE_ARTIFACT_WRITE=1 \
-XVERIF_MCP_ARTIFACT_ROOT=<repo>/tmp/artifacts \
-tools/xverif-mcp
-```
+- XVERIF_MCP_ENABLE_COMMON、XVERIF_MCP_ENABLE_DEBUG、XVERIF_MCP_ENABLE_COV、
+  XVERIF_MCP_ENABLE_BIT、XVERIF_MCP_ENABLE_ENTRY、XVERIF_MCP_ENABLE_LOC、
+  XVERIF_MCP_ENABLE_SVA。
+- XVERIF_MCP_ENABLE_MUTATION、XVERIF_MCP_ENABLE_ARTIFACT_WRITE、XVERIF_MCP_ARTIFACT_ROOT。
+- 无实际消费者的 XVERIF_LSF_CLI_TIMEOUT_SEC、XVERIF_LOOP_TIMEOUT_SEC；
+  SDK-free 使用已有的 STARTUP/REQUEST/CLOSE/BKILL/IDLE 阶段超时。
 
-关闭某组后，该组工具不会注册到 FastMCP，因此不会出现在 MCP `tools/list` 中，也不能被 MCP client 直接调用。`xverif_tool_help` 使用同一策略查询已注册 MCP tool。
+旧 artifact root 下的相对输出不会继续映射到旧根目录。需要保持原输出位置时，显式提供
+绝对路径；下游 coverage 导出同时遵守 native 的绝对路径许可合同。
+
+### 配置归属与读取时机
+
+XVERIF_MCP_* 属于 MCP；XVERIF_LSF_SESSION_* 和 BSUB/BKILL 是共享调度配置；
+XVERIF_LSF_CLI_* 属于 SDK-free CLI，XVERIF_LOOP_* 属于内部 wrapper。
+XVERIF_LSF_ENV_* 指纹和 CLI ENTRY_DIR/LOADED_CONFIG_PATH/CONFIG_FINGERPRINT
+是 SDK-free 内部元数据；FAKE_BSUB_*、XVERIF_TEST_TMPDIR 用于测试。
+XDEBUG_*、XVERIF_XCOV_* 由对应下游工具处理；PATH/PYTHON/PYTHONPATH、
+VERDI_HOME/VCS_HOME、动态库和 license 变量属于启动环境。
+
+MCP 的 session runtime 和 batch 上限在 server 初始化时形成快照；
+XVERIF_MCP_TIMEOUT_SEC 在构造 one-shot runner 时读取，默认 360 秒。
+下游 xcov 的部分日志、缓存和输出选项按操作读取，不能把所有环境变量都视为启动快照。
+修改客户端部署环境后，需要重启 MCP server 才能让新环境进入该进程。
 
 `xverif_tools` 是无参数的 xdebug action discovery 入口。它请求 native
 `actions` 的 `args.output.view="guide"` 并原样返回 `data.guide`；每行只包含 action

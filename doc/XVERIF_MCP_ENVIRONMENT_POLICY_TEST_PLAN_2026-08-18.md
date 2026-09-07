@@ -1,5 +1,9 @@
 # MCP 环境变量默认合同测试补强计划
 
+> 历史记录：本文的 MCP 工具权限开关和 artifact root 方案已由
+> [2026-09-07 清理计划](MCP_ENVIRONMENT_CLEANUP_PLAN_2026-09-07.md) 取代。
+> 旧环境变量仅保留作历史证据，当前配置与迁移以 [MCP README](../xverif_mcp/README.md) 为准。
+
 ## 1. 背景与目标
 
 2026-08-16 的 MCP 权限加固新增 mutation、artifact write、artifact root 和三项 batch
