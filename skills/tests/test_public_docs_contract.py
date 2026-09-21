@@ -133,6 +133,7 @@ README_SECTION_MAP = {
     "Requirements": "环境要求",
     "Build and test": "构建与测试",
     "Documentation": "文档入口",
+    "Star History": "Star History",
 }
 
 

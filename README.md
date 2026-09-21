@@ -236,3 +236,13 @@ Dependency checks are isolated by suite. The `fast` gate is hermetic and starts 
 - xcov user guide: [`xcov/README.md`](xcov/README.md)
 - xcov agent reference: [`skills/xverif/references/xcov.md`](skills/xverif/references/xcov.md)
 - xverif-mcp user guide: [`xverif_mcp/README.md`](xverif_mcp/README.md)
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=blank2077%2Fxverif&type=date&legend=bottom-right">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=blank2077/xverif&type=timeline&theme=dark&legend=bottom-right" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=blank2077/xverif&type=timeline&legend=bottom-right" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=blank2077/xverif&type=timeline&legend=bottom-right" />
+ </picture>
+</a>
