@@ -4,6 +4,7 @@
 #include "axi_transaction_tracker.h"
 #include "../cache/analysis_repository.h"
 #include "npi_fsdb.h"
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <map>

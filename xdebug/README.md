@@ -90,6 +90,21 @@ xdebug/examples/responses/<action>.basic.json
 
 > **环境与授权要求**：GCC 5.0+。当前基于 Verdi **V-2023.12-SP2** 开发与测试。用户必须自行确认其 Synopsys agreement（包括适用时的 VC Apps Access Program Agreement）允许使用对应 NPI/FSDB interfaces。NPI API 随 Verdi 版本不同可能存在参数差异——如果使用其他版本遇到编译或运行时 NPI 兼容性问题，可让 AI agent 根据编译错误和用户本地 NPI headers（`$VERDI_HOME/share/NPI/inc`）进行兼容性修复；这些 headers 不属于本项目的 MIT License 范围。
 
+GCC 版本不是唯一兼容条件，编译器的 libstdc++ dual ABI 还必须与
+`$VERDI_HOME/share/NPI/lib/LINUX64/libnpiL1.so` 一致。默认构建会先执行最小链接预检，
+也可以单独运行：
+
+```bash
+make -C xdebug npi-toolchain-check
+```
+
+预检只编译并链接 `npi_fsdb_sig_value_at(std::string&)`，不会运行生成物、初始化 NPI 或占用
+license。成功时输出 `NPI_TOOLCHAIN_OK` 及编译器的 `_GLIBCXX_USE_CXX11_ABI` 值；若该 L1
+string symbol 未定义，先选择 C++ 标准库 ABI 与本地 Verdi library 匹配的编译器。某些
+toolset 会在 `c++config.h` 中固定 dual ABI，不能把命令行强制定义宏当作可靠修复。其它失败则按
+预检输出核对本地 NPI include/library、`NPI_LDFLAGS`、library order 和系统 zlib；不得静默改用
+其它 Verdi、compiler 或 backend。
+
 ```bash
 tools/xdebug -
 ```

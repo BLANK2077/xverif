@@ -239,7 +239,7 @@ DEPS = $(sort $(CORE_OBJS:.o=.d) \
        $(DESIGN_OBJS:.o=.d) \
        $(WAVEFORM_OBJS:.o=.d))
 
-.PHONY: all internal-engines stream-differential-test-dist cpp-unit-binaries clean FORCE
+.PHONY: all internal-engines npi-toolchain-check stream-differential-test-dist cpp-unit-binaries clean FORCE
 
 FORCE:
 
@@ -264,7 +264,13 @@ $(BUILD_INFO): FORCE specs/actions/actions.yaml
 
 all: $(EXE) internal-engines
 
-internal-engines: $(LIBEXEC)/xdebug-engine
+npi-toolchain-check:
+	$(PYTHON) tools/check_npi_toolchain.py \
+		--cxx "$(CXX)" \
+		--cxxflags "$(CXXFLAGS)" \
+		--ldflags "$(LDFLAGS)"
+
+internal-engines: npi-toolchain-check $(LIBEXEC)/xdebug-engine
 
 # Test-only distribution with the legacy stream differential oracle compiled
 # into an isolated frontend/engine layout. The production targets above never

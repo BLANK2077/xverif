@@ -144,6 +144,9 @@ python3 xdebug/tools/publish_native_xout_report.py --input <native-xout-final-re
 
 - 沙箱内：plan/collect、catalog/schema/testinfra、`fast`。
 - 沙箱外：NPI/FSDB/daidir engine、MCP stdio/UDS/process、fake/real LSF、VCS/simv、VIP、fixture prepare/validation。
+- `make -C xdebug npi-toolchain-check` 使用正式编译器和本地 NPI headers/libraries 做最小
+  compile-link，不运行探针或初始化 NPI；它是 `internal-engines` 的前置门禁，ABI 或链接失败时
+  必须先修正 toolchain，不得换 Verdi/compiler/library order fallback。
 - 沙箱内的 EDA/进程失败不能判定为产品回归。
 - real LSF 仅在 nightly 中 optional；缺失会明确 SKIP。其它 required suite 不得自行 skip。失效的 xring realdata suite 已移除。
 

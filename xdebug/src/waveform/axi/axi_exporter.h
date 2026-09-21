@@ -5,6 +5,7 @@
 #include "npi_fsdb.h"
 #include "json.hpp"
 
+#include <cstdint>
 #include <map>
 #include <string>
 #include <vector>
