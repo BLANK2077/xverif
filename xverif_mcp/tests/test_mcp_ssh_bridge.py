@@ -295,6 +295,7 @@ def test_bootstrap_rejects_a_corrupt_payload(tmp_path: Path) -> None:
         [PYTHON, "-m", "mcp_ssh.bootstrap", "not-base64!!"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=120,
         env=env,
         cwd=str(tmp_path),
@@ -392,6 +393,7 @@ def _spawn_bridge(env: dict[str, str]) -> subprocess.Popen[str]:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        encoding="utf-8",
         bufsize=1,
         env=full,
     )
@@ -520,6 +522,7 @@ def test_bridge_check_exits_two_without_configuration_and_prints_no_values() -> 
         [PYTHON, "-m", "mcp_ssh", "--check"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=180,
         env=env,
     )
@@ -535,6 +538,7 @@ def test_bridge_check_never_prints_a_forwarded_value(tmp_path: Path) -> None:
         [PYTHON, "-m", "mcp_ssh", "--check"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=240,
         env=env,
     )

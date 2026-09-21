@@ -386,6 +386,7 @@ suites:
         - xverif_mcp/tests/test_loop_wrapper_uds.py
         - xverif_mcp/tests/test_native_lsf_cli.py
         - xverif_mcp/tests/test_mcp_sdk_smoke.py
+        - xverif_mcp/tests/test_mcp_ssh_loopback.py
         - xverif_mcp/tests/test_stdio_loop_session_lifecycle.py
     capabilities: [child_process, mcp_process]
     hermetic: false
