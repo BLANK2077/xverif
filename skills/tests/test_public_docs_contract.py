@@ -121,3 +121,55 @@ def test_all_complete_public_json_fences_parse_and_validate_action_tokens() -> N
                 ).validate(payload.get("args", {}))
                 checked_calls += 1
     assert checked_calls >= 20
+
+
+# The root README pair is one document in two languages. These two assertions
+# keep them structurally aligned: a section added to one side, or a
+# documentation link listed only on one side, fails here instead of drifting.
+README_SECTION_MAP = {
+    "Tool overview": "工具概览",
+    "Recommended shell entry points": "推荐 Shell 入口",
+    "Synchronizing agent environment variables": "同步 Agent 环境变量",
+    "Requirements": "环境要求",
+    "Build and test": "构建与测试",
+    "Documentation": "文档入口",
+}
+
+
+def _readme_sections(text: str) -> list[str]:
+    return re.findall(r"(?m)^##\s+(.+?)\s*$", text)
+
+
+def _documentation_links(text: str) -> list[str]:
+    match = re.search(r"(?ms)^##\s*(?:Documentation|文档入口)\s*\n(.*)\Z", text)
+    assert match is not None, "README pair must expose a documentation section"
+    return re.findall(r"\]\(([^)]+)\)", match.group(1))
+
+
+def test_readme_pair_keeps_matching_sections_and_documentation_links() -> None:
+    english = (ROOT / "README.md").read_text(encoding="utf-8")
+    chinese = (ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
+
+    english_sections = _readme_sections(english)
+    chinese_sections = _readme_sections(chinese)
+    assert len(english_sections) == len(chinese_sections), (
+        english_sections, chinese_sections,
+    )
+    expected_english = list(README_SECTION_MAP)
+    assert english_sections == expected_english, (
+        "README.md sections changed; update README_SECTION_MAP and "
+        "README.zh-CN.md together", english_sections,
+    )
+    assert chinese_sections == [
+        README_SECTION_MAP[name] for name in expected_english
+    ], chinese_sections
+
+    english_links = _documentation_links(english)
+    chinese_links = _documentation_links(chinese)
+    assert len(english_links) == len(set(english_links)), english_links
+    assert len(chinese_links) == len(set(chinese_links)), chinese_links
+    assert set(english_links) == set(chinese_links), (
+        "documentation links drifted between README.md and README.zh-CN.md",
+        sorted(set(english_links) - set(chinese_links)),
+        sorted(set(chinese_links) - set(english_links)),
+    )

@@ -55,6 +55,8 @@ tools/xverif-mcp
 
 The NPI-backed engine is a source-only wrapper. Users must build and run it against their own legally licensed Synopsys installation. See [`xdebug/README.md`](xdebug/README.md) and [`THIRD_PARTY.md`](THIRD_PARTY.md).
 
+`tools/xverif-mcp` is the unified stdio MCP server (`python -m xverif_mcp.server`): xdebug and xcov are stateful backends for design/waveform and coverage queries, while xbit, xentry, xloc, and xsva are attached as stateless CLI adapters. When an AI client runs on a login host but NPI/FSDB queries must execute on an LSF compute node, set `XVERIF_MCP_BACKEND=lsf` and the MCP wrapper starts a per-session stdio-loop process inside the cluster through `bsub -I`. Different sessions run in parallel; one session runs serially. The MCP server always exposes every tool group, state mutation, and file output capability; configuration keys and migration from older releases are documented in the [MCP README](xverif_mcp/README.md). Without MCP, and when the login host cannot reach a compute node's TCP port, xdebug natively supports `transport:"file"`, which exchanges request and response through the shared filesystem in the session directory. Every MCP tool accepts the common `xverif_output_path` and `xverif_output_append` parameters to also write the response to a file; a failed file write returns `OUTPUT_WRITE_FAILED` and must not be treated as full success.
+
 ### xbit
 
 `xbit` performs deterministic bit, value, and expression calculations without reading RTL or hierarchy.
@@ -110,7 +112,7 @@ tools/xsva explain --file xsva/tests/golden_ir/path_expand/input.sva --property 
 ```bash
 printf '%s\n' '{"api_version":"xcov.v1","action":"session.open","target":{"vdb":"fake"},"args":{"name":"cov0","fake":true}}' | tools/xcov --json -
 tools/xcov --stdio-loop
-tools/xcov_lsf --json request.json   # 仅无 MCP 且必须经 LSF 时
+tools/xcov_lsf --json request.json   # only without MCP and when LSF is mandatory
 ```
 
 Real NPI coverage queries require a locally licensed Synopsys environment. The project does not bundle or grant rights to the coverage runtime.
@@ -158,6 +160,19 @@ Variables present in the current environment replace matching configured values;
 
 Verdi-dependent capabilities additionally require the applicable Synopsys license rights. `VERDI_HOME` only identifies a local installation and is not a license grant. When another Verdi release exposes NPI compatibility errors, adapt the wrapper against the user's local headers without copying those headers into this repository.
 
+For `xdebug`, the GCC version alone is not sufficient: the compiler's libstdc++
+dual ABI must match the local `libnpiL1.so`. `make -C xdebug` now compile-links a
+minimal `npi_fsdb_sig_value_at(std::string&)` probe before building the NPI
+engine; run `make -C xdebug npi-toolchain-check` to execute that check directly.
+The probe does not initialize NPI or acquire a license. If it reports an
+unresolved L1 string symbol, select a compiler whose C++ standard-library ABI
+matches the installed Verdi library instead of assuming that a command-line
+`_GLIBCXX_USE_CXX11_ABI` define overrides the compiler's `c++config.h`.
+
+> When another Verdi release exposes compile- or run-time NPI compatibility
+> errors, an AI agent can adapt the wrapper from the compiler errors and the
+> user's local NPI headers.
+
 ## Build and test
 
 Makefiles remain responsible for builds. Tests have one public entry point: the root catalog-driven pytest plugin. The repository-local Python environment can be created with Miniconda; `requirements-test.txt` is the pip installation entry point. Normal gates consume previously published databases from `.xverif-test-cache/` and never run VCS or `simv` implicitly.
@@ -185,11 +200,16 @@ pytest --xverif-fixture-clean
 pytest --xverif-results-clean
 ```
 
-正式 gate、fixture prepare 和 fixture validation 默认每 30 秒打印 `[xverif-progress]`，展示累计
-时长、完成数以及当前 test/fixture/phase；可用 `--xverif-progress-interval <seconds>` 调整。
-每次运行在 `.xverif-test-results/<run>/` 持续写入 `progress.jsonl`，结束生成按耗时降序的
-`timing.json`；gate 的 `report.json` 还记录 wall-clock 和 suite 聚合时长。终端汇总直接列出最慢
-5 项，fixture 项同时标出最慢 builder/probe phase。
+Formal gates, fixture preparation, and fixture validation print one
+`[xverif-progress]` heartbeat every 30 seconds by default, showing elapsed time,
+completed count, and the current test/fixture/phase; use
+`--xverif-progress-interval <seconds>` to change the interval. Every run streams
+`progress.jsonl` into `.xverif-test-results/<run>/` and finishes with a
+duration-descending `timing.json`; the gate's `report.json` additionally records
+wall-clock time and per-suite aggregate duration. The terminal summary lists the
+5 slowest items, and fixture entries also name the slowest builder/probe phase.
+
+Dependency checks are isolated by suite: a focused suite never checks Vim/Neovim, NPI, VIP, VCS, or LSF dependencies belonging to other suites. Normal gates check only runtime dependencies and already published fixtures; VCS/VIP/XIF build dependencies are checked only before the matching prepare or validation. `xloc.nvim` requires `nvim` on `PATH`, so keep `~/.local/bin` visible after activating the Conda environment.
 
 Dependency checks are isolated by suite. The `fast` gate is hermetic and starts no external EDA process. Gates or fixture operations involving NPI, MCP processes, VCS, or real databases must run in a properly licensed host environment outside the sandbox. `XVERIF_TEST_EXECUTION_ENV=host` records execution evidence; it does not elevate privileges or switch environments. A missing required fixture is an error with an explicit preparation command; tests never silently prepare, skip, or switch backends. Bare `pytest` is a usage error. See [`doc/agents/xdebug/tests.md`](doc/agents/xdebug/tests.md) for the full contract.
 
@@ -205,9 +225,14 @@ Dependency checks are isolated by suite. The `fast` gate is hermetic and starts 
 - SDK-free LSF CLI: [`skills/xverif-admin/references/sdk-free-loop/overview.md`](skills/xverif-admin/references/sdk-free-loop/overview.md)
 - MCP reference: [`skills/xverif-admin/references/mcp/overview.md`](skills/xverif-admin/references/mcp/overview.md)
 - xbit user guide: [`xbit/README.md`](xbit/README.md)
+- xbit agent reference: [`skills/xverif/references/xbit.md`](skills/xverif/references/xbit.md)
 - xentry user guide: [`xentry/README.md`](xentry/README.md)
+- xentry agent reference: [`skills/xverif/references/xentry.md`](skills/xverif/references/xentry.md)
 - xloc user guide: [`xloc/README.md`](xloc/README.md)
+- xloc agent reference: [`skills/xverif/references/xloc.md`](skills/xverif/references/xloc.md)
 - xwiki skill: [`skills/xwiki/SKILL.md`](skills/xwiki/SKILL.md)
 - xsva user guide: [`xsva/README.md`](xsva/README.md)
+- xsva agent reference: [`skills/xverif/references/xsva.md`](skills/xverif/references/xsva.md)
 - xcov user guide: [`xcov/README.md`](xcov/README.md)
+- xcov agent reference: [`skills/xverif/references/xcov.md`](skills/xverif/references/xcov.md)
 - xverif-mcp user guide: [`xverif_mcp/README.md`](xverif_mcp/README.md)

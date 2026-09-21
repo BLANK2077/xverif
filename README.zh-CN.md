@@ -248,6 +248,13 @@ Claude Code、Codex 等 AI agent 通常由 IDE、插件或独立进程启动，�
 
 > 如果使用其他 Verdi 版本遇到编译或运行时 NPI 兼容性问题，可让 AI agent 根据编译错误和 NPI 头文件进行兼容性修复。
 
+对 `xdebug` 来说，仅满足 GCC 版本要求还不够：编译器的 libstdc++ dual ABI 必须与本地
+`libnpiL1.so` 一致。`make -C xdebug` 会在构建 NPI engine 前，先编译并链接一个最小的
+`npi_fsdb_sig_value_at(std::string&)` 探针；也可以用
+`make -C xdebug npi-toolchain-check` 单独执行。该探针不会初始化 NPI，也不会占用 license。
+若探针报告 L1 string symbol 未定义，应选择 C++ 标准库 ABI 与当前 Verdi library 匹配的
+编译器，不能假定命令行设置 `_GLIBCXX_USE_CXX11_ABI` 一定能覆盖编译器的 `c++config.h`。
+
 ## 构建与测试
 
 构建仍由 Makefile 负责；测试只有根级 catalog-driven pytest plugin 一个公开入口。首次使用可用 Miniconda 一键建立仓库本地 Python 环境；`requirements-test.txt` 是 pip 安装入口。普通 gate 只消费 `.xverif-test-cache/` 中已经发布的数据库，不会隐式运行 VCS/simv。
@@ -272,6 +279,12 @@ pytest --xverif-fixture-validation --xverif-all-fixtures
 pytest --xverif-fixture-clean
 pytest --xverif-results-clean
 ```
+
+正式 gate、fixture prepare 和 fixture validation 默认每 30 秒打印一条 `[xverif-progress]` 心跳，展示累计
+时长、完成数以及当前 test/fixture/phase；可用 `--xverif-progress-interval <seconds>` 调整。每次运行在
+`.xverif-test-results/<run>/` 持续写入 `progress.jsonl`，结束时生成按耗时降序的 `timing.json`；gate 的
+`report.json` 还记录 wall-clock 与 suite 聚合时长。终端汇总列出最慢 5 项，fixture 项同时标出最慢的
+builder/probe phase。
 
 依赖检查按 suite 隔离：focused suite 不会检查其它 suite 的 Vim/Neovim、NPI、VIP、VCS 或 LSF 依赖。普通 gate 只检查运行依赖和已发布 Fixture；VCS/VIP/XIF 构建依赖只在对应 prepare/validation 前检查。`xloc.nvim` 要求 `nvim` 在 `PATH` 中；本机安装在 `~/.local/bin` 时应确保 Conda 激活后仍保留该目录。
 
