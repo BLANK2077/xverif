@@ -1,5 +1,7 @@
 .agents/
 .codex/
+# DSH 项目级 agent 配置与 skill 副本（由 skills/ 安装派生，不是 source of truth）
+.dsh/
 /out/
 **/out/
 /tmp/
