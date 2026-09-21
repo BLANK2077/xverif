@@ -35,3 +35,21 @@ direct backend 使用 NPI 时，MCP server 的显式 `env` 必须包含当前站
 ## batch
 
 `xverif_batch` 始终可用。batch 行里的 tool 参数需要嵌套在 `args` 里；每行 `args` 必须是 object。输入先冻结并受 16 MiB/10,000 条默认 hard limit 约束，输出受 64 MiB 默认 hard limit 约束；三项可通过 `XVERIF_MCP_BATCH_MAX_*` 严格正整数环境变量调整。输入输出同 inode（含 symlink/hardlink）会被拒绝，输出必须不存在并以同目录 staging no-clobber 发布。MCP 自身文件输出不限制根目录；写入失败不得把原 action 成功当作调用成功。
+
+## 远端 ssh backend
+
+`python -m mcp_ssh` 是纯转发层，不是新的 backend：它对 MCP client 呈现远端 xverif server 的
+工具面，并把 `tools/list` schema 与 `tools/call` 结果原样透传。排查顺序按下面走：
+
+- 先 `python -m mcp_ssh --check`。它只打印变量名、帧大小和上游工具数，不打印任何取值；退出
+  码 2 表示 `XVERIF_MCP_SSH_HOST`/`XVERIF_MCP_SSH_REMOTE_ROOT` 缺失或非法。
+- 握手能成功但首个 `tools/list` 返回 `-32603` 错误，说明远端进程没有起来。错误文本里保留
+  了上游原因；工具调用失败则以 `isError=true` 的内容返回，不会伪装成成功。
+- 远端要求 Python >= 3.11、远端仓库路径存在、`xverif_mcp/src` 可导入；`XVERIF_MCP_SSH_REMOTE_PYTHON`
+  默认 `python3`，远端 shell 非交互，不会加载 `~/.bashrc`。
+- 站点的 `VERDI_HOME`、license 变量必须写在 MCP client 的 `env` 里，它们会被转发；凭据形状
+  的名字（含 `TOKEN`/`PASSWORD`/`SECRET`/`COOKIE`）永不转发。
+- 需要核对远端实际收到的环境时，在远端经同一条链路跑 `python -m mcp_ssh.report <remote-root>`。
+- session 状态按远端 `$HOME` 归属；跨机器复用时两机 `$HOME` 必须指向同一份共享存储。
+- 本程序只接受私钥**路径**（`XVERIF_MCP_SSH_IDENTITY`），不读取内容、不生成、不复制密钥；
+  仓库和测试都不允许出现密钥材料，`.gitignore` 已显式拦截。

@@ -23,5 +23,5 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["xverif_mcp*", "xverif_loop*"]
+include = ["xverif_mcp*", "xverif_loop*", "mcp_ssh*"]
 namespaces = false

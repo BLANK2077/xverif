@@ -73,6 +73,17 @@ NPI_TRACING_KNOWLEDGE.md
 **/NPI_TRACING_KNOWLEDGE.md
 CLAUDE.md
 
+# 密钥材料永不入库：ssh 私钥/公钥、known_hosts 与 PEM
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+authorized_keys
+known_hosts*
+*.pem
+*.key
+!xdebug/testdata/**/ucli.key
+
 *.o
 *.a
 __pycache__/

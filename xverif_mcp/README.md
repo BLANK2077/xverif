@@ -322,6 +322,66 @@ with open("<repo>/tmp/batch_results.ndjson") as f:
 
 Claude Code 启动时自动加载项目根目录下的 `.mcp.json`，无需额外配置。
 
+### 通过 ssh 连接远端 xverif MCP
+
+当 EDA 机器与本机不是同一台时，用 `mcp_ssh` 把远端的 xverif MCP server 通过 ssh 暴露成本地
+stdio MCP server。对 MCP client 来说它和本地 server 没有区别：
+
+```json
+{
+  "mcpServers": {
+    "xverif-remote": {
+      "command": "<conda-env>/bin/python",
+      "args": ["-m", "mcp_ssh"],
+      "env": {
+        "PYTHONPATH": "<xverif>/xverif_mcp/src",
+        "XVERIF_MCP_SSH_HOST": "user@eda-host",
+        "XVERIF_MCP_SSH_REMOTE_ROOT": "/shared/xverif",
+        "XVERIF_MCP_SSH_REMOTE_PYTHON": "/shared/xverif/.conda-xverif/bin/python",
+        "XVERIF_MCP_LOG_DIR": "/shared/xverif/.xverif/mcp"
+      }
+    }
+  }
+}
+```
+
+配置项（全部放在 MCP client 的 `env` 中）：
+
+| 变量 | 说明 |
+| --- | --- |
+| `XVERIF_MCP_SSH_HOST` | 必填，`ssh` 的目标，例如 `user@eda-host` |
+| `XVERIF_MCP_SSH_REMOTE_ROOT` | 必填，远端 xverif 仓库根目录（两机共享路径，见下） |
+| `XVERIF_MCP_SSH_REMOTE_PYTHON` | 远端解释器，默认 `python3`，要求 Python >= 3.11 |
+| `XVERIF_MCP_SSH_REMOTE_COMMAND` | 远端命令 JSON 数组，默认 `["-m", "xverif_mcp.server"]` |
+| `XVERIF_MCP_SSH_PORT` | `ssh -p` 端口 |
+| `XVERIF_MCP_SSH_IDENTITY` | `ssh -i` 私钥**路径**；本程序不读取、不复制、不写入任何密钥内容 |
+| `XVERIF_MCP_SSH_OPTIONS` | 追加 ssh 选项，按 shell 分词，例如 `-o StrictHostKeyChecking=accept-new` |
+| `XVERIF_MCP_SSH_SSH_BIN` | 覆盖 `ssh` 可执行文件，默认 `ssh` |
+| `XVERIF_MCP_SSH_ENV_DENY` | 逗号分隔的额外变量名，禁止转发到远端 |
+
+它只做转发，不解释 xverif 语义：`tools/list` 的 schema 与 `tools/call` 的
+`content`/`isError`/`structuredContent` 都原样透传，工具的语义始终由远端 server 决定。因此
+每个 MCP 连接对应一个独立的远端 server 进程，远端的 session 生命周期与直连时完全一致。
+
+`env` 中除本程序自身配置之外的变量都会转发给远端进程（凭据形状的名字、本机 ssh/shell
+簿记、本机 Python/conda 与测试路径会被自动排除）。远端 server 的日志目录由转发的
+`XVERIF_MCP_LOG_DIR` 决定，不设置时落在远端 `$HOME/.xverif/mcp`。
+
+配置自检：
+
+```bash
+python -m mcp_ssh --check          # 只打印变量名和工具数，不打印任何取值
+```
+
+远端已启动后的环境核对（在远端、经同一条链路执行）：
+
+```bash
+python -m mcp_ssh.report <remote-root>   # 打印远端解释器、变量名与仓库位置
+```
+
+注意：xdebug/xcov 的 session 状态按远端 `$HOME` 归属，跨机器复用时两台机器的 `$HOME`
+必须指向同一份共享存储；否则请在原机器上直连，或让远端每次重新 open session。
+
 ## 运行链路
 
 ```text
