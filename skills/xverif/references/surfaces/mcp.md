@@ -50,3 +50,24 @@ expr-only 成功响应的 `summary.source` 固定为
 - xdebug 完成仿真后可用 `xdebug/tools/publish_run_manifest.py --fsdb waves.fsdb
   --output run-manifest.json` 原子发布 manifest；MCP session 元数据中的
   `resource_identity` 同时报告路径摘要、stat 快照和声明的 manifest 摘要，不能把路径摘要当作内容摘要。
+
+## 远端 MCP（`mcp_ssh` 注入）
+
+MCP tool 面可能来自本机 `xverif_mcp.server`，也可能由 `mcp_ssh` 通过 ssh 注入 EDA 机器上的
+server。两者对 agent 呈现同一份工具面（`mcp_ssh` 只转发 schema 与结果），但执行位置不同，
+调用前必须先确认：
+
+- **语义与 session 都在远端。** xdebug/xcov 的 session 由远端 server 持有，`session_id` 只在
+  远端有效；NPI/FSDB/coverage 都在 EDA 机器上执行。
+- **远端解释器需 >= 3.11**，远端仓库路径必须存在且可导入；远端 shell 非交互，不加载 `~/.bashrc`。
+- **站点变量要显式传入。** `VERDI_HOME` 与 license 变量写在 MCP client 的 `env` 里并转发给远端；
+  `HOME`、`USER`、`SSH_AUTH_SOCK`、凭据形状的名字不转发。
+- **state 在远端本机 `$HOME/.xdebug`**，不需要共享 `$HOME`；本机不持有该 session 状态，因此本机
+  的 `~/.xdebug` 与远端 session 无关。
+- **自检**：`python -m mcp_ssh --check` 打印 host、转发变量**名称**与上游工具数，不打印取值；
+  远端不可达时首个 `tools/list` 返回 `-32603`，工具调用失败返回 `isError=true`，都不伪装成功。
+- **不得静默换路**：远端不可达时报错并交用户决定，不自动改走本地 CLI、本地 MCP 或 SDK-free。
+
+细则与排障顺序见 `xverif-admin` 的 `references/mcp/overview.md`。
+
+## Schema discovery

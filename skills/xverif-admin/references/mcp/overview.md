@@ -41,15 +41,19 @@ direct backend 使用 NPI 时，MCP server 的显式 `env` 必须包含当前站
 `python -m mcp_ssh` 是纯转发层，不是新的 backend：它对 MCP client 呈现远端 xverif server 的
 工具面，并把 `tools/list` schema 与 `tools/call` 结果原样透传。排查顺序按下面走：
 
-- 先 `python -m mcp_ssh --check`。它只打印变量名、帧大小和上游工具数，不打印任何取值；退出
-  码 2 表示 `XVERIF_MCP_SSH_HOST`/`XVERIF_MCP_SSH_REMOTE_ROOT` 缺失或非法。
+- 先 `python -m mcp_ssh --check`。它打印 host、远端仓库路径、远端解释器、转发变量的**名称**
+  列表、变量个数与编码长度、上游工具数；**不打印任何变量取值**。退出码 2 表示
+  `XVERIF_MCP_SSH_HOST`/`XVERIF_MCP_SSH_REMOTE_ROOT` 缺失或非法。
 - 握手能成功但首个 `tools/list` 返回 `-32603` 错误，说明远端进程没有起来。错误文本里保留
   了上游原因；工具调用失败则以 `isError=true` 的内容返回，不会伪装成成功。
 - 远端要求 Python >= 3.11、远端仓库路径存在、`xverif_mcp/src` 可导入；`XVERIF_MCP_SSH_REMOTE_PYTHON`
   默认 `python3`，远端 shell 非交互，不会加载 `~/.bashrc`。
 - 站点的 `VERDI_HOME`、license 变量必须写在 MCP client 的 `env` 里，它们会被转发；凭据形状
-  的名字（含 `TOKEN`/`PASSWORD`/`SECRET`/`COOKIE`）永不转发。
+  的名字（含 `TOKEN`/`PASSWORD`/`SECRET`/`COOKIE`）永不转发，描述本机的名字（`HOME`、`USER`、
+  `SSH_AUTH_SOCK`）也不转发——远端进程保留自己的家目录。
 - 需要核对远端实际收到的环境时，在远端经同一条链路跑 `python -m mcp_ssh.report <remote-root>`。
-- session 状态按远端 `$HOME` 归属；跨机器复用时两机 `$HOME` 必须指向同一份共享存储。
+- session 状态落在**远端本机** `$HOME/.xdebug`，**不需要共享 `$HOME`**：会话完全在远端进程内，
+  客户端不接触这些文件。跨机器共享 `~/.xdebug` 只对 xdebug 的 cluster file transport 有意义，
+  那是另一套机制。
 - 本程序只接受私钥**路径**（`XVERIF_MCP_SSH_IDENTITY`），不读取内容、不生成、不复制密钥；
   仓库和测试都不允许出现密钥材料，`.gitignore` 已显式拦截。

@@ -71,7 +71,8 @@ description: >
 ## 禁止事项
 
 - 不把 MCP 参数壳写进原生 envelope，也不把 CLI target/envelope 写进 MCP query。
-- 不因失败自动切换 surface、transport、backend、数据源或测试层级。
+- 不因失败自动切换 surface、环境、transport、backend、数据源或测试层级。MCP 由 `mcp_ssh`
+  远端注入时，远端不可达就报错并交用户决定，不改走本地 CLI、本地 MCP 或 SDK-free。
 - `scan_complete=false`、`analysis_complete=false` 或
   `response_truncated=true` 时不作全量结论。
 - 不把波形图片当唯一证据；图片用于宏观观察，结论回到确定性 action 验证。

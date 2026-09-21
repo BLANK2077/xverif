@@ -15,3 +15,18 @@
   `XDEBUG_ANALYSIS_CACHE_MAX_BYTES`（默认 1 GiB，`0` 关闭主动 soft LRU）和
   `XDEBUG_ANALYSIS_CACHE_HARD_MAX_BYTES`（默认 2 GiB，必须为正且不小于 soft）设置。
   两者只在 engine 启动时严格解析一次；非法值会使 session 启动失败，不会使用默认值兜底。
+
+## 运行前提：解释器
+
+python-based wrapper 需要 **Python >= 3.11**；用旧解释器会直接失败而不是降级：
+
+- `tools/xbit`、`tools/xentry`、`tools/xloc`、`tools/xsva`、`tools/xwaveform`、
+  `tools/xverif-mcp` 默认取 `PATH` 上的 `python3`，可用 `PYTHON=<path>` 覆盖。
+- `tools/xcov` 默认回落到 `${XVERIF_HOME}/.conda-xverif/bin/python`，同样可用 `PYTHON` 或
+  `XVERIF_XCOV_PYTHON` 覆盖——与其它 wrapper 的默认值不同，别假设两者一致。
+- `tools/xdebug` 是编译产物，不依赖 Python 解释器；它的 NPI engine 构建要求见
+  `xdebug/README.md`。
+
+若未激活仓库 conda 环境（`conda activate ./.conda-xverif`）而 `PATH` 上的 `python3` 是
+3.6/3.7，症状是 `SyntaxError: future feature annotations is not defined`。此时应激活环境或
+显式传 `PYTHON`，不要改脚本、也不要因此判定工具损坏。

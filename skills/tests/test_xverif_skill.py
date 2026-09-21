@@ -238,3 +238,43 @@ def test_public_component_inventory_is_routed() -> None:
     main = (SKILL / "SKILL.md").read_text()
     for component in ("xdebug", "xcov", "xbit", "xentry", "xloc", "xsva", "xwaveform"):
         assert component in main
+
+
+def test_every_routed_component_with_a_wrapper_has_user_documentation() -> None:
+    """A routed component needs a README a user can be sent to.
+
+    `xwaveform` was routed by this skill while having no README at all and no mention in the
+    root README inventory, so a routed tool could not be looked up from the public docs.
+    """
+    for component in ("xdebug", "xcov", "xbit", "xentry", "xloc", "xsva", "xwaveform"):
+        assert (ROOT / component / "README.md").is_file(), component
+
+
+def test_cli_surface_documents_the_interpreter_prerequisite() -> None:
+    """python-based wrappers need >= 3.11 and say how to override the interpreter.
+
+    The wrappers default to `python3` from PATH (except `xcov`, which falls back to the repo
+    Conda environment), so a host whose PATH python3 is 3.6 fails with a SyntaxError that
+    looks like a broken tool unless this prerequisite is documented.
+    """
+    cli = (SKILL / "references/surfaces/cli.md").read_text(encoding="utf-8")
+    for term in (
+        "Python >= 3.11", "PYTHON=<path>",
+        "future feature annotations is not defined",
+        "tools/xdebug",
+    ):
+        assert term in cli
+    assert "XVERIF_XCOV_PYTHON" in cli
+
+
+def test_execution_model_is_the_single_routing_authority() -> None:
+    """Routing is stated once, with an environment dimension, instead of per skill.
+
+    The same three-step routing used to be repeated in four places, which is how `mcp_ssh`
+    ended up routed nowhere: any new entrypoint had to be added in four separate docs.
+    """
+    model = (SKILL / "references/core/execution-model.md").read_text(encoding="utf-8")
+    assert "路由的唯一权威" in model
+    for term in ("本地 MCP", "ssh 远端 MCP", "mcp_ssh", "无 MCP"):
+        assert term in model
+    assert "不静默" in model
