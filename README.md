@@ -23,6 +23,29 @@
 
 In short, `xdebug` answers where facts come from and what happened at a specific time; `xbit` computes exact SystemVerilog values; `xentry` extracts configured fields; `xloc` resolves compact log locations on demand; `xwiki` preserves project context; `xsimdebug` operates live VCS or Xcelium debug sessions; `xsva` lowers temporal semantics into IR; `xcov` reports covered and uncovered objects with source evidence; and `xverif-mcp` exposes these deterministic capabilities to AI agents.
 
+## Running against an EDA host over ssh
+
+NPI, FSDB, and coverage queries need a machine that has Verdi and a license. When the agent runs on a different machine - for example an internet-connected host while the EDA server has no outbound network - expose the EDA host's MCP server over ssh instead of copying data:
+
+```json
+{
+  "mcpServers": {
+    "xverif-remote": {
+      "command": "<conda-env>/bin/python",
+      "args": ["-m", "mcp_ssh"],
+      "env": {
+        "PYTHONPATH": "<xverif>/xverif_mcp/src",
+        "XVERIF_MCP_SSH_HOST": "user@eda-host",
+        "XVERIF_MCP_SSH_REMOTE_ROOT": "/shared/xverif",
+        "XVERIF_MCP_SSH_REMOTE_PYTHON": "/shared/xverif/.conda-xverif/bin/python"
+      }
+    }
+  }
+}
+```
+
+`mcp_ssh` only forwards: tool schemas and results are relayed untouched, so the remote server decides every xverif semantic, and each MCP connection owns its own remote process. Variables in the MCP client's `env` block (for example `VERDI_HOME` and license settings) are forwarded to the remote process; credential-shaped names never are. Check a configuration with `python -m mcp_ssh --check`, which prints variable names and the remote tool count but never a value. Both machines must reach the repository through the same path, and session state is owned by the remote `$HOME`, so keep that on shared storage when sessions must survive across machines. See [`xverif_mcp/README.md`](xverif_mcp/README.md) for the full option list and troubleshooting order.
+
 ## Tool overview
 
 ### Default output format: XOUT
@@ -159,6 +182,17 @@ Variables present in the current environment replace matching configured values;
 | Verdi | Currently developed and tested with **V-2023.12-SP2**; NPI signatures can differ by version |
 
 Verdi-dependent capabilities additionally require the applicable Synopsys license rights. `VERDI_HOME` only identifies a local installation and is not a license grant. When another Verdi release exposes NPI compatibility errors, adapt the wrapper against the user's local headers without copying those headers into this repository.
+
+> **Build environment scope.** `xdebug` and `xcov` link against external commercial EDA
+> software (Verdi NPI/FSDB, coverage runtime) and depend on the site's C++ toolchain,
+> libstdc++ ABI, zlib location, and license setup. The project therefore does not - and
+> cannot - guarantee that it builds in every environment, and it does not support every
+> OS/compiler/Verdi combination. Compilation or link failures caused by the local
+> toolchain or by a Verdi installation this project was not developed against are outside
+> the project's scope: resolve them against your own environment, for example by selecting
+> a compiler whose libstdc++ ABI matches the installed `libnpiL1.so`, or by adapting the
+> wrapper locally. Reports that identify a genuine repository defect, reproducible with a
+> documented supported combination, remain in scope.
 
 For `xdebug`, the GCC version alone is not sufficient: the compiler's libstdc++
 dual ABI must match the local `libnpiL1.so`. `make -C xdebug` now compile-links a

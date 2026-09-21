@@ -23,6 +23,36 @@
 
 简单说：`xdebug` 负责“事实从哪里来、某时刻发生了什么”，`xbit` 负责“这些值按 SystemVerilog 规则算出来到底是多少”，`xentry` 负责“这个 entry 的 bit 域段按配置切出来是什么”，`xloc` 负责“这条 log 在哪个文件的哪一行，但只在需要时才查”，`xwiki` 负责“把验证环境、DUT 功能、workflow、debug 入口等知识编译进持续 LLM wiki”，`xsimdebug` 负责“直接操作正在运行的 VCS 或 Xcelium 仿真”，`xsva` 负责”assertion 的 temporal 语义先降成 IR，再解释给人和 agent”，`xcov` 负责“coverage database 里哪些 scope/object/bin 已覆盖或未覆盖，并给出源码 evidence”，`xverif-mcp` 负责”把确定性工具统一暴露给 AI agent 的 MCP 协议入口”。
 
+## 通过 ssh 使用 EDA 机器
+
+NPI、FSDB 和 coverage 查询需要一台装有 Verdi 且有 license 的机器。当 agent 跑在另一台机器上时——
+例如 AI 服务器能上外网、EDA 服务器不能——把 EDA 机器的 MCP server 通过 ssh 暴露出来，而不是
+搬运数据：
+
+```json
+{
+  "mcpServers": {
+    "xverif-remote": {
+      "command": "<conda-env>/bin/python",
+      "args": ["-m", "mcp_ssh"],
+      "env": {
+        "PYTHONPATH": "<xverif>/xverif_mcp/src",
+        "XVERIF_MCP_SSH_HOST": "user@eda-host",
+        "XVERIF_MCP_SSH_REMOTE_ROOT": "/shared/xverif",
+        "XVERIF_MCP_SSH_REMOTE_PYTHON": "/shared/xverif/.conda-xverif/bin/python"
+      }
+    }
+  }
+}
+```
+
+`mcp_ssh` 只做转发：工具 schema 与调用结果原样透传，所有 xverif 语义仍由远端 server 决定，
+每个 MCP 连接对应一个独立的远端进程。MCP client `env` 中的变量（例如 `VERDI_HOME` 和 license
+设置）会转发给远端进程，凭据形状的变量永不转发。可用 `python -m mcp_ssh --check` 自检配置，
+它只打印变量名和远端工具数，不打印任何取值。两台机器需要以相同路径访问同一份仓库；session
+状态归属远端 `$HOME`，如需跨机器保留 session，请把 `$HOME` 放在共享存储上。完整配置项与排障
+顺序见 [`xverif_mcp/README.md`](xverif_mcp/README.md)。
+
 ## 工具概览
 
 ### 默认输出格式：XOUT
@@ -247,6 +277,14 @@ Claude Code、Codex 等 AI agent 通常由 IDE、插件或独立进程启动，�
 | Verdi | 当前基于 **V-2023.12-SP2** 开发与测试，NPI API 随版本不同可能存在参数差异 |
 
 > 如果使用其他 Verdi 版本遇到编译或运行时 NPI 兼容性问题，可让 AI agent 根据编译错误和 NPI 头文件进行兼容性修复。
+
+> **编译环境的适用范围。** `xdebug` 和 `xcov` 需要链接外部商业 EDA 软件（Verdi
+> NPI/FSDB、coverage runtime），并且依赖站点的 C++ 工具链、libstdc++ ABI、zlib 位置和
+> license 配置。因此本项目不保证、也无法保证在所有环境下都能编译通过，也不承诺覆盖所有
+> OS/编译器/Verdi 版本组合。由本地工具链或本项目未针对其开发的 Verdi 安装导致的编译、链接
+> 失败不在本项目范围内，请自行在你们的环境里解决，例如改用 libstdc++ ABI 与已安装
+> `libnpiL1.so` 匹配的编译器，或在本地适配 wrapper。反过来说，能证明是仓库自身缺陷、并且
+> 能在文档化的受支持组合上复现的问题，仍然属于本项目范围。
 
 对 `xdebug` 来说，仅满足 GCC 版本要求还不够：编译器的 libstdc++ dual ABI 必须与本地
 `libnpiL1.so` 一致。`make -C xdebug` 会在构建 NPI engine 前，先编译并链接一个最小的
