@@ -119,6 +119,28 @@ def _query(
     )
 
 
+def _summary_fields(xout: str) -> dict[str, str]:
+    """Parse the XOUT `summary:` block into {key: value}.
+
+    The block is aligned by padding each key to the widest key in the block, so the
+    rendered spacing is a property of which fields are present rather than of any single
+    field. Parsing keeps an assertion about field values from also pinning that padding.
+    """
+    fields: dict[str, str] = {}
+    in_summary = False
+    for line in xout.splitlines():
+        stripped = line.strip()
+        if not in_summary:
+            in_summary = stripped == "summary:"
+            continue
+        if not line.startswith("  ") or ":" not in stripped:
+            break
+        key, _, value = stripped.partition(":")
+        fields[key.strip()] = value.strip()
+    assert fields, "XOUT response has no summary block"
+    return fields
+
+
 def _simple_query(
     cli_runner: CliRunner,
     session_id: str,
@@ -324,21 +346,38 @@ def test_scope_roots_supports_source_filters_and_xout(
     assert isinstance(xout, str)
     assert xout.startswith("@xdebug.scope.roots.v1")
     assert "pointer\tkind\tvalue" not in xout
-    for evidence in (
-        "summary:", "recommended: active_zero_evidence_tb", "source     : auto",
-        "roots      : 1", "matched    : 1", "wave       : 1",
-        "design     : 1", "roots:",
-        "active_zero_evidence_tb  matched  design,wave",
-    ):
-        assert evidence in xout
-    for generic_key in (
-        "recommended_root", "recommended_reason", "matched_count",
-        "response_truncated", "scan_complete", "analysis_complete",
-    ):
-        assert generic_key not in xout
+    assert "summary:" in xout
+    # The summary block pads every key to the widest key in the block, so asserting a
+    # fixed-width string (`"recommended: ..."`) pins the block's key set: adding a longer
+    # key such as `response_truncated` widens the column and breaks the assertion even
+    # though the rendered fields are exactly the intended ones. Compare parsed fields.
+    assert _summary_fields(xout) == {
+        "recommended": "active_zero_evidence_tb",
+        "source": "auto",
+        "roots": "1",
+        "matched": "1",
+        "wave": "1",
+        "design": "1",
+        "scan_complete": "true",
+        "analysis_complete": "true",
+        "response_truncated": "false",
+        "total_count": "1",
+        "returned_count": "1",
+        "truncation_scopes": "[empty]",
+    }
+    # JSON-only names that the XOUT rendering renames. The completeness fields are
+    # deliberately not listed here: `json-api.md` requires callers to read `scan_complete`,
+    # `analysis_complete` and `response_truncated` under exactly those names, and the
+    # renderer keeps them verbatim, so they must appear in XOUT.
+    for json_only_name in ("recommended_root", "recommended_reason", "matched_count"):
+        assert json_only_name not in xout
     roots_block = xout.split("roots:\n", 1)[1]
-    header = roots_block.splitlines()[0].split()
-    assert header == ["path", "status", "sources", "wave", "design"]
+    header, *rows = roots_block.splitlines()
+    assert header.split() == ["path", "status", "sources", "wave", "design"]
+    _, recommended_row = rows[0].split(None, 1)
+    assert recommended_row.split() == [
+        "matched", "design,wave", "active_zero_evidence_tb", "active_zero_evidence_tb",
+    ]
 
 
 @pytest.mark.combined

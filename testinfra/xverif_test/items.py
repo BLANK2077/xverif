@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,7 +38,7 @@ class ExternalSuiteItem(pytest.Item):
 
     def runtest(self) -> None:
         runner = self.suite.runner
-        argv = tuple(str(value) for value in runner.get("argv", []))
+        argv = _resolve_runner_argv(runner.get("argv", []))
         if not argv:
             raise ExternalSuiteFailure(
                 self.suite.id,
@@ -115,6 +116,24 @@ class ExternalSuiteItem(pytest.Item):
         # during setup; None causes TestReport construction to fail before the
         # intended optional-suite skip can be recorded.
         return Path(str(self.config.rootpath)) / "testinfra/catalog.v1.yaml", 0, self.name
+
+
+def _resolve_runner_argv(raw: object) -> tuple[str, ...]:
+    """Resolve a command runner's argv, honouring a ``python3`` interpreter marker.
+
+    Catalog entries spell the interpreter as ``python3`` because that is the *concept*
+    they mean - the Python that owns this test environment. Resolved through ``PATH`` it
+    can instead be a system Python unrelated to the running suite, which made
+    ``xloc.vim``/``xloc.nvim``/``xdebug.cpp_unit`` fail with
+    ``SyntaxError: future feature annotations is not defined`` whenever the Conda
+    environment was not active. The interpreter running this suite is by definition the
+    right one (``python_test_runtime`` already guarantees it is 3.11+), so bind that
+    name to it rather than to whatever ``PATH`` happens to hold.
+    """
+    argv = [str(value) for value in raw] if isinstance(raw, (list, tuple)) else []
+    if argv and argv[0] == "python3":
+        argv[0] = sys.executable
+    return tuple(argv)
 
 
 def _terminate_process_group(process: subprocess.Popen[str], timeout_sec: int) -> None:
