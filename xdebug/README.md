@@ -191,7 +191,7 @@ xdebug request.json
 ~/.xdebug/engine/sessions/<session_id>/transport/
 ```
 
-启用方式：
+这是**显式例外路径**，不是失败后的自动回退：由用户或项目文档明确要求时才启用，并且共享目录必须真实可见。不要因为一次连接失败就静默切到 file transport。启用方式：
 
 ```json
 {
@@ -414,7 +414,7 @@ xdebug session 默认使用本机 Unix domain socket：
 
 同一台机器上的普通调试优先使用默认 UDS。只有 socket 路径不可共享、容器或 namespace 隔离导致 UDS 不可达、或确实需要跨进程边界连接 daemon 时，才显式使用 TCP。
 
-如果问题是“本机无法连接集群计算节点 TCP 端口”，不要用 TCP 直连；改用 `transport:"file"`，让计算节点上的 daemon 通过共享 session 目录交换请求。
+如果问题是“本机无法连接集群计算节点 TCP 端口”，不要用 TCP 直连；在用户确认共享目录可见后改用 `transport:"file"`，让计算节点上的 daemon 通过共享 session 目录交换请求。该选择必须显式做出，不自动回退。
 
 本机 TCP session 示例：
 
