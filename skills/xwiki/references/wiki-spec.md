@@ -142,6 +142,27 @@ updated_at: 2026-06-29
 - `updated_at`
 - `confidence`
 
+### Issue RTL Revisions
+
+所有具体 `de_issue` 和 `dv_issue` 页面必须包含 `rtl_revisions`。目录 `index.md`、`log.md` 以及普通 `de`、`dv` 页面不使用该字段。
+
+```yaml
+rtl_revisions:
+  - repository: rtl
+    commit: "0123456789abcdef0123456789abcdef01234567"
+    tags: ["v1.2.0"]
+    dirty: false
+```
+
+- `repository`：稳定的仓库逻辑名称，不得为本机绝对路径；同一页面内不得重复。
+- `commit`：当前 `HEAD` 的完整 40 位十六进制 commit。
+- `tags`：精确指向该 commit 的全部 tag；没有时使用 `[]`。tag 不能替代 commit。
+- `dirty`：Git 工作树是否存在已跟踪或未跟踪的未提交变化。
+- 分析涉及多个 RTL 仓库或 submodule 时分别记录。已确认没有相关 RTL Git 仓库时使用 `rtl_revisions: []`。
+- 无法确定仓库版本时不能用空列表或猜测值通过校验，必须停止写入并询问用户。
+
+该字段是严格合同。已有具体 issue 页面缺少它时，必须先回填，wiki 才能通过校验。
+
 ## Links
 
 - 使用相对 Markdown 链接。

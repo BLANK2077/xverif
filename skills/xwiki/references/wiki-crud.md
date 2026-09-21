@@ -15,6 +15,7 @@
 - 创建新的 concept Markdown 时，先按 `object_type` 放入 `de/`、`dv/`、`de_issue/` 或 `dv_issue/`；`de_issue` 必须进一步放入 `spec/` 或 `rtl/`。
 - 允许创建多层子目录，但新目录必须同时创建 `index.md` 和 `log.md`。
 - frontmatter 至少包含 `type`、`title`、`description`、`object_type`。
+- 创建具体 `de_issue` 或 `dv_issue` 页面时必须检查相关 RTL Git 仓库并填写 `rtl_revisions`；确认没有相关 Git 仓库时显式填写空列表。
 - 新事实必须能指向 raw source、evidence 或明确标成未确认。
 - 更新根 `index.md` 和沿途每层目录的 `index.md`，让页面可达。
 - 更新相关页面的出链。
@@ -28,6 +29,7 @@
 - 将新材料合并到已有概念，不要创建近似重复页面。
 - 如果新材料推翻旧结论，写明 contradiction/resolution。
 - 无法确认的信息写入未确认信息，不要经验补全。
+- 更新具体 `de_issue` 或 `dv_issue` 页面时重新采集相关 RTL Git 仓库的 commit、精确 tag 和 dirty 状态，不沿用未经核对的旧版本信息。
 - 更新根 index、沿途目录 index、backlinks、tags 和最接近页面的目录 log。
 - 运行校验脚本。
 

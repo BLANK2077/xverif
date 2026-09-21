@@ -31,13 +31,14 @@ xwiki 要求 AI 严格执行 LLM Wiki 的编译过程。
    - issue、index 或 log 更新：不读取 topic prompt。
 5. 抽取稳定事实、验证结论、接口关系、debug 入口、unknowns。
 6. 按 object_type 选择目录：设计事实进入 `de/`，验证事实进入 `dv/`，设计/spec/RTL 问题进入 `de_issue/`，DV 问题进入 `dv_issue/`。`de_issue` 下必须继续区分 `spec/` 或 `rtl/`。
-7. 优先更新已有 concept；只有没有合适页面时才新增。
-8. 处理 contradiction：新材料推翻旧结论时，更新旧页面并记录 resolution。
-9. 更新根 `index.md`、相关目录及沿途子目录的 `index.md`、出链、入链、可选 backlinks/tags。首次项目 ingest 或全量刷新还必须创建或更新 `_index/prompt-profile.md`，记录验证层次、初始化时间、已读取的 prompt 文件集合、topic 到 prompt 文件的映射和是否需要刷新，但不复制 prompt 正文。
-10. 追加最接近更新页面的目录级 `log.md`；跨多个描述对象目录时分别追加各目录日志。
-11. 如果创建新子目录，必须同时创建该目录的 `index.md` 和 `log.md`。
-12. 运行 `validate_xwiki.py`。
-13. 向用户汇报来源、更新页面、验证层次、实际读取的 prompt 集合、主要使用的 prompt、剩余 unknowns 和校验结果；本次没有读取 prompt 时省略 prompt 集合。
+7. 写入具体 issue 页面前，检查本次分析涉及的每个 RTL source root 是否为 Git 仓库，并生成 `rtl_revisions`。每个相关仓库记录稳定逻辑名称、40 位 `HEAD` commit、精确指向该 commit 的全部 tag 和包含未跟踪文件在内的 dirty 状态；相关 submodule 独立记录。已确认没有相关 RTL Git 仓库时记录空列表。无法取得版本时停止并询问，不得用空列表、短 SHA 或猜测值 fallback。
+8. 优先更新已有 concept；只有没有合适页面时才新增。
+9. 处理 contradiction：新材料推翻旧结论时，更新旧页面并记录 resolution。
+10. 更新根 `index.md`、相关目录及沿途子目录的 `index.md`、出链、入链、可选 backlinks/tags。首次项目 ingest 或全量刷新还必须创建或更新 `_index/prompt-profile.md`，记录验证层次、初始化时间、已读取的 prompt 文件集合、topic 到 prompt 文件的映射和是否需要刷新，但不复制 prompt 正文。
+11. 追加最接近更新页面的目录级 `log.md`；跨多个描述对象目录时分别追加各目录日志。
+12. 如果创建新子目录，必须同时创建该目录的 `index.md` 和 `log.md`。
+13. 运行 `validate_xwiki.py`。
+14. 向用户汇报来源、更新页面、验证层次、实际读取的 prompt 集合、主要使用的 prompt、剩余 unknowns 和校验结果；本次没有读取 prompt 时省略 prompt 集合。
 
 ## Case Fail Debug
 
@@ -48,6 +49,8 @@ xwiki 要求 AI 严格执行 LLM Wiki 的编译过程。
 - `spec_bug`：写入 `de_issue/spec/`，描述 spec 不清、spec 与 RTL/DV 期望冲突、需求缺失或文档定义错误。
 
 如果根因未完全确认，选择最可能的候选主题并标记为未确认，列出下一步证据需求。不要把临时仿真产物路径写成长期 citation。
+
+以上三类具体 issue 页面都必须记录 `rtl_revisions`；该要求不因问题最终归类为 env、RTL 或 spec 而改变。
 
 ## Query
 

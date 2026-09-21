@@ -85,6 +85,8 @@ prompt 的加载范围由当前操作阶段决定，不得在每次 xwiki 查询
 - testbench、UVM env、RM、checker、scoreboard、sequence、配置、脚本、仿真参数或 DV 假设问题写入 `dv_issue`。
 - 如果根因未完全确认，仍要更新对应候选 issue 页面，把结论标为未确认，并记录下一步需要的证据。
 
+写入或更新任何具体 `de_issue` 或 `dv_issue` 页面前，必须检查本次分析涉及的每个 RTL source root 是否属于 Git 仓库。具体 issue 页面的 frontmatter 必须包含 `rtl_revisions`：已确认没有相关 RTL Git 仓库时写 `[]`；存在时逐仓库记录稳定逻辑名称、`HEAD` 的 40 位 commit、所有精确指向该 commit 的 tag，以及包含未跟踪文件在内的 dirty 状态。相关 submodule 作为独立仓库记录。tag 不能替代 commit；仓库名称不得使用本机绝对路径。无法取得版本信息时不得写空列表或猜测值，必须向用户报告阻塞并询问。
+
 根因主题与存储对象固定映射：`env_bug` 写入 `dv_issue/`，`rtl_bug` 写入 `de_issue/rtl/`，`spec_bug` 写入 `de_issue/spec/`。主题名用于问题分类，frontmatter 的 `object_type` 仍只能使用 `dv_issue` 或 `de_issue`，不能写成 `env_bug`、`rtl_bug`、`spec_bug`。
 
 详细流程见 [references/compile-process.md](references/compile-process.md)。
@@ -93,7 +95,7 @@ prompt 的加载范围由当前操作阶段决定，不得在每次 xwiki 查询
 
 wiki 根目录必须包含 `index.md`、`de/`、`dv/`、`de_issue/`、`dv_issue/`。根目录不再要求 `log.md`；各描述对象目录必须包含自己的 `index.md` 和 `log.md`。`de_issue/` 下必须再区分 `spec/` 与 `rtl/`，且二者也必须各自包含 `index.md` 和 `log.md`。
 
-wiki 允许多层子目录，但 `$XWIKI_DIR` 下除 `_index/`、`archive/`、`deprecated/` 以外，任何包含 Markdown 页面或子目录的目录都必须同时包含 `index.md` 和 `log.md`，形成可局部查询、可局部追溯的分层记忆。所有 Markdown 文件都必须有 YAML frontmatter，至少包含 `type`、`title`、`description`、`object_type`。`object_type` 只能是 `de`、`dv`、`de_issue`、`dv_issue`。链接必须相对可解析，禁止本机绝对路径和 `file://`。
+wiki 允许多层子目录，但 `$XWIKI_DIR` 下除 `_index/`、`archive/`、`deprecated/` 以外，任何包含 Markdown 页面或子目录的目录都必须同时包含 `index.md` 和 `log.md`，形成可局部查询、可局部追溯的分层记忆。所有 Markdown 文件都必须有 YAML frontmatter，至少包含 `type`、`title`、`description`、`object_type`。`object_type` 只能是 `de`、`dv`、`de_issue`、`dv_issue`。具体 issue 页面还必须包含合法的 `rtl_revisions`。链接必须相对可解析，禁止本机绝对路径和 `file://`。
 
 创建空 wiki 骨架时使用 `scripts/init_xwiki.py`，不要手写目录骨架。脚本默认保留已有文件；需要重建脚本管理的 index/log/_index 文件时显式传 `--force`；只查看计划时传 `--dry-run`。
 

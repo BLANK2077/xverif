@@ -27,6 +27,8 @@ SPECIAL_DIRS = {INDEX_DIR, "archive", "deprecated"}
 LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)\s]+(?:\s+\"[^\"]*\")?)\)")
 LOG_HEADING_RE = re.compile(r"^##\s+(?:\[\d{4}-\d{2}-\d{2}\]|\d{4}-\d{2}-\d{2})(?:\s|$)")
 LOCAL_ABSOLUTE_RE = re.compile(r"^(?:/|~[/\\]|[A-Za-z]:[/\\])")
+FULL_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+RTL_REVISION_KEYS = {"repository", "commit", "tags", "dirty"}
 
 
 @dataclass
@@ -114,6 +116,103 @@ def _parse_frontmatter(text: str) -> tuple[dict[str, str], str] | None:
     return meta, body
 
 
+def _parse_string(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+def _parse_string_list(value: str) -> list[str] | None:
+    value = value.strip()
+    if not value.startswith("[") or not value.endswith("]"):
+        return None
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        parsed = None
+    if isinstance(parsed, list) and all(isinstance(item, str) and item for item in parsed):
+        return parsed
+    inner = value[1:-1].strip()
+    if not inner:
+        return []
+    items = [_parse_string(item) for item in inner.split(",")]
+    if any(not item for item in items):
+        return None
+    return items
+
+
+def _parse_rtl_revision_value(key: str, value: str) -> Any:
+    if key == "tags":
+        return _parse_string_list(value)
+    if key == "dirty":
+        lowered = value.strip().lower()
+        if lowered == "true":
+            return True
+        if lowered == "false":
+            return False
+        return None
+    return _parse_string(value)
+
+
+def _parse_rtl_revisions(text: str) -> tuple[bool, list[dict[str, Any]] | None, str | None]:
+    if not text.startswith("---\n"):
+        return False, None, None
+    marker = "\n---\n"
+    end = text.find(marker, 4)
+    if end < 0:
+        return False, None, None
+    lines = text[4:end].splitlines()
+    matches = [index for index, line in enumerate(lines) if line.startswith("rtl_revisions:")]
+    if not matches:
+        return False, None, None
+    if len(matches) != 1:
+        return True, None, "rtl_revisions must appear exactly once"
+
+    start = matches[0]
+    key, inline = lines[start].split(":", 1)
+    if key != "rtl_revisions":
+        return True, None, "rtl_revisions must be a top-level frontmatter field"
+    inline = inline.strip()
+    if inline:
+        if inline == "[]":
+            return True, [], None
+        try:
+            value = json.loads(inline)
+        except json.JSONDecodeError:
+            return True, None, "inline rtl_revisions must be a JSON-compatible list"
+        if not isinstance(value, list):
+            return True, None, "rtl_revisions must be a list"
+        return True, value, None
+
+    block: list[str] = []
+    for line in lines[start + 1 :]:
+        if line and not line.startswith((" ", "\t")):
+            break
+        block.append(line)
+    entries: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    for line in block:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        first = re.match(r"^  -\s+([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$", line)
+        continuation = re.match(r"^    ([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$", line)
+        if first:
+            current = {}
+            entries.append(current)
+            field, raw_value = first.groups()
+        elif continuation and current is not None:
+            field, raw_value = continuation.groups()
+        else:
+            return True, None, f"invalid rtl_revisions entry syntax: {line.strip()}"
+        if field in current:
+            return True, None, f"duplicate rtl_revisions field: {field}"
+        current[field] = _parse_rtl_revision_value(field, raw_value)
+    if not entries:
+        return True, None, "use rtl_revisions: [] when there are no related RTL Git repositories"
+    return True, entries, None
+
+
 def _rel(path: Path, root: Path) -> str:
     try:
         return path.relative_to(root).as_posix()
@@ -195,6 +294,75 @@ def _validate_markdown_frontmatter(root: Path, path: Path, text: str, findings: 
         findings.append(Finding("DEPRECATED_FLAG_MISSING", rel_path, "archive/deprecated pages require deprecated: true"))
     if is_deprecated and not meta.get("deprecated_reason"):
         findings.append(Finding("DEPRECATED_REASON_MISSING", rel_path, "deprecated pages require deprecated_reason"))
+
+
+def _is_concrete_issue_page(root: Path, path: Path) -> bool:
+    rel = path.relative_to(root)
+    return bool(rel.parts and rel.parts[0] in {"de_issue", "dv_issue"} and path.name not in RESERVED_NAMES)
+
+
+def _validate_issue_rtl_revisions(root: Path, path: Path, text: str, findings: list[Finding]) -> None:
+    if not _is_concrete_issue_page(root, path):
+        return
+    rel_path = _rel(path, root)
+    present, revisions, error = _parse_rtl_revisions(text)
+    if not present:
+        findings.append(
+            Finding(
+                "RTL_REVISIONS_MISSING",
+                rel_path,
+                "concrete de_issue/dv_issue pages require rtl_revisions frontmatter",
+            )
+        )
+        return
+    if error or revisions is None:
+        findings.append(Finding("RTL_REVISIONS_INVALID", rel_path, error or "rtl_revisions is invalid"))
+        return
+
+    repositories: set[str] = set()
+    for index, revision in enumerate(revisions):
+        prefix = f"rtl_revisions[{index}]"
+        if not isinstance(revision, dict):
+            findings.append(Finding("RTL_REVISION_INVALID", rel_path, f"{prefix} must be an object"))
+            continue
+        keys = set(revision)
+        if keys != RTL_REVISION_KEYS:
+            missing = sorted(RTL_REVISION_KEYS - keys)
+            unknown = sorted(keys - RTL_REVISION_KEYS)
+            details = []
+            if missing:
+                details.append("missing " + ", ".join(missing))
+            if unknown:
+                details.append("unknown " + ", ".join(unknown))
+            findings.append(Finding("RTL_REVISION_FIELDS_INVALID", rel_path, f"{prefix}: {'; '.join(details)}"))
+            continue
+
+        repository = revision["repository"]
+        if not isinstance(repository, str) or not repository.strip():
+            findings.append(Finding("RTL_REPOSITORY_INVALID", rel_path, f"{prefix}.repository must be non-empty"))
+        elif repository.lower().startswith("file://") or LOCAL_ABSOLUTE_RE.match(repository):
+            findings.append(
+                Finding("RTL_REPOSITORY_ABSOLUTE", rel_path, f"{prefix}.repository must be a logical name, not {repository}")
+            )
+        elif repository in repositories:
+            findings.append(Finding("RTL_REPOSITORY_DUPLICATE", rel_path, f"duplicate repository: {repository}"))
+        else:
+            repositories.add(repository)
+
+        commit = revision["commit"]
+        if not isinstance(commit, str) or not FULL_COMMIT_RE.fullmatch(commit):
+            findings.append(
+                Finding("RTL_COMMIT_INVALID", rel_path, f"{prefix}.commit must be a lowercase 40-character Git SHA")
+            )
+
+        tags = revision["tags"]
+        if not isinstance(tags, list) or any(not isinstance(tag, str) or not tag for tag in tags):
+            findings.append(Finding("RTL_TAGS_INVALID", rel_path, f"{prefix}.tags must be a list of non-empty strings"))
+        elif len(tags) != len(set(tags)):
+            findings.append(Finding("RTL_TAGS_DUPLICATE", rel_path, f"{prefix}.tags must not contain duplicates"))
+
+        if not isinstance(revision["dirty"], bool):
+            findings.append(Finding("RTL_DIRTY_INVALID", rel_path, f"{prefix}.dirty must be true or false"))
 
 
 def _directory_requires_local_index(directory: Path, root: Path) -> bool:
@@ -284,6 +452,7 @@ def validate_wiki(root: Path) -> list[Finding]:
             findings.append(Finding("UTF8_INVALID", _rel(path, root), "markdown file must be UTF-8"))
             continue
         _validate_markdown_frontmatter(root, path, text, findings)
+        _validate_issue_rtl_revisions(root, path, text, findings)
         if path.name == "log.md":
             _validate_log(root, path, text, findings)
         _validate_links(root, path, text, findings)

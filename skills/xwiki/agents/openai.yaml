@@ -9,6 +9,8 @@ interface:
     查询可隐式执行；只有用户、项目规则或任务范围授权写回时，debug 完 case fail
     后才更新 env_bug、rtl_bug 或 spec_bug 主题。普通查询及 issue、index、log
     更新不读取 topic prompt；首次项目 ingest 或全量刷新读取同层全部 prompt，
-    增量 concept 更新只读取 prompt profile 映射到目标 topic 的 prompt。
+    增量 concept 更新只读取 prompt profile 映射到目标 topic 的 prompt。写入任何
+    具体 de_issue 或 dv_issue 页面时，检查所有相关 RTL Git 仓库并记录完整
+    commit、精确 tag 和 dirty 状态。
 policy:
   allow_implicit_invocation: true
