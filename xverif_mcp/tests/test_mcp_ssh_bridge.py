@@ -153,6 +153,32 @@ def test_forwarding_keeps_site_variables_and_drops_credentials_and_bookkeeping()
     assert names == sorted(names)
 
 
+def test_machine_local_names_never_travel_to_the_remote_host() -> None:
+    """`HOME` is the client machine's home, not the server's.
+
+    xdebug keeps its engine registry and sessions under ``$HOME/.xdebug/engine``, so
+    forwarding the client's ``HOME`` would silently redirect the remote server's state into
+    a path that only exists on the client - and would make the bridge look like it needs a
+    shared home directory when it does not.
+    """
+    environ = {
+        "HOME": "<client-home>",
+        "USER": "client-user",
+        "LOGNAME": "client-user",
+        "SSH_AUTH_SOCK": "<sock>/agent.sock",
+        "SSH_CONNECTION": "10.0.0.1 50000 10.0.0.2 22",
+        "PATH": "<bin>",
+        "SITE_TAG": "site-1",
+    }
+    assert forwarded_names(environ, frozenset()) == ["PATH", "SITE_TAG"]
+
+    _raw, b64 = build_env_frame(environ, frozenset(), "<remote>/xverif")
+    frame = expand_frame(b64)
+    assert "HOME" not in frame
+    assert frame["SITE_TAG"] == "site-1"
+    assert frame["XVERIF_MCP_SSH_REMOTE_ROOT"] == "<remote>/xverif"
+
+
 def test_env_deny_removes_explicit_names() -> None:
     environ = {"PATH": "<bin>", "SITE_TAG": "site-1"}
     assert forwarded_names(environ, frozenset({"SITE_TAG"})) == ["PATH"]

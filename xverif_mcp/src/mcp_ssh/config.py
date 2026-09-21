@@ -68,9 +68,14 @@ SENSITIVE_FRAGMENTS = ("TOKEN", "PASSWORD", "SECRET", "COOKIE")
 # the value never lands in the MCP server's own environment.
 FRAME_ENV_NAME = CONFIG_PREFIX + "ENV_FRAME_B64"
 
-# Names that describe this machine's ssh session; forwarding them would confuse the
-# remote ssh instead of configuring the MCP server.
-LOCAL_ONLY_EXACT = frozenset({"SSH_AUTH_SOCK", "SSH_AGENT_PID", "SSH_CONNECTION", "SSH_TTY"})
+# Names that describe this machine rather than the session being configured. Forwarding
+# them would not configure the remote MCP server, it would misdescribe the remote host:
+# HOME in particular decides where xdebug keeps its engine registry and sessions
+# (``$HOME/.xdebug/engine``), so forwarding it would redirect the remote server's state
+# into a path that only exists here.
+LOCAL_ONLY_EXACT = frozenset(
+    {"HOME", "LOGNAME", "USER", "SSH_AUTH_SOCK", "SSH_AGENT_PID", "SSH_CONNECTION", "SSH_TTY"}
+)
 
 # Shell bookkeeping and exported bash functions. Forwarding these would both bloat the
 # frame (a login shell exports functions) and confuse the remote shell.

@@ -31,20 +31,27 @@ NPI, FSDB, and coverage queries need a machine that has Verdi and a license. Whe
 {
   "mcpServers": {
     "xverif-remote": {
-      "command": "<conda-env>/bin/python",
+      "command": "<local-conda-env>/bin/python",
       "args": ["-m", "mcp_ssh"],
       "env": {
-        "PYTHONPATH": "<xverif>/xverif_mcp/src",
+        "PYTHONPATH": "<local-xverif>/xverif_mcp/src",
         "XVERIF_MCP_SSH_HOST": "user@eda-host",
-        "XVERIF_MCP_SSH_REMOTE_ROOT": "/shared/xverif",
-        "XVERIF_MCP_SSH_REMOTE_PYTHON": "/shared/xverif/.conda-xverif/bin/python"
+        "XVERIF_MCP_SSH_REMOTE_ROOT": "<eda-host-xverif-path>",
+        "XVERIF_MCP_SSH_REMOTE_PYTHON": "<eda-host-python-3.11+>"
       }
     }
   }
 }
 ```
 
-`mcp_ssh` only forwards: tool schemas and results are relayed untouched, so the remote server decides every xverif semantic, and each MCP connection owns its own remote process. Variables in the MCP client's `env` block (for example `VERDI_HOME` and license settings) are forwarded to the remote process; credential-shaped names never are. Check a configuration with `python -m mcp_ssh --check`, which prints variable names and the remote tool count but never a value. Both machines must reach the repository through the same path, and session state is owned by the remote `$HOME`, so keep that on shared storage when sessions must survive across machines. See [`xverif_mcp/README.md`](xverif_mcp/README.md) for the full option list and troubleshooting order.
+The MCP client starts `command` **on the machine where the agent runs**, so `command` and
+`PYTHONPATH` are local paths. Everything behind `XVERIF_MCP_SSH_*` describes the EDA host
+and is used only after `ssh` connects: the remote repository path and the interpreter that
+runs the server there. Only the repository has to be reachable from both machines (a shared
+NAS mount is the usual arrangement); the remote server keeps its own session state under its
+own `$HOME`.
+
+`mcp_ssh` only forwards: tool schemas and results are relayed untouched, so the remote server decides every xverif semantic, and each MCP connection owns its own remote process. Variables in the MCP client's `env` block (for example `VERDI_HOME` and license settings) are forwarded to the remote process; credential-shaped names never are, and neither are the names that describe this machine (such as `HOME` or `SSH_AUTH_SOCK`). Check a configuration with `python -m mcp_ssh --check`, which prints variable names and the remote tool count but never a value. A shared `$HOME` is not required: the session lives entirely on the EDA host. (Sharing `~/.xdebug` across machines only matters for the cluster file transport described in [`xdebug/README.md`](xdebug/README.md), which is a separate mechanism.) See [`xverif_mcp/README.md`](xverif_mcp/README.md) for the full option list and troubleshooting order.
 
 ## Tool overview
 

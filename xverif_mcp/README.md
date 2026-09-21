@@ -363,9 +363,11 @@ stdio MCP server。对 MCP client 来说它和本地 server 没有区别：
 `content`/`isError`/`structuredContent` 都原样透传，工具的语义始终由远端 server 决定。因此
 每个 MCP 连接对应一个独立的远端 server 进程，远端的 session 生命周期与直连时完全一致。
 
-`env` 中除本程序自身配置之外的变量都会转发给远端进程（凭据形状的名字、本机 ssh/shell
-簿记、本机 Python/conda 与测试路径会被自动排除）。远端 server 的日志目录由转发的
-`XVERIF_MCP_LOG_DIR` 决定，不设置时落在远端 `$HOME/.xverif/mcp`。
+`env` 中除本程序自身配置之外的变量都会转发给远端进程；凭据形状的名字、描述本机的变量
+（`HOME`、`USER`、`SSH_AUTH_SOCK`、本机 ssh/shell 簿记）、本机 Python/conda 与测试路径会被
+自动排除。**不需要共享 `$HOME`**：会话完全在远端，状态落在远端自己的 `$HOME/.xdebug`；跨机器
+共享 `~/.xdebug` 只对 `xdebug` 的 cluster file transport 有意义。远端 server 的日志目录由
+转发的 `XVERIF_MCP_LOG_DIR` 决定，不设置时落在远端 `$HOME/.xverif/mcp`。
 
 配置自检：
 

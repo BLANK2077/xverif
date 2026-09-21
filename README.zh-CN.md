@@ -33,25 +33,30 @@ NPI、FSDB 和 coverage 查询需要一台装有 Verdi 且有 license 的机器�
 {
   "mcpServers": {
     "xverif-remote": {
-      "command": "<conda-env>/bin/python",
+      "command": "<本地-conda-env>/bin/python",
       "args": ["-m", "mcp_ssh"],
       "env": {
-        "PYTHONPATH": "<xverif>/xverif_mcp/src",
+        "PYTHONPATH": "<本地-xverif>/xverif_mcp/src",
         "XVERIF_MCP_SSH_HOST": "user@eda-host",
-        "XVERIF_MCP_SSH_REMOTE_ROOT": "/shared/xverif",
-        "XVERIF_MCP_SSH_REMOTE_PYTHON": "/shared/xverif/.conda-xverif/bin/python"
+        "XVERIF_MCP_SSH_REMOTE_ROOT": "<EDA机器上的-xverif-路径>",
+        "XVERIF_MCP_SSH_REMOTE_PYTHON": "<EDA机器上的-python-3.11+>"
       }
     }
   }
 }
 ```
 
+`command` 由 MCP client 在 **agent 所在的本机**启动，所以 `command` 和 `PYTHONPATH` 填本地路径；
+`XVERIF_MCP_SSH_*` 全部描述 EDA 机器，只在 `ssh` 连上之后才用到，填远端仓库路径和远端解释器。
+两台机器只需都能访问同一份仓库（NAS 共享挂载是常见做法），**不需要共享 `$HOME`**：会话完全在
+EDA 机器上，状态落在它自己的 `$HOME` 下。
+
 `mcp_ssh` 只做转发：工具 schema 与调用结果原样透传，所有 xverif 语义仍由远端 server 决定，
 每个 MCP 连接对应一个独立的远端进程。MCP client `env` 中的变量（例如 `VERDI_HOME` 和 license
-设置）会转发给远端进程，凭据形状的变量永不转发。可用 `python -m mcp_ssh --check` 自检配置，
-它只打印变量名和远端工具数，不打印任何取值。两台机器需要以相同路径访问同一份仓库；session
-状态归属远端 `$HOME`，如需跨机器保留 session，请把 `$HOME` 放在共享存储上。完整配置项与排障
-顺序见 [`xverif_mcp/README.md`](xverif_mcp/README.md)。
+设置）会转发给远端进程；凭据形状的变量永不转发，描述本机的变量（如 `HOME`、`SSH_AUTH_SOCK`）
+也不转发。可用 `python -m mcp_ssh --check` 自检配置，它只打印变量名和远端工具数，不打印任何
+取值。跨机器共享 `~/.xdebug` 只对 [`xdebug/README.md`](xdebug/README.md) 里的 cluster file
+transport 有意义，那是另一套机制。完整配置项与排障顺序见 [`xverif_mcp/README.md`](xverif_mcp/README.md)。
 
 ## 工具概览
 
