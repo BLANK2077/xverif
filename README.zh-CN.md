@@ -9,7 +9,7 @@
 >
 > `xdebug` 和 `xcov` 的部分能力需要用户在本地另行取得合法授权并安装相应 Synopsys software；设置 `VERDI_HOME` 或能够访问相关文件本身不代表已经获得 NPI/FSDB API 的使用权或 redistribution 权。不得把 `libNPI.so`、`libnpiL1.so`、`libnffr.so`、Synopsys headers/documentation，或包含这些内容的 binary、package、container image 随本仓库分发。具体边界见 [`THIRD_PARTY.md`](THIRD_PARTY.md)。
 
-`xverif` 是面向芯片验证 debug agent 的本地工具仓库，当前包含六个核心工具、两个 agent skill 和一个统一 MCP 入口：
+`xverif` 是面向芯片验证 debug agent 的本地工具仓库，提供确定性的设计/波形调试、coverage、bit 计算、entry 解析、日志位置还原、SVA 语义、验证知识持续记忆能力，以及统一的 MCP 入口：
 
 - [`xdebug`](xdebug/README.md)：查询设计数据库和波形数据库里的事实。
 - [`xbit`](xbit/README.md)：确定性计算 bit、literal、slice、表达式和 expected value。
@@ -23,42 +23,9 @@
 
 简单说：`xdebug` 负责“事实从哪里来、某时刻发生了什么”，`xbit` 负责“这些值按 SystemVerilog 规则算出来到底是多少”，`xentry` 负责“这个 entry 的 bit 域段按配置切出来是什么”，`xloc` 负责“这条 log 在哪个文件的哪一行，但只在需要时才查”，`xwiki` 负责“把验证环境、DUT 功能、workflow、debug 入口等知识编译进持续 LLM wiki”，`xsimdebug` 负责“直接操作正在运行的 VCS 或 Xcelium 仿真”，`xsva` 负责”assertion 的 temporal 语义先降成 IR，再解释给人和 agent”，`xcov` 负责“coverage database 里哪些 scope/object/bin 已覆盖或未覆盖，并给出源码 evidence”，`xverif-mcp` 负责”把确定性工具统一暴露给 AI agent 的 MCP 协议入口”。
 
-## 通过 ssh 使用 EDA 机器
-
-NPI、FSDB 和 coverage 查询需要一台装有 Verdi 且有 license 的机器。当 agent 跑在另一台机器上时——
-例如 AI 服务器能上外网、EDA 服务器不能——把 EDA 机器的 MCP server 通过 ssh 暴露出来，而不是
-搬运数据：
-
-```json
-{
-  "mcpServers": {
-    "xverif-remote": {
-      "command": "<本地-conda-env>/bin/python",
-      "args": ["-m", "mcp_ssh"],
-      "env": {
-        "PYTHONPATH": "<本地-xverif>/xverif_mcp/src",
-        "XVERIF_MCP_SSH_HOST": "user@eda-host",
-        "XVERIF_MCP_SSH_REMOTE_ROOT": "<EDA机器上的-xverif-路径>",
-        "XVERIF_MCP_SSH_REMOTE_PYTHON": "<EDA机器上的-python-3.11+>"
-      }
-    }
-  }
-}
-```
-
-`command` 由 MCP client 在 **agent 所在的本机**启动，所以 `command` 和 `PYTHONPATH` 填本地路径；
-`XVERIF_MCP_SSH_*` 全部描述 EDA 机器，只在 `ssh` 连上之后才用到，填远端仓库路径和远端解释器。
-两台机器只需都能访问同一份仓库（NAS 共享挂载是常见做法），**不需要共享 `$HOME`**：会话完全在
-EDA 机器上，状态落在它自己的 `$HOME` 下。
-
-`mcp_ssh` 只做转发：工具 schema 与调用结果原样透传，所有 xverif 语义仍由远端 server 决定，
-每个 MCP 连接对应一个独立的远端进程。MCP client `env` 中的变量（例如 `VERDI_HOME` 和 license
-设置）会转发给远端进程；凭据形状的变量永不转发，描述本机的变量（如 `HOME`、`SSH_AUTH_SOCK`）
-也不转发。可用 `python -m mcp_ssh --check` 自检配置，它只打印变量名和远端工具数，不打印任何
-取值。跨机器共享 `~/.xdebug` 只对 [`xdebug/README.md`](xdebug/README.md) 里的 cluster file
-transport 有意义，那是另一套机制。完整配置项与排障顺序见 [`xverif_mcp/README.md`](xverif_mcp/README.md)。
-
 ## 工具概览
+
+下面先说明所有工具共用的输出格式，再逐个说明每个工具的用途和入口。
 
 ### 默认输出格式：XOUT
 
@@ -90,14 +57,7 @@ printf '%s\n' '{"api_version":"xdebug.v1","action":"actions"}' | tools/xdebug --
 tools/xverif-mcp
 ```
 
-`tools/xverif-mcp` 是统一 stdio MCP server（`python -m xverif_mcp.server`），xdebug 作为设计/波形 stateful backend，xcov 作为 coverage stateful backend，xbit/xentry/xloc/xsva 以 stateless CLI adapter 接入。
-如果 AI 客户端在登录机、NPI/FSDB 查询需要跑到 LSF 计算节点，可以设置 `XVERIF_MCP_BACKEND=lsf`，让 MCP wrapper 通过 `bsub -I` 启动集群内 per-session stdio-loop 进程。不同 session 并行，同一 session 串行。
-MCP 始终提供全部工具组、状态修改和文件输出能力；配置项与旧版本迁移见 [MCP README](xverif_mcp/README.md)。
-如果不走 MCP 且本机无法直连计算节点 TCP 端口，xdebug 原生支持 `transport:"file"`，通过共享文件系统在 session 目录下交换 request/response。
-
-所有 MCP tool 通用支持 `xverif_output_path` / `xverif_output_append` 参数，可将响应同时写入文件；文件写入失败会返回 `OUTPUT_WRITE_FAILED`，不能把原 action 成功当作完整成功。
-
-完整说明见 [`xdebug/README.md`](xdebug/README.md)。
+NPI engine 是 source-only wrapper：用户需要自行在已合法授权的 Synopsys 安装上编译并运行。见 [`xdebug/README.md`](xdebug/README.md) 与 [`THIRD_PARTY.md`](THIRD_PARTY.md)。
 
 ### xbit
 
@@ -227,6 +187,15 @@ MCP 工具入口使用对称的 `xverif_cov_session_open/list/doctor/close/kill/
 
 完整说明见 [`xcov/README.md`](xcov/README.md)，agent 能力说明见 [`skills/xverif/references/xcov.md`](skills/xverif/references/xcov.md)，MCP 运行环境问题见 [`skills/xverif-admin/SKILL.md`](skills/xverif-admin/SKILL.md)。
 
+## Agent 与 MCP 接入
+
+`tools/xverif-mcp` 是统一 stdio MCP server（`python -m xverif_mcp.server`），xdebug 作为设计/波形 stateful backend，xcov 作为 coverage stateful backend，xbit/xentry/xloc/xsva 以 stateless CLI adapter 接入。
+如果 AI 客户端在登录机、NPI/FSDB 查询需要跑到 LSF 计算节点，可以设置 `XVERIF_MCP_BACKEND=lsf`，让 MCP wrapper 通过 `bsub -I` 启动集群内 per-session stdio-loop 进程。不同 session 并行，同一 session 串行。
+MCP 始终提供全部工具组、状态修改和文件输出能力；配置项与旧版本迁移见 [MCP README](xverif_mcp/README.md)。
+如果不走 MCP 且本机无法直连计算节点 TCP 端口，xdebug 原生支持 `transport:"file"`，通过共享文件系统在 session 目录下交换 request/response。
+
+所有 MCP tool 通用支持 `xverif_output_path` / `xverif_output_append` 参数，可将响应同时写入文件；文件写入失败会返回 `OUTPUT_WRITE_FAILED`，不能把原 action 成功当作完整成功。
+
 ## 推荐 Shell 入口
 
 为了在任意目录和非交互 shell 中稳定调用，建议把统一 wrapper 目录加入 `PATH`。示例中的 `<xverif-root>` 表示本仓库根目录，请按本机实际路径替换。
@@ -272,6 +241,41 @@ Claude Code、Codex 等 AI agent 通常由 IDE、插件或独立进程启动，�
 ```
 
 同步规则是“当前环境中存在的变量覆盖配置里的同名变量；当前环境中没有的旧变量保持不变”。脚本不做敏感变量过滤，运行前请确认当前 shell 里允许落盘的 token、key、password 等变量。
+
+## 通过 ssh 使用 EDA 机器
+
+NPI、FSDB 和 coverage 查询需要一台装有 Verdi 且有 license 的机器。当 agent 跑在另一台机器上时——
+例如 AI 服务器能上外网、EDA 服务器不能——把 EDA 机器的 MCP server 通过 ssh 暴露出来，而不是
+搬运数据：
+
+```json
+{
+  "mcpServers": {
+    "xverif-remote": {
+      "command": "<本地-conda-env>/bin/python",
+      "args": ["-m", "mcp_ssh"],
+      "env": {
+        "PYTHONPATH": "<本地-xverif>/xverif_mcp/src",
+        "XVERIF_MCP_SSH_HOST": "user@eda-host",
+        "XVERIF_MCP_SSH_REMOTE_ROOT": "<EDA机器上的-xverif-路径>",
+        "XVERIF_MCP_SSH_REMOTE_PYTHON": "<EDA机器上的-python-3.11+>"
+      }
+    }
+  }
+}
+```
+
+`command` 由 MCP client 在 **agent 所在的本机**启动，所以 `command` 和 `PYTHONPATH` 填本地路径；
+`XVERIF_MCP_SSH_*` 全部描述 EDA 机器，只在 `ssh` 连上之后才用到，填远端仓库路径和远端解释器。
+两台机器只需都能访问同一份仓库（NAS 共享挂载是常见做法），**不需要共享 `$HOME`**：会话完全在
+EDA 机器上，状态落在它自己的 `$HOME` 下。
+
+`mcp_ssh` 只做转发：工具 schema 与调用结果原样透传，所有 xverif 语义仍由远端 server 决定，
+每个 MCP 连接对应一个独立的远端进程。MCP client `env` 中的变量（例如 `VERDI_HOME` 和 license
+设置）会转发给远端进程；凭据形状的变量永不转发，描述本机的变量（如 `HOME`、`SSH_AUTH_SOCK`）
+也不转发。可用 `python -m mcp_ssh --check` 自检配置，它只打印变量名和远端工具数，不打印任何
+取值。跨机器共享 `~/.xdebug` 只对 [`xdebug/README.md`](xdebug/README.md) 里的 cluster file
+transport 有意义，那是另一套机制。完整配置项与排障顺序见 [`xverif_mcp/README.md`](xverif_mcp/README.md)。
 
 ## 环境要求
 

@@ -23,37 +23,9 @@
 
 In short, `xdebug` answers where facts come from and what happened at a specific time; `xbit` computes exact SystemVerilog values; `xentry` extracts configured fields; `xloc` resolves compact log locations on demand; `xwiki` preserves project context; `xsimdebug` operates live VCS or Xcelium debug sessions; `xsva` lowers temporal semantics into IR; `xcov` reports covered and uncovered objects with source evidence; and `xverif-mcp` exposes these deterministic capabilities to AI agents.
 
-## Running against an EDA host over ssh
-
-NPI, FSDB, and coverage queries need a machine that has Verdi and a license. When the agent runs on a different machine - for example an internet-connected host while the EDA server has no outbound network - expose the EDA host's MCP server over ssh instead of copying data:
-
-```json
-{
-  "mcpServers": {
-    "xverif-remote": {
-      "command": "<local-conda-env>/bin/python",
-      "args": ["-m", "mcp_ssh"],
-      "env": {
-        "PYTHONPATH": "<local-xverif>/xverif_mcp/src",
-        "XVERIF_MCP_SSH_HOST": "user@eda-host",
-        "XVERIF_MCP_SSH_REMOTE_ROOT": "<eda-host-xverif-path>",
-        "XVERIF_MCP_SSH_REMOTE_PYTHON": "<eda-host-python-3.11+>"
-      }
-    }
-  }
-}
-```
-
-The MCP client starts `command` **on the machine where the agent runs**, so `command` and
-`PYTHONPATH` are local paths. Everything behind `XVERIF_MCP_SSH_*` describes the EDA host
-and is used only after `ssh` connects: the remote repository path and the interpreter that
-runs the server there. Only the repository has to be reachable from both machines (a shared
-NAS mount is the usual arrangement); the remote server keeps its own session state under its
-own `$HOME`.
-
-`mcp_ssh` only forwards: tool schemas and results are relayed untouched, so the remote server decides every xverif semantic, and each MCP connection owns its own remote process. Variables in the MCP client's `env` block (for example `VERDI_HOME` and license settings) are forwarded to the remote process; credential-shaped names never are, and neither are the names that describe this machine (such as `HOME` or `SSH_AUTH_SOCK`). Check a configuration with `python -m mcp_ssh --check`, which prints variable names and the remote tool count but never a value. A shared `$HOME` is not required: the session lives entirely on the EDA host. (Sharing `~/.xdebug` across machines only matters for the cluster file transport described in [`xdebug/README.md`](xdebug/README.md), which is a separate mechanism.) See [`xverif_mcp/README.md`](xverif_mcp/README.md) for the full option list and troubleshooting order.
-
 ## Tool overview
+
+The subsections below cover the output format shared by every tool, then each tool's purpose and entry point.
 
 ### Default output format: XOUT
 
@@ -84,8 +56,6 @@ tools/xverif-mcp
 ```
 
 The NPI-backed engine is a source-only wrapper. Users must build and run it against their own legally licensed Synopsys installation. See [`xdebug/README.md`](xdebug/README.md) and [`THIRD_PARTY.md`](THIRD_PARTY.md).
-
-`tools/xverif-mcp` is the unified stdio MCP server (`python -m xverif_mcp.server`): xdebug and xcov are stateful backends for design/waveform and coverage queries, while xbit, xentry, xloc, and xsva are attached as stateless CLI adapters. When an AI client runs on a login host but NPI/FSDB queries must execute on an LSF compute node, set `XVERIF_MCP_BACKEND=lsf` and the MCP wrapper starts a per-session stdio-loop process inside the cluster through `bsub -I`. Different sessions run in parallel; one session runs serially. The MCP server always exposes every tool group, state mutation, and file output capability; configuration keys and migration from older releases are documented in the [MCP README](xverif_mcp/README.md). Without MCP, and when the login host cannot reach a compute node's TCP port, xdebug natively supports `transport:"file"`, which exchanges request and response through the shared filesystem in the session directory. Every MCP tool accepts the common `xverif_output_path` and `xverif_output_append` parameters to also write the response to a file; a failed file write returns `OUTPUT_WRITE_FAILED` and must not be treated as full success.
 
 ### xbit
 
@@ -147,6 +117,10 @@ tools/xcov_lsf --json request.json   # only without MCP and when LSF is mandator
 
 Real NPI coverage queries require a locally licensed Synopsys environment. The project does not bundle or grant rights to the coverage runtime.
 
+## Agent and MCP integration
+
+`tools/xverif-mcp` is the unified stdio MCP server (`python -m xverif_mcp.server`): xdebug and xcov are stateful backends for design/waveform and coverage queries, while xbit, xentry, xloc, and xsva are attached as stateless CLI adapters. When an AI client runs on a login host but NPI/FSDB queries must execute on an LSF compute node, set `XVERIF_MCP_BACKEND=lsf` and the MCP wrapper starts a per-session stdio-loop process inside the cluster through `bsub -I`. Different sessions run in parallel; one session runs serially. The MCP server always exposes every tool group, state mutation, and file output capability; configuration keys and migration from older releases are documented in the [MCP README](xverif_mcp/README.md). Without MCP, and when the login host cannot reach a compute node's TCP port, xdebug natively supports `transport:"file"`, which exchanges request and response through the shared filesystem in the session directory. Every MCP tool accepts the common `xverif_output_path` and `xverif_output_append` parameters to also write the response to a file; a failed file write returns `OUTPUT_WRITE_FAILED` and must not be treated as full success.
+
 ## Recommended shell entry points
 
 Add the repository's `tools/` directory to `PATH`. Replace `<xverif-root>` with the actual repository path.
@@ -179,6 +153,36 @@ AI agents started by an IDE or plugin may not inherit the Verdi, license, LSF, P
 ```
 
 Variables present in the current environment replace matching configured values; configured values absent from the current environment are preserved. The script does not filter secrets. Review the current shell environment before allowing tokens, keys, or passwords to be written to disk.
+
+## Running against an EDA host over ssh
+
+NPI, FSDB, and coverage queries need a machine that has Verdi and a license. When the agent runs on a different machine - for example an internet-connected host while the EDA server has no outbound network - expose the EDA host's MCP server over ssh instead of copying data:
+
+```json
+{
+  "mcpServers": {
+    "xverif-remote": {
+      "command": "<local-conda-env>/bin/python",
+      "args": ["-m", "mcp_ssh"],
+      "env": {
+        "PYTHONPATH": "<local-xverif>/xverif_mcp/src",
+        "XVERIF_MCP_SSH_HOST": "user@eda-host",
+        "XVERIF_MCP_SSH_REMOTE_ROOT": "<eda-host-xverif-path>",
+        "XVERIF_MCP_SSH_REMOTE_PYTHON": "<eda-host-python-3.11+>"
+      }
+    }
+  }
+}
+```
+
+The MCP client starts `command` **on the machine where the agent runs**, so `command` and
+`PYTHONPATH` are local paths. Everything behind `XVERIF_MCP_SSH_*` describes the EDA host
+and is used only after `ssh` connects: the remote repository path and the interpreter that
+runs the server there. Only the repository has to be reachable from both machines (a shared
+NAS mount is the usual arrangement); the remote server keeps its own session state under its
+own `$HOME`.
+
+`mcp_ssh` only forwards: tool schemas and results are relayed untouched, so the remote server decides every xverif semantic, and each MCP connection owns its own remote process. Variables in the MCP client's `env` block (for example `VERDI_HOME` and license settings) are forwarded to the remote process; credential-shaped names never are, and neither are the names that describe this machine (such as `HOME` or `SSH_AUTH_SOCK`). Check a configuration with `python -m mcp_ssh --check`, which prints variable names and the remote tool count but never a value. A shared `$HOME` is not required: the session lives entirely on the EDA host. (Sharing `~/.xdebug` across machines only matters for the cluster file transport described in [`xdebug/README.md`](xdebug/README.md), which is a separate mechanism.) See [`xverif_mcp/README.md`](xverif_mcp/README.md) for the full option list and troubleshooting order.
 
 ## Requirements
 

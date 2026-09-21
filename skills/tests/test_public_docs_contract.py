@@ -127,10 +127,11 @@ def test_all_complete_public_json_fences_parse_and_validate_action_tokens() -> N
 # keep them structurally aligned: a section added to one side, or a
 # documentation link listed only on one side, fails here instead of drifting.
 README_SECTION_MAP = {
-    "Running against an EDA host over ssh": "通过 ssh 使用 EDA 机器",
     "Tool overview": "工具概览",
+    "Agent and MCP integration": "Agent 与 MCP 接入",
     "Recommended shell entry points": "推荐 Shell 入口",
     "Synchronizing agent environment variables": "同步 Agent 环境变量",
+    "Running against an EDA host over ssh": "通过 ssh 使用 EDA 机器",
     "Requirements": "环境要求",
     "Build and test": "构建与测试",
     "Documentation": "文档入口",
