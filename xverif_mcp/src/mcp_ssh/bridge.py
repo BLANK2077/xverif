@@ -38,7 +38,7 @@ from .config import (
 )
 
 SERVER_NAME = "xverif-mcp-ssh"
-SERVER_VERSION = "0.1.0"
+SERVER_VERSION = "1.0.0"
 
 
 def _stderr(message: str) -> None:

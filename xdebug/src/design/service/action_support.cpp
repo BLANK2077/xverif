@@ -5,7 +5,7 @@
 namespace xdebug_design {
 
 const char* const API_VERSION = "xdebug.internal.v1";
-const char* const TOOL_VERSION = "0.1.0";
+const char* const TOOL_VERSION = "1.0.0";
 
 std::string trim(const std::string& s) {
     size_t b = 0;

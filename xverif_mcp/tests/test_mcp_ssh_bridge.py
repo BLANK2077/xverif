@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pytest
 
+import mcp_ssh
 from mcp_ssh.bootstrap import apply_payload
 from mcp_ssh.config import (
     BOOTSTRAP_LAUNCHER,
@@ -477,6 +478,12 @@ def test_bridge_relays_tools_and_advertises_only_tools(tmp_path: Path) -> None:
     proc = _spawn_bridge(_bridge_env(tmp_path, tmp_path / "logs"))
     try:
         init = _initialize(proc)
+        # The MCP-advertised identity must stay the single package fact; a version bump that
+        # touches only one of the two constants would otherwise go unnoticed.
+        assert init["result"]["serverInfo"] == {
+            "name": "xverif-mcp-ssh",
+            "version": mcp_ssh.__version__,
+        }
         capabilities = init["result"]["capabilities"]
         # xverif exposes tools only; the bridge must not advertise what it cannot serve.
         assert "tools" in capabilities
