@@ -1,0 +1,275 @@
+version: 1
+# xbit ↔ SystemVerilog differential cases.
+#
+# Every case whose `expect_ok` is true is compiled into ONE generated testbench, simulated ONCE
+# by VCS, and then compared against xbit's own result for exact width and value. Cases whose
+# `expect_error` is set are not generated into the testbench: they assert xbit's error code for
+# input SystemVerilog cannot express (or that xbit deliberately rejects).
+#
+# `lrm` cites the IEEE 1800 clause that motivates the case, so coverage can be reviewed by
+# clause instead of by counting cases.
+groups:
+  - group: literals
+    lrm: "5.7.1, 5.7.2, 5.7.3"
+    cases:
+      - {id: lit_sized_hex, expr: "8'hff"}
+      - {id: lit_sized_hex_zero_pad, expr: "8'h0f"}
+      - {id: lit_sized_bin, expr: "4'b1010"}
+      - {id: lit_sized_oct, expr: "6'o52"}
+      - {id: lit_sized_dec, expr: "8'd200"}
+      - {id: lit_signed_hex, expr: "8'shff"}
+      - {id: lit_signed_dec_negative, expr: "-8'sd1"}
+      - {id: lit_signed_dec_min, expr: "-8'sd128"}
+      - {id: lit_signed_dec_max, expr: "8'sd127"}
+      - {id: lit_underscore_bin, expr: "8'b1010_1010"}
+      - {id: lit_underscore_hex, expr: "16'hdead_beef"}
+      - {id: lit_underscore_dec, expr: "32'd1_000_000"}
+      - {id: lit_unsized_hex, expr: "'hff"}
+      - {id: lit_unsized_bin, expr: "'b1010"}
+      - {id: lit_unsized_oct, expr: "'o777"}
+      - {id: lit_unsized_dec, expr: "42"}
+      - {id: lit_unsized_dec_zero, expr: "0"}
+      - {id: lit_unsized_dec_big, expr: "4294967296"}
+      - {id: lit_unsized_signed_dec, expr: "'sd10"}
+      - {id: lit_unsized_unsigned_dec, expr: "'d10"}
+      - {id: lit_wide_64, expr: "64'hffffffffffffffff"}
+      - {id: lit_wide_128, expr: "128'hffffffffffffffffffffffffffffffff"}
+      - {id: lit_one_bit, expr: "1'b1"}
+      - {id: lit_zero_width_value, expr: "8'h00"}
+
+  # 11.4.4-11.4.10: bitwise operators operate on the maximum operand width and zero-extend the
+  # narrower operand; results are unsigned.
+  - group: bitwise
+    lrm: "11.4.4, 11.4.9, 11.6"
+    cases:
+      - {id: bw_and_same, expr: "8'hf0 & 8'h3c"}
+      - {id: bw_or_same, expr: "8'hf0 | 8'h0f"}
+      - {id: bw_xor_same, expr: "8'hff ^ 8'h0f"}
+      - {id: bw_not, expr: "~8'h0f"}
+      - {id: bw_not_wide, expr: "~32'h0"}
+      - {id: bw_and_mixed_width, expr: "4'hf & 8'h0f"}
+      - {id: bw_or_mixed_width, expr: "8'h00 | 4'hf"}
+      - {id: bw_xor_mixed_width, expr: "4'h5 ^ 8'ha5"}
+      - {id: bw_and_signedness_mix, expr: "8'shff & 8'h0f"}
+      - {id: bw_or_signed_operands, expr: "8'sh0f | 8'sh80"}
+      - {id: bw_xor_wide, expr: "64'h0123456789abcdef ^ 64'hffffffffffffffff"}
+      - {id: bw_and_zero, expr: "8'hff & 8'h00"}
+
+  # 11.4.3, 11.4.5, 11.6, 11.8: arithmetic result width is the maximum operand width; a mixed
+  # signed/unsigned operation is evaluated unsigned.
+  - group: arithmetic
+    lrm: "11.4.3, 11.4.5, 11.6, 11.8"
+    cases:
+      - {id: ar_add_same, expr: "8'h0f + 8'h01"}
+      - {id: ar_add_wrap, expr: "8'hff + 8'h01"}
+      - {id: ar_sub_borrow, expr: "8'h00 - 8'h01"}
+      - {id: ar_sub_same, expr: "8'h10 - 8'h01"}
+      - {id: ar_mul_small, expr: "8'h0f * 8'h11"}
+      - {id: ar_mul_wrap, expr: "8'hff * 8'hff"}
+      - {id: ar_div_exact, expr: "8'hf7 / 8'd3"}
+      - {id: ar_mod_exact, expr: "8'hf7 % 8'd3"}
+      - {id: ar_div_truncates, expr: "8'd7 / 8'd2"}
+      - {id: ar_mod_truncates, expr: "8'd7 % 8'd2"}
+      - {id: ar_add_mixed_width, expr: "8'hff + 1'b1"}
+      - {id: ar_add_wide_narrow, expr: "16'h0001 + 4'h1"}
+      - {id: ar_mul_wide, expr: "32'h0000_ffff * 32'h0000_0010"}
+      - {id: ar_add_wide_64, expr: "64'hffffffffffffffff + 64'h1"}
+      - {id: ar_signed_add_negative, expr: "-8'sd5 + 8'sd3"}
+      - {id: ar_signed_sub_negative, expr: "-8'sd5 - 8'sd3"}
+      - {id: ar_signed_add_overflow, expr: "8'sd127 + 8'sd1"}
+      - {id: ar_signed_div_trunc_zero, expr: "-8'sd7 / 8'sd2"}
+      - {id: ar_signed_mod_sign, expr: "-8'sd7 % 8'sd2"}
+      - {id: ar_signed_div_negative_divisor, expr: "-8'sd7 / -8'sd2"}
+      - {id: ar_mixed_signed_unsigned, expr: "8'shff + 8'h01"}
+      - {id: ar_unsized_dec_add, expr: "8'shff + 1"}
+      - {id: ar_wide_div_no_float, expr: "64'hffffffffffffffff / 64'd3"}
+      - {id: ar_wide_div_128, expr: "128'hffffffffffffffffffffffffffffffff / 128'd3"}
+      - {id: ar_unsized_hex_add, expr: "'hff + 1"}
+
+  # 11.4.4, 11.8: relational operators are unsigned unless BOTH operands are signed.
+  - group: compare
+    lrm: "11.4.4, 11.8"
+    cases:
+      - {id: cmp_eq_true, expr: "8'hf0 == 8'hf0"}
+      - {id: cmp_eq_false, expr: "8'hf0 == 8'h0f"}
+      - {id: cmp_ne, expr: "8'hf0 != 8'h0f"}
+      - {id: cmp_lt_unsigned, expr: "8'h01 < 8'hff"}
+      - {id: cmp_lt_mixed_width, expr: "4'hf < 8'h10"}
+      - {id: cmp_le_equal, expr: "8'h10 <= 8'h10"}
+      - {id: cmp_gt, expr: "8'hff > 8'h01"}
+      - {id: cmp_ge_equal, expr: "8'h10 >= 8'h10"}
+      - {id: cmp_signed_negative_lt, expr: "-8'sd1 < 8'sd0"}
+      - {id: cmp_signed_both_negative, expr: "-8'sd2 < -8'sd1"}
+      - {id: cmp_mixed_sign_is_unsigned, expr: "8'shff < 8'h01"}
+      - {id: cmp_mixed_sign_ge, expr: "8'shff >= 8'h01"}
+      - {id: cmp_16bit_msb_unsigned, expr: "16'h8000 < 16'sh0001"}
+      - {id: cmp_16bit_msb_signed, expr: "16'sh8000 < 16'sh0001"}
+      - {id: cmp_wide_eq, expr: "64'h0123456789abcdef == 64'h0123456789abcdef"}
+
+  # 11.4.10, 11.6.3: shift result width equals the LEFT operand width; >>> fills with the sign bit
+  # of the (possibly widened) left operand.
+  - group: shift
+    lrm: "11.4.10, 11.6.3"
+    cases:
+      - {id: sh_lsl_basic, expr: "8'h01 << 4"}
+      - {id: sh_lsl_overflow, expr: "8'hff << 4"}
+      - {id: sh_lsl_count_ge_width, expr: "8'hff << 8"}
+      - {id: sh_lsl_count_gt_width, expr: "8'hff << 9"}
+      - {id: sh_lsr_basic, expr: "8'h80 >> 4"}
+      - {id: sh_lsr_count_ge_width, expr: "8'hff >> 8"}
+      - {id: sh_asr_negative, expr: "8'sh80 >>> 4"}
+      - {id: sh_asr_negative_one, expr: "8'shff >>> 1"}
+      - {id: sh_asr_positive, expr: "8'sh7f >>> 1"}
+      - {id: sh_asr_count_ge_width, expr: "8'sh80 >>> 8"}
+      - {id: sh_logical_shift_on_signed, expr: "8'sh80 >> 4"}
+      - {id: sh_lsl_wide, expr: "32'h0000_0001 << 20"}
+      - {id: sh_asr_wide, expr: "32'sh8000_0000 >>> 1"}
+      - {id: sh_left_operand_width_wins, expr: "4'hf << 8'h04"}
+      - {id: sh_narrow_left_wide_right, expr: "4'h1 << 16'h4"}
+
+  # 11.4.11, 11.4.12: concatenation is unsigned; replication repeats a concatenation.
+  - group: concat_repeat
+    lrm: "11.4.11, 11.4.12"
+    cases:
+      - {id: cc_two_fields, expr: "{4'hA, 4'h5}"}
+      - {id: cc_unequal_widths, expr: "{1'b1, 8'hff}"}
+      - {id: cc_three_fields, expr: "{2'b10, 2'b01, 2'b11}"}
+      - {id: cc_nested_two, expr: "{{2'b10}, {2'b01}}"}
+      - {id: cc_signed_fields_are_unsigned, expr: "{8'shff, 8'shff}"}
+      - {id: cc_wide, expr: "{32'hdead_beef, 32'hcafe_babe}"}
+      - {id: cc_single_field, expr: "{8'h5a}"}
+      - {id: rp_basic, expr: "{4{2'b10}}"}
+      - {id: rp_single_bit, expr: "{8{1'b1}}"}
+      - {id: rp_hex, expr: "{2{4'hA}}"}
+      - {id: rp_three, expr: "{3{4'h5}}"}
+      - {id: rp_of_concat, expr: "{2{4'hA, 4'h5}}"}
+      - {id: rp_of_nested_concat, expr: "{2{{2'b10}, {2'b01}}}"}
+      - {id: rp_wide, expr: "{4{32'hdead_beef}}"}
+
+  # 11.5.1: bit-select and part-select; the result of a select is unsigned.
+  - group: slice_index
+    lrm: "11.5.1"
+    cases:
+      - {id: sl_byte_1, expr: "32'hdead_beef[15:8]"}
+      - {id: sl_byte_0, expr: "32'hdead_beef[7:0]"}
+      - {id: sl_byte_3, expr: "32'hdead_beef[31:24]"}
+      - {id: sl_single_lsb, expr: "32'hdead_beef[0]"}
+      - {id: sl_single_msb, expr: "32'hdead_beef[31]"}
+      - {id: sl_single_mid, expr: "32'hdead_beef[16]"}
+      - {id: sl_wide_field, expr: "64'h0123456789abcdef[47:16]"}
+      - {id: sl_full_width, expr: "8'h5a[7:0]"}
+      - {id: sl_of_signed, expr: "8'shff[3:0]"}
+      - {id: sl_of_concat, expr: "{8'ha5, 8'h5a}[11:4]"}
+
+  # 11.4.11: the ternary result width is the maximum of the two branch widths and both branches are
+  # unified before selection.
+  - group: ternary
+    lrm: "11.4.11, 11.6"
+    cases:
+      - {id: tr_true, expr: "1'b1 ? 8'ha5 : 8'h00"}
+      - {id: tr_false, expr: "1'b0 ? 8'ha5 : 8'h00"}
+      - {id: tr_cond_nonzero, expr: "8'h01 ? 8'h11 : 8'h22"}
+      - {id: tr_cond_zero, expr: "8'h00 ? 8'h11 : 8'h22"}
+      - {id: tr_cond_multi_bit, expr: "4'h8 ? 8'h11 : 8'h22"}
+      - {id: tr_branch_width_unify, expr: "1'b1 ? 4'hf : 8'h0f"}
+      - {id: tr_nested, expr: "1'b1 ? (1'b0 ? 8'h01 : 8'h02) : 8'h03"}
+      - {id: tr_signed_branches, expr: "1'b1 ? -8'sd1 : 8'sd1"}
+      - {id: tr_arith_condition, expr: "(8'h10 > 8'h0f) ? 8'haa : 8'hbb"}
+
+  # 11.4.7, 11.4.8: logical operators treat a non-zero operand (of any width) as true.
+  - group: logical
+    lrm: "11.4.7, 11.4.8"
+    cases:
+      - {id: lg_and_true, expr: "1'b1 && 1'b1"}
+      - {id: lg_and_false, expr: "1'b1 && 1'b0"}
+      - {id: lg_and_multi_bit, expr: "8'h01 && 8'h80"}
+      - {id: lg_and_all_zero, expr: "8'h00 && 8'h01"}
+      - {id: lg_or_true, expr: "8'h00 || 8'h01"}
+      - {id: lg_or_false, expr: "8'h00 || 8'h00"}
+      - {id: lg_not_zero, expr: "!8'h00"}
+      - {id: lg_not_nonzero, expr: "!8'h01"}
+      - {id: lg_not_wide, expr: "!32'h0000_0001"}
+      - {id: lg_chained, expr: "1'b1 && 1'b1 && 1'b0"}
+      - {id: lg_and_result_width, expr: "8'hff && 8'h01"}
+
+  # 11.4.6: unary operators keep the operand width.
+  - group: unary
+    lrm: "11.4.6"
+    cases:
+      - {id: un_plus, expr: "+8'h5a"}
+      - {id: un_minus_signed, expr: "-8'sd1"}
+      - {id: un_minus_unsigned, expr: "-8'h01"}
+      - {id: un_minus_wide, expr: "-32'sd1"}
+      - {id: un_tilde, expr: "~8'hf0"}
+      - {id: un_not, expr: "!1'b0"}
+      - {id: un_minus_of_expr, expr: "-(8'sd3 + 8'sd4)"}
+
+  # 11.8: expression semantics with explicitly supplied variables, including parameter-style widths.
+  - group: variables
+    lrm: "11.8"
+    cases:
+      - id: var_slice_compare
+        expr: "data[15:8] == 8'hbe"
+        vars: {data: "32'hdead_beef"}
+      - id: var_direct
+        expr: "data"
+        vars: {data: "32'hdead_beef"}
+      - id: var_arith_params
+        expr: "ADDR_W + ID_W - 1"
+        vars: {ADDR_W: "32'd32", ID_W: "32'd4"}
+      - id: var_logic
+        expr: "valid && ready"
+        vars: {valid: "1'b1", ready: "1'b0"}
+      - id: var_concat
+        expr: "{tag, data[7:0]}"
+        vars: {tag: "4'ha", data: "32'hdead_beef"}
+      - id: var_repeat
+        expr: "{2{sel}}"
+        vars: {sel: "4'h5"}
+      - id: var_mixed_width_arith
+        expr: "narrow + wide"
+        vars: {narrow: "4'hf", wide: "16'h0100"}
+      - id: var_signed_negative
+        expr: "acc + 8'sd1"
+        vars: {acc: "-8'sd1"}
+      - id: var_select_of_var
+        expr: "flags[3]"
+        vars: {flags: "8'h88"}
+      - id: var_ternary_on_var
+        expr: "sel ? a : b"
+        vars: {sel: "1'b1", a: "8'h11", b: "8'h22"}
+      - id: var_shift_var_amount
+        expr: "value << sh"
+        vars: {value: "8'h01", sh: "8'd3"}
+      - id: var_wide_compare
+        expr: "addr == 64'h0000_0000_dead_beef"
+        vars: {addr: "64'h0000_0000_dead_beef"}
+
+  # Cases xbit must REJECT. Either SystemVerilog cannot express the input at all, or xbit
+  # deliberately fails closed instead of inventing a value.
+  - group: negative
+    lrm: "5.7.1, 11.4.3, 11.5.1, 11.8"
+    cases:
+      - {id: neg_2state_literal_x, expr: "4'b10xz", expect_error: FOUR_STATE_LITERAL}
+      - {id: neg_2state_literal_z, expr: "4'b10zz", expect_error: FOUR_STATE_LITERAL}
+      - {id: neg_2state_question, expr: "4'b10??", expect_error: FOUR_STATE_LITERAL}
+      - {id: neg_4state_op_propagation, expr: "4'b10xz & 4'hf", state: "4state", expect_error: FOUR_STATE_UNSUPPORTED}
+      - {id: neg_4state_arith, expr: "4'b10xz + 4'd1", state: "4state", expect_error: FOUR_STATE_UNSUPPORTED}
+      - {id: neg_div_zero, expr: "8'd1 / 8'd0", expect_error: DIVISION_BY_ZERO}
+      - {id: neg_mod_zero, expr: "8'd1 % 8'd0", expect_error: DIVISION_BY_ZERO}
+      - {id: neg_slice_out_of_range, expr: "8'hff[15:8]", expect_error: WIDTH_OUT_OF_RANGE}
+      - {id: neg_index_out_of_range, expr: "8'hff[8]", expect_error: WIDTH_OUT_OF_RANGE}
+      - {id: neg_slice_reversed, expr: "8'hff[0:7]", expect_error: WIDTH_OUT_OF_RANGE}
+      - {id: neg_unknown_variable, expr: "nosuchvar + 1", expect_error: UNKNOWN_VARIABLE}
+      - {id: neg_unsupported_literal, expr: "8'q12", expect_error: PARSE_ERROR}
+
+  # 4-state literals are preserved for display, which the oracle can check directly because the
+  # generated testbench keeps X/Z characters. These are NOT expression-propagation cases.
+  - group: four_state_literal
+    lrm: "5.7.1, 21.2.1"
+    cases:
+      - {id: fs_literal_x, expr: "4'b10xz", state: "4state"}
+      - {id: fs_literal_z, expr: "4'bzzzz", state: "4state"}
+      - {id: fs_literal_question, expr: "4'b10??", state: "4state"}
+      - {id: fs_literal_hex_x, expr: "8'hxx", state: "4state"}
+      - {id: fs_literal_width_12, expr: "12'b1010_xxxx_zzzz", state: "4state"}

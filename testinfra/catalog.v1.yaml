@@ -20,6 +20,18 @@ suites:
     deterministic: true
     cost: {class: fast, estimate_sec: 2}
 
+  - id: xbit.sv_oracle
+    owner: xbit
+    level: component
+    intent: [contract, semantics]
+    domains: [bit, sv]
+    runner: {kind: pytest, path: xbit/tests/sv_oracle}
+    capabilities: [child_process]
+    hermetic: false
+    deterministic: true
+    cost: {class: medium, estimate_sec: 60}
+    timeouts: {execute_sec: 300, cleanup_sec: 20}
+
   - id: xentry.unit
     owner: xentry
     level: unit

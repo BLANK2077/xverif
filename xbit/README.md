@@ -217,6 +217,29 @@ xbit agent serve --stdio
 
 `--state 4` 可以保留 literal 中的 X/Z 展示信息，但表达式传播不是本轮目标；遇到无法确定的 4-state 运算会返回 `FOUR_STATE_UNSUPPORTED`。
 
+literal 里 `?` 与 `z` 等价（IEEE 1800 5.7.1）；只有 `casez`、`==?` 这类构造才把 `z` 当 don't-care。
+
+## 语义一致性：与 SystemVerilog 仿真对比
+
+xbit 的值语义由**真实仿真器**保证，而不是人工写下的期望值：`xbit/tests/sv_oracle/` 依据用例清单
+生成**一个** SystemVerilog testbench，VCS 编译并仿真**一次**取得全部参考值，再逐例与 xbit 比较
+**(位宽, 精确位串)**。不一致即缺陷，除非登记在显式差异表中（两侧取值都被钉住）。
+
+当前覆盖 171 例（159 正例 + 12 负例），按 LRM 章节分组：literal 形态与宽度、位运算与位宽对齐、
+算术与进位/溢出、signed/unsigned 混合规则、比较、四类移位、concat/repeat（含嵌套）、
+slice/index、条件表达式分支统一、逻辑运算、一元运算、变量表达式，以及 4-state 字面量与错误路径。
+
+该套件**不使用**仓库 fixture 缓存，每次运行重新生成与仿真，属需要 VCS 的沙箱外动作：
+
+```bash
+XVERIF_TEST_EXECUTION_ENV=host pytest --xverif-gate regression --xverif-suite xbit.sv_oracle
+```
+
+机制、复跑方式、如何新增用例，以及 VCS 与 LRM 不一致的具体实测项（例如 `%0*b` 不受支持、
+字面量不可被位选、无尺寸字面量按语境扩展位宽）见
+[`tests/sv_oracle/README.md`](tests/sv_oracle/README.md) 与
+[`tests/sv_oracle/SESSION_RECORD.md`](tests/sv_oracle/SESSION_RECORD.md)。
+
 ## Agent 使用原则
 
 当调试涉及以下内容时，agent 应调用 `xbit`，不要心算：

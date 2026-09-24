@@ -36,8 +36,10 @@ def _parse_based_digits(base: str, digits: str, width: int, state: str) -> tuple
         bit = 0
         per_digit = {"b": 1, "o": 3, "h": 4}[base]
         for ch in reversed(clean.lower()):
+            # A `?` in a numeric literal is the same as `z`, not `x`; only casez/`==?` treat z as a
+            # don't-care. (Dave Rich, sv-bc, 2014-07-02; IEEE 1800-2017 5.7.1.)
             if ch == "?":
-                ch = "x"
+                ch = "z"
             if ch == "x":
                 x_mask |= ((1 << per_digit) - 1) << bit
             elif ch == "z":

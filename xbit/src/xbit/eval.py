@@ -137,6 +137,12 @@ class Parser:
                 then_value = self.parse_expr(0)
                 self.expect(":")
                 else_value = self.parse_expr(prec)
+                # The two branches are unified to the wider width before the condition selects one
+                # (IEEE 1800-2017 11.4.11 and 11.6): `1'b1 ? 4'hf : 8'h0f` is 8 bits wide, not 4.
+                width = max(then_value.width, else_value.width)
+                both_signed = then_value.signed and else_value.signed
+                then_value = then_value.resize(width, signed_extend=both_signed, signed=both_signed)
+                else_value = else_value.resize(width, signed_extend=both_signed, signed=both_signed)
                 left = then_value if left.truthy() else else_value
                 continue
             prec = self.precedence(tok.text)
@@ -185,18 +191,45 @@ class Parser:
         return value
 
     def parse_braces(self) -> BitVector:
+        """Parse a brace group: `{a, b}` concatenation or `{count{body}}` replication."""
         self.expect("{")
-        first = self.parse_expr(0)
-        if self.match("{"):
-            first.require_known("repeat count")
-            item = self.parse_expr(0)
-            self.expect("}")
-            self.expect("}")
-            return repeat(first.value, item)
+        value = self.parse_brace_body()
+        self.expect("}")
+        return value
+
+    def parse_brace_body(self) -> BitVector:
+        """Parse the content of a brace group, without its outer `{` / `}`.
+
+        Both brace forms begin with `{`, so the first element is parsed and the following token
+        decides the form: another `{` means the first element was a repeat count and the body
+        follows, `,` extends a concatenation, and `}` closes a single-element concatenation.
+
+        A nested group such as `{{2'b10}, {2'b01}}` is the ambiguous case, because it can be read
+        as a concatenation whose first element is `{2'b10}`. The reading is therefore speculative:
+        the concatenation interpretation is tried first and abandoned if it does not reach a
+        matching `}`, which is what keeps the replication form reachable.
+        """
+        open_index = self.pos
+        try:
+            first = self.parse_expr(0)
+            if self.peek().text != "{":
+                return self.parse_concatenation_tail(first)
+        except ParseError:
+            pass
+
+        # The concatenation reading failed; the only other form is `count{body}`.
+        self.pos = open_index
+        count = self.parse_expr(0)
+        count.require_known("repeat count")
+        self.expect("{")
+        body = self.parse_brace_body()
+        self.expect("}")
+        return repeat(count.value, body)
+
+    def parse_concatenation_tail(self, first: BitVector) -> BitVector:
         items = [first]
         while self.match(","):
             items.append(self.parse_expr(0))
-        self.expect("}")
         return concat(items)
 
     @staticmethod
