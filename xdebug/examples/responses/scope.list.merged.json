@@ -2,7 +2,7 @@
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "scope.list",
-  "tool": {"name": "xdebug", "version": "0.1.0"},
+  "tool": {"name": "xdebug", "version": "1.0.0"},
   "session": {
     "session_id": "combined_a",
     "mode": "combined",

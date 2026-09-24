@@ -521,7 +521,7 @@ SHA-256 仅标识本次读取内容。没有编译时源文件 hash 或版本清
   "api_version": "xdebug.v1",
   "ok": true,
   "action": "code.members",
-  "tool": {"name": "xdebug", "version": "0.1.0"},
+  "tool": {"name": "xdebug", "version": "1.0.0"},
   "session": null,
   "summary": {
     "status": "found",

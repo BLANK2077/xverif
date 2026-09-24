@@ -4,7 +4,7 @@
   "action": "session.gc",
   "tool": {
     "name": "xdebug",
-    "version": "0.1.0"
+    "version": "1.0.0"
   },
   "session": null,
   "summary": {"before_count": 2, "kept_count": 1, "removed_count": 1},
