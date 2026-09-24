@@ -21,7 +21,12 @@ FRONTEND_LDFLAGS = -pthread
 BUILD    = build
 LIBEXEC  = libexec
 EXE      = xdebug
-PYTHON  ?= python3
+# The build helpers below need Python 3.7+ (they use PEP 563 annotations), so bind PYTHON
+# to the repository environment documented in README instead of trusting whatever
+# `python3` PATH happens to hold; `python-toolchain-check` rejects anything older.
+CONDA_PYTHON = $(abspath $(TOP)/.conda-xverif/bin/python)
+PYTHON ?= $(if $(wildcard $(CONDA_PYTHON)),$(CONDA_PYTHON),python3)
+PYTHON_MIN_VERSION = 3.7
 
 ifeq ($(XDEBUG_STREAM_DIFFERENTIAL_TEST_BUILD),1)
 CXXFLAGS += -DXDEBUG_STREAM_DIFFERENTIAL_TEST_BUILD -Itests
@@ -239,16 +244,16 @@ DEPS = $(sort $(CORE_OBJS:.o=.d) \
        $(DESIGN_OBJS:.o=.d) \
        $(WAVEFORM_OBJS:.o=.d))
 
-.PHONY: all internal-engines npi-toolchain-check stream-differential-test-dist cpp-unit-binaries clean FORCE
+.PHONY: all internal-engines npi-toolchain-check python-toolchain-check stream-differential-test-dist cpp-unit-binaries clean FORCE
 
 FORCE:
 
-$(ACTION_METADATA): specs/actions/actions.yaml tools/sync_action_metadata.py
+$(ACTION_METADATA): specs/actions/actions.yaml tools/sync_action_metadata.py | python-toolchain-check
 	$(PYTHON) tools/sync_action_metadata.py
 
 $(BUILD)/src/api/action_registry_init.o: $(ACTION_METADATA)
 
-$(GENERATED_HELP_TEXT): help.txt tools/sync_help_text.py
+$(GENERATED_HELP_TEXT): help.txt tools/sync_help_text.py | python-toolchain-check
 	$(PYTHON) tools/sync_help_text.py
 
 $(BUILD)/src/api/help_text.o: $(GENERATED_HELP_TEXT)
@@ -262,9 +267,17 @@ $(BUILD_INFO): FORCE specs/actions/actions.yaml
 	  echo "#define XDEBUG_BUILD_ID \"$$rev-$$schema\""; } > $@.tmp; \
 	cmp -s $@.tmp $@ 2>/dev/null || mv $@.tmp $@; rm -f $@.tmp
 
-all: $(EXE) internal-engines
+all: python-toolchain-check $(EXE) internal-engines
 
-npi-toolchain-check:
+python-toolchain-check:
+	@$(PYTHON) -c 'import sys; raise SystemExit(0 if sys.version_info >= tuple(int(p) for p in "$(PYTHON_MIN_VERSION)".split(".")) else 1)' 2>/dev/null || { \
+		echo "ERROR: $(PYTHON) cannot run the xdebug build helpers (Python $(PYTHON_MIN_VERSION)+ required)." >&2; \
+		echo "       Create and activate the repository environment:" >&2; \
+		echo "         python3 tools/create_python_environment.py && conda activate ./.conda-xverif" >&2; \
+		echo "       or pass PYTHON=/path/to/python3 on the make command line." >&2; \
+		exit 1; }
+
+npi-toolchain-check: python-toolchain-check
 	$(PYTHON) tools/check_npi_toolchain.py \
 		--cxx "$(CXX)" \
 		--cxxflags "$(CXXFLAGS)" \
