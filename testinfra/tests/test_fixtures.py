@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 
 from testinfra.xverif_test.fixtures import (
@@ -8,6 +9,7 @@ from testinfra.xverif_test.fixtures import (
     FixtureStore,
     _compatibility_identity,
 )
+from testinfra.xverif_test.interpreters import resolve_interpreter_argv
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -60,6 +62,54 @@ def test_prepare_publishes_and_reuses_fixture(tmp_path: Path) -> None:
     second = store.prepare(spec.id)
     assert second == first
     assert store.resolve(spec.id) == first
+
+
+def make_interpreter_store(root: Path) -> tuple[FixtureStore, FixtureSpec]:
+    source = root / "fixture"
+    source.mkdir()
+    (source / "input.sv").write_text("module top; endmodule\n", encoding="utf-8")
+    record = (
+        "import pathlib, sys; "
+        "pathlib.Path(r'{resources}' + '/' + sys.argv[1]).write_text(sys.executable)"
+    )
+    spec = FixtureSpec(
+        id="demo.interpreter",
+        source_dir="fixture",
+        inputs=("*.sv",),
+        extra_inputs=(),
+        builder={"argv": ["python3", "-c", record, "builder.txt"]},
+        outputs=(FixtureOutput("record", "builder.txt", "file", 1),),
+        tool_env=(),
+        build_capabilities=(),
+        probes=({"argv": ["python3", "-c", record, "probe.txt"]},),
+    )
+    return FixtureStore(root, FixtureRegistry("xverif-fixture-registry.v1", (spec,))), spec
+
+
+def test_builder_and_probe_bind_the_python3_marker_to_the_running_suite(
+    tmp_path: Path,
+) -> None:
+    """A `python3` marker must not be resolved through PATH.
+
+    PATH can hold a system Python unrelated to the suite, which made the fixture
+    semantic probes die with `SyntaxError: future feature annotations is not defined`.
+    The builder and the probe must both run under the interpreter that owns the suite.
+    """
+    store, spec = make_interpreter_store(tmp_path)
+    resources = store.prepare(spec.id)
+    assert (resources / "builder.txt").read_text(encoding="utf-8") == sys.executable
+    assert (resources / "probe.txt").read_text(encoding="utf-8") == sys.executable
+
+
+def test_registry_keeps_the_python3_marker_and_execution_binds_it() -> None:
+    registry = FixtureRegistry.load(
+        ROOT / "testinfra/fixtures.v1.yaml",
+        ROOT / "testinfra/schemas/fixtures.v1.schema.json",
+    )
+    spec = registry.by_id("xdebug.stream_differential_tool")
+    assert spec.builder["argv"][0] == "make"
+    assert spec.probes[0]["argv"][0] == "python3"
+    assert resolve_interpreter_argv(spec.probes[0]["argv"])[0] == sys.executable
 
 
 def test_concurrent_prepare_uses_one_atomic_claim(tmp_path: Path, monkeypatch) -> None:

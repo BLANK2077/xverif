@@ -16,6 +16,8 @@ from typing import Any, Callable, Iterable
 import jsonschema
 import yaml
 
+from .interpreters import resolve_interpreter_argv
+
 
 class FixtureError(RuntimeError):
     pass
@@ -316,7 +318,9 @@ class FixtureStore:
             "resources": str(staging / "resources"),
             "home": str(Path.home()),
         }
-        argv = [str(value).format(**values) for value in spec.builder["argv"]]
+        argv = resolve_interpreter_argv(
+            [str(value).format(**values) for value in spec.builder["argv"]]
+        )
         cwd = Path(str(spec.builder.get("cwd", "{repo}")).format(**values))
         env = self.effective_builder_env(spec)
         log_path = staging / "builder.log"
@@ -355,7 +359,9 @@ class FixtureStore:
         }
         for index, probe in enumerate(spec.probes):
             notify(f"probe_{index + 1}_of_{len(spec.probes)}")
-            argv = [str(value).format(**values) for value in probe["argv"]]
+            argv = resolve_interpreter_argv(
+                [str(value).format(**values) for value in probe["argv"]]
+            )
             cwd = Path(str(probe.get("cwd", "{repo}")).format(**values))
             env = os.environ.copy()
             for key, value in probe.get("env", {}).items():
