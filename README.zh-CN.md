@@ -283,7 +283,7 @@ transport 有意义，那是另一套机制。完整配置项与排障顺序见 
 | 组件 | 要求 |
 |---|---|
 | GCC | **5.0+** |
-| Python | 3.11+（xverif-mcp、xsva、xcov）；xbit/xentry/xloc 支持 3.6+ |
+| Python | 3.11+（xverif-mcp、xsva、xcov）；xbit/xentry/xloc 为 3.10+ |
 | Verdi | 当前基于 **V-2023.12-SP2** 开发与测试，NPI API 随版本不同可能存在参数差异 |
 
 > 如果使用其他 Verdi 版本遇到编译或运行时 NPI 兼容性问题，可让 AI agent 根据编译错误和 NPI 头文件进行兼容性修复。

@@ -190,7 +190,7 @@ own `$HOME`.
 | Component | Requirement |
 |---|---|
 | GCC | **5.0+** |
-| Python | 3.11+ for xverif-mcp, xsva, and xcov; xbit/xentry/xloc support 3.6+ |
+| Python | 3.11+ for xverif-mcp, xsva, and xcov; 3.10+ for xbit/xentry/xloc |
 | Verdi | Currently developed and tested with **V-2023.12-SP2**; NPI signatures can differ by version |
 
 Verdi-dependent capabilities additionally require the applicable Synopsys license rights. `VERDI_HOME` only identifies a local installation and is not a license grant. When another Verdi release exposes NPI compatibility errors, adapt the wrapper against the user's local headers without copying those headers into this repository.
