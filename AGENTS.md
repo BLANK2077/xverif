@@ -109,6 +109,14 @@ xdebug 代码架构、添加 action 流程、统一组件、通信协议、log�
 
 修改 xdebug 架构、action、schema、session、transport、log、runtime 或测试体系时，必须检查该说明书是否需要同步更新。
 
+## timeout 与进程生命周期
+
+全仓 timeout 清单、超时后的清理语义、进程所有权/孤儿边界、LSF `-W`（`XVERIF_LSF_SESSION_WALL_TIME_SEC`、`XVERIF_XCOV_URG_WALL_TIME_SEC`）兜底策略与修改检查清单，维护在：
+
+- [doc/agents/timeouts.md](doc/agents/timeouts.md)
+
+修改任何 timeout 默认值、新增或删除 timeout 环境变量、调整 `terminate`/`killpg`/`bkill`/`close_all` 路径或 session 生命周期时，必须先读该说明书并同步更新，不要重新做全仓 timeout 调查。
+
 ## 环境错误复盘
 
 每次 agent 犯环境相关错误后，必须按下面的模板在**本节**追加一条简短复盘。本节只保留最近发生的条目；累积到影响可读性时，把整条搬移到 [doc/agents/environment-retrospectives.md](doc/agents/environment-retrospectives.md)，并把其中仍然有效的规则合并进下面的规则清单。

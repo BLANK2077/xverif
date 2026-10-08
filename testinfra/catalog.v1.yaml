@@ -376,6 +376,7 @@ suites:
         - xverif_mcp/tests/test_import_adapters.py
         - xverif_mcp/tests/test_lsf_env_config.py
         - xverif_mcp/tests/test_mcp_ssh_bridge.py
+        - xverif_mcp/tests/test_process_termination.py
         - xverif_mcp/tests/test_session_capabilities.py
         - xverif_mcp/tests/test_session_errors.py
         - xverif_mcp/tests/test_schema_projection.py
@@ -398,6 +399,7 @@ suites:
         - xverif_mcp/tests/test_loop_wrapper_uds.py
         - xverif_mcp/tests/test_native_lsf_cli.py
         - xverif_mcp/tests/test_mcp_sdk_smoke.py
+        - xverif_mcp/tests/test_mcp_shutdown.py
         - xverif_mcp/tests/test_mcp_ssh_loopback.py
         - xverif_mcp/tests/test_stdio_loop_session_lifecycle.py
     capabilities: [child_process, mcp_process]

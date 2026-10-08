@@ -143,6 +143,103 @@ def _session_log(root: Path, alias: str, name: str) -> list[dict]:
     return [event for path in paths for event in _read_ndjson(path)]
 
 
+def _server_log(root: Path) -> list[dict]:
+    events: list[dict] = []
+    for name in ("server.ndjson", "uds.ndjson"):
+        for path in sorted((root / "owners").glob(f"*/logs/{name}")):
+            events.extend(_read_ndjson(path))
+    return events
+
+
+def _wait_for_phase(proc, log_root: Path, phase: str, *, timeout: float = 60.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if any(event.get("phase") == phase for event in _server_log(log_root)):
+            return
+        if proc.poll() is not None:
+            pytest.fail(f"manager exited early: {proc.communicate()}")
+        time.sleep(0.05)
+    pytest.fail(f"manager never logged {phase}")
+
+
+def _spawn_manager(sock: str, log_root: Path):
+    import os
+    import subprocess
+
+    env = dict(os.environ)
+    env["XVERIF_LOOP_LOG_DIR"] = str(log_root)
+    env["XVERIF_LOOP_BACKEND"] = "direct"
+    env["PYTHONPATH"] = os.pathsep.join(
+        p for p in (
+            str(Path(__file__).resolve().parents[1] / "src"),
+            os.environ.get("PYTHONPATH", ""),
+        ) if p
+    )
+    return subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "from xverif_loop.wrapper import server_main; "
+            "raise SystemExit(server_main())",
+            "--socket",
+            sock,
+        ],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+
+def test_loop_wrapper_manager_runs_cleanup_on_sigterm(tmp_path):
+    """A SIGTERM manager must clean up and exit instead of dying abruptly."""
+
+    import signal
+
+    log_root = tmp_path / "logs"
+    sock = str(tmp_path / "wrapper.sock")
+    proc = _spawn_manager(sock, log_root)
+    try:
+        _wait_for_phase(proc, log_root, "uds.listen.ready")
+        assert Path(sock).exists(), "manager socket was not published"
+
+        proc.send_signal(signal.SIGTERM)
+        proc.wait(timeout=30)
+    finally:
+        if proc.poll() is None:  # pragma: no cover - defensive
+            proc.kill()
+            proc.wait(timeout=30)
+
+    assert proc.returncode == 0
+    assert not Path(sock).exists(), "shutdown must remove the published socket"
+    phases = [event.get("phase") for event in _server_log(log_root)]
+    assert "uds.shutdown.signal" in phases
+    assert "uds.shutdown.cleanup.begin" in phases
+    assert "uds.shutdown.cleanup.end" in phases
+
+
+def test_loop_wrapper_cleanup_is_idempotent_on_repeated_signals(tmp_path):
+    import signal
+
+    log_root = tmp_path / "logs"
+    sock = str(tmp_path / "wrapper.sock")
+    proc = _spawn_manager(sock, log_root)
+    try:
+        _wait_for_phase(proc, log_root, "uds.listen.ready")
+        assert Path(sock).exists()
+        proc.send_signal(signal.SIGTERM)
+        proc.send_signal(signal.SIGTERM)
+        proc.wait(timeout=30)
+    finally:
+        if proc.poll() is None:  # pragma: no cover - defensive
+            proc.kill()
+            proc.wait(timeout=30)
+
+    phases = [event.get("phase") for event in _server_log(log_root)]
+    assert phases.count("uds.shutdown.cleanup.begin") == 1
+    assert phases.count("uds.shutdown.cleanup.end") == 1
+
+
 @pytest.mark.parametrize("kind", ("file", "symlink"))
 def test_loop_wrapper_rejects_unsafe_existing_socket_path(tmp_path, monkeypatch, kind):
     monkeypatch.setenv("XVERIF_LOOP_LOG_DIR", str(tmp_path / "logs"))

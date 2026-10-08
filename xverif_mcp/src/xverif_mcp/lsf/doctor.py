@@ -10,7 +10,11 @@ import sys
 import time
 from typing import Dict, List, Optional
 
-from xverif_loop.config import default_xdebug_bin, resolve_mcp_runtime_config
+from xverif_loop.config import (
+    default_xdebug_bin,
+    lsf_wall_time_minutes,
+    resolve_mcp_runtime_config,
+)
 from xverif_loop.lsf.bsub import BsubRunner, parse_lsf_job_id
 from xverif_loop.lsf.protocol import JsonlProcess
 from xverif_loop.logging import resolve_logger
@@ -64,6 +68,11 @@ def run(fake: bool = False) -> Dict[str, object]:
             logger=logger,
             queue=runtime.session_queue,
             job_name=f"xverif_doctor_{os.getpid()}" if mode == "lsf" else None,
+            wall_time=(
+                lsf_wall_time_minutes(runtime.lsf_session_wall_time_sec)
+                if mode == "lsf"
+                else None
+            ),
             startup_timeout_sec=30.0,
         )
 

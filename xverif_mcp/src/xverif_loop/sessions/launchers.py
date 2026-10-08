@@ -28,6 +28,7 @@ class LaunchConfig:
     queue: Optional[str] = None
     resource: Optional[str] = None
     job_name: Optional[str] = None
+    wall_time: Optional[str] = None
     startup_timeout_sec: float = 60.0
     lsf_environment_fingerprint: Optional[str] = None
 
@@ -229,13 +230,15 @@ class LsfLauncher(Launcher):
         cfg.logger.lsf(cfg.alias, "launcher.lsf.start", True,
                        backend=cfg.backend, launcher=self.mode,
                        queue=cfg.queue, resource=cfg.resource,
-                       job_name=cfg.job_name, argv_hash=argv_hash(cmd))
+                       job_name=cfg.job_name, wall_time=cfg.wall_time,
+                       argv_hash=argv_hash(cmd))
         proc = self.bsub.start(
             cmd,
             BsubOptions(
                 queue=cfg.queue,
                 resource=cfg.resource,
                 job_name=cfg.job_name,
+                wall_time=cfg.wall_time,
                 propagate_environment=cfg.lsf_environment_fingerprint is not None,
             ),
             runtime=cfg.runtime,

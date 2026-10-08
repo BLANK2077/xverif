@@ -51,6 +51,7 @@ tools/xverif_lsf_env_capture --include SITE_EDA_ROOT --force
 - `XVERIF_LSF_BSUB`、`XVERIF_LSF_BKILL`
 - `XVERIF_LSF_SESSION_QUEUE`，默认 `interactive`
 - `XVERIF_LSF_SESSION_RESOURCE`
+- `XVERIF_LSF_SESSION_WALL_TIME_SEC`，默认 `7200`（2 小时），提交为 `-W <分钟>`；与 MCP LSF 共用同一变量
 - `XVERIF_LSF_CLI_SOCKET`、`XVERIF_LSF_CLI_LOG_DIR`
 - `XVERIF_LSF_CLI_STARTUP_TIMEOUT_SEC`
 - `XVERIF_LSF_CLI_REQUEST_TIMEOUT_SEC`
@@ -61,6 +62,11 @@ tools/xverif_lsf_env_capture --include SITE_EDA_ROOT --force
 - `XVERIF_LSF_CLI_CONFIG`，覆盖默认环境配置绝对路径
 
 SDK-free 仅提供上述阶段超时；MCP one-shot 的 `XVERIF_MCP_TIMEOUT_SEC` 不控制 SDK-free 请求。
+
+`XVERIF_LSF_SESSION_WALL_TIME_SEC` 是提交给 LSF 的 runtime limit，不是客户端超时：秒值向上
+取整到分钟（7200 → `-W 120`），上限 31536000。客户端（agent/CLI/manager）被 SIGKILL 后
+本地清理链无法执行，只有它能让 LSF 侧兜底回收 job。`XVERIF_LSF_BSUB` 自带 `-W` 时直接报错。
+真实站点队列对 `-W` 的接受度与结束帧文本尚未实测（本机没有 LSF）。
 
 布尔值只接受精确 `0|1`，timeout 只接受无首尾空白的有限正数。
 无效配置、LSF 失败、stdio-loop 失败或 cleanup 失败都不转 direct/MCP/其它

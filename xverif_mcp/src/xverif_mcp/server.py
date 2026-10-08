@@ -1,9 +1,12 @@
 """xverif-mcp — unified MCP server for all xverif tools."""
 
+import atexit
 import inspect
 import json
 import os
+import signal
 import tempfile
+import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -60,7 +63,18 @@ For key signals/interfaces, build schema-valid JSON and load it with list.load, 
 Other families: xcov=coverage; xbit=bit math; xentry=structured decode; xloc=location resolve/annotate; xsva=temporal semantics. xverif_batch is strict serial; put query parameters in inner args. Coverage limits/export output stay in action args. Check experimental status and completeness before conclusions. Detailed workflows: xverif and xverif-admin skills."""
 
 
+_CLEANUP_LOCK = threading.Lock()
+_CLEANUP_COMPLETED = False
+
+
 def _cleanup_stateful_sessions() -> None:
+    """Release every stateful session exactly once, from any exit path."""
+
+    global _CLEANUP_COMPLETED
+    with _CLEANUP_LOCK:
+        if _CLEANUP_COMPLETED:
+            return
+        _CLEANUP_COMPLETED = True
     for adapter in (debug, cov):
         try:
             adapter.close_all()
@@ -71,6 +85,75 @@ def _cleanup_stateful_sessions() -> None:
                 backend=getattr(adapter, "mode", adapter.__class__.__name__),
                 error_type=type(exc).__name__,
             )
+
+
+def _shutdown_budget_sec() -> float:
+    """Bound how long a signal-driven cleanup may delay process exit."""
+
+    return min(
+        300.0,
+        max(5.0, float(MCP_RUNTIME.close_timeout_sec)
+            + float(MCP_RUNTIME.bkill_timeout_sec)),
+    )
+
+
+def _bounded_cleanup_and_exit(signum: int) -> None:
+    try:
+        _cleanup_stateful_sessions()
+        MCP_LOGGER.try_server(
+            "mcp.shutdown.cleanup_end",
+            True,
+            signal=signum,
+        )
+    except BaseException as exc:  # noqa: BLE001 - exit must stay bounded
+        MCP_LOGGER.try_server(
+            "mcp.shutdown.cleanup_failed",
+            False,
+            signal=signum,
+            error_type=type(exc).__name__,
+        )
+    finally:
+        os._exit(128 + int(signum))
+
+
+def _install_shutdown_handlers() -> None:
+    """Clean up owned sessions when the MCP client terminates this process.
+
+    SIGKILL cannot be handled; that path is bounded by the LSF ``-W`` runtime
+    limit and by ``XDEBUG_SESSION_IDLE_TIMEOUT_SEC`` for direct sessions.
+    """
+
+    atexit.register(_cleanup_stateful_sessions)
+
+    def _on_sigterm(signum, frame):  # type: ignore[no-untyped-def]
+        del frame
+        thread = threading.Thread(
+            target=_bounded_cleanup_and_exit,
+            args=(signum,),
+            name="xverif-mcp-shutdown",
+            daemon=True,
+        )
+        thread.start()
+        thread.join(_shutdown_budget_sec())
+        MCP_LOGGER.try_server(
+            "mcp.shutdown.cleanup_timeout",
+            False,
+            signal=signum,
+            budget_sec=_shutdown_budget_sec(),
+        )
+        os._exit(128 + int(signum))
+
+    try:
+        signal.signal(signal.SIGTERM, _on_sigterm)
+    except (ValueError, OSError):
+        # Not on the main thread or the platform refuses the handler: the
+        # atexit path still covers normal interpreter shutdown.
+        return
+    MCP_LOGGER.try_server(
+        "mcp.shutdown.handlers_installed",
+        True,
+        signal=signal.SIGTERM,
+    )
 
 
 @asynccontextmanager
@@ -1518,6 +1601,7 @@ def xverif_tool_help(name: str) -> dict:
 
 def main() -> int:
     """Run the MCP stdio server and release all stateful sessions on exit."""
+    _install_shutdown_handlers()
     try:
         mcp.run()
     finally:

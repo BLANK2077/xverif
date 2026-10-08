@@ -51,6 +51,7 @@ class RuntimeConfig:
     lsf_bkill_command: str
     session_queue: str
     session_resource: str | None
+    lsf_session_wall_time_sec: float
     log_root: Path
 
     def with_overrides(
@@ -124,26 +125,63 @@ def validate_positive_timeout(value: object, *, source: str) -> float:
     return result
 
 
+LSF_SESSION_WALL_TIME_ENV = "XVERIF_LSF_SESSION_WALL_TIME_SEC"
+DEFAULT_LSF_SESSION_WALL_TIME_SEC = 7200.0
+MAX_LSF_SESSION_WALL_TIME_SEC = 31536000.0
+
+
+def _wall_time_expected(maximum: float) -> str:
+    return f"a finite positive number of seconds in (0, {maximum:g}]"
+
+
+def validate_lsf_session_wall_time_sec(value: object, *, source: str) -> float:
+    """Validate one LSF session wall-clock limit in seconds."""
+
+    result = validate_positive_timeout(value, source=source)
+    if result > MAX_LSF_SESSION_WALL_TIME_SEC:
+        raise ConfigError(source, str(value), _wall_time_expected(MAX_LSF_SESSION_WALL_TIME_SEC))
+    return result
+
+
+def lsf_wall_time_minutes(value_sec: float) -> str:
+    """Convert a resolved wall-clock limit into the LSF ``-W`` minute token."""
+
+    seconds = validate_lsf_session_wall_time_sec(
+        value_sec,
+        source=LSF_SESSION_WALL_TIME_ENV,
+    )
+    return str(max(1, math.ceil(seconds / 60.0)))
+
+
 def _env_float(
     environ: Mapping[str, str],
     env_name: str,
     default: float,
+    *,
+    maximum: float | None = None,
 ) -> float:
+    expected = (
+        "a finite positive number"
+        if maximum is None
+        else _wall_time_expected(maximum)
+    )
     raw = environ.get(env_name)
     if raw is None:
         return default
     if not raw or raw != raw.strip():
-        raise ConfigError(env_name, raw, "a finite positive number")
+        raise ConfigError(env_name, raw, expected)
     try:
         value = float(raw)
     except ValueError as exc:
         raise ConfigError(
             env_name,
             raw,
-            "a finite positive number",
+            expected,
         ) from exc
     if not math.isfinite(value) or value <= 0:
-        raise ConfigError(env_name, raw, "a finite positive number")
+        raise ConfigError(env_name, raw, expected)
+    if maximum is not None and value > maximum:
+        raise ConfigError(env_name, raw, expected)
     return value
 
 
@@ -275,6 +313,12 @@ def _resolve_runtime_config(
             snapshot,
             "XVERIF_LSF_SESSION_RESOURCE",
             None,
+        ),
+        lsf_session_wall_time_sec=_env_float(
+            snapshot,
+            LSF_SESSION_WALL_TIME_ENV,
+            DEFAULT_LSF_SESSION_WALL_TIME_SEC,
+            maximum=MAX_LSF_SESSION_WALL_TIME_SEC,
         ),
         log_root=_resolved_log_root(
             snapshot,

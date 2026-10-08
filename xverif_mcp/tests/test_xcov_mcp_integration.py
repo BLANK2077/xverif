@@ -171,9 +171,11 @@ def test_cov_fake_lsf_outer_and_inner_urg_full_chain(
     assert outer["requested"] == {
         "queue": "outer_session_queue",
         "resource": "select[type==any]",
+        "wall_time_sec": 7200.0,
     }
     assert outer["submitted"]["queue"] == "outer_session_queue"
     assert outer["submitted"]["job_id"] == "123"
+    assert outer["submitted"]["wall_time_minutes"] == "120"
 
     content, _ = _call_tool(server, "xverif_cov_session_doctor", {
         "session_id": "mcp_fake_lsf_fullchain",

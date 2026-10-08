@@ -837,26 +837,35 @@ class TestLsfStructuredLog:
                 "requested": {
                     "queue": "cov_queue",
                     "resource": "select[mem>1024]",
+                    "wall_time_sec": first_session.wall_time_sec,
                 },
                 "effective": {
                     "queue": "cov_queue",
                     "resource": "select[mem>1024]",
+                    "wall_time_sec": first_session.wall_time_sec,
                 },
                 "submitted": {
                     "queue": "cov_queue",
                     "resource": "select[mem>1024]",
+                    "wall_time_minutes": first_session.wall_time,
                     "job_name": first_session.job_name,
                     "job_id": "123",
                 },
             }
+            assert first_session.wall_time == "120"
+            assert first_session.wall_time_sec == 7200.0
+            assert first_argv[first_argv.index("-W") + 1] == "120"
             default_scheduler = second["session"]["scheduler"]
             assert default_scheduler["requested"] == {
                 "queue": None, "resource": None,
+                "wall_time_sec": second_session.wall_time_sec,
             }
             assert default_scheduler["effective"] == {
                 "queue": "interactive", "resource": None,
+                "wall_time_sec": second_session.wall_time_sec,
             }
             assert default_scheduler["submitted"]["queue"] == "interactive"
+            assert default_scheduler["submitted"]["wall_time_minutes"] == "120"
         finally:
             closed = manager.close_all()
             assert closed["ok"] is True, closed

@@ -107,6 +107,67 @@ def test_lsf_environment_propagation_is_sdk_free_opt_in_only() -> None:
         )
 
 
+def test_lsf_session_wall_time_is_bounded_and_published_in_argv() -> None:
+    from xverif_loop.config import (
+        DEFAULT_LSF_SESSION_WALL_TIME_SEC,
+        lsf_wall_time_minutes,
+    )
+    from xverif_loop.lsf.bsub import BsubOptions, BsubRunner
+
+    assert DEFAULT_LSF_SESSION_WALL_TIME_SEC == 7200.0
+    assert lsf_wall_time_minutes(DEFAULT_LSF_SESSION_WALL_TIME_SEC) == "120"
+    assert lsf_wall_time_minutes(1) == "1"
+    assert lsf_wall_time_minutes(90) == "2"
+
+    runner = BsubRunner("bsub -Is")
+    assert runner.build(["tool", "--stdio-loop"], BsubOptions(wall_time="120")) == [
+        "bsub", "-Is", "-W", "120", "tool", "--stdio-loop",
+    ]
+    assert runner.build(
+        ["tool", "--stdio-loop"],
+        BsubOptions(job_name="job", queue="q", wall_time="120",
+                    resource="select[mem>1]", propagate_environment=True),
+    ) == [
+        "bsub", "-Is", "-J", "job", "-q", "q", "-W", "120",
+        "-R", "select[mem>1]", "-env", "all", "tool", "--stdio-loop",
+    ]
+    with pytest.raises(ValueError, match="must not set -W"):
+        BsubRunner("bsub -Is -W 60").build(
+            ["tool", "--stdio-loop"],
+            BsubOptions(wall_time="120"),
+        )
+
+
+def test_lsf_session_wall_time_default_and_strict_validation(monkeypatch) -> None:
+    from xverif_loop import config
+
+    monkeypatch.delenv("XVERIF_LSF_SESSION_WALL_TIME_SEC", raising=False)
+    assert (
+        config.resolve_mcp_runtime_config().lsf_session_wall_time_sec == 7200.0
+    )
+    monkeypatch.setenv("XVERIF_LSF_SESSION_WALL_TIME_SEC", "5400")
+    assert (
+        config.resolve_mcp_runtime_config().lsf_session_wall_time_sec == 5400.0
+    )
+    assert (
+        config.resolve_loop_wrapper_runtime_config().lsf_session_wall_time_sec
+        == 5400.0
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["", "0", "-1", "nan", "inf", " 1", "1 ", "bad", "31536001"],
+)
+def test_lsf_session_wall_time_rejects_invalid_values(monkeypatch, value) -> None:
+    from xverif_loop import config
+
+    monkeypatch.setenv("XVERIF_LSF_SESSION_WALL_TIME_SEC", value)
+    with pytest.raises(config.ConfigError) as caught:
+        config.resolve_mcp_runtime_config()
+    assert caught.value.env_name == "XVERIF_LSF_SESSION_WALL_TIME_SEC"
+
+
 def test_mcp_shared_wrapper_status_contract_does_not_expose_sdk_free_config(
     monkeypatch,
 ) -> None:

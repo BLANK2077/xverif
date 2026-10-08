@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import shlex
 import sys
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -323,8 +324,108 @@ def test_urg_runner_lsf_rejects_interactive_bsub_and_canonicalizes_paths(
         assert Path(argv[argv.index(option) + 1]).is_absolute()
     assert argv[:8] == [
         "bsub-wrapper", "-K", "-J", "fixed-job",
-        "-q", "urg_queue", fake, "-dir",
+        "-q", "urg_queue", "-W", "120",
     ]
+
+
+def test_urg_runner_direct_timeout_reclaims_whole_group(tmp_path):
+    from xcov.urg_runner import UrgRunner
+
+    marker = tmp_path / "urg-grandchild.pid"
+    fake = _fake_command(
+        tmp_path / "urg-slow",
+        "import pathlib, subprocess, sys, time\n"
+        "print('urg slow start', flush=True)\n"
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)'])\n"
+        f"pathlib.Path({str(marker)!r}).write_text(str(child.pid))\n"
+        "time.sleep(600)\n",
+    )
+    runner = UrgRunner(
+        backend="direct",
+        run_timeout_sec=3.0,
+        session_id="direct-timeout",
+    )
+
+    deadline = time.monotonic() + 5.0
+    result = runner.run([fake], timeout=3.0)
+
+    assert result.returncode == 124
+    assert result.scheduler["status"] == "run_timeout"
+    assert result.scheduler["cleanup"]["complete"] is True
+    assert result.scheduler["cleanup"]["process"] in {"terminated", "killed"}
+    # Partial stdout captured before the deadline is preserved.
+    assert "urg slow start" in result.stdout
+    while not marker.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert marker.exists(), "grandchild was not spawned in time"
+    grandchild_pid = int(marker.read_text(encoding="utf-8"))
+    gone_deadline = time.monotonic() + 10.0
+    while time.monotonic() < gone_deadline:
+        try:
+            with open(f"/proc/{grandchild_pid}/stat", "r", encoding="utf-8") as handle:
+                state = handle.read().rsplit(") ", 1)[-1].split(" ", 1)[0]
+        except FileNotFoundError:
+            state = None
+        if state in (None, "Z"):
+            break
+        time.sleep(0.05)
+    assert state in (None, "Z"), f"grandchild {grandchild_pid} survived the timeout"
+
+
+def test_urg_runner_lsf_wall_time_defaults_and_stays_configurable(
+    monkeypatch,
+):
+    from xcov.errors import XcovError
+    from xcov.urg_runner import UrgRunner
+
+    for name in (
+        "XVERIF_XCOV_URG_WALL_TIME_SEC",
+        "XVERIF_LSF_BSUB",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    fake = "urg-bin"
+    runner = UrgRunner(
+        backend="lsf",
+        bsub_cmd="bsub-wrapper",
+        bkill_cmd="bkill-wrapper",
+        queue="urg_queue",
+    )
+    argv = runner.build_argv([fake], job_name="fixed-job")
+    assert argv[argv.index("-W") + 1] == "120"
+    assert runner.wall_time_minutes == 120
+
+    monkeypatch.setenv("XVERIF_XCOV_URG_WALL_TIME_SEC", "90")
+    ninety = UrgRunner(
+        backend="lsf",
+        bsub_cmd="bsub-wrapper",
+        bkill_cmd="bkill-wrapper",
+        queue="urg_queue",
+    )
+    assert ninety.wall_time_minutes == 2
+
+    for value in ("", "0", "-1", "nan", "inf", " 1", "1 ", "bad", "31536001"):
+        monkeypatch.setenv("XVERIF_XCOV_URG_WALL_TIME_SEC", value)
+        with pytest.raises(XcovError) as caught:
+            UrgRunner(
+                backend="lsf",
+                bsub_cmd="bsub-wrapper",
+                bkill_cmd="bkill-wrapper",
+                queue="urg_queue",
+            )
+        assert caught.value.code == "XCOV_URG_CONFIG_INVALID"
+
+    monkeypatch.delenv("XVERIF_XCOV_URG_WALL_TIME_SEC", raising=False)
+    with pytest.raises(XcovError) as conflict:
+        UrgRunner(
+            backend="lsf",
+            bsub_cmd="bsub -W 60",
+            bkill_cmd="bkill-wrapper",
+            queue="urg_queue",
+        )
+    assert conflict.value.code == "XCOV_URG_CONFIG_INVALID"
+
+    direct = UrgRunner(backend="direct")
+    assert direct.build_argv([fake]) == [fake]
 
 
 def test_urg_runner_fake_lsf_success_uses_batch_k_and_records_job(
@@ -482,6 +583,7 @@ def test_urg_summary_cache_fake_lsf_cold_submits_and_warm_skips_job(
         "status": "cache_hit",
         "queue": "summary_queue",
         "resource": None,
+        "wall_time_minutes": None,
         "job_name": None,
         "job_id": None,
         "exit_status": None,

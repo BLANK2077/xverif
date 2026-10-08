@@ -11,10 +11,19 @@ from xverif_loop.config import (
     resolve_mcp_cli_timeout,
     validate_positive_timeout,
 )
+from xverif_loop.lsf.protocol import terminate_process_group
 from .errors import bad_json, bad_xout, cli_failed, tool_timeout
 from .framing import strict_json_loads, validate_xout_text
 
 Json = Dict[str, Any]
+
+
+def _as_text(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
 
 
 class StatelessCliRunner:
@@ -48,7 +57,12 @@ class StatelessCliRunner:
         raw = self._run_raw(tool, argv, input_text, effective_timeout, extra_env,
                             cwd=cwd)
         if raw.get("timed_out"):
-            return tool_timeout(tool, effective_timeout)
+            return tool_timeout(
+                tool,
+                effective_timeout,
+                stdout_tail=raw["stdout"],
+                stderr_tail=raw["stderr"],
+            )
         try:
             payload = strict_json_loads(raw["stdout"])
         except (json.JSONDecodeError, ValueError):
@@ -74,7 +88,12 @@ class StatelessCliRunner:
         raw = self._run_raw(tool, argv, input_text, effective_timeout, extra_env,
                             cwd=cwd)
         if raw.get("timed_out"):
-            return tool_timeout(tool, effective_timeout)
+            return tool_timeout(
+                tool,
+                effective_timeout,
+                stdout_tail=raw["stdout"],
+                stderr_tail=raw["stderr"],
+            )
         if raw["exit_code"] != 0:
             return cli_failed(tool, raw["exit_code"], raw["stdout"],
                               raw["stderr"])
@@ -92,7 +111,12 @@ class StatelessCliRunner:
         effective_timeout = self._effective_timeout(timeout_sec)
         raw = self._run_raw(tool, argv, input_text, effective_timeout, extra_env, cwd=cwd)
         if raw.get("timed_out"):
-            return tool_timeout(tool, effective_timeout)
+            return tool_timeout(
+                tool,
+                effective_timeout,
+                stdout_tail=raw["stdout"],
+                stderr_tail=raw["stderr"],
+            )
         try:
             expected_action = None
             if tool in {"xdebug", "xcov"} and input_text:
@@ -124,21 +148,38 @@ class StatelessCliRunner:
         env = dict(os.environ)
         if extra_env:
             env.update(extra_env)
+        effective_timeout = self._effective_timeout(timeout_sec)
         try:
-            proc = subprocess.run(
+            proc = subprocess.Popen(
                 cmd,
-                input=input_text,
-                capture_output=True,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
                 encoding="utf-8",
-                timeout=self._effective_timeout(timeout_sec),
-                check=False,
                 env=env,
                 cwd=cwd or os.getcwd(),
+                # Isolate the process group so a timed-out tool cannot leave
+                # grandchildren behind.
+                start_new_session=True,
             )
-        except subprocess.TimeoutExpired:
-            return {"exit_code": -1, "stdout": "", "stderr": "", "timed_out": True}
         except OSError as exc:
-            return {"exit_code": -1, "stdout": "", "stderr": "", "error_type": type(exc).__name__}
-        return {"exit_code": proc.returncode, "stdout": proc.stdout,
-                "stderr": proc.stderr}
+            return {"exit_code": -1, "stdout": "", "stderr": "",
+                    "error_type": type(exc).__name__}
+        try:
+            stdout, stderr = proc.communicate(
+                input=input_text,
+                timeout=effective_timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            cleanup = terminate_process_group(proc)
+            stdout, stderr = proc.communicate()
+            return {
+                "exit_code": -1,
+                "stdout": _as_text(stdout) if stdout is not None else _as_text(exc.output),
+                "stderr": _as_text(stderr) if stderr is not None else _as_text(exc.stderr),
+                "timed_out": True,
+                "cleanup": cleanup,
+            }
+        return {"exit_code": proc.returncode, "stdout": stdout,
+                "stderr": stderr}

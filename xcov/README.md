@@ -112,6 +112,9 @@ MCP 始终提供 coverage 工具。MCP 原样传递导出参数，不改写相�
 - `XVERIF_XCOV_URG_STARTUP_TIMEOUT_SEC`：等待 batch job 从 submitted/PEND 进入 running
   的超时，默认 120 秒。
 - `XVERIF_XCOV_URG_RUN_TIMEOUT_SEC`：job running 后的 URG 执行超时，默认 600 秒。
+- `XVERIF_XCOV_URG_WALL_TIME_SEC`：内层 `bsub -K` job 的 LSF `-W` runtime limit，单位秒，
+  默认 7200（即 `-W 120`）；向上取整到分钟，上限 31536000。`XVERIF_LSF_BSUB` 自带 `-W`
+  时直接报 `XCOV_URG_CONFIG_INVALID`，不静默双写。direct backend 不使用该变量。
 
 固定 URG summary 使用内容寻址 cache。key 包含 VDB 内容 hash、可选 run-manifest
 hash、URG 绝对路径/release/文件身份、固定 argv、parser/cache version、merged selection

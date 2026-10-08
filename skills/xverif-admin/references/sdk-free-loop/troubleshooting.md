@@ -22,8 +22,14 @@
 
 - `INVALID_REQUEST` / `INVALID_ARG`：原生 envelope、target 或 action 参数不符合 xdebug/xcov 合同。
 - `SESSION_LOST`：stdio-loop backend 超时、退出或 backend 报告 session terminal；需要重新 open。
+- job 在运行一段固定时长后消失，且 `scheduler.submitted.wall_time_minutes` 与存活时长接近：
+  LSF `-W` runtime limit（`XVERIF_LSF_SESSION_WALL_TIME_SEC`，默认 7200 秒）到期，
+  LSF 终止了 job；按需调大该值，并用 `gc` 回收残留记录。
 - ready timeout：检查 LSF 队列、backend 是否能启动、`XVERIF_LSF_CLI_STARTUP_TIMEOUT_SEC`。
 - query timeout：先缩小 time_range/limits，再考虑增大 `XVERIF_LSF_CLI_REQUEST_TIMEOUT_SEC`。
+- manager 收到 SIGTERM/SIGINT：会在有界预算内（`close_timeout + bkill_timeout`，默认 60 秒，
+  上限 300 秒）执行 `close_all` 再退出，日志为 `uds.shutdown.cleanup_begin/end`；被 SIGKILL
+  时该清理不会执行，只能依赖 LSF `-W` 兜底。
 - UDS bind 失败：检查 `XVERIF_LSF_CLI_SOCKET` 所在目录权限及同名路径类型；不要手工启动 manager 或 client。
 - `--stdio-loop` 被拒绝：这是预期行为；该参数只由 wrapper 内部提交到计算节点。
 - `CONFIG_ERROR`：检查 `xverif_lsf.env.json` 的 JSON、owner、普通文件类型和

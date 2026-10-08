@@ -27,7 +27,7 @@ def _split_command(argv: List[str]) -> List[str]:
             args.pop(0)
             break
         flag = args.pop(0)
-        if flag in {"-q", "-R", "-J", "-env"} and args:
+        if flag in {"-q", "-R", "-J", "-W", "-env"} and args:
             args.pop(0)
     return args
 
@@ -89,6 +89,20 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     signal.signal(signal.SIGTERM, _terminate_child)
     signal.signal(signal.SIGINT, _terminate_child)
+    wall_after = _env_int("FAKE_BSUB_WALL_TIME_KILL_MS")
+    if wall_after > 0:
+        # Simulate an LSF runtime-limit termination of the job: SIGTERM, a
+        # bounded grace period, SIGKILL, then the scheduler's finished frame.
+        time.sleep(wall_after / 1000.0)
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
+        print("<<Job is finished>>", flush=True)
+        return _env_int("FAKE_BSUB_WALL_TIME_EXIT_CODE", 137)
     kill_after = _env_int("FAKE_BSUB_KILL_CHILD_AFTER_MS")
     if kill_after > 0:
         time.sleep(kill_after / 1000.0)

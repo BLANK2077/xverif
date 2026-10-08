@@ -14,6 +14,7 @@ from xverif_loop.lsf.bsub import BsubRunner
 from xverif_loop.config import (
     RuntimeConfig,
     default_xdebug_bin,
+    lsf_wall_time_minutes,
 )
 from xverif_loop.logging import StructuredLogger, StructuredLoggingError
 from xverif_loop.sessions.launchers import DirectLauncher, Launcher, LsfLauncher
@@ -216,6 +217,16 @@ class McpSessionManager:
         ) if self.mode == "lsf" else None
         if self.mode == "lsf":
             job_name = f"{self._job_prefix}_{_safe_name(self.backend)}_{_safe_name(name)}"
+        actual_wall_time = (
+            lsf_wall_time_minutes(self.runtime.lsf_session_wall_time_sec)
+            if self.mode == "lsf"
+            else None
+        )
+        actual_wall_time_sec = (
+            self.runtime.lsf_session_wall_time_sec
+            if self.mode == "lsf"
+            else None
+        )
         try:
             self.logger.session(
                 name,
@@ -229,6 +240,7 @@ class McpSessionManager:
                 queue=actual_queue,
                 resource=actual_resource,
                 job_name=job_name,
+                wall_time=actual_wall_time,
             )
         except StructuredLoggingError:
             with self._manager_lock:
@@ -247,7 +259,9 @@ class McpSessionManager:
                 launcher=self.launcher, xdebug_bin=self.xdebug_bin,
                 requested_queue=queue, requested_resource=resource,
                 queue=actual_queue, resource=actual_resource,
-                job_name=job_name, runtime=self.runtime,
+                job_name=job_name, wall_time=actual_wall_time,
+                wall_time_sec=actual_wall_time_sec,
+                runtime=self.runtime,
                 backend=self.backend, api_version=self.api_version,
                 ready_protocol=self.ready_protocol,
                 target_key=self.target_key,

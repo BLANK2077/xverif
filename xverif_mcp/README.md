@@ -461,6 +461,7 @@ symlink、非当前用户 owner 和非 `0600` 文件。
 | `XVERIF_LSF_BSUB` | 覆盖 `bsub` 命令（默认 `bsub`） |
 | `XVERIF_LSF_SESSION_QUEUE` | session job 的 LSF 队列（默认 `interactive`） |
 | `XVERIF_LSF_SESSION_RESOURCE` | session job 的 LSF resource string（默认省略） |
+| `XVERIF_LSF_SESSION_WALL_TIME_SEC` | session job 的 LSF `-W` runtime limit，单位秒（默认 7200，即 `-W 120`）；MCP 与 SDK-free LSF CLI 共用 |
 | `XVERIF_LSF_BKILL` | 覆盖 `bkill` 命令 |
 | `XVERIF_XCOV_BIN` | 覆盖 xcov 可执行文件路径，默认 `tools/xcov` |
 | `XVERIF_XCOV_PYTHON` | 覆盖 xcov 使用的 Python runtime |
@@ -473,6 +474,7 @@ symlink、非当前用户 owner 和非 `0600` 文件。
 | `XVERIF_XCOV_URG_RESOURCE` | 可选内层 URG resource string |
 | `XVERIF_XCOV_URG_STARTUP_TIMEOUT_SEC` | 内层 URG job PEND→running 超时，默认 120s |
 | `XVERIF_XCOV_URG_RUN_TIMEOUT_SEC` | 内层 URG running 超时，默认 600s |
+| `XVERIF_XCOV_URG_WALL_TIME_SEC` | 内层 `bsub -K` URG job 的 LSF `-W` runtime limit，单位秒（默认 7200，即 `-W 120`） |
 | `XVERIF_MCP_FAKE_LSF` | 仅 MCP namespace 的显式 fake LSF，严格布尔 `0|1` |
 | `XVERIF_LSF_CLI_SOCKET` | SDK-free LSF CLI 内部 socket 路径；不提供公开 `--socket` 参数 |
 | `XVERIF_LSF_CLI_LOG_DIR` | SDK-free LSF CLI structured log 根目录，默认 `~/.xverif/lsf-cli` |
@@ -488,9 +490,12 @@ symlink、非当前用户 owner 和非 `0600` 文件。
 
 所有 timeout 变量只接受无首尾空白的有限正数；布尔或 timeout 配置非法时立即返回明确错误。MCP 与 SDK-free LSF CLI 的 fake LSF 开关互不别名，也不会在启动、请求或 cleanup 失败时自动切换 backend。
 
+`XVERIF_LSF_SESSION_WALL_TIME_SEC` 与 `XVERIF_XCOV_URG_WALL_TIME_SEC` 同样只接受无首尾空白的有限正数秒，上限 31536000（一年），向上取整到 LSF `-W` 的分钟粒度（7200 → `-W 120`）。它们不是客户端超时，而是提交给 LSF 的 runtime limit：客户端（agent/MCP server/CLI）被 SIGKILL 后本地清理链无法执行，只有 `-W` 能让 LSF 侧兜底回收 job。`XVERIF_LSF_BSUB` 里自带 `-W` 时，MCP session 提交与 xcov 内层 URG 都会直接报错，不产生 argv 与 `scheduler` 记录的静默漂移。
+
 当外层 xcov session 和内层 URG 都使用 LSF 时，外层始终是一个长期
-`bsub -I tools/xcov --stdio-loop`，每个 cold URG 则是独立 `bsub -K`。两个 queue/resource
-命名空间必须分别配置；warm summary cache hit 不提交内层 job。所有 coverage 输入、EL、
+`bsub -I tools/xcov --stdio-loop`（带 `-W <session wall time>`），每个 cold URG 则是独立
+`bsub -K -W <urg wall time>`。两个 queue/resource/wall-time 命名空间必须分别配置；warm summary
+cache hit 不提交内层 job。所有 coverage 输入、EL、
 cache、report 与临时 hier 必须位于登录节点和计算节点共同可见的绝对路径。
 
 xdebug/xcov stateful session 会写结构化 MCP 日志：

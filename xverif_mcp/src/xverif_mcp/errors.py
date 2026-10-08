@@ -45,7 +45,12 @@ def bad_xout(tool: str, stdout_text: str = "", stderr_text: str = "") -> Json:
     )
 
 
-def tool_timeout(tool: str, timeout_sec: float) -> Json:
+def tool_timeout(tool: str, timeout_sec: float, *, stdout_tail: str = "",
+                 stderr_tail: str = "") -> Json:
     return error_payload("XVERIF_TOOL_TIMEOUT",
                          f"{tool} timed out after {timeout_sec:g}s",
-                         tool=tool, timeout_sec=timeout_sec)
+                         tool=tool, timeout_sec=timeout_sec,
+                         stdout_present=bool(stdout_tail),
+                         stderr_present=bool(stderr_tail),
+                         stdout_length=len(stdout_tail),
+                         stderr_length=len(stderr_tail))

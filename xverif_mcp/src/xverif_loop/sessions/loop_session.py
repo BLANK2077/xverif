@@ -22,7 +22,7 @@ from xverif_loop.json_contract import (
 )
 from xverif_loop.logging import StructuredLogger, StructuredLoggingError
 
-from xverif_loop.config import RuntimeConfig, default_xdebug_bin
+from xverif_loop.config import RuntimeConfig, default_xdebug_bin, lsf_wall_time_minutes
 from xverif_loop.sessions.launchers import LaunchConfig, Launcher
 from xverif_loop.sessions.capabilities import lifecycle_capability
 from xverif_loop.sessions.session_errors import response_says_session_terminal
@@ -175,10 +175,13 @@ class XdebugLoopSession:
     queue: Optional[str] = None
     resource: Optional[str] = None
     job_name: Optional[str] = None
+    wall_time: Optional[str] = None
+    wall_time_sec: Optional[float] = None
     lsf_environment_fingerprint: Optional[str] = None
     scheduler_status: str = "not_started"
     submitted_queue: Optional[str] = None
     submitted_resource: Optional[str] = None
+    submitted_wall_time: Optional[str] = None
     submitted_job_name: Optional[str] = None
     submitted_job_id: Optional[str] = None
     session_id: Optional[str] = None
@@ -496,6 +499,7 @@ class XdebugLoopSession:
                            tool_bin=self.xdebug_bin,
                            queue=self.queue, resource=self.resource,
                            job_name=self.job_name,
+                           wall_time=self.wall_time,
                            lsf_environment_fingerprint=self.lsf_environment_fingerprint,
                            startup_timeout_sec=self.runtime.startup_timeout_sec,
                            logger=self.logger)
@@ -1553,14 +1557,17 @@ class XdebugLoopSession:
                 "requested": {
                     "queue": self.requested_queue,
                     "resource": self.requested_resource,
+                    "wall_time_sec": self.wall_time_sec,
                 },
                 "effective": {
                     "queue": self.queue,
                     "resource": self.resource,
+                    "wall_time_sec": self.wall_time_sec,
                 },
                 "submitted": {
                     "queue": self.submitted_queue,
                     "resource": self.submitted_resource,
+                    "wall_time_minutes": self.submitted_wall_time,
                     "job_name": self.submitted_job_name,
                     "job_id": self.submitted_job_id,
                 },
@@ -1569,6 +1576,7 @@ class XdebugLoopSession:
     def _capture_scheduler_handle(self, handle: JsonlProcess) -> None:
         self.submitted_queue = getattr(handle, "submitted_queue", None)
         self.submitted_resource = getattr(handle, "submitted_resource", None)
+        self.submitted_wall_time = getattr(handle, "submitted_wall_time", None)
         self.submitted_job_name = getattr(handle, "job_name", None)
         job_id = getattr(handle, "job_id", None)
         if job_id:

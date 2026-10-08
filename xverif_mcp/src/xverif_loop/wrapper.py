@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import signal
 import socket
 import stat
 import sys
@@ -17,6 +18,7 @@ from xverif_loop.config import (
     RuntimeConfig,
     default_xcov_bin,
     default_xdebug_bin,
+    lsf_wall_time_minutes,
     repo_root,
     resolve_loop_wrapper_runtime_config,
 )
@@ -599,6 +601,9 @@ class LoopWrapperService:
             queue=self.runtime.session_queue,
             resource=self.runtime.session_resource,
             job_name=f"xverif_{alias}",
+            wall_time=lsf_wall_time_minutes(
+                self.runtime.lsf_session_wall_time_sec
+            ),
             startup_timeout_sec=self.runtime.startup_timeout_sec,
             logger=self.logger,
             lsf_environment_fingerprint=(
@@ -608,6 +613,8 @@ class LoopWrapperService:
             ),
         )
         handle = None
+        cleanup: Json = {"status": "not_attempted"}
+        response: Json
         try:
             handle = launcher.start(cfg)
             ready_protocol = (
@@ -633,14 +640,14 @@ class LoopWrapperService:
                 )
             except Exception:
                 pass
-            return transport
+            response = transport
         except Exception as exc:
             error_code = (
                 "LSF_ENV_MISMATCH"
                 if "LSF_ENV_MISMATCH" in str(exc)
                 else "LSF_STDIO_LOOP_FAILED"
             )
-            return self._transport_error(
+            response = self._transport_error(
                 tool=tool,
                 request=request,
                 error={
@@ -651,9 +658,30 @@ class LoopWrapperService:
         finally:
             if handle is not None:
                 try:
-                    launcher.terminate(handle)
-                except Exception:
-                    pass
+                    termination = launcher.terminate(handle)
+                    cleanup = {
+                        "status": "confirmed",
+                        "scheduler": termination.get(
+                            "scheduler",
+                            {"status": "not_applicable"},
+                        ),
+                    }
+                except Exception as exc:
+                    cleanup = {
+                        "status": "failed",
+                        "error_type": type(exc).__name__,
+                    }
+                    self.logger.try_lsf(
+                        alias,
+                        "transient.terminate.failed",
+                        False,
+                        error_type=type(exc).__name__,
+                    )
+        if cleanup.get("status") == "failed":
+            error = response.get("error")
+            if isinstance(error, dict):
+                error["cleanup"] = cleanup
+        return response
 
     def has_live_or_unresolved_sessions(self) -> bool:
         return (
@@ -689,6 +717,70 @@ class LoopWrapperServer:
         self._idle_timeout_sec = idle_timeout_sec
         self._last_activity = time.monotonic()
         self._active_requests = 0
+        self._previous_handlers: dict[int, Any] = {}
+        self._watchdog_lock = threading.Lock()
+        self._watchdog_started = False
+
+    def shutdown_budget_sec(self) -> float:
+        """Bound how long a signal-driven cleanup may delay process exit."""
+
+        runtime = self.service.runtime
+        return min(
+            300.0,
+            max(
+                5.0,
+                float(runtime.close_timeout_sec)
+                + float(runtime.bkill_timeout_sec),
+            ),
+        )
+
+    def install_signal_handlers(self) -> None:
+        """Stop the accept loop on SIGTERM/SIGINT so cleanup always runs.
+
+        Without this the default signal action kills the manager without
+        running ``_shutdown_cleanup``, leaving its LSF jobs behind.
+        """
+
+        if threading.current_thread() is not threading.main_thread():
+            return
+
+        def _on_signal(signum, frame):  # type: ignore[no-untyped-def]
+            del frame
+            self.logger.try_uds("uds.shutdown.signal", True, signal=signum)
+            self._stop.set()
+            self._start_exit_watchdog(signum)
+
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            try:
+                self._previous_handlers[signum] = signal.signal(
+                    signum,
+                    _on_signal,
+                )
+            except (ValueError, OSError):
+                continue
+
+    def _start_exit_watchdog(self, signum: int) -> None:
+        with self._watchdog_lock:
+            if self._watchdog_started:
+                return
+            self._watchdog_started = True
+
+        def _watchdog() -> None:
+            budget = self.shutdown_budget_sec()
+            time.sleep(budget)
+            self.logger.try_uds(
+                "uds.shutdown.timeout",
+                False,
+                signal=signum,
+                budget_sec=budget,
+            )
+            os._exit(128 + int(signum))
+
+        threading.Thread(
+            target=_watchdog,
+            name="xverif-loop-shutdown",
+            daemon=True,
+        ).start()
 
     def wait_until_ready(self, timeout_sec: float) -> None:
         if not self._startup_finished.wait(timeout_sec):
@@ -701,6 +793,7 @@ class LoopWrapperServer:
             raise RuntimeError("loop wrapper server startup finished without becoming ready")
 
     def serve_forever(self) -> None:
+        self.install_signal_handlers()
         path = Path(self.socket_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -972,12 +1065,26 @@ class LoopWrapperServer:
             )
 
     def _shutdown_cleanup(self) -> None:
-        self.service.close_all()
-        if self._created_socket:
-            try:
-                Path(self.socket_path).unlink()
-            except FileNotFoundError:
-                pass
+        self.logger.try_uds(
+            "uds.shutdown.cleanup.begin",
+            True,
+            socket_path=self.socket_path,
+        )
+        try:
+            self.service.close_all()
+        except Exception as exc:
+            self.logger.try_uds(
+                "uds.shutdown.cleanup_failed",
+                False,
+                error_type=type(exc).__name__,
+            )
+        finally:
+            if self._created_socket:
+                try:
+                    Path(self.socket_path).unlink()
+                except FileNotFoundError:
+                    pass
+        self.logger.try_uds("uds.shutdown.cleanup.end", True)
 
 
 def send_requests(socket_path: str, requests: Iterable[Json], timeout_sec: float = 30.0) -> list[Json]:

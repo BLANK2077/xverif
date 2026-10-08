@@ -37,6 +37,7 @@ class BsubOptions:
     queue: Optional[str] = None
     resource: Optional[str] = None
     job_name: Optional[str] = None
+    wall_time: Optional[str] = None
     propagate_environment: bool = False
 
     def extra_args(self) -> List[str]:
@@ -46,6 +47,8 @@ class BsubOptions:
             extras.extend(["-J", self.job_name])
         if self.queue:
             extras.extend(["-q", self.queue])
+        if self.wall_time:
+            extras.extend(["-W", self.wall_time])
         if self.resource:
             extras.extend(["-R", self.resource])
         if self.propagate_environment:
@@ -69,6 +72,11 @@ class BsubRunner:
             raise ValueError(
                 "XVERIF_LSF_BSUB must not set -env; xverif requires explicit '-env all'"
             )
+        if opts.wall_time and "-W" in base:
+            raise ValueError(
+                "XVERIF_LSF_BSUB must not set -W; "
+                "use XVERIF_LSF_SESSION_WALL_TIME_SEC instead"
+            )
         base.extend(opts.extra_args())
         base.extend(list(command))
         return base
@@ -83,7 +91,8 @@ class BsubRunner:
         alias = (log_context or {}).get("alias")
         logger.lsf(alias, "bsub.start", True,
                    argv_hash=argv_hash(argv), queue=opts.queue,
-                   resource=opts.resource, job_name=opts.job_name)
+                   resource=opts.resource, job_name=opts.job_name,
+                   wall_time=opts.wall_time)
         proc = JsonlProcess.start(
             argv,
             runtime=runtime,
@@ -93,4 +102,5 @@ class BsubRunner:
         proc.job_name = opts.job_name
         proc.submitted_queue = opts.queue
         proc.submitted_resource = opts.resource
+        proc.submitted_wall_time = opts.wall_time
         return proc

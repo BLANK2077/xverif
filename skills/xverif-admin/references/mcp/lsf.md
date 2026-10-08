@@ -25,6 +25,7 @@ job。xcov native loop 只允许一个 live VDB session，多 session 由 manage
 - `XVERIF_LSF_BKILL`
 - `XVERIF_LSF_SESSION_QUEUE`
 - `XVERIF_LSF_SESSION_RESOURCE`
+- `XVERIF_LSF_SESSION_WALL_TIME_SEC`，默认 `7200`（2 小时），提交为 `-W <分钟>`
 - `XVERIF_MCP_STARTUP_TIMEOUT_SEC`
 - `XVERIF_MCP_REQUEST_TIMEOUT_SEC`
 - `XVERIF_MCP_FAKE_LSF=0|1`：只属于 MCP namespace 的显式 fake LSF
@@ -47,6 +48,20 @@ queue/resource 优先级为 session open 显式参数、`XVERIF_LSF_SESSION_QUEU
 在 ready 前退出；两者都会执行原有 process+bkill 清理，不会转 direct。
 环境和 open 参数中的 queue/resource 都必须是无首尾空白的非空字符串；空值不会被接受后
 静默省略 `-q/-R`，避免 effective/submitted 与真实 argv 漂移。
+
+## `-W` runtime limit
+
+每个 session job 都带 LSF `-W`：`XVERIF_LSF_SESSION_WALL_TIME_SEC`（单位秒，无首尾空白的
+有限正数，上限 31536000）向上取整到分钟，默认 7200 秒即 `-W 120`。它只接受秒值，不提供
+`off`/无限语法；需要更长会话时显式调大数值。
+
+- `scheduler.requested.wall_time_sec`、`scheduler.effective.wall_time_sec` 是 xverif 解析出的
+  秒值；`scheduler.submitted.wall_time_minutes` 是真实 argv 里 `-W` 的分钟值。
+- `XVERIF_LSF_BSUB` 自带 `-W` 时直接报错（不静默双写）；MCP session、SDK-free manager、
+  `xdebug_lsf log` passthrough 与 doctor 共用这一个变量。
+- 达到 `-W` 后由 LSF 终止 job，客户端侧只会看到 loop/bsub 提前退出（`SESSION_LOST` 或
+  `startup_rejected`），此时按 `scheduler.wall_time_*` 判断是否撞上限，再按需 `gc` 残留记录。
+  本机未安装 LSF，`-W` 在真实站点队列上的接受度与结束帧文本尚未实测。
 
 xcov 外层 session job 与内层 URG job 是两个独立配置面：本页的 session queue 只控制
 `bsub -I tools/xcov --stdio-loop`。若要把 cache miss 的 URG 也提交 LSF，另设

@@ -28,6 +28,96 @@ class ProtocolError(RuntimeError):
     pass
 
 
+def process_group_id(process: subprocess.Popen) -> Optional[int]:
+    """Best-effort process group id for one spawned process."""
+
+    try:
+        return os.getpgid(process.pid)
+    except OSError:
+        return process.pid
+
+
+def signal_process_group(
+    process: subprocess.Popen,
+    signum: int,
+    *,
+    pgid: Optional[int] = None,
+) -> str:
+    """Signal one isolated process group and report how delivery was attempted.
+
+    ``signaled``/``group_gone`` mean the group call itself was accepted by the
+    kernel (at least one member existed / no member existed anymore).
+    ``leader_only`` means the group call was refused and only the direct child
+    could be signalled.  ``failed`` means nothing could be signalled.
+    """
+
+    target = pgid if pgid is not None else process_group_id(process)
+    if not target or target <= 0:
+        return "failed"
+    try:
+        os.killpg(target, signum)
+        return "signaled"
+    except ProcessLookupError:
+        return "group_gone"
+    except OSError:
+        pass
+    try:
+        process.send_signal(signum)
+        return "leader_only"
+    except OSError:
+        return "failed"
+
+
+def terminate_process_group(
+    process: subprocess.Popen,
+    *,
+    pgid: Optional[int] = None,
+    timeout_sec: float = 5.0,
+) -> Json:
+    """SIGTERM one process group, escalate to SIGKILL, and report the truth.
+
+    An unconfirmed termination is reported as ``ok: false`` so callers never
+    record a false "cleanup complete" for a process that may still be running.
+    """
+
+    started = time.monotonic()
+    if process.poll() is not None:
+        return {
+            "ok": True,
+            "status": "already_exited",
+            "returncode": process.returncode,
+            "forced": False,
+            "elapsed_ms": int((time.monotonic() - started) * 1000),
+        }
+    forced = False
+    delivery = signal_process_group(process, signal.SIGTERM, pgid=pgid)
+    try:
+        process.wait(timeout=timeout_sec)
+    except subprocess.TimeoutExpired:
+        forced = True
+        signal_process_group(process, signal.SIGKILL, pgid=pgid)
+        try:
+            process.wait(timeout=timeout_sec)
+        except subprocess.TimeoutExpired:
+            return {
+                "ok": False,
+                "status": "unconfirmed",
+                "error_type": "TerminationTimeout",
+                "signal_delivery": delivery,
+                "returncode": process.returncode,
+                "forced": forced,
+                "elapsed_ms": int((time.monotonic() - started) * 1000),
+            }
+    return {
+        "ok": True,
+        "status": "terminated",
+        "signal_delivery": delivery,
+        "returncode": process.returncode,
+        "forced": forced,
+        "elapsed_ms": int((time.monotonic() - started) * 1000),
+    }
+
+
 @dataclass
 class JsonlProcess:
     argv: List[str]
@@ -42,9 +132,11 @@ class JsonlProcess:
     job_id: Optional[str] = None
     submitted_queue: Optional[str] = None
     submitted_resource: Optional[str] = None
+    submitted_wall_time: Optional[str] = None
     log_alias: Optional[str] = None
     log_backend: Optional[str] = None
     log_launcher: Optional[str] = None
+    pgid: Optional[int] = None
     _stdout_thread: Optional[threading.Thread] = None
     _stderr_thread: Optional[threading.Thread] = None
     expected_environment_fingerprint: Optional[str] = None
@@ -70,6 +162,12 @@ class JsonlProcess:
             start_new_session=True,  # isolate process group for clean kill of children
         )
         item = cls(args, proc, runtime, logger)
+        # Cache the process group once, while the leader is known to be alive.
+        # Re-deriving it from the pid later races with reaping.
+        try:
+            item.pgid = os.getpgid(proc.pid)
+        except OSError:
+            item.pgid = proc.pid
         if log_context:
             item.log_alias = log_context.get("alias")
             item.log_backend = log_context.get("backend")
@@ -378,75 +476,34 @@ class JsonlProcess:
         )
         raise ProtocolError(f"timeout waiting response {request_id}")
 
+    def _signal_group(self, signum: int) -> str:
+        return signal_process_group(self.proc, signum, pgid=self.pgid)
+
     def terminate(self, timeout_sec: float = 5.0) -> Json:
-        started = time.monotonic()
         try:
-            if self.proc.poll() is not None:
-                self._close_pipes()
-                result = {
-                    "ok": True,
-                    "status": "already_exited",
-                    "returncode": self.proc.returncode,
-                    "forced": False,
-                    "elapsed_ms": int((time.monotonic() - started) * 1000),
-                }
-                self._try_log_stdio(
-                    "process.terminate.end",
-                    True,
-                    **{
-                        key: value
-                        for key, value in result.items()
-                        if key != "ok"
-                    },
-                )
-                return result
-            # Kill the entire process group so child engines are not orphaned.
-            forced = False
-            try:
-                os.killpg(
-                    os.getpgid(self.proc.pid),
-                    __import__("signal").SIGTERM,
-                )
-            except (ProcessLookupError, OSError):
-                self.proc.terminate()
-            try:
-                self.proc.wait(timeout=timeout_sec)
-            except subprocess.TimeoutExpired:
-                forced = True
-                try:
-                    os.killpg(
-                        os.getpgid(self.proc.pid),
-                        __import__("signal").SIGKILL,
-                    )
-                except (ProcessLookupError, OSError):
-                    self.proc.kill()
-                self.proc.wait(timeout=timeout_sec)
-            self._close_pipes()
-            result = {
-                "ok": True,
-                "status": "terminated",
-                "returncode": self.proc.returncode,
-                "forced": forced,
-                "elapsed_ms": int((time.monotonic() - started) * 1000),
-            }
-            self._try_log_stdio(
-                "process.terminate.end",
-                True,
-                **{
-                    key: value
-                    for key, value in result.items()
-                    if key != "ok"
-                },
+            result = terminate_process_group(
+                self.proc,
+                pgid=self.pgid,
+                timeout_sec=timeout_sec,
             )
-            return result
         except Exception as exc:
             self._try_log_stdio(
                 "process.terminate.end",
                 False,
                 error_type=type(exc).__name__,
-                elapsed_ms=int((time.monotonic() - started) * 1000),
             )
             raise
+        self._close_pipes()
+        self._try_log_stdio(
+            "process.terminate.end",
+            bool(result.get("ok")),
+            **{
+                key: value
+                for key, value in result.items()
+                if key != "ok"
+            },
+        )
+        return result
 
     def _close_pipes(self) -> None:
         for stream in (self.proc.stdin, self.proc.stdout, self.proc.stderr):

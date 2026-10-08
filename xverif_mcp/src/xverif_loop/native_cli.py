@@ -6,6 +6,7 @@ import argparse
 import os
 from pathlib import Path
 import select
+import signal
 import subprocess
 import sys
 import time
@@ -20,6 +21,7 @@ from xverif_loop.env_config import (
 from xverif_loop.config import (
     default_xcov_bin,
     default_xdebug_bin,
+    lsf_wall_time_minutes,
     resolve_loop_wrapper_runtime_config,
     resolve_env_timeout,
 )
@@ -192,9 +194,69 @@ def _ensure_manager(socket_path: str) -> None:
         if status.get("config_fingerprint") == os.environ.get(CONFIG_FINGERPRINT_ENV):
             return
         _retire_mismatched_manager(socket_path, status)
-    if proc.poll() is None:
-        proc.terminate()
-    raise RuntimeError("LSF CLI manager did not publish listen readiness")
+    cleanup = _terminate_failed_manager(proc)
+    raise RuntimeError(
+        "LSF CLI manager did not publish listen readiness; "
+        f"cleanup status={cleanup.get('status')}"
+    )
+
+
+def _terminate_failed_manager(proc: subprocess.Popen) -> Json:
+    """Terminate one unready manager process group with a bounded ladder."""
+
+    started = time.monotonic()
+    if proc.poll() is not None:
+        return {
+            "status": "already_exited",
+            "returncode": proc.returncode,
+            "elapsed_ms": int((time.monotonic() - started) * 1000),
+        }
+    try:
+        pgid = os.getpgid(proc.pid)
+    except OSError:
+        pgid = proc.pid
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+        delivery = "signaled"
+    except ProcessLookupError:
+        delivery = "group_gone"
+    except OSError:
+        try:
+            proc.terminate()
+            delivery = "leader_only"
+        except OSError:
+            delivery = "failed"
+    try:
+        proc.wait(timeout=5.0)
+        return {
+            "status": "terminated",
+            "signal_delivery": delivery,
+            "returncode": proc.returncode,
+            "elapsed_ms": int((time.monotonic() - started) * 1000),
+        }
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except OSError:
+        try:
+            proc.kill()
+        except OSError:
+            pass
+    try:
+        proc.wait(timeout=5.0)
+        return {
+            "status": "killed",
+            "signal_delivery": delivery,
+            "returncode": proc.returncode,
+            "elapsed_ms": int((time.monotonic() - started) * 1000),
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "status": "unconfirmed",
+            "signal_delivery": delivery,
+            "elapsed_ms": int((time.monotonic() - started) * 1000),
+        }
 
 
 def _read_request(input_arg: str | None) -> Json:
@@ -300,6 +362,7 @@ def _run_lsf_passthrough(tool: str, argv: list[str]) -> int:
             queue=runtime.session_queue,
             resource=runtime.session_resource,
             job_name=f"xverif_{tool}_admin_{os.getpid()}",
+            wall_time=lsf_wall_time_minutes(runtime.lsf_session_wall_time_sec),
             propagate_environment=bool(
                 os.environ.get(ENV_FINGERPRINT_ENV)
             ),
