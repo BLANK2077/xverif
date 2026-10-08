@@ -4,7 +4,7 @@
   "action": "batch",
   "tool": {
     "name": "xdebug",
-    "version": "1.0.0"
+    "version": "1.0.1"
   },
   "session": null,
   "summary": {
@@ -23,7 +23,7 @@
         "action": "session.list",
         "tool": {
           "name": "xdebug",
-          "version": "1.0.0"
+          "version": "1.0.1"
         },
         "session": null,
         "summary": {

@@ -4,7 +4,7 @@
   "action": "session.open",
   "tool": {
     "name": "xdebug",
-    "version": "1.0.0"
+    "version": "1.0.1"
   },
   "session": null,
   "summary": {

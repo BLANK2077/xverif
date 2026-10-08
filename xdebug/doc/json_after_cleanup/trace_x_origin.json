@@ -24,7 +24,7 @@
     "action": "trace.x_origin",
     "tool": {
       "name": "xdebug",
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     "session": {
       "session_id": "xprop_debug",
