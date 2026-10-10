@@ -19,7 +19,8 @@
     },
     "session": null,
     "summary": {
-      "removed": true
+      "removed": true,
+      "retired_unreachable": false
     },
     "data": {
       "removed_session": {

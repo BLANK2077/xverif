@@ -186,6 +186,7 @@ class XdebugLoopSession:
     submitted_job_id: Optional[str] = None
     session_id: Optional[str] = None
     state: str = "new"
+    terminal_source: Optional[str] = None
     handle: Optional[JsonlProcess] = None
     pid: Optional[int] = None
     last_error: Optional[str] = None
@@ -239,6 +240,63 @@ class XdebugLoopSession:
             return False
         proc = getattr(h, "proc", None)
         return proc is not None and proc.poll() is None
+
+    def loop_exit_evidence(self) -> Optional[Json]:
+        """Return exit evidence when the owned loop process already exited."""
+
+        handle = self.handle
+        if handle is None:
+            return None
+        proc = getattr(handle, "proc", None)
+        if proc is None or proc.poll() is None:
+            return None
+        return {
+            "loop_returncode": proc.returncode,
+            "job_id": getattr(handle, "job_id", None),
+            "job_name": getattr(handle, "job_name", None),
+            "wall_time_minutes": getattr(handle, "submitted_wall_time", None),
+        }
+
+    def loop_dead_evidence(self) -> Optional[Json]:
+        """Return proof that this session's own loop process exited."""
+
+        evidence = self.loop_exit_evidence()
+        if evidence is not None:
+            return evidence
+        stored = self.last_cleanup.get("loop_exit")
+        return stored if isinstance(stored, dict) else None
+
+    def refresh_state(self) -> bool:
+        """Demote a live session whose own loop process already exited.
+
+        A session that exits on its own (LSF runtime limit, engine crash,
+        stdin EOF) must be classifiable without first failing a query.
+        """
+
+        evidence = self.loop_exit_evidence()
+        if evidence is None:
+            return False
+        with self._lifecycle_lock:
+            if self.state != "alive":
+                return False
+            self.state = "dead"
+            self.terminal_source = "loop_exit"
+            self.last_cleanup = {
+                **self.last_cleanup,
+                "source": "loop_exit",
+                "loop_exit": evidence,
+            }
+        self.logger.try_session(
+            self.alias,
+            "session.loop_exit",
+            False,
+            backend=self.backend,
+            launcher=self.launcher.mode,
+            session_id=self.session_id,
+            state=self.state,
+            **evidence,
+        )
+        return True
 
     @_redacted_operation
     def abort(
@@ -370,6 +428,23 @@ class XdebugLoopSession:
         if code == "SESSION_OWNERSHIP_TOKEN_MISMATCH":
             return "token_mismatch"
         return "cleanup_failed"
+
+    @staticmethod
+    def _native_retired_unreachable(response: Json) -> bool:
+        """True when the native lane retired an unreachable backend record."""
+
+        payload = response.get("json") if isinstance(response, dict) else None
+        source = payload if isinstance(payload, dict) else response
+        summary = source.get("summary") if isinstance(source, dict) else None
+        return bool(
+            isinstance(summary, dict)
+            and summary.get("retired_unreachable") is True
+        )
+
+    def _admin_probe_timeout_sec(self, *, budget_sec: float = 5.0) -> float:
+        """Bounded budget for admin probes that must not stall on a dead engine."""
+
+        return max(0.1, min(float(self.runtime.close_timeout_sec), budget_sec))
 
     def _finish_dispatched_open(
         self,
@@ -751,6 +826,36 @@ class XdebugLoopSession:
             "terminate": "skipped",
         }
         errors: Json = {}
+        self.refresh_state()
+        if self.state == "dead" and not force:
+            # Graceful close cannot reach a loop that already exited; route the
+            # caller to the force lane instead of silently upgrading.
+            result = _error(
+                "SESSION_LOST",
+                "session loop is no longer running; graceful close cannot "
+                "confirm backend cleanup",
+                session_id=self.session_id,
+                mode=self.launcher.mode,
+                terminal_source=self.terminal_source or "loop_exit",
+                cleanup=self.last_cleanup,
+                next_actions=[
+                    {
+                        "tool": "xverif_debug_session_kill",
+                        "session_id": self.session_id,
+                        "reason": "force close retires the unusable generation",
+                    },
+                ],
+            )
+            self.logger.try_session(
+                self.alias,
+                "session.close.end",
+                False,
+                backend=self.backend,
+                launcher=self.launcher.mode,
+                session_id=self.session_id,
+                terminal_source=self.terminal_source or "loop_exit",
+            )
+            return self._attach_observability(result, observability_cursor)
         if self.handle and self.state == "alive" and self.session_id and not force:
             try:
                 req = {
@@ -886,6 +991,7 @@ class XdebugLoopSession:
     @_redacted_operation
     def doctor(self, verbose: bool = False) -> Json:
         capability = lifecycle_capability(self.backend)
+        self.refresh_state()
         transport_alive = self.process_alive()
         backend_response: Optional[Json] = None
         source = "loop"
@@ -914,7 +1020,12 @@ class XdebugLoopSession:
                 source = "request_lane_busy"
         elif capability.fixed_admin_path and self.session_id:
             source = "fixed_native_admin"
-            backend_response = self._call_native_admin(capability.native_health_action)
+            # Bounded probe: an unreachable engine must not hold a read-only
+            # doctor for the whole close budget.
+            backend_response = self._call_native_admin(
+                capability.native_health_action,
+                timeout_sec=self._admin_probe_timeout_sec(),
+            )
         backend_ok = bool(backend_response and backend_response.get("ok"))
         unresolved = (
             self.state == "alive" and not backend_ok
@@ -966,6 +1077,7 @@ class XdebugLoopSession:
         }
         errors: Json = {}
         response: Optional[Json] = None
+        self.refresh_state()
         with self._lifecycle_lock:
             conditional_target = self.session_id or self.alias
             conditional_token = (
@@ -973,12 +1085,20 @@ class XdebugLoopSession:
                 if capability.supports_conditional_cleanup_token
                 else None
             )
+            # Retire an unreachable backend only when this wrapper already
+            # observed its own loop process exit; the engine cannot outlive a
+            # terminated loop in that case.
+            retire_unreachable = bool(
+                capability.supports_unreachable_retire
+                and self.loop_dead_evidence() is not None
+            )
             handle = self.handle
             self.handle = None
             self.state = "terminating"
             self._lifecycle_generation += 1
             if handle is not None:
                 self._capture_scheduler_handle(handle)
+        stages["retire_unreachable"] = retire_unreachable
         if handle is not None:
             try:
                 termination = self.launcher.terminate(handle)
@@ -1010,6 +1130,8 @@ class XdebugLoopSession:
                 capability.native_kill_action,
                 session_id=conditional_target,
                 ownership_token=conditional_token,
+                retire_unreachable=retire_unreachable,
+                timeout_sec=self._admin_probe_timeout_sec(),
             )
             stages["native_kill_resolution"] = "fixed_native_admin"
         elif capability.native_kill_action:
@@ -1025,8 +1147,13 @@ class XdebugLoopSession:
                     "code": "NATIVE_KILL_RESPONSE_MISSING",
                 }
             elif response.get("ok") is True:
-                stages["native_kill"] = "ok"
-                stages["cleanup_outcome"] = "cleaned"
+                if self._native_retired_unreachable(response):
+                    stages["native_kill"] = "retired_unreachable"
+                    stages["cleanup_outcome"] = "retired_unreachable"
+                    stages["engine_confirmation"] = "unreachable"
+                else:
+                    stages["native_kill"] = "ok"
+                    stages["cleanup_outcome"] = "cleaned"
             else:
                 outcome = (
                     self._conditional_cleanup_outcome(response)
@@ -1096,6 +1223,8 @@ class XdebugLoopSession:
         *,
         session_id: Optional[str] = None,
         ownership_token: Optional[str] = None,
+        retire_unreachable: bool = False,
+        timeout_sec: Optional[float] = None,
     ) -> Json:
         target_session_id = session_id or self.session_id
         if not target_session_id:
@@ -1108,18 +1237,31 @@ class XdebugLoopSession:
             "action": action,
             "target": {"session_id": target_session_id},
         }
+        args: Json = {}
         if ownership_token:
             if action != "session.close":
                 return _error(
                     "INVALID_ADMIN_REQUEST",
                     "conditional cleanup key is only valid for force session.close",
                 )
-            request["args"] = {
-                "mode": "force",
-                "ownership_token": ownership_token,
-            }
+            args["mode"] = "force"
+            args["ownership_token"] = ownership_token
         elif self.backend == "xdebug" and action == "session.close":
-            request["args"] = {"mode": "force"}
+            args["mode"] = "force"
+        if retire_unreachable:
+            if action != "session.close" or args.get("mode") != "force":
+                return _error(
+                    "INVALID_ADMIN_REQUEST",
+                    "unreachable retirement is only valid for force session.close",
+                )
+            args["retire_unreachable"] = True
+        if args:
+            request["args"] = args
+        effective_timeout = (
+            self.runtime.close_timeout_sec
+            if timeout_sec is None
+            else timeout_sec
+        )
         try:
             proc = subprocess.run(
                 [self.xdebug_bin, "--json", "-"],
@@ -1128,7 +1270,7 @@ class XdebugLoopSession:
                 encoding="utf-8",
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                timeout=self.runtime.close_timeout_sec,
+                timeout=effective_timeout,
                 check=False,
             )
         except Exception as exc:

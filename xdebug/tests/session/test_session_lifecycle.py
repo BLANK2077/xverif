@@ -50,6 +50,20 @@ def _kill_all(cli_runner: CliRunner) -> None:
     cli_runner.run(_request("session.close", target={"session_id": "all"}, args={"mode": "force"}))
 
 
+def _session_directory(isolated_home: Path, session_id: str) -> Path:
+    path_hash = 1469598103934665603
+    for byte in session_id.encode("utf-8"):
+        path_hash ^= byte
+        path_hash = (path_hash * 1099511628211) & ((1 << 64) - 1)
+    return (
+        isolated_home
+        / ".xdebug"
+        / "engine"
+        / "sessions"
+        / f"{session_id[:16]}_{path_hash:016x}"
+    )
+
+
 def _write_registry_session(isolated_home: Path, record: dict) -> None:
     canonical = {
         "session_id": "",
@@ -95,17 +109,7 @@ def _write_registry_session(isolated_home: Path, record: dict) -> None:
         canonical[f"{prefix}_dev"] = stat_result.st_dev
         canonical[f"{prefix}_inode"] = stat_result.st_ino
     session_id = canonical["session_id"]
-    path_hash = 1469598103934665603
-    for byte in session_id.encode("utf-8"):
-        path_hash ^= byte
-        path_hash = (path_hash * 1099511628211) & ((1 << 64) - 1)
-    session_dir = (
-        isolated_home
-        / ".xdebug"
-        / "engine"
-        / "sessions"
-        / f"{session_id[:16]}_{path_hash:016x}"
-    )
+    session_dir = _session_directory(isolated_home, session_id)
     session_dir.mkdir(parents=True, exist_ok=True)
     (session_dir / "state.json").write_text(
         json.dumps(canonical, indent=2) + "\n",
@@ -602,6 +606,158 @@ def test_session_gc_removes_crashed_engine(
         )
         assert gc.response["data"]["removed"][0]["reason"] == "unhealthy"
         assert not Path(native["socket_path"]).exists()
+    finally:
+        _kill_all(cli_runner)
+
+
+def _write_unreachable_remote_record(
+    isolated_home: Path,
+    session_id: str,
+    fsdb: Path,
+) -> dict:
+    """Publish a file-transport record whose engine host cannot answer."""
+
+    stat_result = fsdb.stat()
+    _write_registry_session(
+        isolated_home,
+        {
+            "session_id": session_id,
+            "generation": "7" * 64,
+            "lifecycle_state": "active",
+            "transport": "file",
+            "file_dir": str(isolated_home / "session-files" / session_id),
+            "socket_path": "",
+            "fsdb_file": str(fsdb),
+            "fsdb_mtime_ns": stat_result.st_mtime_ns,
+            "fsdb_size": stat_result.st_size,
+            "fsdb_dev": stat_result.st_dev,
+            "fsdb_inode": stat_result.st_ino,
+            "server_host": "xverif-unreachable-host",
+            "server_pid": 999999999,
+        },
+    )
+    (isolated_home / "session-files" / session_id).mkdir(parents=True, exist_ok=True)
+    return _registry_session(isolated_home, session_id)
+
+
+@pytest.mark.session
+@pytest.mark.waveform
+def test_force_close_retires_unreachable_engine_and_reopens_same_name(
+    resource_targets: dict,
+    cli_runner: CliRunner,
+    isolated_home: Path,
+) -> None:
+    name = "retire_remote"
+    fsdb = Path(resource_targets["waveform"]["fsdb"])
+    try:
+        record = _write_unreachable_remote_record(isolated_home, name, fsdb)
+
+        started = time.monotonic()
+        stale = cli_runner.run(
+            _request(
+                "session.open",
+                target=resource_targets["waveform"],
+                args={"name": name},
+            )
+        )
+        elapsed = time.monotonic() - started
+        assert not stale.ok
+        assert stale.response["error"]["code"] == "SESSION_STALE"
+        assert stale.response["error"]["unreachable"] is True
+        assert stale.response["error"]["next_actions"]
+        assert (
+            stale.response["error"]["correct_example"]["args"][
+                "retire_unreachable"
+            ]
+            is True
+        )
+        # The conflict probe is bounded by limits.timeout_ms, never by the
+        # file-transport request deadline.
+        assert elapsed < 30.0, elapsed
+
+        kept = cli_runner.run(
+            _request(
+                "session.close",
+                target={"session_id": name},
+                args={"mode": "force"},
+            )
+        )
+        assert not kept.ok
+        assert kept.response["error"]["code"] == "SESSION_CLEANUP_FAILED"
+        assert _registry_session(isolated_home, name)["session_id"] == name
+
+        retired = cli_runner.run(
+            _request(
+                "session.close",
+                target={"session_id": name},
+                args={"mode": "force", "retire_unreachable": True},
+            )
+        )
+        assert retired.ok, retired.response
+        assert retired.response["summary"] == {
+            "removed": True,
+            "retired_unreachable": True,
+        }
+        assert retired.response["data"]["removed_session"]["session_id"] == name
+        session_dir = _session_directory(isolated_home, name)
+        assert not (session_dir / "state.json").exists()
+        assert (session_dir / "generation").exists()
+        assert _registry(isolated_home)["sessions"] == []
+
+        reopened = cli_runner.run(
+            _request(
+                "session.open",
+                target=resource_targets["waveform"],
+                args={"name": name},
+            )
+        )
+        assert reopened.ok, reopened.response
+        assert reopened.response["session"]["session_id"] == name
+        assert _registry_session(isolated_home, name)["session_id"] == name
+    finally:
+        _kill_all(cli_runner)
+
+
+@pytest.mark.session
+@pytest.mark.waveform
+def test_retire_unreachable_rejects_graceful_and_all(
+    resource_targets: dict,
+    cli_runner: CliRunner,
+    isolated_home: Path,
+) -> None:
+    name = "retire_reject"
+    fsdb = Path(resource_targets["waveform"]["fsdb"])
+    try:
+        _write_unreachable_remote_record(isolated_home, name, fsdb)
+
+        graceful = cli_runner.run(
+            _request(
+                "session.close",
+                target={"session_id": name},
+                args={"mode": "graceful", "retire_unreachable": True},
+            )
+        )
+        assert not graceful.ok
+        assert graceful.response["error"]["code"] == "INVALID_REQUEST"
+        assert (
+            graceful.response["error"]["invalid_arg"]
+            == "args.retire_unreachable"
+        )
+
+        bulk = cli_runner.run(
+            _request(
+                "session.close",
+                target={"session_id": "all"},
+                args={"mode": "force", "retire_unreachable": True},
+            )
+        )
+        assert not bulk.ok
+        assert bulk.response["error"]["code"] == "INVALID_REQUEST"
+        assert (
+            bulk.response["error"]["invalid_arg"]
+            == "args.retire_unreachable"
+        )
+        assert _registry_session(isolated_home, name)["session_id"] == name
     finally:
         _kill_all(cli_runner)
 

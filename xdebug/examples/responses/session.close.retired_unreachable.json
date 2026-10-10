@@ -7,16 +7,16 @@
     "version": "1.0.1"
   },
   "session": null,
-  "summary": {"removed": true, "retired_unreachable": false},
+  "summary": {"removed": true, "retired_unreachable": true},
   "data": {
     "removed_session": {
       "session_id": "case_a",
       "mode": "combined",
       "daidir": "simv.daidir",
       "fsdb": "waves.fsdb",
-      "socket_path": "session-endpoints/case_a.sock",
-      "server_host": "localhost",
-      "transport": "uds"
+      "file_dir": "session-files/case_a",
+      "server_host": "compute-node-01",
+      "transport": "file"
     }
   },
   "error": null

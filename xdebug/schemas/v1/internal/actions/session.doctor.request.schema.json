@@ -121,7 +121,14 @@
         },
         "limits": {
           "type": "object",
-          "properties": {},
+          "properties": {
+            "timeout_ms": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647,
+              "description": "Positive frontend-to-engine health-probe timeout in milliseconds. Bounds how long an unreachable session engine may hold the probe; session.open uses a bounded probe to classify an existing session id as healthy or stale."
+            }
+          },
           "additionalProperties": false
         }
       },

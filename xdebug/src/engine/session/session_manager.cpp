@@ -723,7 +723,7 @@ SessionEnsureResult SessionManager::ensure_session(
             result.message = failure_message;
             SessionCleanupResult cleanup =
                 cleanup_session_locked(
-                    session, SessionCloseMode::Force);
+                    session, SessionCloseMode::Force, false);
             result.cleanup_succeeded =
                 cleanup.cleanup_succeeded;
             result.compensation_status =
@@ -870,7 +870,8 @@ SessionEnsureResult SessionManager::create_session(const std::vector<std::string
 
 SessionCleanupResult SessionManager::cleanup_session_locked(
     SessionInfo session,
-    SessionCloseMode mode) {
+    SessionCloseMode mode,
+    bool retire_unreachable) {
     SessionCleanupResult result;
     result.info = session;
 
@@ -893,6 +894,9 @@ SessionCleanupResult SessionManager::cleanup_session_locked(
         owned_children_.find(session.server_pid) !=
         owned_children_.end();
     bool stopped = !has_process;
+    // Explicit unreachable retirement: the record is removed without claiming
+    // that the engine process was proven stopped.
+    bool retired_unreachable = false;
 
     if (has_process && is_local_session_host(session)) {
         stopped = wait_for_session_process_exit(
@@ -926,6 +930,23 @@ SessionCleanupResult SessionManager::cleanup_session_locked(
             }
             usleep(100000);
         }
+    } else if (has_process && retire_unreachable &&
+               mode == SessionCloseMode::Force) {
+        // The quit probe above is bounded by the transport ping timeout, so an
+        // engine that never answered is unreachable right now.  The caller
+        // explicitly asked to retire such a generation instead of keeping an
+        // unusable record that would block the session name forever.
+        stopped = true;
+        retired_unreachable = true;
+        xdebug_core::log_lifecycle_event(
+            "engine",
+            session.session_id,
+            "cleanup.retire_unreachable",
+            true,
+            {{"pid", session.server_pid},
+             {"server_host", session.server_host},
+             {"transport", session.transport},
+             {"lifecycle_state", session.lifecycle_state}});
     }
 
     if (!stopped) {
@@ -958,14 +979,21 @@ SessionCleanupResult SessionManager::cleanup_session_locked(
 
     result.status = SessionCleanupStatus::Cleaned;
     result.cleanup_succeeded = true;
-    result.message = "session generation cleaned";
+    result.retired_unreachable = retired_unreachable;
+    result.message = retired_unreachable
+        ? "session generation retired without a reachable engine"
+        : "session generation cleaned";
     return result;
 }
 
 SessionCleanupResult SessionManager::close_session(
     const std::string& session_id,
-    SessionCloseMode mode,
+    const SessionCloseOptions& options,
     const SessionCleanupPrecondition& precondition) {
+    const SessionCloseMode mode = options.mode;
+    const bool retire_unreachable =
+        options.retire_unreachable &&
+        mode == SessionCloseMode::Force;
     SessionCleanupResult result;
     SessionLifecycleLease lease(session_id);
     if (!lease.locked()) {
@@ -1024,8 +1052,9 @@ SessionCleanupResult SessionManager::close_session(
         {{"pid", session.server_pid},
          {"lifecycle_state", session.lifecycle_state},
          {"close_mode",
-          mode == SessionCloseMode::Graceful ? "graceful" : "force"}});
-    result = cleanup_session_locked(session, mode);
+          mode == SessionCloseMode::Graceful ? "graceful" : "force"},
+         {"retire_unreachable", retire_unreachable}});
+    result = cleanup_session_locked(session, mode, retire_unreachable);
     xdebug_core::log_lifecycle_event(
         "engine",
         session_id,
@@ -1033,6 +1062,7 @@ SessionCleanupResult SessionManager::close_session(
         result.ok(),
         {{"pid", session.server_pid},
          {"cleanup_succeeded", result.cleanup_succeeded},
+         {"retired_unreachable", result.retired_unreachable},
          {"close_mode",
           mode == SessionCloseMode::Graceful ? "graceful" : "force"},
          {"lifecycle_state",
@@ -1043,8 +1073,9 @@ SessionCleanupResult SessionManager::close_session(
 SessionCleanupResult SessionManager::kill_session(
     const std::string& session_id,
     const SessionCleanupPrecondition& precondition) {
-    return close_session(
-        session_id, SessionCloseMode::Force, precondition);
+    SessionCloseOptions options;
+    options.mode = SessionCloseMode::Force;
+    return close_session(session_id, options, precondition);
 }
 
 SessionTimeoutContainmentResult SessionManager::terminate_on_timeout(

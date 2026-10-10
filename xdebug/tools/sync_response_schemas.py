@@ -785,6 +785,8 @@ def error_schema(action: str) -> dict[str, Any]:
             "minItems": 1,
         },
     }
+    if action in SESSION_RESPONSE_ACTIONS:
+        properties["unreachable"] = {"type": "boolean"}
     if action in {"trace.x_origin", "value.at"}:
         properties.update(
             {

@@ -112,12 +112,42 @@ xdebug helper 的 200ms grace、`xdebug log bundle` 的 30s、`mcp_ssh` 的 `Con
 3. 只有确认 leader 退出才返回 `ok/complete`；两次等待都超时返回 `status="unconfirmed"`，
    上层据此写 `cleanup_partial`/`orphan_suspected` tombstone，**不得**报成功。
 
-### 4.3 已知残余风险（未在本次治理范围内）
+### 4.3 退役（retire）语义：自退出/超时后如何 kill 并复用同名
+
+session 自行退出（loop/引擎崩溃、`-W` 到期、EOF）后不能只靠"杀进程"回收，必须显式退役记录：
+
+1. MCP `refresh_state()`：`state=="alive"` 且自有 loop 进程已退出 → 降级为 `dead`
+   （`terminal_source="loop_exit"`，证据含 `loop_returncode`/`job_id`/`wall_time_minutes`），
+   并把证据存进 `last_cleanup.loop_exit`；在 `kill`/`close`/`doctor`/`open` 入口刷新。
+2. MCP `kill`（= `session_close(mode="force")`）：只在"已观察到自有 loop 退出"时给 native admin 请求
+   附加 `args.retire_unreachable=true`；其余情况完全不发送该参数。
+3. native `session.close mode=force`：`cleanup_session_locked` 先做 2s 级 ping/quit 探测；若引擎完全
+   不可达且调用方显式要求退役，则 `stopped=true, retired_unreachable=true`，随后走既有
+   `xdebug_design_remove_session_generation()`（按 generation 守卫删除 state/socket/endpoint/transport，
+   保留 generation marker、history 与 logs）。**不声称引擎进程已停止**；响应
+   `summary.retired_unreachable=true`。
+4. native 约束：`retire_unreachable` 仅允许 `mode=force` + 精确单一 `target.session_id`（`all`、
+   graceful 都在 CLI 与引擎两层拒绝）；`session.gc` 的 idle/unhealthy 回收路径内部固定带该参数；
+   `session.open` 的同名冲突探测使用内部 `limits.timeout_ms`（默认
+   `XDEBUG_FILE_TRANSPORT_PING_TIMEOUT_MS` 2000ms）有界化，失败即 `SESSION_STALE` +
+   `error.unreachable` + `next_actions`/`correct_example`。
+5. 名字复用规则：MCP `closed` tombstone **不再**阻止同名 `session_open`（旧记录仅作证据）；
+   `cleanup_partial`/`orphan_suspected` 仍阻止并返回 `next_actions` → `xverif_debug_session_kill`；
+   `gc` 对"loop 已确认退出"的未解决记录重试一次 kill，成功即转 `closed` 并移除，发布 `retired_count`。
+6. gracefully close 遇到 loop 已退出不静默升级：返回 `SESSION_LOST` + `next_actions` 指向 kill。
+
+残余风险：单线程引擎正在执行长查询时 ping 也会失败，因此"不可达"≠"进程已死"；退役只在显式
+kill/gc 车道发生，被退役记录对应的引擎（若仍活着）会自行跑到 `XDEBUG_SESSION_IDLE_TIMEOUT_SEC`
+空闲退出；若它之后重新 touch 自己的 registry 记录，同名 open 会再次看到 `SESSION_STALE`，
+重复 kill 即可再次退役。
+
+### 4.4 已知残余风险（未在本次治理范围内）
 
 | 风险 | 现状 | 兜底 |
 | --- | --- | --- |
 | detached xdebug engine 长期存活 | `setsid()` + 无 PDEATHSIG，最长 24h | `XDEBUG_SESSION_IDLE_TIMEOUT_SEC`、`session.gc` |
-| 远端/LSF 引擎超时收容不确认 | `session_manager.cpp` 对非本地进程直接 return，不写 tombstone | LSF job 被 `-W`/bkill 回收后引擎随 job 消失；注册表残留需 `gc` |
+| 远端/LSF 引擎超时收容不确认 | `session_manager.cpp` 对非本地进程直接 return，不写 tombstone | 显式 retire 车道（4.3）可退役记录；`-W`/bkill 回收 job |
+| 忙引擎被判定为不可达 | ping 失败不等于进程死亡 | retire 仅在显式 kill/gc 且 loop 已退出时触发；不回收时保持 unresolved |
 | `xdebug --stdio-loop` 无信号处理、EOF 退出不关 session | C++ 侧未改 | MCP 层 SIGTERM 清理已覆盖常见路径 |
 | `mcp_ssh` 无 keepalive / upstream ready 无超时 | 未改 | 连接断开由 MCP SDK killpg 处理 |
 | `xverif_batch` 无整体时限 | 未改 | 每行受 request/one-shot 超时约束 |

@@ -57,6 +57,10 @@
           "maxLength": 64,
           "pattern": "^[0-9a-f]{64}$",
           "description": "Opaque 256-bit conditional-cleanup token encoded as exactly 64 lowercase hexadecimal characters. A managed wrapper may supply it at session.open and provide it to session.close with args.mode=force as an optional match precondition, not as authorization. When session.open omits it, the frontend binds a fail-closed internally generated token; never log or publish either form."
+        },
+        "retire_unreachable": {
+          "type": "boolean",
+          "description": "Explicit recovery lane for session.close with args.mode=force and one exact target.session_id: when the session engine cannot be reached at all, the session record is retired instead of being retained as cleanup_failed, so the same session name can be opened again. The response publishes summary.retired_unreachable. It never claims the engine process was proven stopped."
         }
       },
       "additionalProperties": false,
@@ -89,9 +93,9 @@
   "additionalProperties": false,
   "description": "Close one or all debug sessions gracefully or forcibly.",
   "x-purpose": "以 graceful 或 force 模式关闭一个或全部 session。",
-  "x-how_it_works": "graceful 只请求退出且失败时保留诊断记录；force 可在身份校验后终止本机进程；all 返回移除与保留计数。",
+  "x-how_it_works": "graceful 只请求退出且失败时保留诊断记录；force 可在身份校验后终止本机进程；all 返回移除与保留计数；force + retire_unreachable 在引擎完全不可达时退役该记录（summary.retired_unreachable=true）使同名 session 可重开，但不声称引擎进程已停止。",
   "x-when_to_use": "结束 session，或显式清理异常残留。",
-  "x-arg_contract_notes": "required: target.session_id；mode 可取 graceful 或 force（默认 graceful）；ownership_token 仅允许 force 且精确单一 session_id",
+  "x-arg_contract_notes": "required: target.session_id；mode 可取 graceful 或 force（默认 graceful）；ownership_token 与 retire_unreachable 都仅允许 force 且精确单一 session_id",
   "x-description-zh": "以 graceful 或 force 模式关闭一个或全部 session。",
   "x-agent": {
     "use_when": [
@@ -109,7 +113,7 @@
       }
     ],
     "constraints": [
-      "required: target.session_id；mode 可取 graceful 或 force（默认 graceful）；ownership_token 仅允许 force 且精确单一 session_id"
+      "required: target.session_id；mode 可取 graceful 或 force（默认 graceful）；ownership_token 与 retire_unreachable 都仅允许 force 且精确单一 session_id"
     ]
   },
   "allOf": [

@@ -529,6 +529,9 @@
             "$ref": "#/$defs/validationIssue"
           },
           "minItems": 1
+        },
+        "unreachable": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,

@@ -171,6 +171,59 @@ def _fake_native_admin_cli(dirpath: Path, capture_path: Path) -> str:
     ])
 
 
+def _fake_loop_with_retire_admin(dirpath: Path) -> str:
+    """Loop fake that also answers the out-of-band native admin lane.
+
+    The admin lane runs the same binary without --stdio-loop, so it reports a
+    retired-unreachable close for ``retire_unreachable`` requests and an
+    unhealthy doctor otherwise.
+    """
+
+    return _make_fake_script(dirpath / "fake_xdebug_admin", [
+        "import json, os, sys",
+        "",
+        "if '--stdio-loop' not in sys.argv:",
+        "    request = json.loads(sys.stdin.read() or '{}')",
+        "    action = request.get('action', '')",
+        "    args = request.get('args', {})",
+        "    if action == 'session.close' and args.get('retire_unreachable') is True:",
+        "        print(json.dumps({'api_version': 'xdebug.v1', 'ok': True,",
+        "                          'action': action,",
+        "                          'summary': {'removed': True, 'retired_unreachable': True}}))",
+        "    elif action == 'session.close':",
+        "        print(json.dumps({'api_version': 'xdebug.v1', 'ok': False, 'action': action,",
+        "                          'error': {'code': 'SESSION_CLEANUP_FAILED',",
+        "                                    'message': 'engine unreachable'}}))",
+        "    else:",
+        "        print(json.dumps({'api_version': 'xdebug.v1', 'ok': False, 'action': action,",
+        "                          'error': {'code': 'SESSION_UNHEALTHY',",
+        "                                    'message': 'ping failed',",
+        "                                    'health_status': 'ping_failed'}}))",
+        "    sys.exit(0)",
+        "",
+        'print(json.dumps({"type":"ready","protocol":"xdebug-stdio-loop","version":1,"pid":os.getpid()}))',
+        "sys.stdout.flush()",
+        "for line in sys.stdin:",
+        "    line = line.strip()",
+        "    if not line: continue",
+        "    req = json.loads(line)",
+        '    rid = req.get("request_id", req.get("id", "unknown"))',
+        '    action = req.get("action", "")',
+        "    if action == 'stdio.quit':",
+        "        sys.exit(0)",
+        "    if action == 'session.open':",
+        "        name = req.get('args', {}).get('name', 'test')",
+        "        result = {'ok': True, 'action': action,",
+        "                  'session': {'session_id': name, 'mode': 'waveform'},",
+        "                  'summary': {'status': 'opened'}}",
+        "    else:",
+        "        result = {'ok': True, 'action': action, 'summary': {'echo': action}}",
+        "    print(json.dumps({'id': rid, 'ok': True, 'payload_format': 'json',",
+        "                      'json': result}))",
+        "    sys.stdout.flush()",
+    ])
+
+
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
@@ -521,6 +574,34 @@ class TestManagerEvict:
         assert r["error"]["code"] == "SESSION_STALE"
         assert "stale_test" in mgr.sessions
 
+    def test_graceful_close_after_loop_exit_points_to_kill(self, tmp_path):
+        fake = _fake_loop_with_retire_admin(tmp_path)
+        mgr = _new_manager()
+        mgr.xdebug_bin = fake
+        mgr.open_session("close_after_exit", fsdb="t.fsdb")
+        s = mgr.sessions["close_after_exit"]
+        s.handle.terminate()
+        time.sleep(0.2)
+        assert not s.process_alive()
+
+        r = mgr.close_session("close_after_exit")
+
+        assert not r.get("ok"), r
+        assert r["error"]["code"] == "SESSION_LOST"
+        assert r["error"]["terminal_source"] == "loop_exit"
+        assert (
+            r["error"]["next_actions"][0]["tool"]
+            == "xverif_debug_session_kill"
+        )
+        assert "close_after_exit" not in mgr.sessions
+        assert "close_after_exit" in mgr.tombstones
+
+        reclaimed = mgr.kill_session("close_after_exit")
+        reopened = mgr.open_session("close_after_exit", fsdb="t.fsdb")
+
+        assert reopened["ok"] is True, (reclaimed, reopened)
+        assert mgr.close_all()["ok"] is True
+
     def test_close_dead_session(self, tmp_path):
         fake = _fake_loop_script(tmp_path)
         mgr = _new_manager()
@@ -627,6 +708,82 @@ class TestOpenAfterLost:
         r = mgr.open_session("reopen_me", fsdb="test.fsdb")
         assert r.get("ok"), r
         assert "reopen_me" in mgr.sessions
+
+
+class TestUnreachableRetire:
+    def test_wall_time_loop_exit_kill_retires_and_reopens_same_name(
+        self, tmp_path, monkeypatch,
+    ):
+        fake = _fake_loop_with_retire_admin(tmp_path)
+        monkeypatch.setenv("FAKE_BSUB_STDOUT_NOISE_BEFORE_READY", "1")
+        monkeypatch.setenv("FAKE_BSUB_WALL_TIME_KILL_MS", "700")
+        monkeypatch.setenv(
+            "XVERIF_LSF_BKILL",
+            shlex.join([sys.executable, "-c", "raise SystemExit(0)"]),
+        )
+        runtime = _runtime(backend="lsf")
+        manager = McpSessionManager(
+            runtime=runtime,
+            xdebug_bin=fake,
+            logger=resolve_logger(runtime),
+        )
+        manager.launcher = LsfLauncher(
+            BsubRunner(f"{sys.executable} -m xverif_loop.lsf.fake_bsub")
+        )
+
+        opened = manager.open_session("walltime_case", fsdb="t.fsdb")
+        assert opened["ok"] is True, opened
+        session = manager.sessions["walltime_case"]
+        assert session.wall_time == "120"
+
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline and session.process_alive():
+            time.sleep(0.05)
+        assert not session.process_alive()
+        assert session.state == "alive"
+
+        killed = manager.kill_session("walltime_case")
+
+        assert killed["ok"] is True, killed
+        cleanup = killed["data"]["cleanup"]
+        assert cleanup["native_kill"] == "retired_unreachable"
+        assert cleanup["cleanup_outcome"] == "retired_unreachable"
+        assert cleanup["engine_confirmation"] == "unreachable"
+        assert cleanup["retire_unreachable"] is True
+
+        reopened = manager.open_session("walltime_case", fsdb="t.fsdb")
+        assert reopened["ok"] is True, reopened
+        try:
+            assert reopened["session"]["session_id"] == "walltime_case"
+        finally:
+            assert manager.close_all()["ok"] is True
+
+    def test_kill_of_live_loop_never_requests_retire(self, tmp_path):
+        capture_path = tmp_path / "admin_requests.ndjson"
+        session = _new_session(
+            _fake_native_admin_cli(tmp_path, capture_path),
+            alias="live_admin",
+        )
+        session.session_id = "live-session"
+        session.state = "alive"
+        session.handle = JsonlProcess.start(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            runtime=session.runtime,
+            logger=session.logger,
+        )
+
+        killed = session.kill()
+
+        assert killed["ok"] is True, killed
+        assert killed["cleanup"]["retire_unreachable"] is False
+        requests = _read_ndjson(capture_path)
+        close_requests = [
+            request for request in requests
+            if request["action"] == "session.close"
+        ]
+        assert close_requests
+        for request in close_requests:
+            assert "retire_unreachable" not in request["args"]
 
 
 class TestFixedNativeAdminPath:

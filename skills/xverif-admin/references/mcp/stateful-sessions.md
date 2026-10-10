@@ -44,6 +44,10 @@ MCP 的 xdebug/xcov stateful session 通过同一套 stdio-loop session manager 
 - 同一 managed session 的 query 由 request lane 串行，但 recovery lifecycle 不与阻塞 query 共用该锁。`kill` 会原子摘除 loop handle、终止进程，再按 backend 能力通过独立 fixed native admin path 做精确条件清理；已在途 query 的迟到异常不会把最终状态改回 dead。
 - 普通 close 遇到 request lane 正忙时立即返回可重试的 `SESSION_BUSY`，并以 `session_preserved=true` 保留会话；调用方可在 query 完成后重试，或显式选择 kill。doctor 不等待 busy lane：xdebug 使用 fixed native admin path，缺少独立管理入口的 backend 明确返回 health unknown。
 - xdebug detached engine 可能在 loop 死后存活，只使用固定 native admin path doctor/kill；无法确认清理时保留 `orphan_suspected` tombstone。
+- loop 自行退出或 LSF `-W` 到期后，`xverif_debug_session_kill`（= `session_close(mode="force")`）会带上显式退役语义：native 侧仅在引擎完全不可达时退役该 generation 记录，响应 `cleanup.native_kill="retired_unreachable"`、`cleanup.engine_confirmation="unreachable"`（**不声称引擎进程已停止**），session 进入 `closed`。
+- 名字可用性由终态决定：`closed` tombstone 不再阻止同名 `session_open`（旧记录仅作为证据保留在 list 中）；`cleanup_partial`/`orphan_suspected` 仍返回 `SESSION_TOMBSTONE_EXISTS`，错误里带 `next_actions` 指向 `xverif_debug_session_kill`。
+- `xverif_debug_session_gc` 会对"loop 已确认退出"的未解决 tombstone 重试一次 kill；成功即转 `closed` 并移除，汇总发布 `retired_count`；仍不确定时保持 unresolved。
+- graceful close 遇到 loop 已退出时不静默升级：返回 `SESSION_LOST` 并在 `next_actions` 指向 kill 车道。
 - xcov backend 随 loop 进程退出；xcov kill 终止 loop/process/LSF job，并明确标记 native kill 不支持。
 - close/kill 分层返回 native backend、stdio loop、process、LSF job、manager record、tombstone 状态；部分失败为 `SESSION_CLEANUP_PARTIAL_FAILURE`，不得同名隐式 reopen。
 - xcov reason revision 尚未通过 CSV export/compile/apply 持久化时，普通 close 返回

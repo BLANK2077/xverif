@@ -548,6 +548,16 @@ xverif_cov_query
 
 xdebug detached backend 可能比 stdio-loop 活得更久，dead loop 只由固定 native admin path 精确 doctor/kill；xcov backend 由 loop 进程拥有，kill 只终止 loop/process/LSF job，并明确返回 native kill `not_supported`。任一 cleanup 阶段失败时返回 `SESSION_CLEANUP_PARTIAL_FAILURE`、`error_layer=session_manager` 并保留 unresolved tombstone。debug/cov query 均拒绝 native lifecycle action，不会 fallback 到其它 transport 或 backend。
 
+session 自行退出（引擎崩溃、LSF `-W` 到期、stdin EOF）后：`refresh_state()` 把 `state` 从 `alive`
+降级为 `dead`（证据含 `loop_returncode`/`job_id`/`wall_time_minutes`）；`kill` 只在这种"自有 loop
+已退出"证据成立时，向 native `session.close mode=force` 附加 `retire_unreachable=true`——native 仅在
+引擎完全不可达时退役该 generation（响应 `summary.retired_unreachable=true`，`cleanup.native_kill
+="retired_unreachable"`、`cleanup.engine_confirmation="unreachable"`，**不声称引擎进程已停止**）。
+退役后 session 进入 `closed`：`closed` tombstone 不再阻止同名 `session_open`；`cleanup_partial` /
+`orphan_suspected` 仍返回 `SESSION_TOMBSTONE_EXISTS`（带 `next_actions` 指向 kill），`gc` 会对 loop
+已确认退出的 unresolved 记录重试一次回收并在 summary 发布 `retired_count`。graceful close 遇到
+loop 已退出不静默升级，返回 `SESSION_LOST` + `next_actions`。
+
 `xverif_debug_session_open` 与 `xverif_cov_session_open` 都接受可选 `run_manifest`。
 它们会在启动后端前严格校验已发布的资源清单：xdebug 使用
 `xdebug.run-manifest.v1`（FSDB/daidir），xcov 使用 `xcov.run-manifest.v2`（VDB）。xcov v2

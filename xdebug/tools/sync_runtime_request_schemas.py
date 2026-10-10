@@ -127,6 +127,18 @@ ADDITIONAL_ARG_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "packet_index": {"type": "integer"},
     "path": {"type": "string"},
+    "retire_unreachable": {
+        "type": "boolean",
+        "description": (
+            "Explicit recovery lane for session.close with args.mode=force "
+            "and one exact target.session_id: when the session engine cannot "
+            "be reached at all, the session record is retired instead of "
+            "being retained as cleanup_failed, so the same session name can "
+            "be opened again. The response publishes "
+            "summary.retired_unreachable. It never claims the engine process "
+            "was proven stopped."
+        ),
+    },
     "role": {"type": "string"},
     "rules": {"oneOf": [{"type": "array"}, {"type": "object"}]},
     "reset": reset_schema(),
@@ -355,7 +367,7 @@ RUNTIME_CONSUMER_CONTRACTS_BY_ACTION: dict[
     "session.close": _named_runtime_consumer_contract(
         "xdebug/src/engine/engine_query.cpp"
         "::handle_session_action[action=session.close](ContractBoundRequest&)",
-        {"mode", "ownership_token"},
+        {"mode", "ownership_token", "retire_unreachable"},
     ),
     "session.doctor": _named_runtime_consumer_contract(
         "xdebug/src/engine/engine_query.cpp"
@@ -762,6 +774,19 @@ LIMIT_PROPERTIES_BY_ACTION: dict[str, dict[str, dict[str, Any]]] = {
                 "Total wall-clock budget for the ordered batch. Remaining "
                 "time is projected into each engine-forward child and no "
                 "later child starts after the deadline."
+            ),
+        },
+    },
+    "session.doctor": {
+        "timeout_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": RUNTIME_SIGNED_INT_MAX,
+            "description": (
+                "Positive frontend-to-engine health-probe timeout in "
+                "milliseconds. Bounds how long an unreachable session engine "
+                "may hold the probe; session.open uses a bounded probe to "
+                "classify an existing session id as healthy or stale."
             ),
         },
     },

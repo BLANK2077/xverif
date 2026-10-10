@@ -1161,8 +1161,8 @@
     spec.handler_kind = "session";
     spec.request_schema = "schemas/v1/actions/session.close.request.schema.json";
     spec.response_schema = "schemas/v1/actions/session.close.response.schema.json";
-    spec.request_examples = {"examples/requests/session.close.basic.json", "examples/requests/session.close.force.json", "examples/requests/session.close.managed.json"};
-    spec.response_examples = {"examples/responses/session.close.basic.json", "examples/responses/session.close.all.json"};
+    spec.request_examples = {"examples/requests/session.close.basic.json", "examples/requests/session.close.force.json", "examples/requests/session.close.managed.json", "examples/requests/session.close.force_unreachable.json"};
+    spec.response_examples = {"examples/responses/session.close.basic.json", "examples/responses/session.close.all.json", "examples/responses/session.close.retired_unreachable.json"};
     spec.args.required = {};
     spec.description_en = "Close one or all debug sessions gracefully or forcibly.";
     spec.description_zh = "以 graceful 或 force 模式关闭一个或全部 session。";

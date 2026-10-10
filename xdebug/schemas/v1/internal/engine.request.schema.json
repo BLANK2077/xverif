@@ -10383,6 +10383,10 @@
               "maxLength": 64,
               "pattern": "^[0-9a-f]{64}$",
               "description": "Opaque 256-bit conditional-cleanup token encoded as exactly 64 lowercase hexadecimal characters. A managed wrapper may supply it at session.open and provide it to session.close with args.mode=force as an optional match precondition, not as authorization. When session.open omits it, the frontend binds a fail-closed internally generated token; never log or publish either form."
+            },
+            "retire_unreachable": {
+              "type": "boolean",
+              "description": "Explicit recovery lane for session.close with args.mode=force and one exact target.session_id: when the session engine cannot be reached at all, the session record is retired instead of being retained as cleanup_failed, so the same session name can be opened again. The response publishes summary.retired_unreachable. It never claims the engine process was proven stopped."
             }
           },
           "additionalProperties": false,
@@ -10543,7 +10547,14 @@
         },
         "limits": {
           "type": "object",
-          "properties": {},
+          "properties": {
+            "timeout_ms": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647,
+              "description": "Positive frontend-to-engine health-probe timeout in milliseconds. Bounds how long an unreachable session engine may hold the probe; session.open uses a bounded probe to classify an existing session id as healthy or stale."
+            }
+          },
           "additionalProperties": false
         }
       },

@@ -47,7 +47,7 @@
 ## Session Actions
 | action | status | resource | purpose | how it works | objective | args contract |
 | --- | --- | --- | --- | --- | --- | --- |
-| `session.close` | stable | session | 以 graceful 或 force 模式关闭一个或全部 session。 | graceful 只请求退出且失败时保留诊断记录；force 可在身份校验后终止本机进程；`all` 返回移除与保留计数。 | 结束 session，或显式清理异常残留。 | required: target.session_id；mode 可取 graceful 或 force（默认 graceful）；ownership_token 仅允许 force 且精确单一 session_id |
+| `session.close` | stable | session | 以 graceful 或 force 模式关闭一个或全部 session。 | graceful 只请求退出且失败时保留诊断记录；force 可在身份校验后终止本机进程；`all` 返回移除与保留计数；force + `retire_unreachable` 在引擎完全不可达时退役该记录（`summary.retired_unreachable=true`）使同名 session 可重开，但不声称引擎进程已停止。 | 结束 session，或显式清理异常残留。 | required: target.session_id；mode 可取 graceful 或 force（默认 graceful）；ownership_token 与 retire_unreachable 都仅允许 force 且精确单一 session_id |
 | `session.doctor` | stable | session | 诊断当前 session。 | 检查 session 资源、路径和可访问状态。 | 定位 daidir/fsdb/session 绑定问题。 | none |
 | `session.gc` | stable | none | 清理过期 session。 | 扫描 session 管理状态并回收可释放项。 | 避免长期运行时积累无用资源。 | none |
 | `session.list` | stable | session | 列出当前 session。 | 读取 SessionManager 中的活动 session 元数据。 | 确认已有 session_id 和资源类型。 | none |

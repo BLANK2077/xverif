@@ -342,6 +342,13 @@ SessionCloseMode request_session_close_mode(
         : SessionCloseMode::Graceful;
 }
 
+bool request_retire_unreachable(ContractBoundRequest& request) {
+    auto args = request.args();
+    if (!args.contains("retire_unreachable")) return false;
+    if (!args["retire_unreachable"].is_boolean()) return false;
+    return args["retire_unreachable"].get<bool>();
+}
+
 bool valid_ownership_token(const std::string& token) {
     if (token.size() != 64) return false;
     for (const char c : token) {
@@ -600,6 +607,29 @@ OrderedJson handle_session_action(
             request_session_close_mode(bound_request);
         const std::string ownership_token =
             request_ownership_token(bound_request);
+        const bool retire_unreachable =
+            request_retire_unreachable(bound_request);
+        if (retire_unreachable &&
+            close_mode != SessionCloseMode::Force) {
+            return make_error(
+                request,
+                action,
+                "INVALID_REQUEST",
+                "args.retire_unreachable is only valid with args.mode=force",
+                false,
+                {{"invalid_arg", "args.retire_unreachable"},
+                 {"expected", "args.mode=force"}});
+        }
+        if (retire_unreachable && sid == "all") {
+            return make_error(
+                request,
+                action,
+                "INVALID_REQUEST",
+                "args.retire_unreachable requires one exact target.session_id",
+                false,
+                {{"invalid_arg", "args.retire_unreachable"},
+                 {"expected", "one exact target.session_id"}});
+        }
         if (sid == "all") {
             if (!ownership_token.empty()) {
                 return make_error(
@@ -626,9 +656,11 @@ OrderedJson handle_session_action(
             OrderedJson failed_session_ids = OrderedJson::array();
             size_t removed_count = 0;
             for (const auto& session : before) {
+                xdebug_engine::SessionCloseOptions close_options;
+                close_options.mode = close_mode;
                 const SessionCleanupResult cleanup =
                     manager.close_session(
-                        session.session_id, close_mode);
+                        session.session_id, close_options);
                 if (cleanup.ok()) {
                     ++removed_count;
                 } else {
@@ -674,8 +706,11 @@ OrderedJson handle_session_action(
             precondition.ownership_token_hash =
                 xdebug_core::sha256_text(ownership_token);
         }
+        xdebug_engine::SessionCloseOptions close_options;
+        close_options.mode = close_mode;
+        close_options.retire_unreachable = retire_unreachable;
         SessionCleanupResult cleanup =
-            manager.close_session(sid, close_mode, precondition);
+            manager.close_session(sid, close_options, precondition);
         if (!cleanup.ok()) {
             OrderedJson evidence =
                 session_error_evidence(cleanup.info);
@@ -730,6 +765,7 @@ OrderedJson handle_session_action(
             {"mode", close_mode == SessionCloseMode::Force
                          ? "force" : "graceful"},
             {"removed", true},
+            {"retired_unreachable", cleanup.retired_unreachable},
         };
         return response;
     }

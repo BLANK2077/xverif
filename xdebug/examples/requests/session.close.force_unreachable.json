@@ -1,0 +1,11 @@
+{
+  "api_version": "xdebug.v1",
+  "action": "session.close",
+  "target": {
+    "session_id": "case_a"
+  },
+  "args": {
+    "mode": "force",
+    "retire_unreachable": true
+  }
+}

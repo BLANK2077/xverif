@@ -20,11 +20,19 @@
 
 ## 常见错误
 
-- `SESSION_LOST`：MCP 已清理失效 session；重新 open。
-- `SESSION_STALE`：同名 session 记录存在但进程不健康；显式 close/gc 后重开。
+- `SESSION_LOST`：MCP 已清理失效 session；按 `next_actions` 重新 open；若来自 graceful close，
+  说明 loop 已退出，改用 `xverif_debug_session_kill`。
+- `SESSION_STALE` / `SESSION_TOMBSTONE_EXISTS`：名字仍被未解决记录占用。按错误里的
+  `next_actions` 调用 `xverif_debug_session_kill`（= `session_close(mode="force")`）：它终止 loop
+  并在引擎不可达时退役记录（`cleanup.native_kill="retired_unreachable"`、
+  `cleanup.engine_confirmation="unreachable"`，不声称引擎进程已停止），之后同名
+  `xverif_debug_session_open` 可成功。也可先 `xverif_debug_session_gc`，它会对 loop 已退出的记录
+  重试一次回收并发布 `retired_count`。已 `closed` 的 tombstone 不再挡名字，直接重开即可。
 - session/query 在运行一段时间后自行消失，且 `scheduler.wall_time_minutes` 与存活时长接近：
   这是 LSF `-W` runtime limit（`XVERIF_LSF_SESSION_WALL_TIME_SEC`，默认 7200 秒）到期，
-  LSF 终止了 job。按需调大该值；残留记录用 `gc` 回收，不要在未确认 job 已消失时同名重开。
+  LSF 终止了 job。按需调大该值；残留记录用上面的 kill/gc 流程回收。
+- 同名 open 的冲突探测是有界的（内部 `limits.timeout_ms`，默认 2000ms）：`SESSION_STALE` 会在
+  秒级返回，不再等 file transport 的 300s 请求超时。
 - `OUTPUT_WRITE_FAILED`：检查 MCP 进程工作目录、输出父目录是否存在以及写权限。
 - `OUTPUT_SERIALIZATION_FAILED`：响应不能编码为严格 JSON；写入失败不能当作调用成功。
 - `BAD_JSON` 或 envelope 异常：检查 MCP tool 参数壳和 `output_format`；xdebug 原生 envelope 请改用 `xverif`。

@@ -95166,11 +95166,15 @@
           "properties": {
             "removed": {
               "const": true
+            },
+            "retired_unreachable": {
+              "type": "boolean"
             }
           },
           "additionalProperties": false,
           "required": [
-            "removed"
+            "removed",
+            "retired_unreachable"
           ]
         },
         {
@@ -95718,6 +95722,9 @@
             "$ref": "#/$defs/batchChild_session_close_aa057fec8c__validationIssue"
           },
           "minItems": 1
+        },
+        "unreachable": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
@@ -96592,11 +96599,15 @@
       "properties": {
         "removed": {
           "const": true
+        },
+        "retired_unreachable": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
       "required": [
-        "removed"
+        "removed",
+        "retired_unreachable"
       ]
     },
     "batchChild_session_close_aa057fec8c__successData0": {
@@ -96689,7 +96700,7 @@
       "title": "session.close response",
       "description": "Close one or all debug sessions gracefully or forcibly.",
       "x-description-zh": "以 graceful 或 force 模式关闭一个或全部 session。",
-      "x-output_notes": "session.close 成功响应的 summary 字段为 summary.removed, summary.removed_count, summary.requested_count, summary.retained_count；data 字段为 data.removed_session, data.removed_sessions。未知字段会被拒绝。",
+      "x-output_notes": "session.close 成功响应的 summary 字段为 summary.removed, summary.removed_count, summary.requested_count, summary.retained_count, summary.retired_unreachable；data 字段为 data.removed_session, data.removed_sessions。未知字段会被拒绝。",
       "type": "object",
       "properties": {
         "api_version": {
@@ -97390,6 +97401,9 @@
             "$ref": "#/$defs/batchChild_session_doctor_31fba39a0d__validationIssue"
           },
           "minItems": 1
+        },
+        "unreachable": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
@@ -99117,6 +99131,9 @@
             "$ref": "#/$defs/batchChild_session_gc_9ac09bc11f__validationIssue"
           },
           "minItems": 1
+        },
+        "unreachable": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
@@ -100900,6 +100917,9 @@
             "$ref": "#/$defs/batchChild_session_list_50bb9d5ae6__validationIssue"
           },
           "minItems": 1
+        },
+        "unreachable": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
@@ -102587,6 +102607,9 @@
             "$ref": "#/$defs/batchChild_session_open_d6fa5c8431__validationIssue"
           },
           "minItems": 1
+        },
+        "unreachable": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,

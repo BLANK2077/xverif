@@ -241,7 +241,13 @@ def _session_remove_contract() -> tuple[SessionSuccessVariant, ...]:
     return (
         SessionSuccessVariant(
             "single",
-            _closed({"removed": {"const": True}}, ("removed",)),
+            _closed(
+                {
+                    "removed": {"const": True},
+                    "retired_unreachable": {"type": "boolean"},
+                },
+                ("removed", "retired_unreachable"),
+            ),
             _closed(
                 {"removed_session": _ref("sessionRecord")},
                 ("removed_session",),

@@ -24,7 +24,11 @@
 - `SESSION_LOST`：stdio-loop backend 超时、退出或 backend 报告 session terminal；需要重新 open。
 - job 在运行一段固定时长后消失，且 `scheduler.submitted.wall_time_minutes` 与存活时长接近：
   LSF `-W` runtime limit（`XVERIF_LSF_SESSION_WALL_TIME_SEC`，默认 7200 秒）到期，
-  LSF 终止了 job；按需调大该值，并用 `gc` 回收残留记录。
+  LSF 终止了 job；按需调大该值。残留记录用 session 层回收：native
+  `session.close mode=force retire_unreachable=true`（引擎不可达时退役记录，响应
+  `summary.retired_unreachable=true`，随后同名可重开）；`session.gc` 会对已判 unhealthy 的记录走
+  同一条退役路径。同名 open 的冲突探测有界（内部 `limits.timeout_ms`，默认 2000ms），
+  不再等 file transport 的 300s 请求超时。
 - ready timeout：检查 LSF 队列、backend 是否能启动、`XVERIF_LSF_CLI_STARTUP_TIMEOUT_SEC`。
 - query timeout：先缩小 time_range/limits，再考虑增大 `XVERIF_LSF_CLI_REQUEST_TIMEOUT_SEC`。
 - manager 收到 SIGTERM/SIGINT：会在有界预算内（`close_timeout + bkill_timeout`，默认 60 秒，

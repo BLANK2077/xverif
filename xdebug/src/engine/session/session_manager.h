@@ -77,9 +77,21 @@ enum class SessionCloseMode {
     Force
 };
 
+struct SessionCloseOptions {
+    SessionCloseMode mode = SessionCloseMode::Graceful;
+    // Explicit recovery lane.  When the session engine endpoint cannot be
+    // reached and the recorded engine is not a live local process, retire the
+    // session record instead of preserving it as cleanup_failed.  Never
+    // applies to graceful closes, which must keep managed evidence.
+    bool retire_unreachable = false;
+};
+
 struct SessionCleanupResult {
     SessionCleanupStatus status = SessionCleanupStatus::CleanupFailed;
     bool cleanup_succeeded = false;
+    // Set only when an explicitly requested unreachable-engine retirement
+    // removed the record without proving the engine process stopped.
+    bool retired_unreachable = false;
     std::string message;
     SessionInfo info;
 
@@ -149,10 +161,11 @@ public:
     // Close a specific session.  Graceful mode never sends a signal and
     // retains managed evidence unless process exit is proven.  Force mode may
     // terminate the generation-matched local engine process from outside its
-    // NPI context.
+    // NPI context.  Force mode with retire_unreachable may retire a record
+    // whose engine is provably unreachable.
     SessionCleanupResult close_session(
         const std::string& session_id,
-        SessionCloseMode mode,
+        const SessionCloseOptions& options,
         const SessionCleanupPrecondition& precondition =
             SessionCleanupPrecondition());
 
@@ -238,7 +251,8 @@ private:
     bool terminate_spawned_child(pid_t pid, int timeout_ms);
     SessionCleanupResult cleanup_session_locked(
         SessionInfo session,
-        SessionCloseMode mode);
+        SessionCloseMode mode,
+        bool retire_unreachable);
     SessionHealth diagnose_session_locked(
         const SessionInfo& session);
 };

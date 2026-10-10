@@ -9,6 +9,7 @@
 #include "common/path_utils.h"
 #include "core/session/session_timeout.h"
 #include "core/session/session_types.h"
+#include "core/session/transport_timeout.h"
 #include "core/common/sha256.h"
 #include "core/schema/runtime_schema_validator.h"
 #include "engine/service/contract_bound_request.h"
@@ -92,6 +93,11 @@ Json session_lifecycle_request(const Json& parent_request,
         if (has_string(parent_request["args"], "ownership_token")) {
             request["args"]["ownership_token"] =
                 parent_request["args"]["ownership_token"];
+        }
+        if (parent_request["args"].contains("retire_unreachable") &&
+            parent_request["args"]["retire_unreachable"].is_boolean()) {
+            request["args"]["retire_unreachable"] =
+                parent_request["args"]["retire_unreachable"];
         }
     }
     return request;
@@ -1115,6 +1121,10 @@ bool Dispatcher::force_close_session_record(
     Json close_req =
         session_lifecycle_request(request, "session.close", record.id);
     close_req["args"]["mode"] = "force";
+    // This is the reclamation lane (session.gc, idle expiry, confirmed
+    // unhealthy sessions): when the engine is unreachable, retire the record
+    // instead of keeping a generation that blocks the session name forever.
+    close_req["args"]["retire_unreachable"] = true;
     Json close_result = invoke_engine(
         close_req,
         close_req["target"],
@@ -1529,6 +1539,11 @@ Json Dispatcher::handle_session(
             Json doctor_req =
                 session_lifecycle_request(
                     request, "session.doctor", name);
+            // Bound the conflict probe: an unreachable engine must not hold
+            // session.open for the full file-transport request deadline.
+            doctor_req["limits"] = {
+                {"timeout_ms",
+                 xdebug_core::file_transport_ping_timeout_ms()}};
             Json health = invoke_engine(
                 doctor_req,
                 doctor_req["target"],
@@ -1557,6 +1572,30 @@ Json Dispatcher::handle_session(
             if (!health_code.empty()) {
                 err["error"]["backend_error_code"] = health_code;
             }
+            // An engine that did not answer the bounded probe is unreachable:
+            // the caller can retire the stale generation and reuse this name.
+            const Json health_error =
+                health.value("error", Json::object());
+            const std::string health_status =
+                health_error.value("health_status", std::string());
+            const std::string probe_code = backend_error_code(health);
+            if (probe_code == "ENGINE_TIMEOUT" ||
+                probe_code == "SESSION_UNHEALTHY" ||
+                health_status == "ping_failed" ||
+                health_status == "connect_failed") {
+                err["error"]["unreachable"] = true;
+            }
+            err["error"]["next_actions"] = Json::array({
+                "Retire the stale generation with session.close mode=force.",
+                "Then open the same session name again.",
+            });
+            err["error"]["correct_example"] = {
+                {"api_version", kApiVersion},
+                {"action", "session.close"},
+                {"target", {{"session_id", name}}},
+                {"args", {{"mode", "force"},
+                          {"retire_unreachable", true}}},
+            };
             return err;
         }
         // Spawn ONE unified engine (handles design, waveform, or both).
@@ -1713,6 +1752,19 @@ Json Dispatcher::handle_session(
                 "args.ownership_token is only valid for one exact session_id",
                 false);
         }
+        if (args.contains("retire_unreachable") &&
+            args["retire_unreachable"].is_boolean() &&
+            args["retire_unreachable"].get<bool>()) {
+            Json err = make_error(
+                request,
+                action,
+                "INVALID_REQUEST",
+                "args.retire_unreachable requires one exact target.session_id",
+                false);
+            err["error"]["invalid_arg"] = "args.retire_unreachable";
+            err["error"]["expected"] = "one exact target.session_id";
+            return err;
+        }
         for (const auto& record : records) {
             std::string cleanup_backend_error;
             Json close_req = session_lifecycle_request(
@@ -1757,6 +1809,23 @@ Json Dispatcher::handle_session(
     const SessionCatalogResult lookup = sessions_.get(id, record);
     if (!lookup.ok()) return catalog_error(request, lookup);
     if (action == "session.close") {
+        const std::string close_mode =
+            args.value("mode", std::string("graceful"));
+        const bool retire_unreachable =
+            args.contains("retire_unreachable") &&
+            args["retire_unreachable"].is_boolean() &&
+            args["retire_unreachable"].get<bool>();
+        if (retire_unreachable && close_mode != "force") {
+            Json err = make_error(
+                request,
+                action,
+                "INVALID_REQUEST",
+                "args.retire_unreachable is only valid with args.mode=force",
+                false);
+            err["error"]["invalid_arg"] = "args.retire_unreachable";
+            err["error"]["expected"] = "args.mode=force";
+            return err;
+        }
         Json conditional_cleanup_error =
             session_conditional_cleanup_error(
                 request,
@@ -1787,7 +1856,13 @@ Json Dispatcher::handle_session(
             return response;
         }
         Json response = make_response(request, action, ok);
-        response["summary"] = {{"removed", ok}};
+        const bool retired_unreachable =
+            r.value("summary", Json::object())
+                .value("retired_unreachable", false);
+        response["summary"] = {
+            {"removed", ok},
+            {"retired_unreachable", retired_unreachable},
+        };
         response["data"] = {
             {"removed_session", session_record_json(record)},
         };

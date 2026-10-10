@@ -680,6 +680,12 @@ def test_same_alias_open_cannot_cross_terminal_publication(
         def process_alive(self):
             return True
 
+        def refresh_state(self):
+            return False
+
+        def loop_dead_evidence(self):
+            return None
+
         def public_json(self):
             return {
                 "session_id": self.session_id,
@@ -776,6 +782,12 @@ def test_open_logging_failures_leave_one_terminal_manager_state(
 
         def process_alive(self):
             return True
+
+        def refresh_state(self):
+            return False
+
+        def loop_dead_evidence(self):
+            return None
 
         def public_json(self):
             return {
@@ -1157,3 +1169,160 @@ def test_sdk_free_stage_timeouts_remain_independent(monkeypatch, phase):
         assert getattr(runtime, candidate.lower() + "_timeout_sec") == (
             17.5 if candidate == phase else default
         )
+
+
+class _RetireDouble:
+    """Minimal session double for tombstone name reuse and gc retry tests."""
+
+    def __init__(
+        self,
+        alias: str,
+        *,
+        state: str,
+        kill_ok: bool = True,
+        loop_dead: bool = True,
+    ) -> None:
+        self.alias = alias
+        self.session_id = alias
+        self.state = state
+        self.backend = "xdebug"
+        self.last_cleanup: dict = {}
+        self.kill_calls = 0
+        self._kill_ok = kill_ok
+        self._loop_dead = loop_dead
+
+    def refresh_state(self) -> bool:
+        return False
+
+    def loop_dead_evidence(self):
+        return {"loop_returncode": 137, "job_id": "123"} if self._loop_dead else None
+
+    def process_alive(self) -> bool:
+        return False
+
+    def public_json(self, verbose: bool = False) -> dict:
+        return {"session_id": self.session_id, "state": self.state}
+
+    def kill(self) -> dict:
+        self.kill_calls += 1
+        if self._kill_ok:
+            self.state = "closed"
+            return {
+                "ok": True,
+                "cleanup": {"cleanup_outcome": "retired_unreachable"},
+            }
+        return {
+            "ok": False,
+            "error": {"code": "SESSION_CLEANUP_PARTIAL_FAILURE"},
+        }
+
+
+def _retire_manager(tmp_path: Path):
+    from xverif_loop.sessions.session_manager import McpSessionManager
+
+    runtime, logger = _runtime_and_logger(tmp_path)
+    return McpSessionManager(
+        runtime=runtime,
+        xdebug_bin="xdebug",
+        logger=logger,
+    )
+
+
+def test_closed_tombstone_no_longer_blocks_same_session_name(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    from xverif_loop.sessions import session_manager as manager_module
+
+    manager = _retire_manager(tmp_path)
+    manager.tombstones["reuse_case"] = _RetireDouble(
+        "reuse_case", state="closed"
+    )
+
+    class _OpenOk:
+        def __init__(self, *, alias, **kwargs) -> None:
+            self.alias = alias
+            self.session_id = alias
+            self.state = "new"
+
+        def open(self) -> dict:
+            self.state = "alive"
+            return {"ok": True}
+
+        def process_alive(self) -> bool:
+            return True
+
+        def refresh_state(self) -> bool:
+            return False
+
+        def public_json(self, verbose: bool = False) -> dict:
+            return {"session_id": self.session_id, "state": self.state}
+
+    monkeypatch.setattr(manager_module, "XdebugLoopSession", _OpenOk)
+
+    reopened = manager.open_session("reuse_case", fsdb="waves.fsdb")
+
+    assert reopened["ok"] is True, reopened
+    assert "reuse_case" in manager.sessions
+    assert "reuse_case" not in manager.tombstones
+
+
+def test_unresolved_tombstone_blocks_same_name_with_reclaim_action(
+    tmp_path: Path,
+) -> None:
+    manager = _retire_manager(tmp_path)
+    manager.tombstones["locked_case"] = _RetireDouble(
+        "locked_case", state="orphan_suspected"
+    )
+
+    blocked = manager.open_session("locked_case", fsdb="waves.fsdb")
+
+    assert blocked["ok"] is False
+    assert blocked["error"]["code"] == "SESSION_TOMBSTONE_EXISTS"
+    assert blocked["error"]["tombstone_state"] == "orphan_suspected"
+    assert blocked["error"]["next_actions"][0]["tool"] == "xverif_debug_session_kill"
+    assert "locked_case" in manager.tombstones
+
+
+def test_gc_retries_kill_for_dead_loop_tombstone(tmp_path: Path) -> None:
+    manager = _retire_manager(tmp_path)
+    retired = _RetireDouble("retire_case", state="orphan_suspected")
+    manager.tombstones["retire_case"] = retired
+
+    gc = manager.gc_sessions()
+
+    assert retired.kill_calls == 1
+    assert gc["summary"]["retired_count"] == 1
+    assert gc["summary"]["removed_count"] == 1
+    assert gc["summary"]["unresolved_count"] == 0
+    assert gc["data"]["retired"][0]["retired_outcome"] == "retired_unreachable"
+    assert "retire_case" not in manager.tombstones
+
+
+def test_gc_keeps_tombstone_when_retire_still_fails(tmp_path: Path) -> None:
+    manager = _retire_manager(tmp_path)
+    retry_failing = _RetireDouble(
+        "retry_failing_case", state="orphan_suspected", kill_ok=False
+    )
+    manager.tombstones["retry_failing_case"] = retry_failing
+
+    gc = manager.gc_sessions()
+
+    assert retry_failing.kill_calls == 1
+    assert gc["summary"]["retired_count"] == 0
+    assert gc["summary"]["unresolved_count"] == 1
+    assert "retry_failing_case" in manager.tombstones
+
+
+def test_gc_does_not_retire_without_loop_exit_evidence(tmp_path: Path) -> None:
+    manager = _retire_manager(tmp_path)
+    unknown = _RetireDouble(
+        "unknown_case", state="orphan_suspected", loop_dead=False
+    )
+    manager.tombstones["unknown_case"] = unknown
+
+    gc = manager.gc_sessions()
+
+    assert unknown.kill_calls == 0
+    assert gc["summary"]["unresolved_count"] == 1
+    assert "unknown_case" in manager.tombstones

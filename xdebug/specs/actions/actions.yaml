@@ -2141,11 +2141,13 @@
         "request": [
           "examples/requests/session.close.basic.json",
           "examples/requests/session.close.force.json",
-          "examples/requests/session.close.managed.json"
+          "examples/requests/session.close.managed.json",
+          "examples/requests/session.close.force_unreachable.json"
         ],
         "response": [
           "examples/responses/session.close.basic.json",
-          "examples/responses/session.close.all.json"
+          "examples/responses/session.close.all.json",
+          "examples/responses/session.close.retired_unreachable.json"
         ]
       },
       "required_target": [

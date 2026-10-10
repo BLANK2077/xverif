@@ -20,6 +20,7 @@ class BackendLifecycleCapability:
     managed_transport: Optional[str]
     accepts_trace_id: bool
     supports_conditional_cleanup_token: bool
+    supports_unreachable_retire: bool
     session_id_path: Tuple[str, ...]
 
 
@@ -37,6 +38,7 @@ CAPABILITIES = {
         managed_transport="uds",
         accepts_trace_id=True,
         supports_conditional_cleanup_token=True,
+        supports_unreachable_retire=True,
         session_id_path=("session", "session_id"),
     ),
     "xcov": BackendLifecycleCapability(
@@ -52,6 +54,7 @@ CAPABILITIES = {
         managed_transport=None,
         accepts_trace_id=False,
         supports_conditional_cleanup_token=False,
+        supports_unreachable_retire=False,
         session_id_path=("data", "session", "session_id"),
     ),
 }

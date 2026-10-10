@@ -362,9 +362,11 @@ def test_duplicate_open_uses_canonical_doctor_request_and_strict_health_error(
             "session_id": "duplicate_case",
         },
         "args": {},
+        # The conflict probe is bounded so an unreachable engine cannot hold
+        # session.open for the file-transport request deadline.
+        "limits": {"timeout_ms": 2000},
     }
     assert "name" not in doctor["args"]
-    assert "limits" not in doctor
 
 
 def test_expired_session_cleanup_does_not_inherit_query_args_or_limits(
@@ -424,7 +426,7 @@ def test_expired_session_cleanup_does_not_inherit_query_args_or_limits(
         "target": {
             "session_id": "expired_case",
         },
-        "args": {"mode": "force"},
+        "args": {"mode": "force", "retire_unreachable": True},
     }
     assert "signal" not in kill["args"]
     assert "time" not in kill["args"]

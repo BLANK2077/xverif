@@ -53,6 +53,19 @@ def _management_key(session: XdebugLoopSession) -> str:
     return session.session_id or session.alias
 
 
+def _reopen_next_action(session_id: str) -> Json:
+    """Point one blocked name at the exact reclaim call."""
+
+    return {
+        "tool": "xverif_debug_session_kill",
+        "session_id": session_id,
+        "reason": (
+            "force close terminates the loop and retires an unreachable "
+            "backend record so the name can be opened again"
+        ),
+    }
+
+
 def _cleanup_success(operation: str, session: XdebugLoopSession,
                      cleanup: Json, **summary_fields: Any) -> Json:
     stages = dict(cleanup)
@@ -199,14 +212,38 @@ class McpSessionManager:
                 return _error("SESSION_ID_EXISTS", f"session id is opening: {name}")
             if name in self.sessions:
                 existing = self.sessions[name]
-                if existing.state == "alive":
-                    if existing.process_alive():
-                        return _error("SESSION_ID_EXISTS", f"session id already exists: {name}")
-                    return _error("SESSION_STALE", "session id exists but is stale: "
-                                  f"{name}; close it explicitly before opening again")
+                existing.refresh_state()
+                if existing.state == "alive" and existing.process_alive():
+                    return _error("SESSION_ID_EXISTS", f"session id already exists: {name}")
+                return _error(
+                    "SESSION_STALE",
+                    "session id exists but is stale: "
+                    f"{name}; close it explicitly before opening again",
+                    session_state=existing.state,
+                    next_actions=[_reopen_next_action(name)],
+                )
             if name in self.tombstones:
-                return _error("SESSION_TOMBSTONE_EXISTS",
-                              f"session tombstone exists: {name}; inspect doctor and run gc or kill explicitly")
+                retired = self.tombstones[name]
+                if retired.state == "closed":
+                    # A confirmed-closed record no longer owns the name; keep
+                    # the evidence in the lifecycle log, not as a name lock.
+                    self.tombstones.pop(name, None)
+                    self.logger.try_session(
+                        name,
+                        "manager.tombstone.retired_for_reopen",
+                        True,
+                        backend=self.backend,
+                        launcher=self.mode,
+                        session_id=retired.session_id,
+                    )
+                else:
+                    return _error(
+                        "SESSION_TOMBSTONE_EXISTS",
+                        f"session tombstone exists: {name}; inspect doctor and "
+                        "run kill or gc explicitly",
+                        tombstone_state=retired.state,
+                        next_actions=[_reopen_next_action(name)],
+                    )
             self._opening.add(name)
         job_name = None
         actual_queue = (
@@ -702,6 +739,7 @@ class McpSessionManager:
     def gc_sessions(self, verbose: bool = False) -> Json:
         observability_cursor = self.logger.failure_cursor()
         removed = []
+        retired = []
         unresolved = []
         with self._manager_lock:
             tombstone_snapshot = list(self.tombstones.values())
@@ -716,8 +754,28 @@ class McpSessionManager:
                     for key, value in list(self.tombstones.items()):
                         if value is s:
                             self.tombstones.pop(key, None)
-            else:
-                unresolved.append(s.public_json(verbose=verbose))
+                continue
+            # Unresolved record whose own loop already exited: retry the
+            # reclaim lane once per gc call so a stale generation does not
+            # block the session name forever.
+            if s.loop_dead_evidence() is not None:
+                retry = s.kill()
+                if retry.get("ok"):
+                    outcome = retry.get("cleanup", {}).get("cleanup_outcome")
+                    self._evict_session(s, tombstone_state="closed")
+                    with self._manager_lock:
+                        for key, value in list(self.tombstones.items()):
+                            if value is s:
+                                self.tombstones.pop(key, None)
+                    record = {
+                        **s.public_json(verbose=verbose),
+                        "retired_outcome": outcome,
+                    }
+                    removed.append(record)
+                    if outcome == "retired_unreachable":
+                        retired.append(record)
+                    continue
+            unresolved.append(s.public_json(verbose=verbose))
         for s in session_snapshot:
             if s.state == "alive" and not s.process_alive():
                 capability = lifecycle_capability(s.backend)
@@ -740,9 +798,14 @@ class McpSessionManager:
                 "backend": self.backend,
                 "cleanup_complete": not unresolved,
                 "removed_count": len(removed),
+                "retired_count": len(retired),
                 "unresolved_count": len(unresolved),
             },
-            "data": {"removed": removed, "unresolved": unresolved},
+            "data": {
+                "removed": removed,
+                "retired": retired,
+                "unresolved": unresolved,
+            },
         }, observability_cursor)
 
     def session_open(self, name: str, fsdb: Optional[str] = None,

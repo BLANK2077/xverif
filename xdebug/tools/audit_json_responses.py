@@ -318,8 +318,10 @@ def _audit_session_success(
                 f"{sorted(required_data)}, got {sorted(data_fields)}"
             )
     elif action == "session.close":
+        # retired_unreachable is the explicit unreachable-retirement marker of
+        # the canonical single-session close shape.
         single = (
-            set(summary) == {"removed"}
+            set(summary) in ({"removed"}, {"removed", "retired_unreachable"})
             and set(data) == {"removed_session"}
         )
         bulk = (

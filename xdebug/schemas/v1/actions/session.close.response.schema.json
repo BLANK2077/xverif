@@ -4,7 +4,7 @@
   "title": "session.close response",
   "description": "Close one or all debug sessions gracefully or forcibly.",
   "x-description-zh": "以 graceful 或 force 模式关闭一个或全部 session。",
-  "x-output_notes": "session.close 成功响应的 summary 字段为 summary.removed, summary.removed_count, summary.requested_count, summary.retained_count；data 字段为 data.removed_session, data.removed_sessions。未知字段会被拒绝。",
+  "x-output_notes": "session.close 成功响应的 summary 字段为 summary.removed, summary.removed_count, summary.requested_count, summary.retained_count, summary.retired_unreachable；data 字段为 data.removed_session, data.removed_sessions。未知字段会被拒绝。",
   "$defs": {
     "jsonValue": {
       "anyOf": [
@@ -46,11 +46,15 @@
           "properties": {
             "removed": {
               "const": true
+            },
+            "retired_unreachable": {
+              "type": "boolean"
             }
           },
           "additionalProperties": false,
           "required": [
-            "removed"
+            "removed",
+            "retired_unreachable"
           ]
         },
         {
@@ -598,6 +602,9 @@
             "$ref": "#/$defs/validationIssue"
           },
           "minItems": 1
+        },
+        "unreachable": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
@@ -1472,11 +1479,15 @@
       "properties": {
         "removed": {
           "const": true
+        },
+        "retired_unreachable": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
       "required": [
-        "removed"
+        "removed",
+        "retired_unreachable"
       ]
     },
     "successData0": {
