@@ -15,7 +15,7 @@
     "action": "session.close",
     "tool": {
       "name": "xdebug",
-      "version": "1.0.1"
+      "version": "1.0.2"
     },
     "session": null,
     "summary": {

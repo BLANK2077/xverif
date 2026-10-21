@@ -7,7 +7,7 @@
 namespace xdebug {
 
 static const char* const kApiVersion = "xdebug.v1";
-static const char* const kToolVersion = "1.0.1";
+static const char* const kToolVersion = "1.0.2";
 
 Json tool_metadata();
 
