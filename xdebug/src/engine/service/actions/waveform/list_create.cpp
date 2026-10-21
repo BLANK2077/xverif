@@ -3,6 +3,7 @@
 #include "service/config_store_error.h"
 #include "service/engine_globals.h"
 #include "list_action_helpers.h"
+#include "waveform_action_error_helpers.h"
 
 #include "design/protocol/protocol.h"
 #include "waveform/server/fsdb_value_reader.h"
@@ -58,11 +59,18 @@ public:
             }
             const std::string signal =
                 requested_signals[index].get<std::string>();
-            if (!npi_fsdb_sig_by_name(
-                    xdebug_waveform::g_fsdb_file,
-                    signal.c_str(),
-                    nullptr)) {
+            npiFsdbSigHandle handle = npi_fsdb_sig_by_name(
+                xdebug_waveform::g_fsdb_file,
+                signal.c_str(),
+                nullptr);
+            if (!handle) {
                 return list_signal_not_found_error(action_name(), signal);
+            }
+            if (xdebug_waveform::fsdb_signal_is_aggregate_root(handle)) {
+                return waveform_aggregate_signal_error(
+                    action_name(),
+                    "args.signals[" + std::to_string(index) + "]",
+                    signal);
             }
             signals.push_back(signal);
         }

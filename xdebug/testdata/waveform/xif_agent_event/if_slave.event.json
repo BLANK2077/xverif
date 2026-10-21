@@ -1,12 +1,14 @@
 {
   "clock": "xif_tb_top.clk",
-  "reset": {"signal": "xif_tb_top.rst_n", "polarity": "active_low"},
+  "reset": {
+    "signal": "xif_tb_top.rst_n",
+    "polarity": "active_low"
+  },
   "edge": "posedge",
   "signals": {
     "vld": "xif_tb_top.if_slave.vld",
     "rdy": "xif_tb_top.if_slave.rdy",
-    "bp": "xif_tb_top.if_slave.bp",
-    "pd": "xif_tb_top.if_slave.pd"
+    "bp": "xif_tb_top.if_slave.bp"
   },
   "fields": {
     "opcode": "pd[23:16]",

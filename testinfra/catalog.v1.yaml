@@ -647,6 +647,19 @@ suites:
     cost: {class: slow, estimate_sec: 120}
     resources: {cpu: 1, memory_mb: 2048, tokens: [verdi_npi]}
 
+  - id: xdebug.aggregate_rejection
+    owner: xdebug
+    level: integration
+    intent: [contract, semantics]
+    domains: [waveform, value, error]
+    runner: {kind: pytest, path: xdebug/tests/synthetic/test_aggregate_rejection.py}
+    fixtures: [xdebug.apb_vip, xdebug.xif_event]
+    capabilities: [child_process, npi, fsdb, daidir]
+    hermetic: false
+    deterministic: true
+    cost: {class: medium, estimate_sec: 20}
+    timeouts: {execute_sec: 120, cleanup_sec: 20}
+
   - id: xdebug.active_semantics
     owner: xdebug
     level: integration

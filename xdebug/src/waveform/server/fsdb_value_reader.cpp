@@ -47,6 +47,22 @@ FsdbSignalWidth fsdb_signal_width(npiFsdbFileHandle file,
              : nullptr);
 }
 
+bool fsdb_signal_is_aggregate_root(npiFsdbSigHandle signal) {
+    if (!signal) return false;
+    NPI_INT32 has_member = 0;
+    return npi_fsdb_sig_property(
+               npiFsdbSigHasMember, signal, &has_member) &&
+           has_member != 0;
+}
+
+std::string aggregate_signal_error_message(const std::string& signal) {
+    return "SIGNAL_NOT_LEAF: aggregate root " + signal +
+           " is not queryable; provide a final leaf signal path such as " +
+           signal + "[0], " + signal + "[0][7:4], or " + signal +
+           ".field; for a dynamic index, read the index signal first and " +
+           "then use a constant path";
+}
+
 xdebug_core::LogicValue logic_value_from_fsdb_signal(
     npiFsdbSigHandle signal,
     const std::string& raw,

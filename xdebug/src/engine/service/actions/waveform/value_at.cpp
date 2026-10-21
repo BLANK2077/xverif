@@ -331,6 +331,7 @@ bool sample_dependencies(
     const RequestedTime& requested,
     bool clock_sampled,
     const xdebug_waveform::ClockSampleSpec& clock_spec,
+    const std::string& source_arg,
     std::map<std::string, ObservedValue>& observed,
     Json& clock_context,
     Json& error) {
@@ -349,6 +350,8 @@ bool sample_dependencies(
                 specs,
                 npiFsdbBinStrVal,
                 'b',
+                "value.at",
+                source_arg,
                 point,
                 error)) {
             return false;
@@ -373,6 +376,11 @@ bool sample_dependencies(
         if (!handle) {
             observed[path].status = "signal_not_found";
             continue;
+        }
+        if (xdebug_waveform::fsdb_signal_is_aggregate_root(handle)) {
+            error = waveform_aggregate_signal_error(
+                "value.at", source_arg, path);
+            return false;
         }
         std::string raw;
         if (!npi_fsdb_sig_hdl_value_at(
@@ -490,6 +498,10 @@ public:
                 return waveform_signal_not_found_error(
                     action_name(), source_name);
             }
+            if (xdebug_waveform::fsdb_signal_is_aggregate_root(handle)) {
+                return waveform_aggregate_signal_error(
+                    action_name(), "args.signal", source_name);
+            }
         }
 
         std::vector<RequestedTime> times;
@@ -535,6 +547,7 @@ public:
                     time,
                     clock_sampled,
                     clock_spec,
+                    "args." + source_kind,
                     observed,
                     clock_context,
                     error)) {

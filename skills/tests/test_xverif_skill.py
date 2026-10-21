@@ -127,6 +127,26 @@ def test_xdebug_main_workflow_has_required_decisions_and_routes() -> None:
     assert "图片不是唯一证据" in text
 
 
+def test_aggregate_root_guidance_requires_leaf_paths() -> None:
+    text = "\n".join(
+        (SKILL / relative).read_text(encoding="utf-8")
+        for relative in (
+            "references/capabilities/xdebug.md",
+            "references/xdebug/action-reference.md",
+        )
+    )
+    for term in (
+        "SIGNAL_NOT_LEAF",
+        "packed array",
+        "unpacked array",
+        "top.mem[0]",
+        "top.packed2d[0][7:4]",
+        "top.ps.a",
+        "动态下标",
+    ):
+        assert term in text, term
+
+
 def test_xdebug_discovery_and_loaded_config_workflow_are_mandatory() -> None:
     main = (SKILL / "SKILL.md").read_text(encoding="utf-8")
     mcp = (SKILL / "references/surfaces/mcp.md").read_text(encoding="utf-8")

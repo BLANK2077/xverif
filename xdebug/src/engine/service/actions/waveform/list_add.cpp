@@ -3,6 +3,7 @@
 #include "service/config_store_error.h"
 #include "service/engine_globals.h"
 #include "list_action_helpers.h"
+#include "waveform_action_error_helpers.h"
 
 #include "design/protocol/protocol.h"
 #include "waveform/server/fsdb_value_reader.h"
@@ -43,8 +44,13 @@ public:
             return list_missing_field_error("list.add", "args.name", "name of a list created in this session");
         if (sig.empty())
             return list_missing_field_error("list.add", "args.signal", "existing waveform signal path");
-        if (!npi_fsdb_sig_by_name(xdebug_waveform::g_fsdb_file, sig.c_str(), NULL))
-            return list_signal_not_found_error("list.add", sig);
+        npiFsdbSigHandle handle = npi_fsdb_sig_by_name(
+            xdebug_waveform::g_fsdb_file, sig.c_str(), NULL);
+        if (!handle) return list_signal_not_found_error("list.add", sig);
+        if (xdebug_waveform::fsdb_signal_is_aggregate_root(handle)) {
+            return waveform_aggregate_signal_error(
+                "list.add", "args.signal", sig);
+        }
         xdebug_waveform::ListManager lm;
         xdebug_waveform::StoreResult added =
             lm.add_signal(xdebug_waveform::g_session_id, n, sig);

@@ -169,6 +169,8 @@ public:
                                      signal_specs,
                                      npiFsdbBinStrVal,
                                      'b',
+                                     action_name(),
+                                     "args.signals",
                                      point,
                                      point_error)) {
             return point_error;

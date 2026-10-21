@@ -3,6 +3,7 @@
 #include "service/config_store_error.h"
 #include "service/engine_globals.h"
 #include "event_action_helpers.h"
+#include "waveform_action_error_helpers.h"
 
 #include "design/protocol/protocol.h"
 #include "waveform/server/fsdb_value_reader.h"
@@ -74,6 +75,37 @@ public:
                  {"expected", "strict event config with clock/signals compatible with the active waveform"},
                  {"correct_example", event_config_example("event.config.load")}});
         cfg.name = name;
+
+        npiFsdbSigHandle clock_handle = npi_fsdb_sig_by_name(
+            xdebug_waveform::g_fsdb_file,
+            cfg.clock_sample.clock.c_str(),
+            nullptr);
+        if (xdebug_waveform::fsdb_signal_is_aggregate_root(clock_handle)) {
+            return waveform_aggregate_signal_error(
+                action_name(), "args.config_path", cfg.clock_sample.clock);
+        }
+        if (cfg.has_reset) {
+            npiFsdbSigHandle reset_handle = npi_fsdb_sig_by_name(
+                xdebug_waveform::g_fsdb_file,
+                cfg.reset.signal.c_str(),
+                nullptr);
+            if (xdebug_waveform::fsdb_signal_is_aggregate_root(reset_handle)) {
+                return waveform_aggregate_signal_error(
+                    action_name(), "args.config_path", cfg.reset.signal);
+            }
+        }
+        for (const auto& signal : cfg.signals) {
+            npiFsdbSigHandle handle = npi_fsdb_sig_by_name(
+                xdebug_waveform::g_fsdb_file,
+                signal.second.c_str(),
+                nullptr);
+            if (xdebug_waveform::fsdb_signal_is_aggregate_root(handle)) {
+                return waveform_aggregate_signal_error(
+                    action_name(),
+                    "config.signals." + signal.first,
+                    signal.second);
+            }
+        }
 
         EventManager em;
         StoreResult created =

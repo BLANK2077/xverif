@@ -3,6 +3,7 @@
 #include "service/engine_globals.h"
 #include "waveform_action_support.h"
 #include "list_action_helpers.h"
+#include "waveform_action_error_helpers.h"
 
 #include "design/protocol/protocol.h"
 #include "waveform/server/fsdb_value_reader.h"
@@ -49,8 +50,15 @@ public:
         Json arr = Json::array();
         for (auto& sig : lst.signals) {
             Json item; item["signal"] = sig;
-            item["status"] = npi_fsdb_sig_by_name(xdebug_waveform::g_fsdb_file, sig.c_str(), NULL)
-                ? "ok" : "not_found";
+            npiFsdbSigHandle handle =
+                npi_fsdb_sig_by_name(
+                    xdebug_waveform::g_fsdb_file, sig.c_str(), NULL);
+            if (handle &&
+                xdebug_waveform::fsdb_signal_is_aggregate_root(handle)) {
+                return waveform_aggregate_signal_error(
+                    action_name(), "list.signals", sig);
+            }
+            item["status"] = handle ? "ok" : "not_found";
             arr.push_back(item);
         }
         Json out; out["signals"] = arr;

@@ -79,6 +79,27 @@ inline Json waveform_signal_not_found_error(const std::string& action,
          {"next_actions", Json::array({"Use scope.list or signal.resolve to find the exact waveform signal path."})}});
 }
 
+inline Json waveform_aggregate_signal_error(const std::string& action,
+                                            const std::string& invalid_arg,
+                                            const std::string& signal) {
+    return make_handler_error(
+        "SIGNAL_NOT_LEAF",
+        "aggregate root is not queryable: " + signal,
+        {{"invalid_arg", invalid_arg},
+         {"expected",
+          "final leaf signal path such as " + signal + "[0], " + signal +
+              "[0][7:4], or " + signal + ".field"},
+         {"next_actions",
+          Json::array(
+              {"Query a constant element or member path, for example " +
+                   signal + "[0] or " + signal + ".field.",
+               "For a dynamic index, read the index signal first, then build a constant path.",
+               "Use scope.list or signal.resolve to inspect aggregate children."})},
+         {"correct_example", waveform_action_example(action)},
+         {"example_note",
+          "Example only; replace the aggregate path with a final leaf signal path."}});
+}
+
 inline Json waveform_expression_alias_error(const std::string& action,
                                             const std::string& invalid_arg,
                                             const std::string& message) {

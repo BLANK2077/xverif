@@ -54,6 +54,10 @@ bool read_signal_changes(const std::string& signal,
         error = "Signal not found: " + signal;
         return false;
     }
+    if (fsdb_signal_is_aggregate_root(sig)) {
+        error = aggregate_signal_error_message(signal);
+        return false;
+    }
     TimeBasedVcIterGuard guard;
     npiFsdbTimeBasedVcIter& iter = guard.iter();
     iter.add(sig);
@@ -133,6 +137,10 @@ bool build_signal_alias_handles(const Json& signals,
         npiFsdbSigHandle sig = npi_fsdb_sig_by_name(g_fsdb_file, path.c_str(), NULL);
         if (!sig) {
             error = "Signal not found: " + path;
+            return false;
+        }
+        if (fsdb_signal_is_aggregate_root(sig)) {
+            error = aggregate_signal_error_message(path);
             return false;
         }
         seen[alias] = path;
@@ -477,6 +485,10 @@ Json ai_signal_stability(const Json& args, std::string& error) {
         error = "Signal not found: " + signal;
         return Json();
     }
+    if (fsdb_signal_is_aggregate_root(sig)) {
+        error = aggregate_signal_error_message(signal);
+        return Json();
+    }
     Json arr = Json::array();
     bool stable = true;
     std::string first;
@@ -556,6 +568,10 @@ Json ai_signal_xz_verify(const Json& args, std::string& error) {
     npiFsdbSigHandle sig = npi_fsdb_sig_by_name(g_fsdb_file, signal.c_str(), nullptr);
     if (!sig) {
         error = "Signal not found: " + signal;
+        return Json();
+    }
+    if (fsdb_signal_is_aggregate_root(sig)) {
+        error = aggregate_signal_error_message(signal);
         return Json();
     }
 

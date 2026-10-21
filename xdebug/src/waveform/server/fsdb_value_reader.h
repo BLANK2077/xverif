@@ -25,6 +25,16 @@ FsdbSignalWidth fsdb_signal_width(npiFsdbSigHandle signal);
 FsdbSignalWidth fsdb_signal_width(npiFsdbFileHandle file,
                                   const std::string& signal_path);
 
+// True when the handle is a packed/unpacked array or a struct/union root.
+// Element and member paths return false.  Value actions must reject aggregate
+// roots and ask for a final leaf path instead of trying to flatten them.
+bool fsdb_signal_is_aggregate_root(npiFsdbSigHandle signal);
+
+// Canonical message used by server-side handlers that only carry an error
+// string.  The leading SIGNAL_NOT_LEAF token is converted into error.code by
+// the engine handler layer.
+std::string aggregate_signal_error_message(const std::string& signal);
+
 xdebug_core::LogicValue logic_value_from_fsdb_signal(
     npiFsdbSigHandle signal,
     const std::string& raw,

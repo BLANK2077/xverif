@@ -11,6 +11,11 @@ module apb_vip_fixture_top;
   logic [31:0] prdata;
   logic pready;
   logic pslverr;
+  logic [1:0][7:0] packed2d;
+
+  initial begin
+    packed2d = '0;
+  end
 
   initial begin
     clk = 0;

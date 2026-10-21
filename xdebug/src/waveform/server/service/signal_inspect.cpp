@@ -697,6 +697,10 @@ Json ai_signal_anomaly_inspect(const Json& args, std::string& error) {
         fsdbTimeValPairVec_t changes;
         std::string signal_error;
         if (!read_signal_changes(signal, begin, end, npiFsdbBinStrVal, changes, signal_error)) {
+            if (signal_error.rfind("SIGNAL_NOT_LEAF:", 0) == 0) {
+                error = signal_error;
+                return Json();
+            }
             analysis_complete = false;
             scan_status.push_back({{"signal", signal}, {"status", "error"},
                                    {"analysis_complete", false}, {"message", signal_error}});

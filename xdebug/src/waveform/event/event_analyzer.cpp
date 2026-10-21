@@ -374,13 +374,33 @@ bool EventAnalyzer::validate_config(npiFsdbFileHandle file,
         error = "Clock signal not found: " + config.clock_sample.clock;
         return false;
     }
-    if (config.has_reset && !npi_fsdb_sig_by_name(file, config.reset.signal.c_str(), NULL)) {
-        error = "Reset signal not found: " + config.reset.signal;
+    if (fsdb_signal_is_aggregate_root(
+            npi_fsdb_sig_by_name(
+                file, config.clock_sample.clock.c_str(), NULL))) {
+        error = aggregate_signal_error_message(config.clock_sample.clock);
         return false;
     }
+    if (config.has_reset) {
+        npiFsdbSigHandle reset_sig =
+            npi_fsdb_sig_by_name(file, config.reset.signal.c_str(), NULL);
+        if (!reset_sig) {
+            error = "Reset signal not found: " + config.reset.signal;
+            return false;
+        }
+        if (fsdb_signal_is_aggregate_root(reset_sig)) {
+            error = aggregate_signal_error_message(config.reset.signal);
+            return false;
+        }
+    }
     for (const auto& kv : config.signals) {
-        if (!npi_fsdb_sig_by_name(file, kv.second.c_str(), NULL)) {
+        npiFsdbSigHandle sig =
+            npi_fsdb_sig_by_name(file, kv.second.c_str(), NULL);
+        if (!sig) {
             error = "Signal not found for alias " + kv.first + ": " + kv.second;
+            return false;
+        }
+        if (fsdb_signal_is_aggregate_root(sig)) {
+            error = aggregate_signal_error_message(kv.second);
             return false;
         }
         ordered_aliases.push_back(kv.first);

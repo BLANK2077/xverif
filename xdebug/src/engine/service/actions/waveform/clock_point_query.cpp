@@ -1,6 +1,7 @@
 #include "clock_point_query.h"
 
 #include "service/engine_action_handler.h"
+#include "waveform_action_error_helpers.h"
 
 #include "core/npi/time_contract.h"
 #include "waveform/server/fsdb_value_reader.h"
@@ -140,14 +141,22 @@ bool build_clock_point_query(npiFsdbFileHandle fsdb,
                              const std::vector<PointSignalSpec>& signals,
                              npiFsdbValType value_type,
                              char value_prefix,
+                             const std::string& action,
+                             const std::string& invalid_arg,
                              ClockPointQueryResult& out,
                              Json& error) {
     (void)formatted_requested_time;
     std::vector<xdebug_waveform::ClockPointSignal> point_signals;
     point_signals.reserve(signals.size());
     for (const auto& sig : signals) {
-        point_signals.push_back({sig.label, sig.path,
-            npi_fsdb_sig_by_name(fsdb, sig.path.c_str(), nullptr)});
+        npiFsdbSigHandle handle =
+            npi_fsdb_sig_by_name(fsdb, sig.path.c_str(), nullptr);
+        if (xdebug_waveform::fsdb_signal_is_aggregate_root(handle)) {
+            error = waveform_aggregate_signal_error(
+                action, invalid_arg, sig.path);
+            return false;
+        }
+        point_signals.push_back({sig.label, sig.path, handle});
     }
 
     xdebug_waveform::ClockPointResult point_result;

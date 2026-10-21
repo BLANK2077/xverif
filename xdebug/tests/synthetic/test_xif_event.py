@@ -146,7 +146,8 @@ def test_event_find_preserves_canonical_json_and_flat_xout(
         assert xout.startswith("@xdebug.event.find.v1\n")
         for required in ("requested:", "effective:", "events:", "time", "vld", "rdy"):
             assert required in xout
-        assert "'b{01011010,0011,0010,1010010101011010}" in xout
+        assert "8'h5a" in xout
+        assert "16'ha55a" in xout
         for forbidden in (
             '"',
             ':{',

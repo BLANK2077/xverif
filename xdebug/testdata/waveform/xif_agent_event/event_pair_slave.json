@@ -1,12 +1,14 @@
 {
   "clock": "xif_event_top.clk",
-  "reset": {"signal": "xif_event_top.rst_n", "polarity": "active_low"},
+  "reset": {
+    "signal": "xif_event_top.rst_n",
+    "polarity": "active_low"
+  },
   "edge": "posedge",
   "signals": {
     "vld": "xif_event_top.if_pair_slave.vld",
     "rdy": "xif_event_top.if_pair_slave.rdy",
     "bp": "xif_event_top.if_pair_slave.bp",
-    "pd": "xif_event_top.if_pair_slave.pd",
     "opcode": "xif_event_top.if_pair_slave.pd.opcode",
     "channel": "xif_event_top.if_pair_slave.pd.channel",
     "id": "xif_event_top.if_pair_slave.pd.id",

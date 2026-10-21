@@ -313,8 +313,11 @@ public:
 
         std::vector<EventRecord> records;
         std::string error;
-        if (!g_event_analyzer.analyze(g_fsdb_file, config, query, records, error))
+        if (!g_event_analyzer.analyze(g_fsdb_file, config, query, records, error)) {
+            if (error.rfind("SIGNAL_NOT_LEAF:", 0) == 0)
+                return make_handler_error_from_message(error);
             return make_handler_error("ACTION_FAILED", error, {{"cause_code", "EVENT_FAILED"}});
+        }
         if (mode == "last" && records.size() > 1) {
             EventRecord last = records.back();
             records.assign(1, last);

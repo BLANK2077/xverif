@@ -34,6 +34,8 @@ bool build_clock_point_query(npiFsdbFileHandle fsdb,
                              const std::vector<PointSignalSpec>& signals,
                              npiFsdbValType value_type,
                              char value_prefix,
+                             const std::string& action,
+                             const std::string& invalid_arg,
                              ClockPointQueryResult& out,
                              Json& error);
 

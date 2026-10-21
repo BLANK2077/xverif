@@ -3,9 +3,11 @@
 #include "service/engine_globals.h"
 #include "service/config_store_error.h"
 #include "list_action_helpers.h"
+#include "waveform_action_error_helpers.h"
 
 #include "waveform/list/list_manager.h"
 #include "waveform/list/signal_list.h"
+#include "waveform/server/fsdb_value_reader.h"
 
 #include "npi_fsdb.h"
 
@@ -111,6 +113,17 @@ bool parse_config(
                     signal_arg,
                     "existing final leaf waveform signal path");
                 return false;
+            }
+            {
+                npiFsdbSigHandle handle = npi_fsdb_sig_by_name(
+                    xdebug_waveform::g_fsdb_file,
+                    signal.c_str(),
+                    nullptr);
+                if (xdebug_waveform::fsdb_signal_is_aggregate_root(handle)) {
+                    error = waveform_aggregate_signal_error(
+                        "list.load", signal_arg, signal);
+                    return false;
+                }
             }
             list.signals.push_back(signal);
             signal_validation.push_back(
