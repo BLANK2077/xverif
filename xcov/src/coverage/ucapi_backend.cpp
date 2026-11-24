@@ -779,6 +779,38 @@ bool is_leaf_object(const UcapiLibrary& api, ucapi::Handle object,
 
 
 
+bool match_leaf_recursive(const UcapiLibrary& api, ucapi::Handle obj,
+                          ucapi::Handle region, const std::string& metric,
+                          const std::string& scope_name,
+                          const std::string& wanted, ucapi::Handle* out_obj,
+                          nlohmann::json* out_row) {
+    const int type = api.get(obj, region, nullptr, ucapi::kType);
+    if (is_leaf_type(type)) {
+        nlohmann::json row = nlohmann::json::object();
+        row["metric"] = metric;
+        row["scope"] = scope_name;
+        row["type"] = coverage_type_for_metric(metric);
+        const std::string name = safe_str(api.get_str(obj, ucapi::kName));
+        row["name"] = name;
+        row["full_name"] = scope_name + "." + name;
+        if (coverage_ref(row) != wanted) return false;
+        *out_obj = api.make_persistent(obj);
+        if (out_row != nullptr) *out_row = row;
+        return true;
+    }
+    if (type != ucapi::kContainer) return false;
+    ucapi::Handle kids = api.iterate(obj, ucapi::kObjects);
+    if (kids == nullptr) return false;
+    ucapi::Handle kid;
+    bool found = false;
+    while (!found && (kid = api.scan(kids)) != nullptr) {
+        found = match_leaf_recursive(api, kid, region, metric, scope_name,
+                                     wanted, out_obj, out_row);
+    }
+    api.release(kids);
+    return found;
+}
+
 // Find one coverable object by its session-local coverage_ref.
 bool find_by_ref(const UcapiLibrary& api, ucapi::Handle test,
                  const std::vector<ScopeInfo>& scopes,

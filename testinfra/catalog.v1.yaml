@@ -127,7 +127,11 @@ suites:
     level: system
     intent: [contract, semantics, lifecycle]
     domains: [coverage]
-    runner: {kind: pytest, path: xcov/tests/test_ucapi_actions.py}
+    runner:
+      kind: pytest
+      paths:
+        - xcov/tests/test_ucapi_actions.py
+        - xcov/tests/test_ucapi_legacy_port.py
     fixtures: [xcov.comprehensive]
     capabilities: [child_process]
     hermetic: false

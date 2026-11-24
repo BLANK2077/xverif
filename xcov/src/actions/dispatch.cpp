@@ -832,10 +832,34 @@ nlohmann::json Dispatcher::action_export(const nlohmann::json& req) {
                     rows.push_back(row);
                 }
                 const std::string name = std::string(metric) + ".json";
+                const MetricKind kind_for_metric =
+                    metric_from_key(std::string(metric));
+                long covered = 0;
+                long coverable = 0;
+                auto deep = scope->metrics.find(kind_for_metric);
+                if (deep != scope->deep_metrics.end()) {
+                    covered = deep->second.covered;
+                    coverable = deep->second.coverable;
+                }
+                nlohmann::json coverage = nlohmann::json::object();
+                coverage["covered"] = covered;
+                coverage["coverable"] = coverable;
+                coverage["missing"] =
+                    coverable > covered ? coverable - covered : 0;
+                if (coverable > 0) {
+                    coverage["pct"] = py_round(
+                        100.0 * static_cast<double>(covered) /
+                            static_cast<double>(coverable), 2);
+                } else {
+                    coverage["pct"] = nullptr;
+                }
                 nlohmann::json payload = {
                     {"schema", "xcov.code_coverage.gap.v1"},
                     {"metric", metric},
                     {"scope", scope_name},
+                    {"coverage_basis", "self"},
+                    {"analysis_complete", true},
+                    {"coverage", coverage},
                     {"gap_count", rows.size()},
                     {"gaps", rows},
                 };
