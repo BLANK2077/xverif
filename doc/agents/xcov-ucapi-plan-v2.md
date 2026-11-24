@@ -161,10 +161,10 @@
 | 2 condition/decision groups | 完成 |
 | 3 exclude.functional.* | 完成（covergroup/coverpoint/cross） |
 | 4 annotation 与 EL | 完成（instance 排除写出 ANNOTATION） |
-| 5 CSV 语义 | 完成（validate/apply/format 已有，compile 走新路径） |
-| 6 去丑 | 部分完成（set_exclude_all_iter 不采用；annotation 需持久化 handle 已修） |
+| 5 CSV 语义 | 完成（validate 逐行必填列/空值校验；apply/format 已有；compile 走新路径） |
+| 6 去丑 | 完成（set_exclude_all_iter 不采用并记录；error callback 已接；annotation 持久化 bug 已修） |
 | 7 测试 | 完成（cpp_actions 24 个用例） |
-| 8 清理与发布 | 进行中 |
+| 8 清理与发布 | 完成（`xverif-1.0.7` / `xverif-1.0.8`） |
 
 ## 实施中发现的额外 bug
 
