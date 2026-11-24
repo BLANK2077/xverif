@@ -308,6 +308,92 @@ def test_instance_exclusion_reaches_el(loop, tmp_path):
     assert object_lines, "instance exclusion produced no EL object rows"
 
 
+def test_condition_and_decision_groups(loop, tmp_path):
+    """condition/branch payloads expose grouped decisions with gap parity."""
+    scopes = _scopes(loop)
+    payloads = {}
+    for leaf in [name for name in scopes if name.count(".") >= 2]:
+        response = loop.call("export.code_coverage", {
+            "scopes": [leaf], "metrics": ["condition", "branch"],
+            "output": {"path": str(tmp_path / ("groups-" + leaf.replace(".", "_"))),
+                       "allow_absolute_path": True},
+        })
+        assert response["ok"], response
+        for item in response["data"]["items"]:
+            for artifact in item["metrics"]:
+                path = Path(response["data"]["items"][0]["directory"],
+                            artifact["json"])
+                if not path.is_file():
+                    continue
+                payload = json.loads(path.read_text())
+                metric = payload["metric"]
+                if metric not in ("condition", "branch"):
+                    continue
+                key = ("condition_groups" if metric == "condition"
+                       else "decision_groups")
+                if payload.get(key):
+                    payloads[metric] = payload
+        if len(payloads) == 2:
+            break
+    assert set(payloads) == {"condition", "branch"}, sorted(payloads)
+    for metric, payload in payloads.items():
+        key = "condition_groups" if metric == "condition" else "decision_groups"
+        groups = payload.get(key, [])
+        assert payload["gap_count"] == payload["coverage"]["missing"]
+        assert payload["coverage_object_gap_count"] == payload["coverage"]["missing"]
+        assert groups, metric
+        uncovered = sum(len(group["uncovered"]) for group in groups)
+        assert (uncovered + payload["unattributed_gap_count"]
+                == payload["coverage"]["missing"])
+        for group in groups:
+            assert group["group_id"].startswith("DG")
+            assert group["uncovered"]
+
+
+def test_functional_covergroup_exclusion(loop, tmp_path):
+    """covergroup-level exclusion reaches the EL."""
+    summary = loop.call("functional_coverage.summary", {
+        "group_by": "covergroup", "limits": {"max_items": 1},
+    })
+    assert summary["ok"], summary
+    rows = summary["data"]["items"]
+    if not rows:
+        pytest.skip("fixture has no covergroup")
+    covergroup = rows[0]["covergroup"]
+    scope = covergroup.split("::", 1)[0]
+    response = loop.call("exclude.functional.add", {
+        "items": [{"target_kind": "covergroup", "scope": scope,
+                   "covergroup": covergroup, "reason": "cg reason"}],
+    })
+    assert response["ok"], response
+    assert response["data"]["items"][0]["target_count"] > 0
+    el_path = tmp_path / "cg.el"
+    exported = loop.call("export.exclude", {
+        "output": {"path": str(el_path), "allow_absolute_path": True},
+    })
+    assert exported["ok"], exported
+    text = el_path.read_text(encoding="utf-8")
+    assert "covergroup " in text, text[:400]
+    assert "cg reason" in text
+
+
+def test_instance_exclusion_writes_annotation(loop, tmp_path):
+    """instance-level exclusion carries the reason into the EL."""
+    scopes = _scopes(loop)
+    target = next((name for name in scopes if name.count(".") == 1), scopes[0])
+    response = loop.call("exclude.instance.add", {
+        "items": [{"scope": target, "reason": "instance reason"}],
+    })
+    assert response["ok"], response
+    el_path = tmp_path / "instance-ann.el"
+    exported = loop.call("export.exclude", {
+        "output": {"path": str(el_path), "allow_absolute_path": True},
+    })
+    assert exported["ok"], exported
+    text = el_path.read_text(encoding="utf-8")
+    assert 'ANNOTATION: "instance reason"' in text, text[:400]
+
+
 def test_error_paths(loop, tmp_path):
     """Malformed inputs return structured errors instead of crashing."""
     missing = loop.call("exclude.load",

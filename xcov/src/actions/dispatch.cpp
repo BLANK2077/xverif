@@ -961,6 +961,75 @@ nlohmann::json Dispatcher::action_export(const nlohmann::json& req) {
                     payload["line_group_count"] = line_groups.size();
                     payload["line_groups"] = line_groups;
                 }
+                if (std::string(metric) == "condition" ||
+                    std::string(metric) == "branch") {
+                    nlohmann::json groups = nlohmann::json::array();
+                    int covered_object_gaps = 0;
+                    int group_index = 0;
+                    for (const auto& group : sess.backend->decision_groups(
+                             *scope, std::string(metric) == "condition"
+                                         ? "Condition"
+                                         : "Branch")) {
+                        nlohmann::json entry = nlohmann::json::object();
+                        char group_id[16];
+                        std::snprintf(group_id, sizeof group_id, "DG%04d",
+                                      ++group_index);
+                        entry["group_id"] = group_id;
+                        const std::string at =
+                            group.file + ":" + std::to_string(group.line_no);
+                        if (std::string(metric) == "condition") {
+                            entry["condition"] = {{"at", at},
+                                                  {"expression", group.expression}};
+                        } else {
+                            entry["decision_path"] = nlohmann::json::array();
+                            entry["decision_path"].push_back(
+                                {{"marker", group.expression},
+                                 {"kind", "branch"},
+                                 {"at", at},
+                                 {"expression", group.expression}});
+                        }
+                        nlohmann::json terms = nlohmann::json::array();
+                        nlohmann::json uncovered = nlohmann::json::array();
+                        for (const auto& arm : group.arms) {
+                            terms.push_back({{"marker", arm.pattern},
+                                             {"expression", arm.expression}});
+                        }
+                        for (long k = 0; k < group.missing_gaps; ++k) {
+                            ++covered_object_gaps;
+                            char gap_id[16];
+                            std::snprintf(gap_id, sizeof gap_id, "B%04d",
+                                          covered_object_gaps);
+                            const std::string pattern =
+                                group.arms.empty()
+                                    ? std::string()
+                                    : group.arms[static_cast<std::size_t>(k) %
+                                                 group.arms.size()]
+                                          .pattern;
+                            uncovered.push_back(
+                                {{"gap_id", gap_id},
+                                 {"values", pattern},
+                                 {"status", "not_covered"}});
+                        }
+                        entry["terms"] = terms;
+                        entry["uncovered"] = uncovered;
+                        groups.push_back(entry);
+                    }
+                    const long missing_total =
+                        coverage["missing"].get<long>();
+                    if (std::string(metric) == "condition") {
+                        payload["condition_group_count"] = groups.size();
+                        payload["coverage_object_gap_count"] = missing_total;
+                        payload["unattributed_gap_count"] =
+                            missing_total - covered_object_gaps;
+                        payload["condition_groups"] = groups;
+                    } else {
+                        payload["decision_group_count"] = groups.size();
+                        payload["coverage_object_gap_count"] = missing_total;
+                        payload["unattributed_gap_count"] =
+                            missing_total - covered_object_gaps;
+                        payload["decision_groups"] = groups;
+                    }
+                }
                 write_file(dir + "/" + name, payload.dump(2) + "\n");
                 write_file(dir + "/" + std::string(metric) + ".xout",
                            "@xcov.code_coverage." + std::string(metric) +

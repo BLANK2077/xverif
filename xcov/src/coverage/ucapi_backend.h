@@ -125,6 +125,29 @@ public:
     void unload_exclusions();
     std::size_t excluded_count() const;
 
+    struct DecisionArm {
+        std::string pattern;      // branch: "0001"; condition term: "0"
+        std::string expression;   // full name, e.g. "((a)) = 0"
+        int line_no = -1;
+        long covered = 0;
+        long coverable = 0;
+    };
+
+    struct DecisionGroup {
+        std::string expression;   // container name, e.g. "(!rst_n)"
+        std::string file;
+        int line_no = -1;
+        long covered = 0;
+        long coverable = 0;
+        long missing_gaps = 0;   // sum of (coverable-covered) over all leaves
+        std::vector<DecisionArm> arms;
+    };
+
+    /// Decision/condition containers with their cross arms.
+    /// `metric` selects "Branch" or "Condition".
+    std::vector<DecisionGroup> decision_groups(const ScopeInfo& scope,
+                                               const std::string& metric) const;
+
     struct LineLeaf {
         std::string name;
         std::string file;
