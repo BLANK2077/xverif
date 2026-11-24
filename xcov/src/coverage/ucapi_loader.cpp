@@ -1,5 +1,7 @@
 #include "coverage/ucapi_loader.h"
 
+#include <string>
+
 #include "core/errors.h"
 #include "core/fs.h"
 
@@ -90,6 +92,9 @@ UcapiLibrary::UcapiLibrary() {
         reinterpret_cast<ucapi::FnUnloadExclusion>(bind("covdb_unload_exclusion"));
     set_error_callback =
         reinterpret_cast<ucapi::FnSetErrorCallback>(bind("covdb_set_error_callback"));
+    if (set_error_callback != nullptr) {
+        set_error_callback(&UcapiLibrary::error_callback, nullptr);
+    }
     configure = reinterpret_cast<ucapi::FnConfigure>(bind("covdb_configure"));
     version_fn = reinterpret_cast<ucapi::FnVersion>(bind("covdb_version"));
     get_integer_annotation = reinterpret_cast<ucapi::FnGetIntegerAnnotation>(
@@ -112,5 +117,19 @@ std::string UcapiLibrary::version() const {
     const char* text = version_fn();
     return text == nullptr ? std::string() : std::string(text);
 }
+
+namespace {
+thread_local std::string g_last_error;
+} // namespace
+
+void UcapiLibrary::error_callback(ucapi::Handle /*err*/, void* /*data*/) {
+    // UCAPI does not pass the message to the callback; record a marker so
+    // callers can distinguish "an error happened" from silent default values.
+    g_last_error = "ucapi_error";
+}
+
+std::string UcapiLibrary::last_error() const { return g_last_error; }
+
+void UcapiLibrary::clear_error() const { g_last_error.clear(); }
 
 } // namespace xcov

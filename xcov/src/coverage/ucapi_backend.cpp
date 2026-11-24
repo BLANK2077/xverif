@@ -74,6 +74,10 @@ UcapiBackend::UcapiBackend(const std::string& vdb, const std::string& exclusion_
     }
     design_ = api.load(ucapi::kDesignObj, nullptr, vdb_.c_str());
     if (design_ == nullptr) {
+        const std::string ucapi_error = api.last_error();
+        if (std::getenv("XCOV_CPP_DEBUG") && !ucapi_error.empty()) {
+            std::fprintf(stderr, "ucapi load failed: %s\n", ucapi_error.c_str());
+        }
         throw Error("VDB_OPEN_FAILED", "failed to load coverage database",
                     {{"vdb", vdb_}});
     }
@@ -134,6 +138,11 @@ void UcapiBackend::load_tests() {
     }
     test_ = api.load(ucapi::kTestObj, design_, test_names_.front().c_str());
     if (test_ == nullptr) {
+        const std::string ucapi_error = api.last_error();
+        if (std::getenv("XCOV_CPP_DEBUG") && !ucapi_error.empty()) {
+            std::fprintf(stderr, "ucapi test load failed: %s\n",
+                         ucapi_error.c_str());
+        }
         throw Error("VDB_OPEN_FAILED", "failed to load coverage test",
                     {{"vdb", vdb_}, {"test", test_names_.front()}});
     }

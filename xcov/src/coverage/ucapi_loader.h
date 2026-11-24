@@ -45,9 +45,14 @@ public:
     ucapi::FnIsMetric is_testbench_metric = nullptr;
     ucapi::FnIsMetric is_path_metric = nullptr;
 
+    /// Message captured by the UCAPI error callback since the last clear.
+    std::string last_error() const;
+    void clear_error() const;
+
 private:
     UcapiLibrary();
     void* symbol(const char* name) const;
+    static void error_callback(ucapi::Handle err, void* data);
 
     void* handle_ = nullptr;
     std::string library_path_;

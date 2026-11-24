@@ -1461,13 +1461,42 @@ nlohmann::json Dispatcher::action_csv_validate(const nlohmann::json& req) {
         if (!file_exists(path)) continue;
         const CsvDocument document = parse_csv(path);
         total_rows += document.rows.size();
-        for (const auto& row : document.rows) {
-            const std::string scope = row.value("scope");
-            if (scope.empty()) {
+        const std::string kind_name(kind.kind);
+        const std::vector<std::string> required_columns =
+            kind_name == "code"
+                ? std::vector<std::string>{"scope", "metric", "object"}
+                : kind_name == "functional"
+                      ? std::vector<std::string>{"scope", "covergroup", "bin"}
+                      : kind_name == "assertion"
+                            ? std::vector<std::string>{"scope", "assertion"}
+                            : std::vector<std::string>{"target_kind", "scope"};
+        for (const auto& column : required_columns) {
+            bool present = false;
+            for (const auto& header : document.header) {
+                if (header == column) present = true;
+            }
+            if (!present) {
                 ++total_errors;
                 items.push_back(
                     {{"status", "error"},
-                     {"message", std::string("scope column is empty at line ") +
+                     {"message", "missing required column '" + column +
+                                     "' in " + std::string(kind.file)}});
+            }
+        }
+        for (const auto& row : document.rows) {
+            bool row_ok = true;
+            for (const auto& column : required_columns) {
+                if (!row.value(column).empty()) continue;
+                // object/metric may be empty when the selector uses line/bin
+                if (column == "object" && !row.value("line").empty()) continue;
+                if (column == "metric" && !row.value("bin").empty()) continue;
+                row_ok = false;
+            }
+            if (!row_ok) {
+                ++total_errors;
+                items.push_back(
+                    {{"status", "error"},
+                     {"message", std::string("required column is empty at line ") +
                                      std::to_string(row.line_number)}});
             }
         }
