@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cctype>
+#include <set>
 #include <fstream>
 #include <sstream>
 #include "core/limits.h"
@@ -842,9 +843,23 @@ nlohmann::json Dispatcher::action_export(const nlohmann::json& req) {
             std::snprintf(dirname, sizeof dirname, "instance-%04zu", index);
             const std::string dir = raw_path + "/" + dirname;
             ensure_directory(dir);
-            const auto gaps = sess.backend->code_gaps(*scope);
+            std::set<std::string> requested_metrics;
+            if (args.contains("metrics") && args.at("metrics").is_array()) {
+                for (const auto& item : args.at("metrics")) {
+                    requested_metrics.insert(item.get<std::string>());
+                }
+            }
+            if (requested_metrics.empty()) {
+                requested_metrics = {"line", "toggle", "branch", "condition",
+                                     "fsm"};
+            }
+            const auto scan = sess.backend->scan_code(*scope, requested_metrics);
+            const auto& gaps = scan.gaps;
             nlohmann::json metrics_meta = nlohmann::json::array();
             for (const char* metric : {"line", "toggle", "branch", "condition", "fsm"}) {
+                if (requested_metrics.find(metric) == requested_metrics.end()) {
+                    continue;
+                }
                 nlohmann::json rows = nlohmann::json::array();
                 for (const auto& gap : gaps) {
                     if (gap.metric != metric) continue;
@@ -868,7 +883,7 @@ nlohmann::json Dispatcher::action_export(const nlohmann::json& req) {
                 if (std::string(metric) == "line") {
                     std::map<std::pair<std::string, int>, nlohmann::json> groups;
                     int gap_index = 0;
-                    for (const auto& leaf : sess.backend->line_leaves(*scope)) {
+                    for (const auto& leaf : scan.line_leaves) {
                         if (leaf.coverable <= 0 || leaf.covered >= leaf.coverable) {
                             continue;
                         }
@@ -966,7 +981,8 @@ nlohmann::json Dispatcher::action_export(const nlohmann::json& req) {
                     nlohmann::json groups = nlohmann::json::array();
                     int covered_object_gaps = 0;
                     int group_index = 0;
-                    for (const auto& group : sess.backend->decision_groups(
+                    for (const auto& group :
+                         sess.backend->decision_groups(
                              *scope, std::string(metric) == "condition"
                                          ? "Condition"
                                          : "Branch")) {

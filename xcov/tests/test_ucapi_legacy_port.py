@@ -118,7 +118,7 @@ def test_csv_reason_with_comma_and_quotes_survives_compile(cpp_env, xverif_fixtu
                                                           tmp_path):
     """Port of test_csv_parser_preserves_standard_csv_quoting_and_source_groups."""
     vdb = _fixture_vdb(xverif_fixture, "xcov.comprehensive", "comprehensive.vdb")
-    scope, metric, gap = _first_gap(cpp_env, vdb, tmp_path, ["top.u_core0"])
+    scope, metric, gap = _first_gap(cpp_env, vdb, tmp_path, ["top.u_core0.g_pipe.u_proc.u_alu"])
     reason = '不可达,"恢复路径"'
     csv_dir = tmp_path / "csv"
     csv_dir.mkdir()
@@ -179,7 +179,7 @@ def test_csv_compile_publishes_four_artifacts_and_loads_union(cpp_env,
                                                              tmp_path):
     """Port of test_csv_compile_publishes_four_files_and_loads_union."""
     vdb = _fixture_vdb(xverif_fixture, "xcov.comprehensive", "comprehensive.vdb")
-    scope, metric, gap = _first_gap(cpp_env, vdb, tmp_path, ["top.u_core0"])
+    scope, metric, gap = _first_gap(cpp_env, vdb, tmp_path, ["top.u_core0.g_pipe.u_proc.u_alu"])
     csv_dir = tmp_path / "csv"
     csv_dir.mkdir()
     (csv_dir / "code_exclusions.csv").write_text(
@@ -224,7 +224,7 @@ def test_exclusion_lifecycle_add_remove_export_unload(cpp_env, xverif_fixture,
         generated = send({
             "api_version": "xcov.v1", "request_id": "g",
             "action": "export.code_coverage", "target": {"session_id": name},
-            "args": {"scopes": ["top.u_core0"], "metrics": ["line"],
+            "args": {"scopes": ["top.u_core0.g_pipe.u_proc.u_alu"], "metrics": ["line"],
                      "output": {"path": str(tmp_path / "life-gap"),
                                 "allow_absolute_path": True}},
         })
@@ -333,8 +333,8 @@ def test_coverage_ref_is_deterministic_across_sessions(cpp_env, xverif_fixture,
     ref generated elsewhere still resolves.
     """
     vdb = _fixture_vdb(xverif_fixture, "xcov.comprehensive", "comprehensive.vdb")
-    first = _first_gap(cpp_env, vdb, tmp_path / "a", ["top.u_core0"])[2]
-    second = _first_gap(cpp_env, vdb, tmp_path / "b", ["top.u_core0"])[2]
+    first = _first_gap(cpp_env, vdb, tmp_path / "a", ["top.u_core0.g_pipe.u_proc.u_alu"])[2]
+    second = _first_gap(cpp_env, vdb, tmp_path / "b", ["top.u_core0.g_pipe.u_proc.u_alu"])[2]
     assert first["full_name"] == second["full_name"]
     assert first["coverage_ref"] == second["coverage_ref"]
     # Resolution is guaranteed inside the session that produced the ref; the
@@ -346,7 +346,7 @@ def test_coverage_ref_is_deterministic_across_sessions(cpp_env, xverif_fixture,
         generated = send({
             "api_version": "xcov.v1", "request_id": "g",
             "action": "export.code_coverage", "target": {"session_id": name},
-            "args": {"scopes": ["top.u_core0"], "metrics": ["line"],
+            "args": {"scopes": ["top.u_core0.g_pipe.u_proc.u_alu"], "metrics": ["line"],
                      "output": {"path": str(tmp_path / "ref-gap"),
                                 "allow_absolute_path": True}},
         })

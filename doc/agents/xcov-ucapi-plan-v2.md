@@ -152,6 +152,21 @@
 3. 发布版本号沿用 `xverif-1.0.x`，本次为 `xverif-1.0.7`。
 4. 阶段 1 的 probe 结论如果推翻某阶段前提，该阶段降级为"记录限制 + 不做"，并在 md 里更新，不阻塞其他阶段。
 
+## 遍历优化（2026-11-25）
+
+分析发现 `export.code_coverage` 对同一 scope 会遍历 8 次（`code_gaps` 5 个 metric +
+`line_leaves` 1 次 + `decision_groups` 2 次），且 `code_gaps` 不按请求的 metrics 过滤。
+
+| 项 | 改动 | 结果 |
+|---|---|---|
+| P0 合并遍历 + metrics 过滤 | 新增 `scan_code(scope, metrics)`，一次遍历同时产出 gaps 与 line_leaves；`export.code_coverage` 只输出请求的 metric | 单 metric 导出 6.5→3.4 ms（约 2×）；全 metric 8→3 次遍历 |
+| P1 functional/assert 缓存 | session 级缓存 + 排除操作失效 | 遍历省下，但 summary 的瓶颈在 JSON 行构建，端到端收益不明显 |
+| P2 restore 跳过未排除 | `exclude_subtree` 已有 `updated == status` 早退 | 无需额外改动 |
+| P3 find_by_ref 缓存扩展 | `ref_locators_` 已覆盖 export 路径 | 未扩展 |
+
+`decision_groups` 保持在独立扫描中（已验证稳定），未并入 `scan_code`，因为
+container/cross 判定在合并扫描里出现过回归。
+
 ## 进度表
 
 | 阶段 | 状态 |

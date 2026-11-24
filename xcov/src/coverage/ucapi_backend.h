@@ -5,6 +5,7 @@
 #include <json.hpp>
 
 #include <map>
+#include <set>
 #include <tuple>
 #include <string>
 #include <vector>
@@ -168,6 +169,19 @@ public:
     };
     std::vector<CodeGap> code_gaps(const ScopeInfo& scope) const;
 
+    struct CodeScan {
+        std::vector<CodeGap> gaps;
+        std::vector<LineLeaf> line_leaves;
+        std::vector<DecisionGroup> condition_groups;
+        std::vector<DecisionGroup> branch_groups;
+    };
+
+    /// One pass over the requested code metrics of one instance.
+    /// `metrics` holds "line"/"toggle"/"branch"/"condition"/"fsm".
+    CodeScan scan_code(const ScopeInfo& scope,
+                       const std::set<std::string>& metrics) const;
+
+
     /// Children of one scope in hierarchy order.
     std::vector<const ScopeInfo*> children(const std::string& full_name) const;
 
@@ -194,9 +208,19 @@ private:
     std::vector<std::string> top_scopes_;
     std::map<std::string, std::vector<std::string>> children_;
     std::vector<ucapi::Handle> persistent_handles_;
+    // Cached full-scan results; invalidated by every exclusion mutation.
+    mutable std::vector<FunctionalGroup> functional_cache_;
+    mutable bool functional_cache_valid_ = false;
+    mutable std::vector<AssertionRow> assertion_cache_;
+    mutable bool assertion_cache_valid_ = false;
+    void invalidate_caches() const {
+        functional_cache_valid_ = false;
+        assertion_cache_valid_ = false;
+    }
     std::map<std::string, std::tuple<std::string, std::string, std::string>>
         ref_locators_;
 };
+
 
 const char* metric_key(MetricKind kind);
 MetricKind metric_from_key(const std::string& key);

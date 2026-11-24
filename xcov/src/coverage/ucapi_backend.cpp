@@ -533,6 +533,7 @@ MetricAggregate UcapiBackend::functional_totals() const {
 }
 
 std::vector<UcapiBackend::FunctionalGroup> UcapiBackend::functional_groups() const {
+    if (functional_cache_valid_) return functional_cache_;
     const UcapiLibrary& api = UcapiLibrary::instance();
     std::vector<FunctionalGroup> out;
     ucapi::Handle metrics = api.iterate(test_, ucapi::kMetrics);
@@ -600,10 +601,13 @@ std::vector<UcapiBackend::FunctionalGroup> UcapiBackend::functional_groups() con
         api.release(groups);
     }
     api.release(metrics);
+    functional_cache_ = out;
+    functional_cache_valid_ = true;
     return out;
 }
 
 std::vector<UcapiBackend::AssertionRow> UcapiBackend::assertions() const {
+    if (assertion_cache_valid_) return assertion_cache_;
     const UcapiLibrary& api = UcapiLibrary::instance();
     std::vector<AssertionRow> out;
     ucapi::Handle metrics = api.iterate(test_, ucapi::kMetrics);
@@ -1032,6 +1036,7 @@ bool UcapiBackend::set_exclusion(const std::string& coverage_ref_value,
     } else {
         updated &= ~ucapi::kStatusExcludedAtReportTime;
     }
+    invalidate_caches();
     const int rc = api.set(object, region, test_, ucapi::kCovStatus, updated);
     if (rc == 0 && excluded && !reason.empty()) {
         api.set_annotation(object, "cov_comment", reason.c_str());
@@ -1107,6 +1112,7 @@ bool UcapiBackend::exclude_leaf(const std::string& scope_name,
 std::size_t UcapiBackend::exclude_scope(const std::string& scope_name,
                                         bool recursive,
                                         const std::string& reason) {
+    invalidate_caches();
     const UcapiLibrary& api = UcapiLibrary::instance();
     std::vector<const ScopeInfo*> targets;
     for (const auto& scope : scopes_) {
@@ -1153,6 +1159,7 @@ std::size_t UcapiBackend::exclude_scope(const std::string& scope_name,
 
 std::size_t UcapiBackend::restore_scope(const std::string& scope_name,
                                         bool recursive) {
+    invalidate_caches();
     const UcapiLibrary& api = UcapiLibrary::instance();
     std::vector<const ScopeInfo*> targets;
     for (const auto& scope : scopes_) {
@@ -1231,6 +1238,7 @@ std::size_t UcapiBackend::exclude_functional(const std::string& scope,
                                              const std::string& target_kind,
                                              const std::string& item,
                                              const std::string& reason) {
+    invalidate_caches();
     const UcapiLibrary& api = UcapiLibrary::instance();
     std::size_t changed = 0;
     ucapi::Handle metrics = api.iterate(test_, ucapi::kMetrics);
@@ -1298,6 +1306,7 @@ void UcapiBackend::save_exclusions(const std::string& path) const {
 }
 
 void UcapiBackend::load_exclusions(const std::string& path) {
+    invalidate_caches();
     const UcapiLibrary& api = UcapiLibrary::instance();
     const int rc = api.load_exclude_file(test_, path.c_str());
     if (rc != 0) {
@@ -1307,6 +1316,7 @@ void UcapiBackend::load_exclusions(const std::string& path) {
 }
 
 void UcapiBackend::unload_exclusions() {
+    invalidate_caches();
     const UcapiLibrary& api = UcapiLibrary::instance();
     api.unload_exclusion(design_);
 }
@@ -1462,6 +1472,54 @@ std::vector<UcapiBackend::DecisionGroup> UcapiBackend::decision_groups(
     return out;
 }
 
+namespace {
+
+void collect_code_node(const UcapiLibrary& api, ucapi::Handle obj,
+                       ucapi::Handle region, ucapi::Handle test,
+                       const std::string& metric, const std::string& scope_name,
+                       const std::string& parent_kind, bool fsm,
+                       bool in_transitions, UcapiBackend::CodeScan* scan) {
+    const int type = api.get(obj, region, nullptr, ucapi::kType);
+    const std::string name = safe_str(api.get_str(obj, ucapi::kName));
+    if (is_leaf_type(type)) {
+        const bool in_fsm_transitions = !fsm || in_transitions;
+        if (in_fsm_transitions) {
+            const long covered = api.get(obj, region, test, ucapi::kCovered);
+            const long coverable = api.get(obj, region, test, ucapi::kCoverable);
+            if (coverable > 0 && covered == 0) {
+                UcapiBackend::CodeGap gap;
+                gap.name = name;
+                gap.full_name = scope_name + "." + name;
+                gap.metric = metric;
+                gap.coverable = coverable;
+                scan->gaps.push_back(gap);
+            }
+            if (metric == "line") {
+                UcapiBackend::LineLeaf leaf;
+                leaf.name = name;
+                leaf.file = safe_str(api.get_str(obj, ucapi::kFileName));
+                leaf.line_no = api.get(obj, region, test, ucapi::kLineNo);
+                leaf.covered = covered;
+                leaf.coverable = coverable;
+                leaf.parent_kind = parent_kind;
+                scan->line_leaves.push_back(leaf);
+            }
+        }
+        return;
+    }
+    if (type != ucapi::kContainer) return;
+    ucapi::Handle kids = api.iterate(obj, ucapi::kObjects);
+    if (kids == nullptr) return;
+    ucapi::Handle kid;
+    while ((kid = api.scan(kids)) != nullptr) {
+        collect_code_node(api, kid, region, test, metric, scope_name, name, fsm,
+                          in_transitions, scan);
+    }
+    api.release(kids);
+}
+
+} // namespace
+
 std::vector<UcapiBackend::LineLeaf> UcapiBackend::line_leaves(
     const ScopeInfo& scope) const {
     const UcapiLibrary& api = UcapiLibrary::instance();
@@ -1491,6 +1549,50 @@ std::vector<UcapiBackend::LineLeaf> UcapiBackend::line_leaves(
     }
     api.release(metrics);
     return out;
+}
+
+UcapiBackend::CodeScan UcapiBackend::scan_code(
+    const ScopeInfo& scope, const std::set<std::string>& metrics) const {
+    const UcapiLibrary& api = UcapiLibrary::instance();
+    CodeScan scan;
+    if (scope.handle == nullptr) return scan;
+    ucapi::Handle metric_list = api.iterate(test_, ucapi::kMetrics);
+    if (metric_list == nullptr) return scan;
+    ucapi::Handle metric;
+    while ((metric = api.scan(metric_list)) != nullptr) {
+        std::string key;
+        bool fsm = false;
+        if (api.is_line_metric(metric)) {
+            key = "line";
+        } else if (api.is_tgl_metric(metric)) {
+            key = "toggle";
+        } else {
+            const std::string name = safe_str(api.get_str(metric, ucapi::kName));
+            if (name == "Branch") key = "branch";
+            else if (name == "Condition") key = "condition";
+            else if (name == "Fsm") { key = "fsm"; fsm = true; }
+        }
+        if (key.empty() || metrics.find(key) == metrics.end()) continue;
+        ucapi::Handle persistent_metric = api.make_persistent(metric);
+        ucapi::Handle raw_region = api.get_qualified_handle(
+            scope.handle, persistent_metric, ucapi::kIdentity);
+        if (raw_region != nullptr) {
+            ucapi::Handle region = api.make_persistent(raw_region);
+            api.release(raw_region);
+            ucapi::Handle objects = api.iterate(region, ucapi::kObjects);
+            if (objects != nullptr) {
+                ucapi::Handle object;
+                while ((object = api.scan(objects)) != nullptr) {
+                    collect_code_node(api, object, region, test_, key,
+                                      scope.full_name, "", fsm, false, &scan);
+                }
+                api.release(objects);
+            }
+        }
+        api.release(persistent_metric);
+    }
+    api.release(metric_list);
+    return scan;
 }
 
 std::vector<UcapiBackend::CodeGap> UcapiBackend::code_gaps(
