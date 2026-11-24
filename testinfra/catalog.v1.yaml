@@ -122,6 +122,20 @@ suites:
     cost: {class: slow, estimate_sec: 120}
     timeouts: {execute_sec: 600, cleanup_sec: 30}
 
+  - id: xcov.cpp_actions
+    owner: xcov
+    level: system
+    intent: [contract, semantics, lifecycle]
+    domains: [coverage]
+    runner: {kind: pytest, path: xcov/tests/test_ucapi_actions.py}
+    fixtures: [xcov.comprehensive]
+    capabilities: [child_process]
+    hermetic: false
+    deterministic: true
+    gates: [regression, nightly]
+    cost: {class: slow, estimate_sec: 120}
+    timeouts: {execute_sec: 600, cleanup_sec: 30}
+
   - id: xcov.exclusion_npi
     owner: xcov
     level: system

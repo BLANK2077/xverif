@@ -802,6 +802,7 @@ bool find_by_ref(const UcapiLibrary& api, ucapi::Handle test,
         const std::string mname = safe_str(api.get_str(metric, ucapi::kName));
         ucapi::Handle persistent_metric = api.make_persistent(metric);
         for (const auto& scope : scopes) {
+            if (scope.handle == nullptr) continue;
             ucapi::Handle region = api.get_qualified_handle(
                 scope.handle, persistent_metric, ucapi::kIdentity);
             if (region == nullptr) continue;
@@ -1037,7 +1038,7 @@ bool UcapiBackend::exclude_leaf(const std::string& scope_name,
                                 const std::string& reason) {
     const UcapiLibrary& api = UcapiLibrary::instance();
     const ScopeInfo* scope = find_scope(scope_name);
-    if (scope == nullptr) return false;
+    if (scope == nullptr || scope->handle == nullptr) return false;
     ucapi::Handle object = nullptr;
     ucapi::Handle region = nullptr;
     if (!find_leaf_by_locator(api, test_, *scope, metric, name, &object, &region)) {
@@ -1079,6 +1080,7 @@ std::size_t UcapiBackend::exclude_scope(const std::string& scope_name,
         }
         ucapi::Handle persistent_metric = api.make_persistent(metric);
         for (const ScopeInfo* scope : targets) {
+            if (scope->handle == nullptr) continue;
             ucapi::Handle region = api.get_qualified_handle(
                 scope->handle, persistent_metric, ucapi::kIdentity);
             if (region == nullptr) continue;
@@ -1122,6 +1124,7 @@ std::size_t UcapiBackend::restore_scope(const std::string& scope_name,
         }
         ucapi::Handle persistent_metric = api.make_persistent(metric);
         for (const ScopeInfo* scope : targets) {
+            if (scope->handle == nullptr) continue;
             ucapi::Handle region = api.get_qualified_handle(
                 scope->handle, persistent_metric, ucapi::kIdentity);
             if (region == nullptr) continue;
@@ -1202,8 +1205,10 @@ std::vector<UcapiBackend::CodeGap> UcapiBackend::code_gaps(
         else if (name == "Fsm") kind = MetricKind::Fsm;
         else continue;
         ucapi::Handle persistent_metric = api.make_persistent(metric);
-        ucapi::Handle region =
-            api.get_qualified_handle(scope.handle, persistent_metric, ucapi::kIdentity);
+        ucapi::Handle region = scope.handle == nullptr
+            ? nullptr
+            : api.get_qualified_handle(scope.handle, persistent_metric,
+                                       ucapi::kIdentity);
         if (region == nullptr) {
             api.release(persistent_metric);
             continue;
@@ -1280,8 +1285,10 @@ void UcapiBackend::collect_leaf_rows(const ScopeInfo& scope,
         else continue;
         if (kind == MetricKind::Fsm) continue;
         ucapi::Handle persistent_metric = api.make_persistent(metric);
-        ucapi::Handle region =
-            api.get_qualified_handle(scope.handle, persistent_metric, ucapi::kIdentity);
+        ucapi::Handle region = scope.handle == nullptr
+            ? nullptr
+            : api.get_qualified_handle(scope.handle, persistent_metric,
+                                       ucapi::kIdentity);
         if (region == nullptr) {
             api.release(persistent_metric);
             continue;
