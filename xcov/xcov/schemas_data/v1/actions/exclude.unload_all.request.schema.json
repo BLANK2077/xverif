@@ -1,0 +1,52 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "exclude.unload_all"
+    },
+    "api_version": {
+      "const": "xcov.v1"
+    },
+    "args": {
+      "additionalProperties": false,
+      "properties": {
+        "confirm": {
+          "type": "boolean"
+        },
+        "test": {
+          "const": "merged"
+        }
+      },
+      "required": [
+        "confirm"
+      ],
+      "type": "object"
+    },
+    "request_id": {
+      "maxLength": 65536,
+      "minLength": 1,
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "maxLength": 65536,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "api_version",
+    "action",
+    "target",
+    "args"
+  ],
+  "type": "object"
+}

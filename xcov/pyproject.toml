@@ -14,3 +14,6 @@ xcov = "xcov.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[tool.setuptools.package-data]
+xcov = ["schemas_data/**/*.json"]

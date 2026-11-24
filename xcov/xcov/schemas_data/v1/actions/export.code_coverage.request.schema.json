@@ -1,0 +1,90 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "export.code_coverage"
+    },
+    "api_version": {
+      "const": "xcov.v1"
+    },
+    "args": {
+      "additionalProperties": false,
+      "properties": {
+        "metrics": {
+          "items": {
+            "enum": [
+              "line",
+              "condition",
+              "branch",
+              "toggle",
+              "fsm"
+            ],
+            "maxLength": 65536,
+            "type": "string"
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "type": "array"
+        },
+        "output": {
+          "additionalProperties": false,
+          "properties": {
+            "allow_absolute_path": {
+              "type": "boolean"
+            },
+            "path": {
+              "maxLength": 65536,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "type": "object"
+        },
+        "scopes": {
+          "items": {
+            "maxLength": 65536,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "scopes",
+        "output"
+      ],
+      "type": "object"
+    },
+    "request_id": {
+      "maxLength": 65536,
+      "minLength": 1,
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "maxLength": 65536,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "api_version",
+    "action",
+    "target",
+    "args"
+  ],
+  "type": "object"
+}

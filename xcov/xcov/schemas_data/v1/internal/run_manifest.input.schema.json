@@ -1,0 +1,80 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "resources": {
+      "additionalProperties": false,
+      "properties": {
+        "vdb": {
+          "additionalProperties": false,
+          "properties": {
+            "directory_count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "file_count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "hash_version": {
+              "const": "sha256-entry-tree-v2"
+            },
+            "kind": {
+              "enum": [
+                "file",
+                "directory"
+              ],
+              "maxLength": 65536,
+              "type": "string"
+            },
+            "path": {
+              "minLength": 1,
+              "pattern": "^(?!/)(?!\\.\\.(?:/|$))(?!.*\\/\\.\\.(?:\\/|$)).+$",
+              "type": "string"
+            },
+            "sha256": {
+              "maxLength": 64,
+              "minLength": 64,
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "size_bytes": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "symlink_count": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "path",
+            "kind",
+            "hash_version",
+            "size_bytes",
+            "file_count",
+            "directory_count",
+            "symlink_count",
+            "sha256"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "vdb"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "xcov.run-manifest.v2"
+    },
+    "state": {
+      "const": "published"
+    }
+  },
+  "required": [
+    "schema_version",
+    "state",
+    "resources"
+  ],
+  "type": "object"
+}

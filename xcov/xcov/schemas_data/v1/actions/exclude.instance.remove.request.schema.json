@@ -1,0 +1,71 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "exclude.instance.remove"
+    },
+    "api_version": {
+      "const": "xcov.v1"
+    },
+    "args": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "recursive": {
+                "type": "boolean"
+              },
+              "scope": {
+                "maxLength": 65536,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "scope"
+            ],
+            "type": "object"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "type": "array"
+        },
+        "test": {
+          "const": "merged"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "request_id": {
+      "maxLength": 65536,
+      "minLength": 1,
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "maxLength": 65536,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "api_version",
+    "action",
+    "target",
+    "args"
+  ],
+  "type": "object"
+}

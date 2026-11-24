@@ -5,11 +5,30 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$script_dir/.." && pwd)"
 export XVERIF_HOME="${XVERIF_HOME:-$root}"
 
-python_bin="${PYTHON:-${XVERIF_XCOV_PYTHON:-${XVERIF_HOME}/.conda-xverif/bin/python}}"
-command -v "$python_bin" >/dev/null 2>&1 || {
-  echo "ERROR: Python interpreter not found: $python_bin; set PYTHON or XVERIF_XCOV_PYTHON" >&2
-  exit 2
-}
+# The backend selects the implementation: UCAPI runs the C++ binary, URG runs
+# the legacy Python implementation. There is no separate implementation switch.
+backend="${XVERIF_XCOV_BACKEND:-ucapi}"
 
-export PYTHONPATH="$root/xcov${PYTHONPATH:+:${PYTHONPATH}}"
-exec "$python_bin" -m xcov.cli "$@"
+case "$backend" in
+  ucapi)
+    binary="$root/xcov/bin/xcov"
+    if [ ! -x "$binary" ]; then
+      echo "ERROR: C++ xcov binary not found: $binary; run 'make -C xcov'" >&2
+      exit 2
+    fi
+    exec "$binary" "$@"
+    ;;
+  urg)
+    python_bin="${PYTHON:-${XVERIF_XCOV_PYTHON:-${XVERIF_HOME}/.conda-xverif/bin/python}}"
+    command -v "$python_bin" >/dev/null 2>&1 || {
+      echo "ERROR: Python interpreter not found: $python_bin; set PYTHON or XVERIF_XCOV_PYTHON" >&2
+      exit 2
+    }
+    export PYTHONPATH="$root/xcov${PYTHONPATH:+:${PYTHONPATH}}"
+    exec "$python_bin" -m xcov.cli "$@"
+    ;;
+  *)
+    echo "ERROR: XVERIF_XCOV_BACKEND must be 'ucapi' or 'urg', got: $backend" >&2
+    exit 2
+    ;;
+esac

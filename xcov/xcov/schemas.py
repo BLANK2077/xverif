@@ -953,7 +953,7 @@ def _csv_workflow_args(action: str) -> Json:
     return _args(props)
 
 
-SCHEMAS: Dict[str, Json] = {
+_BUILT_SCHEMAS: Dict[str, Json] = {
     "actions": _schema_entry(
         "actions",
         _request("actions"),
@@ -1937,3 +1937,48 @@ def schema_actions() -> List[str]:
 def stdio_control_actions() -> List[str]:
     """Return transport-control actions declared by the stdio request contract."""
     return [STDIO_QUIT_REQUEST["properties"]["action"]["const"]]
+
+
+# --- canonical JSON schema loading ------------------------------------------
+#
+# The checked-in files under ``schemas_data/v1`` are the single source of truth
+# shared by the Python and the C++ implementation.  The programmatic builders
+# above are kept only so the export tool and parity tests can prove that the
+# JSON files stay byte-for-byte equivalent to the original definitions.
+import json as _json
+from pathlib import Path as _Path
+
+_SCHEMA_DATA_ROOT = _Path(__file__).resolve().parent / "schemas_data" / "v1"
+
+
+def _read_schema_file(relative: str) -> Json:
+    path = _SCHEMA_DATA_ROOT / relative
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise XcovError(
+            "SCHEMA_DATA_MISSING",
+            "canonical schema file is missing",
+            path=str(path),
+        ) from exc
+    return _json.loads(text)
+
+
+def _load_schemas_from_disk() -> Dict[str, Json]:
+    return {
+        action: {
+            "request": _read_schema_file(f"actions/{action}.request.schema.json"),
+            "response": _read_schema_file(f"actions/{action}.response.schema.json"),
+        }
+        for action in sorted(_BUILT_SCHEMAS)
+    }
+
+
+# Programmatic definitions retained for export/parity checks only.
+BUILT_SCHEMAS = _BUILT_SCHEMAS
+BUILT_RUN_MANIFEST_INPUT = RUN_MANIFEST_INPUT
+BUILT_STDIO_QUIT_REQUEST = STDIO_QUIT_REQUEST
+
+SCHEMAS = _load_schemas_from_disk()
+RUN_MANIFEST_INPUT = _read_schema_file("internal/run_manifest.input.schema.json")
+STDIO_QUIT_REQUEST = _read_schema_file("internal/stdio_quit.request.schema.json")

@@ -100,12 +100,27 @@ suites:
       kind: pytest
       paths:
         - xcov/tests/test_exclusions.py
+        - xcov/tests/test_schema_export.py
         - xcov/tests/test_urg_summary.py
         - xcov/tests/test_xcov.py
     capabilities: [child_process]
     hermetic: false
     deterministic: true
     cost: {class: fast, estimate_sec: 3}
+
+  - id: xcov.cpp_parity
+    owner: xcov
+    level: system
+    intent: [contract, semantics]
+    domains: [coverage]
+    runner: {kind: pytest, path: xcov/tests/test_cpp_parity.py}
+    fixtures: [xcov.comprehensive]
+    capabilities: [child_process]
+    hermetic: false
+    deterministic: true
+    gates: [regression, nightly]
+    cost: {class: slow, estimate_sec: 120}
+    timeouts: {execute_sec: 600, cleanup_sec: 30}
 
   - id: xcov.exclusion_npi
     owner: xcov

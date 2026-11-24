@@ -1,0 +1,31 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "actions"
+    },
+    "api_version": {
+      "const": "xcov.v1"
+    },
+    "args": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "request_id": {
+      "maxLength": 65536,
+      "minLength": 1,
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "api_version",
+    "action"
+  ],
+  "type": "object"
+}

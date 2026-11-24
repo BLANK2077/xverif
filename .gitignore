@@ -97,6 +97,8 @@ __pycache__/
 /tools/xverif_lsf.env.json
 
 xdebug/build/
+xcov/build/
+xcov/bin/
 xverif_mcp/build/
 xdebug/xdebug
 xdebug/libexec/

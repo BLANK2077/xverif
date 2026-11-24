@@ -1,0 +1,22 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "stdio.quit"
+    },
+    "api_version": {
+      "const": "xcov.v1"
+    },
+    "request_id": {
+      "maxLength": 65536,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "api_version",
+    "request_id",
+    "action"
+  ],
+  "type": "object"
+}

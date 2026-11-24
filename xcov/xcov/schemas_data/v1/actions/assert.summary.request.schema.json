@@ -1,0 +1,146 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "assert.summary"
+    },
+    "api_version": {
+      "const": "xcov.v1"
+    },
+    "args": {
+      "additionalProperties": false,
+      "properties": {
+        "limits": {
+          "additionalProperties": false,
+          "properties": {
+            "max_items": {
+              "anyOf": [
+                {
+                  "maximum": 10000,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "overflow": {
+              "enum": [
+                "truncate",
+                "error",
+                "summary_only"
+              ],
+              "maxLength": 65536,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "query": {
+          "additionalProperties": false,
+          "properties": {
+            "case_sensitive": {
+              "type": "boolean"
+            },
+            "exclude_patterns": {
+              "items": {
+                "maxLength": 65536,
+                "type": "string"
+              },
+              "maxItems": 64,
+              "type": "array"
+            },
+            "include_patterns": {
+              "items": {
+                "maxLength": 65536,
+                "type": "string"
+              },
+              "maxItems": 64,
+              "type": "array"
+            },
+            "match_field": {
+              "enum": [
+                "kind",
+                "name",
+                "full_name",
+                "category",
+                "severity"
+              ],
+              "maxLength": 65536,
+              "type": "string"
+            },
+            "pattern_mode": {
+              "const": "glob"
+            }
+          },
+          "type": "object"
+        },
+        "scope": {
+          "maxLength": 65536,
+          "minLength": 1,
+          "type": "string"
+        },
+        "sort": {
+          "additionalProperties": false,
+          "properties": {
+            "by": {
+              "enum": [
+                "name",
+                "full_name",
+                "covered",
+                "coverable",
+                "missing",
+                "coverage_pct",
+                "status",
+                "attempts",
+                "real_successes",
+                "without_attempts"
+              ],
+              "maxLength": 65536,
+              "type": "string"
+            },
+            "order": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "maxLength": 65536,
+              "type": "string"
+            }
+          },
+          "required": [
+            "by"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "request_id": {
+      "maxLength": 65536,
+      "minLength": 1,
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "maxLength": 65536,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "api_version",
+    "action",
+    "target"
+  ],
+  "type": "object"
+}

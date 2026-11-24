@@ -1,0 +1,215 @@
+{
+  "actions": [
+    {
+      "do_not_use_when": "Do not use when the exact request or response schema for one known action is needed.",
+      "handler": "_actions",
+      "name": "actions",
+      "needs_session": false,
+      "use_when": "Discover every canonical xcov.v1 action and its selection boundary."
+    },
+    {
+      "do_not_use_when": "Do not use to execute a coverage query.",
+      "handler": "_schema",
+      "name": "schema",
+      "needs_session": false,
+      "use_when": "Read the strict request or response contract for one canonical action."
+    },
+    {
+      "do_not_use_when": "Do not use an existing session_id; close it explicitly before opening another VDB under that name.",
+      "handler": "_session_open",
+      "name": "session.open",
+      "needs_session": false,
+      "use_when": "Open exactly one requested VDB in a new named coverage session."
+    },
+    {
+      "do_not_use_when": "Do not use to query coverage scores or holes.",
+      "handler": "_session_status",
+      "name": "session.status",
+      "needs_session": false,
+      "use_when": "Inspect one live coverage session without scanning coverage objects."
+    },
+    {
+      "do_not_use_when": "Do not use before all queries against that session are complete.",
+      "handler": "_session_close",
+      "name": "session.close",
+      "needs_session": false,
+      "use_when": "Close one live coverage session and release its backend."
+    },
+    {
+      "do_not_use_when": "Do not use for hierarchy scopes or coverage metrics.",
+      "handler": "_tests_list",
+      "name": "tests.list",
+      "needs_session": true,
+      "use_when": "List coverage tests present in the opened VDB."
+    },
+    {
+      "do_not_use_when": "Do not use when hierarchy holes or individual source evidence are required.",
+      "handler": "_metrics_list",
+      "name": "metrics.list",
+      "needs_session": true,
+      "use_when": "Summarize merged coverage metrics for a scope from the URG summary index."
+    },
+    {
+      "do_not_use_when": "Do not use to enumerate child scopes or detailed uncovered objects.",
+      "handler": "_scope",
+      "name": "scope.summary",
+      "needs_session": true,
+      "use_when": "Get the aggregate coverage score for one scope or top-level scopes."
+    },
+    {
+      "do_not_use_when": "Do not use for a name-pattern search across the selected subtree.",
+      "handler": "_scope",
+      "name": "scope.children",
+      "needs_session": true,
+      "use_when": "Enumerate direct or recursive descendants of one hierarchy scope."
+    },
+    {
+      "do_not_use_when": "Do not use when only direct children of a known scope are needed.",
+      "handler": "_scope",
+      "name": "scope.search",
+      "needs_session": true,
+      "use_when": "Find hierarchy scopes using query glob filters."
+    },
+    {
+      "do_not_use_when": "Do not use for hierarchy-level holes or detailed Markdown evidence.",
+      "handler": "_code_coverage",
+      "name": "code_coverage.summary",
+      "needs_session": true,
+      "use_when": "Aggregate code-coverage scores by a declared grouping field."
+    },
+    {
+      "do_not_use_when": "Do not use when only uncovered functional items are required.",
+      "handler": "_functional",
+      "name": "functional_coverage.summary",
+      "needs_session": true,
+      "use_when": "Aggregate functional coverage at covergroup, coverpoint, cross, or bin level."
+    },
+    {
+      "do_not_use_when": "Do not use for the detailed assertion Markdown report.",
+      "handler": "_assert_report",
+      "name": "assert.summary",
+      "needs_session": true,
+      "use_when": "Summarize assertion attempts, successes, and basic coverage."
+    },
+    {
+      "do_not_use_when": "Do not use for inline hierarchy summaries.",
+      "handler": "_export",
+      "name": "export.code_coverage",
+      "needs_session": true,
+      "use_when": "Write strict per-instance code-coverage JSON, XOUT, and raw URG artifacts."
+    },
+    {
+      "do_not_use_when": "Do not use for inline functional coverage rows.",
+      "handler": "_export",
+      "name": "export.functional_coverage",
+      "needs_session": true,
+      "use_when": "Write detailed functional-coverage holes to a Markdown artifact."
+    },
+    {
+      "do_not_use_when": "Do not use for the compact assertion summary.",
+      "handler": "_export",
+      "name": "export.assert",
+      "needs_session": true,
+      "use_when": "Write detailed assertion coverage evidence to a Markdown artifact."
+    },
+    {
+      "do_not_use_when": "Do not concatenate or parse native EL text.",
+      "handler": "_exclude_load",
+      "name": "exclude.load",
+      "needs_session": true,
+      "use_when": "Load one or more native EL files in order using pynpi union semantics."
+    },
+    {
+      "do_not_use_when": "Use export gap IDs for portable exclusions; coverage_ref is session-local.",
+      "handler": "_exclude_set",
+      "name": "exclude.add",
+      "needs_session": true,
+      "use_when": "Set report-time exclusion state for exact coverage references."
+    },
+    {
+      "do_not_use_when": "Do not use to remove immutable compile-time exclusions.",
+      "handler": "_exclude_set",
+      "name": "exclude.remove",
+      "needs_session": true,
+      "use_when": "Clear report-time exclusion state for exact coverage references."
+    },
+    {
+      "do_not_use_when": "Do not use module definitions, wildcards, regex, or synthetic hierarchy scopes.",
+      "handler": "_exclude_container",
+      "name": "exclude.instance.add",
+      "needs_session": true,
+      "use_when": "Atomically exclude exact or URG-XML-expanded instance targets."
+    },
+    {
+      "do_not_use_when": "Recursive removal uses recorded exact ownership and never re-expands current XML.",
+      "handler": "_exclude_container",
+      "name": "exclude.instance.remove",
+      "needs_session": true,
+      "use_when": "Atomically remove owned exact instance exclusions."
+    },
+    {
+      "do_not_use_when": "Do not use this action for functional bins.",
+      "handler": "_exclude_container",
+      "name": "exclude.functional.add",
+      "needs_session": true,
+      "use_when": "Atomically exclude exact covergroup, coverpoint, or cross containers."
+    },
+    {
+      "do_not_use_when": "Do not use this action for functional bins.",
+      "handler": "_exclude_container",
+      "name": "exclude.functional.remove",
+      "needs_session": true,
+      "use_when": "Atomically remove owned covergroup, coverpoint, or cross exclusions."
+    },
+    {
+      "do_not_use_when": "Do not request append or strict-save modes.",
+      "handler": "_export_exclude",
+      "name": "export.exclude",
+      "needs_session": true,
+      "use_when": "Export current merged-test exclusions with save_exclude_file(path, \"w\")."
+    },
+    {
+      "do_not_use_when": "Do not use as an implementation of single-object removal.",
+      "handler": "_exclude_unload_all",
+      "name": "exclude.unload_all",
+      "needs_session": true,
+      "use_when": "Clear all report-time exclusions after explicit confirmation."
+    },
+    {
+      "do_not_use_when": "Do not use to apply or compile exclusions.",
+      "handler": "_exclude_csv_validate",
+      "name": "exclude.csv.validate",
+      "needs_session": true,
+      "use_when": "逐行校验 CSV 格式、selector 语句格式、VDB object 存在性。最多返回前 10 条错误。"
+    },
+    {
+      "do_not_use_when": "Do not publish native EL artifacts.",
+      "handler": "_exclude_csv_apply",
+      "name": "exclude.csv.apply",
+      "needs_session": true,
+      "use_when": "Resolve and apply all exactly matched CSV exclusions to the current session."
+    },
+    {
+      "do_not_use_when": "Do not publish partial output when any selector fails.",
+      "handler": "_exclude_csv_compile",
+      "name": "exclude.csv.compile",
+      "needs_session": true,
+      "use_when": "Validate, resolve, apply, and atomically publish three native EL files."
+    },
+    {
+      "do_not_use_when": "Do not change exclusion semantics.",
+      "handler": "_exclude_csv_format",
+      "name": "exclude.csv.format",
+      "needs_session": false,
+      "use_when": "Check stable grouped CSV ordering, or write it only with write=true."
+    },
+    {
+      "do_not_use_when": "Does not persist exclusions that originated only from native EL files.",
+      "handler": "_exclude_csv_export",
+      "name": "exclude.csv.export",
+      "needs_session": true,
+      "use_when": "Atomically merge reason-bearing session exclusions into portable CSV files."
+    }
+  ],
+  "catalog_version": "xcov.action-catalog.v1"
+}

@@ -1,0 +1,130 @@
+{
+  "actions": {
+    "actions": {
+      "request": "19c2ad0140a9ed71988d04cf143dd800acd77ed622db63905786a6b6ffc695ff",
+      "response": "f95d29fb3ac464ee718d195ebe56c9d12b482caa5a2a36d520dd7217fd394812"
+    },
+    "assert.summary": {
+      "request": "6d4e116f617ac9e1962d0b2334fc3b8d9733d7c42c8f9de906eac2bc8aa3514d",
+      "response": "403d046748f78f4c5a1afcba21616e080688c7125d4f2a6f7c1afc9fd14fc712"
+    },
+    "code_coverage.summary": {
+      "request": "8ce072f894589ff82689131d2d44a73c5cc98698c050316cc19110921ee32e31",
+      "response": "13e7424e22c121e2d52c4243c736c6490458e141d5977b0e7e9f67a658ee0aec"
+    },
+    "exclude.add": {
+      "request": "49ac8f58e931fe36d6f9e812f8ac49a835c20d8fa5a8d4667fb2df6e679f5808",
+      "response": "cf30185d7c2722116a4e489f7cb07e6e5819397d49d1da6407730d154ea99f63"
+    },
+    "exclude.csv.apply": {
+      "request": "137e3ca20482036c962ba382e55a844b98faedc0875f9d1b055ad6f184f8e170",
+      "response": "2c02dd0a90abd75be3d0b0553ce1f6f383bcfaff893e06a94a8b58414de4f255"
+    },
+    "exclude.csv.compile": {
+      "request": "8fd3f5ceb310175ecd40b258efcdb9eb3bb0b3b17e68ad416f32cd4c2a6b8779",
+      "response": "1cc33c3a636b9e1c0f848ed49fd46f4f3d5ae5870cc7d4654571d70263fe77ca"
+    },
+    "exclude.csv.export": {
+      "request": "f1f87efb641c5d1f4b86e65fd8c2836038ffd91608359c76e77bc2614d9f6778",
+      "response": "7a47c98c7d21649aa992cb986611464e5f5f355c58b5b4b5ac6230cbda998656"
+    },
+    "exclude.csv.format": {
+      "request": "b6da5af663d7e61decf1e57920dcf2f1f58ba7c37e7db046bd82d9385c15ffeb",
+      "response": "e351af603226972d8f75e93b4b3792b471ec707345b480cb80524eaa9aa63c3d"
+    },
+    "exclude.csv.validate": {
+      "request": "ee2450d5910d36f9b525c6b34fe8667f0958eff4bec53021b391abda26f80cfa",
+      "response": "945a7edd66e24c2be409c547889ab0d809df56d9a3ebfe22abffa3151e9b92cd"
+    },
+    "exclude.functional.add": {
+      "request": "c290ca4bb85b069305ed8e6b393f0b70375b3c3364351ed41d54165f592b9826",
+      "response": "e86db4bd2f23131295998506ed3ee0629af965a79719fbe0b7fd6b459a23bc25"
+    },
+    "exclude.functional.remove": {
+      "request": "665cacd77c63bec7d0e68b38c9480b8036336e49e6a5f62213458f084326cb17",
+      "response": "cb3a5710221a8416645a1384af39e9639b1f4b6f8af793861bb15282369295d7"
+    },
+    "exclude.instance.add": {
+      "request": "494dda51d8f9c5f2512389fd37ebcde7c3ffd6b81989ee5efe890ed3a437feea",
+      "response": "e531a34c34a534b46b34659047494fa067b994794477e3d19f577aa39d55621d"
+    },
+    "exclude.instance.remove": {
+      "request": "c35d88f1e580bc6fd9d97f0d4dbe78afbc5e6d383628b7b4f791a0cfb008de56",
+      "response": "61592a99830135fb31e2ae2b389e74cb73194f838736888d36108db714407de4"
+    },
+    "exclude.load": {
+      "request": "9864bc821ee373d746f885d41b625f543430424d7f772a2601d0ad16e2402599",
+      "response": "5a6d5f36c3cffe9c1e6c3023d9f15c45254d11b0ba5086ff00b6e64fd8d4fb50"
+    },
+    "exclude.remove": {
+      "request": "63405867220ab9cabe8311d6f4878b6c60eed0027b8ea7a8a3be48ffaa0dd9f2",
+      "response": "f5c3bd0f96c24816021b891b9994cd50c9484d6946e7160896e828e4b8875c09"
+    },
+    "exclude.unload_all": {
+      "request": "9d45c8301da5c5897d882cca02b246303dac70fa657ab266c662a1b180163b5d",
+      "response": "407b92042952f1844edb10840197a81f9c91c67f7e931260e960d46fc9c6f653"
+    },
+    "export.assert": {
+      "request": "c920f761b7d40e533e10f370d2267e9d11b61109ad4871f3f22d12563b4dad2f",
+      "response": "04a78acbdfce933c2ff01e0e9d96288b1ce7aa9cd996b0377d01d75e5c0bc87d"
+    },
+    "export.code_coverage": {
+      "request": "99506faa3126ac0084f0acea26fa736e0068d70940598cdd51a09ca9b0394006",
+      "response": "69097971c7b083aa2cdc8f4a110d6d76761ef70322e55c5fbc3a6ede66081cc9"
+    },
+    "export.exclude": {
+      "request": "765fa4cc32f141f0a74225a08e45e25abc72b772149eb9be8d85654d92469f76",
+      "response": "894d43c639c4d3cd54f78d247659c7a48feb46ef901f7089b79a3280ff387e1a"
+    },
+    "export.functional_coverage": {
+      "request": "517d2bb25ca4ae8270cec893c66530bd31303d47bf6bd4da4f8e87ec18a85168",
+      "response": "8e2d3244c11635afa1ca2e16f37533824a9dce64fcd7a2d8e92874d305a6daee"
+    },
+    "functional_coverage.summary": {
+      "request": "3fafeb06553ae6c1a0e84d9048d440948a8c63886e74a00cea9b58c8a15c066d",
+      "response": "e922db33c4800c480c4a8ef531dc4178fc4a3ef2fc0de827a185fc6a63bfb63a"
+    },
+    "metrics.list": {
+      "request": "faf9c03bff7343dca07d0c93cdccd249a6bb92dc29e5ae292799cb064aa99e90",
+      "response": "aad384801bb71a2be26706394a1e16018db2c7f3900508901b504180ef77d3ae"
+    },
+    "schema": {
+      "request": "faba8ff095020d65ebb3cb46798bbb86adb3dc1da7698669dd5154d7058e86e0",
+      "response": "5c7177ea8ae7f15eab1e8a60c3d4e348fd4f07f9fcfa93cdeec1422474526f77"
+    },
+    "scope.children": {
+      "request": "00c41745d63cd847e2774382761d7cf8ba502370a3ab4a862ccf61a86508f26f",
+      "response": "c6b954883df3a5e9654e652fce2e7e61b8f6cc11f34ca4e04e8388a69ee51109"
+    },
+    "scope.search": {
+      "request": "d541ec5d5b74cf506683dae0e744e0496ace76587fa61b5dacf05a62b70ed691",
+      "response": "4fca74efa4ef581dcf77a8d3eea780fedf73bc4ecc0f7a0862077e187d52581d"
+    },
+    "scope.summary": {
+      "request": "70a7641a450a23279911a2fad8533c573266a94fa15e98bd55e4ddd53bc3ad31",
+      "response": "a8c08d4ab7eae094b0f1c8bed1bbf058ab5f89266fc985e1c97d1df4526cab0e"
+    },
+    "session.close": {
+      "request": "9f237c4e8f175448b075fb339456323cdd747fa3ae24017822a4111a13432556",
+      "response": "f2fb3839fcb8fb35f0857069eb666e6747b026388c09e20d7d735a40e4943a5a"
+    },
+    "session.open": {
+      "request": "8b8eb8081dbd9036e235e59386ee2cacb0ee4755beaebfaf593e1569be1c1b31",
+      "response": "2af96ff8daaedbf7d75793718fb7f21f68ab570a3af422f741db54b1bb9a77a0"
+    },
+    "session.status": {
+      "request": "dcb02767dc129c82003b5092002eb029d045c601be7b9f45cee7d0957a07ac7f",
+      "response": "463ed8fde2619b2061bd0f78668aa769ae854e7625e701bef52504f815e49fcf"
+    },
+    "tests.list": {
+      "request": "4c534d27ff4a61272ae2f72201a1cbd11dbc210a110b1888829838f83c92c9f0",
+      "response": "bf7e9e0e10ebdcde2ec2ceb24a99d313f8bc7ce96bddfead391198c3b2932b26"
+    }
+  },
+  "generated_by": "xcov/tools/export_schemas.py",
+  "internal": {
+    "run_manifest": "b063cf963b05b62f9887dcc75afd756160e56fba591c215e00d9f6a4ed6daeb3",
+    "stdio_quit": "f7e339ac80743e55f83564a0dc24d71cf71762b61d1760c8b4e68ddc7c6e7a5d"
+  },
+  "schema_version": "xcov.schema.v1"
+}

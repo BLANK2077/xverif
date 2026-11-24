@@ -1,0 +1,116 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "exclude.add"
+    },
+    "api_version": {
+      "const": "xcov.v1"
+    },
+    "args": {
+      "additionalProperties": false,
+      "properties": {
+        "coverage_refs": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "coverage_ref": {
+                "maxLength": 65536,
+                "minLength": 1,
+                "type": "string"
+              },
+              "reason": {
+                "maxLength": 65536,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "coverage_ref",
+              "reason"
+            ],
+            "type": "object"
+          },
+          "maxItems": 10000,
+          "minItems": 1,
+          "type": "array"
+        },
+        "exports": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "items": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "gap_id": {
+                      "maxLength": 65536,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "reason": {
+                      "maxLength": 65536,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "gap_id",
+                    "reason"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 10000,
+                "minItems": 1,
+                "type": "array"
+              },
+              "path": {
+                "maxLength": 65536,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "items"
+            ],
+            "type": "object"
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "type": "array"
+        },
+        "test": {
+          "const": "merged"
+        }
+      },
+      "type": "object"
+    },
+    "request_id": {
+      "maxLength": 65536,
+      "minLength": 1,
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "maxLength": 65536,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "api_version",
+    "action",
+    "target",
+    "args"
+  ],
+  "type": "object"
+}

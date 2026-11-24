@@ -1,0 +1,65 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "session.open"
+    },
+    "api_version": {
+      "const": "xcov.v1"
+    },
+    "args": {
+      "additionalProperties": false,
+      "properties": {
+        "cache_dir": {
+          "maxLength": 65536,
+          "minLength": 1,
+          "type": "string"
+        },
+        "exclusion_policy": {
+          "enum": [
+            "default",
+            "strict"
+          ],
+          "maxLength": 65536,
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 65536,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "request_id": {
+      "maxLength": 65536,
+      "minLength": 1,
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "run_manifest": {
+          "maxLength": 65536,
+          "minLength": 1,
+          "type": "string"
+        },
+        "vdb": {
+          "maxLength": 65536,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "vdb"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "api_version",
+    "action",
+    "target"
+  ],
+  "type": "object"
+}
