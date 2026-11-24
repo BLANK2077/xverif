@@ -9,12 +9,45 @@
 #include "core/fs.h"
 #include <cstdio>
 #include <cstdlib>
+#include <cctype>
+#include <fstream>
 #include <sstream>
 #include "core/limits.h"
 
 #include <chrono>
 
 namespace xcov {
+
+namespace {
+
+std::string read_source_line(const std::string& path, int line_no) {
+    if (line_no <= 0 || path.empty()) return std::string();
+    std::ifstream in(path);
+    if (!in) return std::string();
+    std::string line;
+    int current = 0;
+    while (std::getline(in, line)) {
+        ++current;
+        if (current == line_no) {
+            while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) {
+                line.pop_back();
+            }
+            return line;
+        }
+    }
+    return std::string();
+}
+
+std::string lower_copy(std::string text) {
+    for (char& ch : text) {
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    }
+    return text;
+}
+
+
+} // namespace
+
 
 namespace {
 
@@ -831,6 +864,67 @@ nlohmann::json Dispatcher::action_export(const nlohmann::json& req) {
                                                gap.metric, gap.name);
                     rows.push_back(row);
                 }
+                nlohmann::json line_groups = nlohmann::json::array();
+                if (std::string(metric) == "line") {
+                    std::map<std::pair<std::string, int>, nlohmann::json> groups;
+                    int gap_index = 0;
+                    for (const auto& leaf : sess.backend->line_leaves(*scope)) {
+                        if (leaf.coverable <= 0 || leaf.covered >= leaf.coverable) {
+                            continue;
+                        }
+                        const std::pair<std::string, int> key{leaf.file,
+                                                              leaf.line_no};
+                        auto& group = groups[key];
+                        if (!group.contains("context")) {
+                            group["context"] = nlohmann::json::object();
+                            group["context"]["kind"] = lower_copy(leaf.parent_kind);
+                            group["context"]["at"] = leaf.file + ":" +
+                                                     std::to_string(leaf.line_no);
+                            group["context"]["covered"] = 0;
+                            group["context"]["coverable"] = 0;
+                            group["context"]["missing"] = 0;
+                            group["context"]["pct"] = nullptr;
+                            group["uncovered"] = nlohmann::json::array();
+                        }
+                        group["context"]["covered"] =
+                            group["context"]["covered"].get<long>() + leaf.covered;
+                        group["context"]["coverable"] =
+                            group["context"]["coverable"].get<long>() +
+                            leaf.coverable;
+                        group["context"]["missing"] =
+                            group["context"]["coverable"].get<long>() -
+                            group["context"]["covered"].get<long>();
+                        const long coverable =
+                            group["context"]["coverable"].get<long>();
+                        const long covered =
+                            group["context"]["covered"].get<long>();
+                        if (coverable > 0) {
+                            group["context"]["pct"] =
+                                py_round(100.0 * static_cast<double>(covered) /
+                                             static_cast<double>(coverable), 2);
+                        }
+                        ++gap_index;
+                        char gap_id[16];
+                        std::snprintf(gap_id, sizeof gap_id, "L%04d", gap_index);
+                        std::string statement =
+                            read_source_line(leaf.file, leaf.line_no);
+                        if (statement.empty()) statement = leaf.name;
+                        group["uncovered"].push_back(
+                            {{"gap_id", gap_id},
+                             {"at", leaf.file + ":" +
+                                        std::to_string(leaf.line_no)},
+                             {"statement", statement}});
+                    }
+                    int group_index = 0;
+                    for (auto& entry : groups) {
+                        ++group_index;
+                        char group_id[16];
+                        std::snprintf(group_id, sizeof group_id, "LG%04d",
+                                      group_index);
+                        entry.second["group_id"] = group_id;
+                        line_groups.push_back(entry.second);
+                    }
+                }
                 const std::string name = std::string(metric) + ".json";
                 const MetricKind kind_for_metric =
                     metric_from_key(std::string(metric));
@@ -863,6 +957,10 @@ nlohmann::json Dispatcher::action_export(const nlohmann::json& req) {
                     {"gap_count", rows.size()},
                     {"gaps", rows},
                 };
+                if (std::string(metric) == "line") {
+                    payload["line_group_count"] = line_groups.size();
+                    payload["line_groups"] = line_groups;
+                }
                 write_file(dir + "/" + name, payload.dump(2) + "\n");
                 write_file(dir + "/" + std::string(metric) + ".xout",
                            "@xcov.code_coverage." + std::string(metric) +

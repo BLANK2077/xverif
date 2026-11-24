@@ -125,6 +125,18 @@ public:
     void unload_exclusions();
     std::size_t excluded_count() const;
 
+    struct LineLeaf {
+        std::string name;
+        std::string file;
+        int line_no = -1;
+        long covered = 0;
+        long coverable = 0;
+        std::string parent_kind;
+    };
+
+    /// All line leaves of one instance with source location and parent kind.
+    std::vector<LineLeaf> line_leaves(const ScopeInfo& scope) const;
+
     struct CodeGap {
         std::string metric;
         std::string name;

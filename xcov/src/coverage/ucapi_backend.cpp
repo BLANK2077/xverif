@@ -1216,6 +1216,68 @@ std::size_t UcapiBackend::excluded_count() const {
     return 0;
 }
 
+namespace {
+
+void collect_line_leaves(const UcapiLibrary& api, ucapi::Handle obj,
+                         ucapi::Handle region, ucapi::Handle test,
+                         const std::string& parent_kind,
+                         std::vector<UcapiBackend::LineLeaf>* out) {
+    const int type = api.get(obj, region, nullptr, ucapi::kType);
+    const std::string name = safe_str(api.get_str(obj, ucapi::kName));
+    if (is_leaf_type(type)) {
+        UcapiBackend::LineLeaf leaf;
+        leaf.name = name;
+        leaf.file = safe_str(api.get_str(obj, ucapi::kFileName));
+        leaf.line_no = api.get(obj, region, test, ucapi::kLineNo);
+        leaf.covered = api.get(obj, region, test, ucapi::kCovered);
+        leaf.coverable = api.get(obj, region, test, ucapi::kCoverable);
+        leaf.parent_kind = parent_kind;
+        out->push_back(leaf);
+        return;
+    }
+    if (type != ucapi::kContainer) return;
+    ucapi::Handle kids = api.iterate(obj, ucapi::kObjects);
+    if (kids == nullptr) return;
+    ucapi::Handle kid;
+    while ((kid = api.scan(kids)) != nullptr) {
+        collect_line_leaves(api, kid, region, test, name, out);
+    }
+    api.release(kids);
+}
+
+} // namespace
+
+std::vector<UcapiBackend::LineLeaf> UcapiBackend::line_leaves(
+    const ScopeInfo& scope) const {
+    const UcapiLibrary& api = UcapiLibrary::instance();
+    std::vector<LineLeaf> out;
+    if (scope.handle == nullptr) return out;
+    ucapi::Handle metrics = api.iterate(test_, ucapi::kMetrics);
+    if (metrics == nullptr) return out;
+    ucapi::Handle metric;
+    while ((metric = api.scan(metrics)) != nullptr) {
+        if (!api.is_line_metric(metric)) continue;
+        ucapi::Handle persistent_metric = api.make_persistent(metric);
+        ucapi::Handle region = api.get_qualified_handle(
+            scope.handle, persistent_metric, ucapi::kIdentity);
+        if (region != nullptr) {
+            ucapi::Handle objects = api.iterate(region, ucapi::kObjects);
+            if (objects != nullptr) {
+                ucapi::Handle object;
+                while ((object = api.scan(objects)) != nullptr) {
+                    collect_line_leaves(api, object, region, test_, "",
+                                        &out);
+                }
+                api.release(objects);
+            }
+            api.release(region);
+        }
+        api.release(persistent_metric);
+    }
+    api.release(metrics);
+    return out;
+}
+
 std::vector<UcapiBackend::CodeGap> UcapiBackend::code_gaps(
     const ScopeInfo& scope) const {
     const UcapiLibrary& api = UcapiLibrary::instance();

@@ -437,6 +437,43 @@ def test_line_gap_count_matches_missing(cpp_env, xverif_fixture, tmp_path):
     assert payload["gap_count"] == payload["coverage"]["missing"]
 
 
+def test_line_groups_cover_every_missing_object(cpp_env, xverif_fixture,
+                                                tmp_path):
+    """Port of test_line_zero_over_n_expands_one_gap_per_coverage_object."""
+    vdb = _fixture_vdb(xverif_fixture, "xcov.modinfo_edge_layouts",
+                       "edge_cases.vdb")
+    payload = _first_gap_or_empty(cpp_env, vdb, tmp_path,
+                                  ["route_matrix.u_value_dark"], "line")
+    gaps = [gap for group in payload["line_groups"]
+            for gap in group["uncovered"]]
+    assert payload["gap_count"] == payload["coverage"]["missing"] == len(gaps)
+    counts = {}
+    for gap in gaps:
+        key = (gap["at"], gap["statement"])
+        counts[key] = counts.get(key, 0) + 1
+    assert any(count >= 4 and count % 4 == 0 for count in counts.values()), counts
+    for group in payload["line_groups"]:
+        context = group["context"]
+        assert context["missing"] == len(group["uncovered"])
+        assert context["coverable"] - context["covered"] == context["missing"]
+
+
+def test_line_groups_context_carries_source_location(cpp_env, xverif_fixture,
+                                                     tmp_path):
+    """Every line group points at a real source line with a statement."""
+    vdb = _fixture_vdb(xverif_fixture, "xcov.modinfo_edge_layouts",
+                       "edge_cases.vdb")
+    payload = _first_gap_or_empty(cpp_env, vdb, tmp_path,
+                                  ["route_matrix.u_value_dark"], "line")
+    assert payload["line_groups"]
+    for group in payload["line_groups"]:
+        at = group["context"]["at"]
+        assert ".sv:" in at, at
+        for gap in group["uncovered"]:
+            assert gap["at"] == at
+            assert gap["statement"].strip(), gap
+
+
 def _first_gap_or_empty(cpp_env, vdb: Path, tmp_path: Path, scopes, metric):
     proc, send, name = _session([str(CPP_BINARY), "--stdio-loop"], cpp_env, vdb)
     try:
