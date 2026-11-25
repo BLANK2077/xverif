@@ -2398,3 +2398,99 @@ def test_csv_record_remove_then_family_round_trip(loop, tmp_path):
     key = lambda row: (row["metric"], row["covered"], row["coverable"])
     assert [key(row) for row in after["data"]["items"]] == \
         [key(row) for row in removed["data"]["items"]]
+
+
+def test_compile_publish_failure_rolls_back(loop, vdb, tmp_path):
+    gap = _full_gap(loop, tmp_path)
+    pristine = loop.call("metrics.list", {})
+    csv_dir = tmp_path / "publish-fail-csv"
+    _seed_required_csvs(csv_dir)
+    (csv_dir / "code_exclusions.csv").write_text(
+        "# schema_version=xcov-code-exclusions.v1\n"
+        "# coverage_kind=code\n"
+        "scope,metric,line,object,bin,reason\n"
+        f"top.u_core0,toggle,,{gap['full_name']},,publish fail\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "readonly-output"
+    out_dir.mkdir()
+    out_dir.chmod(0o555)
+    try:
+        compiled = loop.call("exclude.csv.compile", {
+            "directory": str(csv_dir), "output_directory": str(out_dir),
+            "allow_absolute_path": True,
+        })
+        assert not compiled["ok"], compiled
+        assert compiled["error"]["code"] in {"EXCLUSION_SAVE_FAILED", "IO_ERROR"}
+    finally:
+        out_dir.chmod(0o755)
+    after = loop.call("metrics.list", {})
+    key = lambda row: (row["metric"], row["covered"], row["coverable"])
+    assert [key(row) for row in after["data"]["items"]] == \
+        [key(row) for row in pristine["data"]["items"]]
+    # The failed compile must not mark reasons as persisted.
+    closed = loop.call("session.close", {})
+    if closed["ok"]:
+        # No record was left behind, so a graceful close is legal too.
+        assert closed["summary"]["discarded_reason_count"] == 0
+
+
+def test_line_selector_readd_survives_family_remove(xverif_fixture, tmp_path):
+    resources = xverif_fixture("xcov.modinfo_edge_layouts")
+    database = resources / "edge_cases.vdb"
+    if not database.is_dir():
+        pytest.skip(f"fixture VDB missing: {database}")
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs")
+    session = Loop([str(CPP_BINARY), "--stdio-loop"], env, database)
+    scope = "route_matrix.u_value_dark"
+    try:
+        out_dir = tmp_path / "line-readd-gaps"
+        exported = session.call("export.code_coverage", {
+            "scopes": [scope], "metrics": ["line"],
+            "output": {"path": str(out_dir), "allow_absolute_path": True},
+        })
+        assert exported["ok"], exported
+        payload = json.loads(
+            (out_dir / "instance-0001" / "line.json").read_text())
+        line = payload["line_groups"][0]["uncovered"][0]["at"].rsplit(":", 1)[1]
+        reference = payload["gaps"][0]["coverage_ref"]
+        assert session.call("exclude.add", {
+            "coverage_refs": [{"coverage_ref": reference, "reason": "first"}],
+        })["ok"]
+        assert session.call("exclude.remove",
+                            {"coverage_refs": [reference]})["ok"]
+        csv_dir = tmp_path / "line-readd-csv"
+        _seed_required_csvs(csv_dir)
+        (csv_dir / "code_exclusions.csv").write_text(
+            "# schema_version=xcov-code-exclusions.v1\n"
+            "# coverage_kind=code\n"
+            "scope,metric,line,object,bin,reason\n"
+            f"{scope},line,{line},,,line selector\n",
+            encoding="utf-8",
+        )
+        applied = session.call("exclude.csv.apply",
+                               {"directory": str(csv_dir)})
+        assert applied["ok"], applied
+        readd = session.call("metrics.list", {})
+        assert session.call("exclude.instance.add", {
+            "items": [{"scope": scope, "reason": "unrelated"}],
+        })["ok"]
+        assert session.call("exclude.instance.remove", {
+            "items": [{"scope": scope}],
+        })["ok"]
+        after = session.call("metrics.list", {})
+        key = lambda row: (row["metric"], row["covered"], row["coverable"])
+        assert [key(row) for row in after["data"]["items"]] == \
+            [key(row) for row in readd["data"]["items"]]
+    finally:
+        session.close()
+
+
+def test_exclude_add_exports_is_explicit_error(loop, tmp_path):
+    response = loop.call("exclude.add", {
+        "exports": [{"path": str(tmp_path / "missing.json"),
+                     "items": [{"gap_id": "G0001", "reason": "export"}]}],
+    })
+    assert not response["ok"], response
+    assert response["error"]["code"] == "ACTION_NOT_IMPLEMENTED"

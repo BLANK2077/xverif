@@ -169,6 +169,10 @@ public:
     std::size_t exclude_line(const std::string& scope_name, int line_no,
                              const std::string& reason,
                              const std::string& source_file = std::string());
+    /// Fully-qualified names of line-metric leaves at one source line.
+    std::vector<std::string> line_leaf_full_names(
+        const std::string& scope_name, int line_no,
+        const std::string& source_file = std::string());
     std::size_t exclude_scope(
         const std::string& scope_name, bool recursive,
         const std::string& reason,

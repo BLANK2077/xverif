@@ -1916,6 +1916,71 @@ bool UcapiBackend::scope_has_covered_objects(const std::string& scope_name,
     return covered_found;
 }
 
+std::vector<std::string> UcapiBackend::line_leaf_full_names(
+    const std::string& scope_name, int line_no,
+    const std::string& source_file) {
+    const UcapiLibrary& api = UcapiLibrary::instance();
+    const ScopeInfo* scope = find_scope(scope_name);
+    std::vector<std::string> out;
+    if (scope == nullptr || scope->handle == nullptr || line_no <= 0) return out;
+    ucapi::Handle metrics = api.iterate(test_, ucapi::kMetrics);
+    if (metrics == nullptr) return out;
+    ucapi::Handle metric;
+    while ((metric = api.scan(metrics)) != nullptr) {
+        if (!api.is_line_metric(metric)) continue;
+        ucapi::Handle persistent_metric = api.make_persistent(metric);
+        ucapi::Handle region = api.get_qualified_handle(
+            scope->handle, persistent_metric, ucapi::kIdentity);
+        if (region != nullptr) {
+            std::function<void(ucapi::Handle, const std::string&)> visit =
+                [&](ucapi::Handle obj, const std::string& parent_path) {
+                const int type = api.get(obj, region, nullptr, ucapi::kType);
+                const std::string name =
+                    safe_str(api.get_str(obj, ucapi::kName));
+                const std::string path =
+                    parent_path.empty() ? name : parent_path + "." + name;
+                if (is_leaf_type(type)) {
+                    const int object_line =
+                        api.get(obj, region, test_, ucapi::kLineNo);
+                    const std::string object_file =
+                        safe_str(api.get_str(obj, ucapi::kFileName));
+                    const bool file_matches =
+                        source_file.empty() || object_file == source_file ||
+                        (object_file.size() > source_file.size() &&
+                         object_file.compare(object_file.size() -
+                                                 source_file.size(),
+                                             source_file.size(),
+                                             source_file) == 0 &&
+                         object_file[object_file.size() -
+                                     source_file.size() - 1] == '/');
+                    if (object_line == line_no && file_matches) {
+                        out.push_back(scope->full_name + "." + path);
+                    }
+                    return;
+                }
+                if (type != ucapi::kContainer) return;
+                ucapi::Handle kids = api.iterate(obj, ucapi::kObjects);
+                if (kids == nullptr) return;
+                ucapi::Handle kid;
+                while ((kid = api.scan(kids)) != nullptr) visit(kid, path);
+                api.release(kids);
+            };
+            ucapi::Handle objects = api.iterate(region, ucapi::kObjects);
+            if (objects != nullptr) {
+                ucapi::Handle object;
+                while ((object = api.scan(objects)) != nullptr) {
+                    visit(object, "");
+                }
+                api.release(objects);
+            }
+            api.release(region);
+        }
+        api.release(persistent_metric);
+    }
+    api.release(metrics);
+    return out;
+}
+
 std::size_t UcapiBackend::exclude_scope(
     const std::string& scope_name, bool recursive,
     const std::string& reason,

@@ -1515,11 +1515,39 @@ namespace {
 std::string make_temp_baseline(const char* prefix);
 void remove_temp_baseline(const std::string& path);
 
-void clear_removed_ref_tombstone(Session& sess,
-                                  const std::string& full_name) {
+void clear_removed_ref_tombstone(
+    Session& sess, const ExclusionRecord& record,
+    const std::vector<std::string>& affected_full_names = {}) {
+    std::set<std::string> affected(affected_full_names.begin(),
+                                   affected_full_names.end());
     for (auto it = sess.removed_ref_names.begin();
          it != sess.removed_ref_names.end();) {
-        if (it->second == full_name) {
+        const std::string& locator = it->second;
+        const std::size_t first = locator.find('\x1f');
+        const std::size_t second =
+            first == std::string::npos
+                ? std::string::npos
+                : locator.find('\x1f', first + 1);
+        if (first == std::string::npos || second == std::string::npos) {
+            ++it;
+            continue;
+        }
+        const std::string ref_scope = locator.substr(0, first);
+        const std::string ref_metric =
+            locator.substr(first + 1, second - first - 1);
+        const std::string ref_name = locator.substr(second + 1);
+        bool match = ref_scope == record.scope && ref_metric == record.metric &&
+                     (ref_name == record.full_name ||
+                      affected.find(ref_name) != affected.end());
+        if (!match && !record.name.empty()) {
+            const std::string suffix = "." + record.name;
+            match = ref_scope == record.scope &&
+                    ref_metric == record.metric &&
+                    ref_name.size() > suffix.size() &&
+                    ref_name.compare(ref_name.size() - suffix.size(),
+                                     suffix.size(), suffix) == 0;
+        }
+        if (match) {
             sess.removed_refs.erase(it->first);
             it = sess.removed_ref_names.erase(it);
         } else {
@@ -1827,6 +1855,11 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
                            {{"items", items}});
     }
     const bool adding = action == "exclude.add";
+    if (args.contains("exports") && !args.at("exports").is_null()) {
+        throw Error("ACTION_NOT_IMPLEMENTED",
+                    "exclude.add exports is not implemented; use coverage_refs",
+                    {{"path", "$.args.exports"}});
+    }
     const nlohmann::json refs =
         args.value("coverage_refs", nlohmann::json::array());
     bool records_changed = false;
@@ -1856,7 +1889,8 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
                     std::string r_name;
                     if (sess.backend->locator_for_ref(ref, &r_scope, &r_metric,
                                                       &r_name)) {
-                        sess.removed_ref_names[ref] = r_name;
+                        sess.removed_ref_names[ref] =
+                            r_scope + "\x1f" + r_metric + "\x1f" + r_name;
                     }
                     records_changed |= erase_exclusion_record_by_ref(sess, ref);
                     items.push_back(item);
@@ -1918,7 +1952,8 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
                 std::string r_name;
                 if (sess.backend->locator_for_ref(ref, &r_scope, &r_metric,
                                                   &r_name)) {
-                    sess.removed_ref_names[ref] = r_name;
+                    sess.removed_ref_names[ref] =
+                        r_scope + "\x1f" + r_metric + "\x1f" + r_name;
                 }
                 records_changed |= erase_exclusion_record_by_ref(sess, ref);
             }
@@ -2612,7 +2647,7 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                         records_changed |= put_exclusion_record(sess, record);
                     }
                     if (target_kind != "instance") {
-                        clear_removed_ref_tombstone(sess, record.full_name);
+                        clear_removed_ref_tombstone(sess, record);
                     }
 
                 } else {
@@ -2637,7 +2672,7 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                     record.name = row.value("assertion");
                     record.full_name = full_name;
                     records_changed |= put_exclusion_record(sess, record);
-                    clear_removed_ref_tombstone(sess, record.full_name);
+                    clear_removed_ref_tombstone(sess, record);
                 } else {
                     ++failed;
                 }
@@ -2675,7 +2710,15 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                         ? name
                         : scope + "." + name;
                 records_changed |= put_exclusion_record(sess, record);
-                clear_removed_ref_tombstone(sess, record.full_name);
+                std::vector<std::string> affected_names;
+                if (metric == "line" && name.empty() && !line_text.empty()) {
+                    int line_no = 0;
+                    if (parse_canonical_line(line_text, &line_no)) {
+                        affected_names = sess.backend->line_leaf_full_names(
+                            scope, line_no, row.source_file);
+                    }
+                }
+                clear_removed_ref_tombstone(sess, record, affected_names);
             } else {
                 ++failed;
             }
@@ -2699,12 +2742,49 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                     "no artifacts were published",
                     {{"failed_count", total_failed}});
     }
+    // Publish transactionally: write temp files, then rename with backups; a
+    // failure restores both the DB state and any previous artifacts.
+    const std::string suffix = ".tmp." + std::to_string(::getpid());
+    const std::string code_el = output_directory + "/code.el";
+    const std::string code_tmp = code_el + suffix;
+    std::vector<std::pair<std::string, std::string>> published;
+    std::vector<std::pair<std::string, std::string>> backups;
+    try {
+        sess.backend->save_exclusions(code_tmp);
+        std::vector<std::pair<std::string, std::string>> staged;
+        staged.emplace_back(code_tmp, code_el);
+        for (const char* extra : {"functional.el", "assertion.el",
+                                  "container.el"}) {
+            const std::string destination = output_directory + "/" + extra;
+            const std::string temporary = destination + suffix;
+            write_file(temporary, std::string());
+            staged.emplace_back(temporary, destination);
+        }
+        for (const auto& pair : staged) {
+            if (file_exists(pair.second)) {
+                const std::string backup = pair.second + ".bak" + suffix;
+                std::rename(pair.second.c_str(), backup.c_str());
+                backups.emplace_back(backup, pair.second);
+            }
+            if (std::rename(pair.first.c_str(), pair.second.c_str()) != 0) {
+                throw Error("EXCLUSION_SAVE_FAILED",
+                            "cannot publish compiled exclusion artifact",
+                            {{"path", pair.second}});
+            }
+            published.emplace_back(pair.second, pair.first);
+        }
+    } catch (const Error& exc) {
+        for (const auto& pair : published) ::unlink(pair.first.c_str());
+        for (const auto& pair : backups) {
+            std::rename(pair.first.c_str(), pair.second.c_str());
+        }
+        rollback();
+        throw;
+    }
+    for (const auto& pair : backups) ::unlink(pair.first.c_str());
     if (records_changed) sess.mark_reason_mutation();
     sess.mark_reasons_persisted();
-    const std::string code_el = output_directory + "/code.el";
-    sess.backend->save_exclusions(code_el);
     for (const char* extra : {"functional.el", "assertion.el", "container.el"}) {
-        write_file(output_directory + "/" + extra, std::string());
         items.push_back({{"status", "published"},
                          {"path", output_directory + "/" + extra},
                          {"record_count", 0}});
@@ -3222,7 +3302,17 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
                     records_changed |= put_exclusion_record(sess, record);
                 }
                 if (record.target_kind != "instance") {
-                    clear_removed_ref_tombstone(sess, record.full_name);
+                    std::vector<std::string> affected_names;
+                    const std::string metric = row.value("metric");
+                    const std::string name = row.value("object");
+                    if (metric == "line" && name.empty() && !line_text.empty()) {
+                        int line_no = 0;
+                        if (parse_canonical_line(line_text, &line_no)) {
+                            affected_names = sess.backend->line_leaf_full_names(
+                                scope, line_no, row.source_file);
+                        }
+                    }
+                    clear_removed_ref_tombstone(sess, record, affected_names);
                 }
 
             } else {

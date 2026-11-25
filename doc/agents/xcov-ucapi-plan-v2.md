@@ -450,7 +450,20 @@ live-record 跳过让陈旧 CSV record 否决显式 remove。本轮处理：
 
 已知限制新增：事务级 TempBaselineGuard 在 TMPDIR 不可用时 fail-closed（无数据损坏）。
 
-## 剩余已知限制（2026-11-25 第十五轮 review 后）
+## 第二十轮 review 修复（2026-11-25，HEAD 5699a8e 之后）
+
+第十六轮独立 review 确认上一轮 4 个 P1 已修，但发现 3 个 P1：compile 发布阶段
+失败不回滚且提前 mark persisted；line-selector/短对象名 CSV 复加的 tombstone
+清除缺口；`exclude.add exports` 静默忽略。本轮处理：
+
+| # | 问题 | 处理 |
+|---|---|---|
+| 1 | compile 发布失败不回滚 | 四类 EL 先写 temp，带 backup rename 发布；失败删除已发布文件、恢复 backup、rollback DB/records，成功后才 mark_reasons_persisted |
+| 2 | line-selector/短名 tombstone 清除缺口 | tombstone 保存 remove 时的 scope/metric/name；清除时按 locator 身份 + 短名后缀匹配；line selector 通过 `line_leaf_full_names` 枚举受影响对象 |
+| 3 | `exports` 静默忽略 | `exclude.add` 检测 exports 立即返回 `ACTION_NOT_IMPLEMENTED`（不再假成功）；文档记录为已知不支持 |
+| 4 | 测试 | 新增 compile 发布失败回滚、line-selector re-add、exports 显式错误 3 个用例（cpp_actions 85 passed） |
+
+## 剩余已知限制（2026-11-25 第十六轮 review 后）
 
 - recursive instance 排除在超大库仍 >60s（`covdb_set_exclude_all_iter` 不可用，只能逐 leaf）。
 - coverpoint/cross 的 exclusion 在 EL 中不产出对象（UCAPI 限制）。
@@ -474,6 +487,8 @@ live-record 跳过让陈旧 CSV record 否决显式 remove。本轮处理：
   以内与 add 同量级。
 - 事务级 `TempBaselineGuard` 在 TMPDIR 不可用时 fail-closed（`EXCLUSION_BASELINE_FAILED`，
   无数据损坏）；只有 family baseline 支持回退。
+- `exclude.add exports` 未实现，现返回 `ACTION_NOT_IMPLEMENTED`（不再静默成功）；
+  调用方应使用 `coverage_refs`。code export 的 `gaps[].gap_id` 仍为空。
 
 ## 进度表
 
