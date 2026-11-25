@@ -1535,6 +1535,17 @@ void check_instance_owner_conflict(const Session& sess,
     }
 }
 
+std::string assertion_kind_for_record(const Session& sess,
+                                       const std::string& full_name) {
+    for (const auto& row : sess.backend->assertions()) {
+        if (row.full_name != full_name) continue;
+        if (row.type == 1) return "cover_property";
+        if (row.type == 2) return "cover_sequence";
+        return "assertion";
+    }
+    return "assertion";
+}
+
 bool reapply_exclusion_record(Session& sess, const ExclusionRecord& record) {
     if (record.kind == "assertion") {
         return !record.full_name.empty() &&
@@ -1648,6 +1659,7 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
             // failure after load would leave the session modified.
             const ElDocument document = parse_el(path);
             sess.backend->load_exclusions(path);
+            sess.loaded_el_paths.push_back(path);
             for (const auto& entry : document.entries) {
                 sess.loaded_el_entries.push_back(entry);
             }
@@ -1665,6 +1677,7 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
         sess.backend->unload_exclusions();
         sess.exclusion_records.clear();
         sess.loaded_el_entries.clear();
+        sess.loaded_el_paths.clear();
         // Removing every exclusion also clears the dirty reason set; this
         // mirrors Python clear_exclusions().
         sess.mark_reasons_persisted();
@@ -1707,7 +1720,8 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
                     record.kind =
                         record.metric == "assert" ? "assertion" : "code";
                     if (record.kind == "assertion") {
-                        record.target_kind = "assertion";
+                        record.target_kind = assertion_kind_for_record(
+                            sess, record.full_name);
                     }
                     records_changed |= put_exclusion_record(sess, record);
                     sess.backend->set_exclusion(ref, true, reason);
@@ -1733,7 +1747,8 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
                                       locator_name, &record);
                 record.kind = record.metric == "assert" ? "assertion" : "code";
                 if (record.kind == "assertion") {
-                    record.target_kind = "assertion";
+                    record.target_kind =
+                        assertion_kind_for_record(sess, record.full_name);
                 }
                 records_changed |= put_exclusion_record(sess, record);
             } else if (applied) {
@@ -2587,6 +2602,14 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
                                 "no real instance matches the requested scope",
                                 {{"scope", scope}});
                 }
+                if (sess.exclusion_policy == "strict" &&
+                    sess.backend->scope_has_covered_objects(scope,
+                                                            recursive)) {
+                    throw Error("EXCLUSION_APPLY_FAILED",
+                                "strict instance exclusion refused: the subtree "
+                                "contains already-covered objects",
+                                {{"scope", scope}});
+                }
                 // Python rejects a second owner (different expansion root or
                 // reason) for the same exact instance target.
                 for (const auto& target_scope : expanded) {
@@ -2671,6 +2694,19 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
                     "no recorded instance exclusions own the requested roots");
     }
     if (!adding && instance_action) {
+        // Exclusions loaded from EL files are not part of the reason-record
+        // map; reload them so an instance-family restore cannot drop them.
+        for (const auto& path : sess.loaded_el_paths) {
+            try {
+                sess.backend->load_exclusions(path);
+            } catch (const Error& exc) {
+                throw Error("EXCLUSION_REAPPLY_FAILED",
+                            "could not reapply a loaded exclusion file after "
+                            "restoring an instance family",
+                            {{"path", path},
+                             {"cause_message", exc.message()}});
+            }
+        }
         // restore_scope clears every report-time bit in the subtree; reapply
         // independently-owned leaf/assertion/functional reasons so an
         // instance-family remove cannot silently drop other owners.

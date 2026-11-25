@@ -156,6 +156,10 @@ public:
                              const std::string& source_file = std::string());
     std::size_t exclude_scope(const std::string& scope_name, bool recursive,
                               const std::string& reason);
+    /// True when any code leaf under the instance subtree is already covered
+    /// (used for strict container preflight).
+    bool scope_has_covered_objects(const std::string& scope_name,
+                                   bool recursive) const;
     /// Exclude/restore assertions owned by one instance subtree (assertions
     /// live on the test handle, so the instance walk cannot reach them).
     std::size_t exclude_assertions(const std::string& scope_name,

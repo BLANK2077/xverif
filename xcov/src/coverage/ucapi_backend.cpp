@@ -1719,6 +1719,66 @@ std::size_t UcapiBackend::exclude_line(const std::string& scope_name,
     return changed > 0 ? changed : matched;
 }
 
+bool UcapiBackend::scope_has_covered_objects(const std::string& scope_name,
+                                            bool recursive) const {
+    const UcapiLibrary& api = UcapiLibrary::instance();
+    std::vector<const ScopeInfo*> targets;
+    for (const auto& scope : scopes_) {
+        if (scope.handle == nullptr) continue;
+        if (scope.full_name == scope_name ||
+            (recursive && scope.full_name.size() > scope_name.size() &&
+             scope.full_name.compare(0, scope_name.size(), scope_name) == 0 &&
+             scope.full_name[scope_name.size()] == '.')) {
+            targets.push_back(&scope);
+        }
+    }
+    ucapi::Handle metrics = api.iterate(test_, ucapi::kMetrics);
+    if (metrics == nullptr) return false;
+    ucapi::Handle metric;
+    bool covered_found = false;
+    while (!covered_found && (metric = api.scan(metrics)) != nullptr) {
+        if (api.is_assert_metric(metric) || api.is_testbench_metric(metric) ||
+            api.is_path_metric(metric)) {
+            continue;
+        }
+        ucapi::Handle persistent_metric = api.make_persistent(metric);
+        for (const ScopeInfo* scope : targets) {
+            if (covered_found) break;
+            ucapi::Handle region = api.get_qualified_handle(
+                scope->handle, persistent_metric, ucapi::kIdentity);
+            if (region == nullptr) continue;
+            std::function<bool(ucapi::Handle)> visit = [&](ucapi::Handle obj) {
+                const int type = api.get(obj, region, nullptr, ucapi::kType);
+                if (is_leaf_type(type)) {
+                    return api.get(obj, region, test_, ucapi::kCovered) > 0;
+                }
+                if (type != ucapi::kContainer) return false;
+                ucapi::Handle kids = api.iterate(obj, ucapi::kObjects);
+                if (kids == nullptr) return false;
+                ucapi::Handle kid;
+                bool found = false;
+                while (!found && (kid = api.scan(kids)) != nullptr) {
+                    found = visit(kid);
+                }
+                api.release(kids);
+                return found;
+            };
+            ucapi::Handle objects = api.iterate(region, ucapi::kObjects);
+            if (objects != nullptr) {
+                ucapi::Handle object;
+                while (!covered_found && (object = api.scan(objects)) != nullptr) {
+                    covered_found = visit(object);
+                }
+                api.release(objects);
+            }
+            api.release(region);
+        }
+        api.release(persistent_metric);
+    }
+    api.release(metrics);
+    return covered_found;
+}
+
 std::size_t UcapiBackend::exclude_scope(const std::string& scope_name,
                                         bool recursive,
                                         const std::string& reason) {

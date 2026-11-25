@@ -28,7 +28,7 @@ def _env(backend: str = "ucapi") -> dict:
 class Loop:
     """One stdio-loop subprocess with helpers for request/response."""
 
-    def __init__(self, command, env, vdb: Path):
+    def __init__(self, command, env, vdb: Path, policy: str = "default"):
         self.proc = subprocess.Popen(
             command,
             stdin=subprocess.PIPE,
@@ -45,7 +45,7 @@ class Loop:
             "request_id": "open",
             "action": "session.open",
             "target": {"vdb": str(vdb)},
-            "args": {"name": "cov0"},
+            "args": {"name": "cov0", "exclusion_policy": policy},
         })
         assert opened["ok"], json.dumps(opened)[:500]
 
@@ -1592,3 +1592,101 @@ def test_csv_row_validation_rejects_assertion_kind_and_line_overflow(
     overflow = loop.call("exclude.csv.apply", {"directory": str(overflow_dir)})
     assert not overflow["ok"], overflow
     assert overflow["error"]["code"] == "EXCLUSION_CSV_INVALID"
+
+
+def test_loaded_el_survives_instance_round_trip(loop, vdb, tmp_path):
+    """EL-loaded exclusions must not be wiped by instance add/remove."""
+    reference = _first_gap_ref(loop, tmp_path)
+    added = loop.call("exclude.add", {
+        "coverage_refs": [{"coverage_ref": reference, "reason": "loaded reason"}],
+    })
+    assert added["ok"], added
+    el_path = tmp_path / "loaded.el"
+    assert loop.call("export.exclude", {
+        "output": {"path": str(el_path), "allow_absolute_path": True},
+    })["ok"]
+
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs-2")
+    fresh = Loop([str(CPP_BINARY), "--stdio-loop"], env, vdb)
+    try:
+        assert fresh.call("exclude.load", {"paths": [str(el_path)]})["ok"]
+        before = fresh.call("metrics.list", {})
+        assert before["ok"], before
+        assert fresh.call("exclude.instance.add", {
+            "items": [{"scope": "top.u_core0", "reason": "temporary"}],
+        })["ok"]
+        assert fresh.call("exclude.instance.remove", {
+            "items": [{"scope": "top.u_core0"}],
+        })["ok"]
+        after = fresh.call("metrics.list", {})
+        key = lambda row: (row["metric"], row["covered"], row["coverable"])
+        assert [key(row) for row in after["data"]["items"]] == \
+            [key(row) for row in before["data"]["items"]]
+        after_el = tmp_path / "loaded-after.el"
+        assert fresh.call("export.exclude", {
+            "output": {"path": str(after_el), "allow_absolute_path": True},
+        })["ok"]
+        object_lines = [line for line in after_el.read_text().splitlines()
+                        if line.startswith(("Toggle", "Block", "Branch",
+                                            "Condition", "Fsm", "Assert"))]
+        assert object_lines, "loaded EL exclusion disappeared"
+        csv_dir = tmp_path / "loaded-csv"
+        assert fresh.call("exclude.csv.export", {
+            "directory": str(csv_dir), "allow_absolute_path": True,
+        })["ok"]
+        assert "loaded reason" in (csv_dir / "code_exclusions.csv").read_text()
+    finally:
+        fresh.close()
+
+
+def test_strict_instance_exclusion_rejects_covered_objects(vdb, tmp_path):
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs")
+    strict = Loop([str(CPP_BINARY), "--stdio-loop"], env, vdb, policy="strict")
+    try:
+        before = strict.call("metrics.list", {})
+        assert before["ok"], before
+        rejected = strict.call("exclude.instance.add", {
+            "items": [{"scope": "top.u_core0", "reason": "strict"}],
+        })
+        assert not rejected["ok"], rejected
+        assert rejected["error"]["code"] == "EXCLUSION_APPLY_FAILED"
+        after = strict.call("metrics.list", {})
+        key = lambda row: (row["metric"], row["covered"], row["coverable"])
+        assert [key(row) for row in after["data"]["items"]] == \
+            [key(row) for row in before["data"]["items"]]
+    finally:
+        strict.close()
+
+
+def test_assertion_ref_csv_keeps_kind(xverif_fixture, tmp_path):
+    resources = xverif_fixture("xcov.modinfo_edge_layouts")
+    database = resources / "edge_cases.vdb"
+    if not database.is_dir():
+        pytest.skip(f"fixture VDB missing: {database}")
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs")
+    loop = Loop([str(CPP_BINARY), "--stdio-loop"], env, database)
+    el_dir = tmp_path / "assert-kinds"
+    exported = loop.call("export.assert", {
+        "output": {"path": str(el_dir), "allow_absolute_path": True},
+    })
+    assert exported["ok"], exported
+    gaps = json.loads((el_dir / "assert.json").read_text())["gaps"]
+    cover = next((gap for gap in gaps
+                  if gap["kind"] == "npiCovCoverProperty"), None)
+    if cover is None:
+        pytest.skip("fixture has no cover property gap")
+    assert loop.call("exclude.add", {
+        "coverage_refs": [{"coverage_ref": cover["coverage_ref"],
+                           "reason": "cover reason"}],
+    })["ok"]
+    csv_dir = tmp_path / "assert-csv"
+    assert loop.call("exclude.csv.export", {
+        "directory": str(csv_dir), "allow_absolute_path": True,
+    })["ok"]
+    text = (csv_dir / "assertion_exclusions.csv").read_text()
+    assert "cover_property" in text, text
+    assert "cover reason" in text
+    loop.close()

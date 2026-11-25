@@ -319,7 +319,20 @@ expansion-root ownership、assertion 归属、重复 apply 非幂等）和 2 个
 | 3 | `assertion_kind` 未校验 enum；空/非法值被接受 | `load_validated_csv_directory` 校验 `assertion`/`cover_property`/`cover_sequence`；ref 来源 assertion 记录默认 `target_kind=assertion` |
 | 4 | `line > INT_MAX` 通过行校验后才在 resolve 失败 | `parse_canonical_line` 增加 `INT_MAX` 检查，统一报 `EXCLUSION_CSV_INVALID` |
 
-## 剩余已知限制（2026-11-25 第六轮 review 后）
+## 第十一轮 review 修复（2026-11-25，HEAD edc4725 之后）
+
+第七轮独立 review 复验上一轮 4 项修复后，发现 1 个 P1：`exclude.load` 载入的
+排除不在 reason-record 集合中，instance add/remove 的 `restore_scope` 清掉后
+不会重放，DB/EL 丢失而 CSV 仍导出；另有 strict 容器部分生效、ref assertion
+kind 统一成 assertion 2 个 P2。本轮处理：
+
+| # | 问题 | 处理 |
+|---|---|---|
+| 1 | loaded EL 排除在 instance remove 后丢失 | Session 记录 loaded_el_paths；instance family remove 恢复后重新 `load_exclusions` 每个 EL 文件，失败抛 `EXCLUSION_REAPPLY_FAILED` 并事务回滚 |
+| 2 | strict 下 instance add 部分生效并返回成功 | 新增 `scope_has_covered_objects` 预检；strict 容器 add 发现子树含 covered leaf 时整请求 `EXCLUSION_APPLY_FAILED`，不写记录/CSV |
+| 3 | ref 来源 assertion 的 assertion_kind 统一记成 assertion | 新增 `assertion_kind_for_record`，按 `AssertionRow.type` 映射 assertion/cover_property/cover_sequence |
+
+## 剩余已知限制（2026-11-25 第七轮 review 后）
 
 - recursive instance 排除在超大库仍 >60s（`covdb_set_exclude_all_iter` 不可用，只能逐 leaf）。
 - coverpoint/cross 的 exclusion 在 EL 中不产出对象（UCAPI 限制）。
