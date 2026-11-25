@@ -1,12 +1,13 @@
 # xcov UCAPI 能力补全与实现清理计划
 
-> 状态：已完成（2026-11-25），最终发布 `xverif-1.0.7`；默认后端为 `urg`，`ucapi` 为可选试用。
+> 状态：已完成（2026-11-25），最终发布 `xverif-1.0.3`（承接公开的上一个 release
+> `xverif-1.0.2`）；默认后端为 `urg`，`ucapi` 为可选试用。
 > 前置：`doc/agents/xcov-ucapi-rewrite.md`（C++ 重写的验收合同）。
 
 ## 背景
 
-`xcov` 的 C++ + UCAPI 实现在 `xverif-1.0.6` 已可用；最终 `xverif-1.0.7` 保留 Python/URG 为
-默认后端，`ucapi` 作为可选试用，30 个 action 与全量回归保持可用。
+本任务的 C++ + UCAPI 实现完成后，最终发布 `xverif-1.0.3`（承接公开的 `xverif-1.0.2`），
+保留 Python/URG 为默认后端，`ucapi` 作为可选试用；30 个 action 与全量回归保持可用。
 研究 UCAPI 源码后发现两类问题：
 
 1. **有未实现的能力**：`condition_groups` / `decision_groups`、`exclude.functional.*` 真实语义、
@@ -20,8 +21,8 @@
 
 1. 用 UCAPI 原生能力补全 `condition_groups` / `decision_groups` / `exclude.functional.*`。
 2. 消除已知的实现绕路，能换原生 API 的换掉，不能换的在代码注释里写明原因。
-3. 修掉已发现的两个 bug：instance 排除不写 `ANNOTATION`、`gap_count != coverage.missing`（后者 1.0.5 已修，回归保护）。
-4. 测试覆盖新能力，全量回归全绿后提交并发布 `xverif-1.0.7`。
+3. 修掉已发现的两个 bug：instance 排除不写 `ANNOTATION`、`gap_count != coverage.missing`（后者此前已修，回归保护）。
+4. 测试覆盖新能力，全量回归全绿后提交并发布 `xverif-1.0.3`。
 
 ## 调研已确认的事实
 
@@ -48,7 +49,7 @@
 | 去丑 | `exclude_scope`/`restore_scope` 不再逐叶子调用（若 `set_exclude_all_iter` 验证失败则保留并写明原因）；错误走 `covdb_set_error_callback` |
 | 测试 | `xcov.cpp_actions` 新增 ≥8 个用例；`xcov.cpp_parity` 新增 condition/branch payload 对拍 |
 | 回归 | `pytest --xverif-gate regression -n auto` 全绿 |
-| 发布 | commit 中文、`git status --short` 只含本任务文件、tag `xverif-1.0.7` + release |
+| 发布 | commit 中文、`git status --short` 只含本任务文件、tag `xverif-1.0.3` + release |
 
 ## 阶段任务
 
@@ -134,7 +135,7 @@
 1. 更新 `doc/agents/xcov-ucapi-rewrite.md` 与本文档的进度与已知限制。
 2. 检查 `xcov/README.md`、`skills/xverif/references/xcov.md` 是否需要同步。
 3. 全量回归：`XVERIF_TEST_EXECUTION_ENV=host pytest --xverif-gate regression -n auto -q`。
-4. `git status --short` 确认范围，中文 commit，推送 `master`，打 `xverif-1.0.7` 并 `gh release create`。
+4. `git status --short` 确认范围，中文 commit，推送 `master`，打 `xverif-1.0.3` 并 `gh release create`。
    最终发布策略：默认 `XVERIF_XCOV_BACKEND=urg`，`ucapi` 作为可选试用；不删除 Python 实现，
    不发布第二个 release。
 
@@ -152,7 +153,7 @@
 
 1. `doc/agents/` 是计划文档的正确位置（与 `xcov-ucapi-rewrite.md` 一致）。
 2. 新增字段只加不删，`condition_groups`/`decision_groups` 对旧调用方是增量字段。
-3. 发布版本号沿用 `xverif-1.0.x`，本次为最终 `xverif-1.0.7`；只发布这一个最终 release。
+3. 发布版本号沿用 `xverif-1.0.x`，本次为最终 `xverif-1.0.3`；只发布这一个最终 release。
 4. 默认后端为 `urg`；`ucapi` 为可选试用，需要用户自备 Verdi/UCAPI，仓库不分发 UCAPI
    源码/库。
 4. 阶段 1 的 probe 结论如果推翻某阶段前提，该阶段降级为"记录限制 + 不做"，并在 md 里更新，不阻塞其他阶段。
@@ -523,7 +524,7 @@ tombstone 身份匹配漏了 assertion 的 `metric`（CSV 复加断言在 family
 | 5 CSV 语义 | 完成（validate 逐行必填列/空值校验；apply/format 已有；compile 走新路径） |
 | 6 去丑 | 完成（set_exclude_all_iter 不采用并记录；error callback 已接；annotation 持久化 bug 已修） |
 | 7 测试 | 完成（cpp_actions 当前 87 个用例） |
-| 8 清理与发布 | 完成（最终 `xverif-1.0.7`；默认 urg、ucapi 可选试用） |
+| 8 清理与发布 | 完成（最终 `xverif-1.0.3`；默认 urg、ucapi 可选试用） |
 
 ## 实施中发现的额外 bug
 

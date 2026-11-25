@@ -115,7 +115,7 @@ stdio-loop 帧）；支持 CSV 与 EL+annotation 双向转换，并能读取 EL 
 - [x] 发布时保留 Python 实现作为默认 `urg` 后端（不删除）
 - [x] 保留 catalog 的 `npi` capability 与 `xcov.exclusion_npi`
 - [x] 全量回归
-- [x] 提交 + 推送 + 发布最终 release（`xverif-1.0.7`）
+- [x] 提交 + 推送 + 发布最终 release（`xverif-1.0.3`）
 
 ## 5. 技术要点（实现参考）
 
