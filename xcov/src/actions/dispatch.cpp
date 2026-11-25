@@ -1326,6 +1326,7 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
                 sess.backend->locator_for_ref(ref, &record.scope, &record.metric,
                                               &record.name);
                 record.full_name = record.scope + "." + record.name;
+                record.kind = record.metric == "assert" ? "assertion" : "code";
                 sess.exclusion_records[ref] = record;
             } else if (applied) {
                 sess.exclusion_records.erase(ref);
@@ -1574,10 +1575,26 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                 }
                 continue;
             }
-            std::string metric = row.value("metric");
-            if (metric.empty() && kind_name == "assertion") {
-                metric = "assert";
+            if (kind_name == "assertion") {
+                std::string full_name = row.value("assertion");
+                if (full_name.find('.') == std::string::npos && !scope.empty()) {
+                    full_name = scope + "." + full_name;
+                }
+                if (sess.backend->exclude_assertion(full_name, true, reason)) {
+                    ++applied;
+                    ExclusionRecord record;
+                    record.kind = "assertion";
+                    record.reason = reason;
+                    record.scope = scope;
+                    record.name = row.value("assertion");
+                    record.full_name = full_name;
+                    sess.exclusion_records[record.full_name] = record;
+                } else {
+                    ++failed;
+                }
+                continue;
             }
+            const std::string metric = row.value("metric");
             const std::string name = row.has("object") ? row.value("object")
                                                        : row.value("assertion");
             if (sess.backend->exclude_leaf(scope, metric, name, reason)) {
@@ -1799,11 +1816,14 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
                     row_ok = sess.backend->exclude_functional(
                                  scope, covergroup, target_kind, item, reason) > 0;
                 }
+            } else if (kind_name == "assertion") {
+                std::string full_name = row.value("assertion");
+                if (full_name.find('.') == std::string::npos && !scope.empty()) {
+                    full_name = scope + "." + full_name;
+                }
+                row_ok = sess.backend->exclude_assertion(full_name, true, reason);
             } else {
                 std::string metric = row.value("metric");
-                if (metric.empty() && kind_name == "assertion") {
-                    metric = "assert";
-                }
                 const std::string name =
                     row.has("object") ? row.value("object") : row.value("assertion");
                 row_ok = sess.backend->exclude_leaf(scope, metric, name, reason);

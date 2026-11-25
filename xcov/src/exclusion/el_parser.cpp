@@ -121,10 +121,10 @@ ElDocument parse_el(const std::string& path) {
             }
             continue;
         }
+        // Test-level sections (covergroup/coverpoint/cross/assert without an
+        // INSTANCE/MODULE header) are legal in UCAPI-saved exclusion files.
         if (section_name.empty()) {
-            throw Error("EL_PARSE_FAILED",
-                        "object line appears before INSTANCE/MODULE",
-                        {{"path", path}, {"line", line_number}});
+            section_kind = "TEST";
         }
         ElEntry entry;
         entry.section_kind = section_kind;

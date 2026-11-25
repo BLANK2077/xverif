@@ -457,10 +457,14 @@ void UcapiBackend::finalize_scope_metrics() {
                                      : real_successes) > 0
                                     ? 1
                                     : 0;
+                            if (assert_excluded) {
+                                api.release(persistent);
+                                continue;
+                            }
                             MetricAggregate& entry =
                                 scopes_[pos->second].metrics[MetricKind::Assert];
                             entry.covered += hit;
-                            if (!assert_excluded) entry.coverable += 1;
+                            entry.coverable += 1;
                         }
                         api.release(persistent);
                     }
@@ -1180,9 +1184,13 @@ namespace {
 std::size_t exclude_subtree(const UcapiLibrary& api, ucapi::Handle obj,
                             ucapi::Handle region, ucapi::Handle test,
                             bool excluded, const std::string& reason,
-                            bool* annotation_written) {
+                            bool* annotation_written, bool strict) {
     const int type = api.get(obj, region, nullptr, ucapi::kType);
     if (is_leaf_type(type)) {
+        if (excluded && strict) {
+            const long covered = api.get(obj, region, test, ucapi::kCovered);
+            if (covered > 0) return 0;  // strict: excluding covered is illegal
+        }
         const int status = api.get(obj, region, test, ucapi::kCovStatus);
         int updated = status;
         if (excluded) {
@@ -1212,7 +1220,7 @@ std::size_t exclude_subtree(const UcapiLibrary& api, ucapi::Handle obj,
     ucapi::Handle kid;
     while ((kid = api.scan(kids)) != nullptr) {
         changed += exclude_subtree(api, kid, region, test, excluded, reason,
-                                   annotation_written);
+                                   annotation_written, strict);
     }
     api.release(kids);
     return changed;
@@ -1329,8 +1337,9 @@ std::size_t UcapiBackend::exclude_scope(const std::string& scope_name,
             if (objects != nullptr) {
                 ucapi::Handle object;
                 while ((object = api.scan(objects)) != nullptr) {
-                    changed += exclude_subtree(api, object, region, test_, true,
-                                               reason, &annotation_written);
+                    changed += exclude_subtree(
+                        api, object, region, test_, true, reason,
+                        &annotation_written, exclusion_policy_ == "strict");
                 }
                 api.release(objects);
             }
@@ -1376,7 +1385,7 @@ std::size_t UcapiBackend::restore_scope(const std::string& scope_name,
                 ucapi::Handle object;
                 while ((object = api.scan(objects)) != nullptr) {
                     changed += exclude_subtree(api, object, region, test_, false,
-                                               std::string(), nullptr);
+                                               std::string(), nullptr, false);
                 }
                 api.release(objects);
             }

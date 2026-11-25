@@ -81,7 +81,7 @@ constexpr int kStatusCovered = 8;
 constexpr int kStatusExcludedAtReportTime = 64;
 
 // AssertionType
-constexpr int kConfigExcludeMode = 94;  // covdbExcludeMode
+constexpr int kConfigExcludeMode = 28;  // covdbExcludeMode
 constexpr int kAssertionTypeAssert = 0;
 constexpr int kAssertionTypeCoverProperty = 1;
 constexpr int kAssertionTypeCoverSequence = 2;
