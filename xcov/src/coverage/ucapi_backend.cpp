@@ -480,8 +480,23 @@ void UcapiBackend::finalize_scope_metrics() {
                         const std::size_t dot = full.rfind('.');
                         const std::string scope_name =
                             dot == std::string::npos ? full : full.substr(0, dot);
-                        auto pos = scope_positions_.find(scope_name);
-                        if (pos != scope_positions_.end()) {
+                        // Assertions can live in generate blocks that have
+                        // no coverage instance of their own; URG attributes
+                        // them to the nearest real ancestor scope.
+                        std::size_t mount_index = scopes_.size();
+                        std::string node = scope_name;
+                        while (!node.empty()) {
+                            auto pos = scope_positions_.find(node);
+                            if (pos != scope_positions_.end() &&
+                                scopes_[pos->second].handle != nullptr) {
+                                mount_index = pos->second;
+                                break;
+                            }
+                            const std::size_t parent_dot = node.rfind('.');
+                            if (parent_dot == std::string::npos) break;
+                            node = node.substr(0, parent_dot);
+                        }
+                        if (mount_index != scopes_.size()) {
                             const int type = api.get_assert_type(persistent);
                             long real_successes = 0;
                             long all_successes = 0;
@@ -521,7 +536,7 @@ void UcapiBackend::finalize_scope_metrics() {
                                 continue;
                             }
                             MetricAggregate& entry =
-                                scopes_[pos->second].metrics[MetricKind::Assert];
+                                scopes_[mount_index].metrics[MetricKind::Assert];
                             entry.covered += hit;
                             entry.coverable += 1;
                         }
@@ -685,6 +700,10 @@ const std::vector<UcapiBackend::AssertionRow>& UcapiBackend::assertions() const 
             AssertionRow row;
             row.full_name = safe_str(api.get_str(persistent, ucapi::kFullName));
             row.name = safe_str(api.get_str(persistent, ucapi::kName));
+            const std::size_t name_dot = row.name.rfind('.');
+            if (name_dot != std::string::npos) {
+                row.name = row.name.substr(name_dot + 1);
+            }
             row.type = api.get_assert_type(persistent);
             ucapi::Handle blocks = api.iterate(persistent, ucapi::kObjects);
             if (blocks != nullptr) {
@@ -1395,7 +1414,7 @@ namespace {
 std::size_t exclude_subtree(const UcapiLibrary& api, ucapi::Handle obj,
                             ucapi::Handle region, ucapi::Handle test,
                             bool excluded, const std::string& reason,
-                            bool* annotation_written, bool strict) {
+                            char* annotation_written, bool strict) {
     const int type = api.get(obj, region, nullptr, ucapi::kType);
     if (is_leaf_type(type)) {
         if (excluded && strict) {
@@ -1415,12 +1434,12 @@ std::size_t exclude_subtree(const UcapiLibrary& api, ucapi::Handle obj,
         // quadratic on large designs; one durable annotation per request is
         // enough to carry the reason into the EL.
         if (excluded && !reason.empty() && annotation_written != nullptr &&
-            !*annotation_written) {
+            *annotation_written == 0) {
             ucapi::Handle persistent = api.make_persistent(obj);
             api.set_annotation(persistent, "cov_comment", reason.c_str());
             api.set_durable(region, test, persistent, 1);
             api.release(persistent);
-            *annotation_written = true;
+            *annotation_written = 1;
         }
         return 1;
     }
@@ -1628,7 +1647,6 @@ std::size_t UcapiBackend::exclude_scope(const std::string& scope_name,
         if (match) targets.push_back(&scope);
     }
     std::size_t changed = 0;
-    bool annotation_written = false;
     ucapi::Handle metrics = api.iterate(test_, ucapi::kMetrics);
     if (metrics == nullptr) return 0;
     ucapi::Handle metric;
@@ -1637,8 +1655,13 @@ std::size_t UcapiBackend::exclude_scope(const std::string& scope_name,
             api.is_path_metric(metric)) {
             continue;
         }
+        // One durable annotation per excluded INSTANCE section (one per
+        // metric section) instead of one per leaf.
+        std::vector<char> annotation_written(targets.size(), 0);
         ucapi::Handle persistent_metric = api.make_persistent(metric);
-        for (const ScopeInfo* scope : targets) {
+        for (std::size_t target_index = 0; target_index < targets.size();
+             ++target_index) {
+            const ScopeInfo* scope = targets[target_index];
             if (scope->handle == nullptr) continue;
             ucapi::Handle raw_region = api.get_qualified_handle(
                 scope->handle, persistent_metric, ucapi::kIdentity);
@@ -1651,7 +1674,8 @@ std::size_t UcapiBackend::exclude_scope(const std::string& scope_name,
                 while ((object = api.scan(objects)) != nullptr) {
                     changed += exclude_subtree(
                         api, object, region, test_, true, reason,
-                        &annotation_written, exclusion_policy_ == "strict");
+                        &annotation_written[target_index],
+                        exclusion_policy_ == "strict");
                 }
                 api.release(objects);
             }

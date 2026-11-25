@@ -39,8 +39,10 @@ std::string exclusion_record_key(const ExclusionRecord& record) {
         return "instance:" + record.scope;
     }
     if (!record.target_kind.empty()) {
+        // exclude_functional targets the whole point/cross; a CSV bin column
+        // therefore must not split the record identity.
         return "functional:" + record.scope + "|" + record.target_kind + "|" +
-               record.covergroup + "|" + record.item + "|" + record.bin;
+               record.covergroup + "|" + record.item;
     }
     return record.kind + ":" + record.scope + "|" + record.name;
 }

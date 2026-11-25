@@ -984,3 +984,192 @@ def test_evicted_assert_refs_still_resolve(xverif_fixture, tmp_path):
             assert added["data"]["items"][0]["status"] == "changed", added
     finally:
         session.close()
+
+
+def test_csv_failure_rolls_back_previous_exclusions(loop, tmp_path):
+    """A failed CSV apply must not unload exclusions when baseline creation
+    or directory permissions prevent a user-directory snapshot."""
+    scope = "top.u_core0"
+    assert loop.call("exclude.instance.add", {
+        "items": [{"scope": scope, "reason": "keep me"}],
+    })["ok"]
+    csv_dir = tmp_path / "readonly-csv"
+    csv_dir.mkdir()
+    (csv_dir / "code_exclusions.csv").write_text(
+        "# schema_version=xcov-code-exclusions.v1\n"
+        "# coverage_kind=code\n"
+        "scope,metric,line,object,bin,reason\n"
+        "top,line,999999,,,bad line\n",
+        encoding="utf-8",
+    )
+    csv_dir.chmod(0o555)
+    try:
+        failed = loop.call("exclude.csv.apply", {"directory": str(csv_dir)})
+        assert not failed["ok"], failed
+        assert failed["error"]["code"] == "EXCLUSION_RESOLVE_FAILED"
+    finally:
+        csv_dir.chmod(0o755)
+    el_path = tmp_path / "after-rollback.el"
+    exported = loop.call("export.exclude", {
+        "output": {"path": str(el_path), "allow_absolute_path": True},
+    })
+    assert exported["ok"], exported
+    text = el_path.read_text()
+    assert "INSTANCE:" in text and "keep me" in text, text[:400]
+    records_dir = tmp_path / "after-rollback-csv"
+    assert loop.call("exclude.csv.export", {
+        "directory": str(records_dir), "allow_absolute_path": True,
+    })["ok"]
+    assert "keep me" in (records_dir / "container_exclusions.csv").read_text()
+
+
+def test_generate_block_assertions_are_mounted(xverif_fixture, tmp_path):
+    """Assertions declared in a generate block mount to the nearest real
+    ancestor scope and keep their basename."""
+    resources = xverif_fixture("xcov.modinfo_complex")
+    database = resources / "complex.vdb"
+    if not database.is_dir():
+        pytest.skip(f"fixture VDB missing: {database}")
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs")
+    session = Loop([str(CPP_BINARY), "--stdio-loop"], env, database)
+    try:
+        metrics = session.call("metrics.list", {})
+        assert metrics["ok"], metrics
+        assert_row = next(row for row in metrics["data"]["items"]
+                          if row["metric"] == "assert")
+        summary = session.call("assert.summary", {})
+        assert summary["ok"], summary
+        rows = summary["data"]["items"]
+        assert assert_row["coverable"] == len(rows), (assert_row, len(rows))
+        assert assert_row["covered"] == sum(
+            1 for row in rows if row["covered"]), (assert_row, rows)
+        by_name = session.call("assert.summary", {
+            "query": {"match_field": "name",
+                      "include_patterns": ["a_result_known"]},
+        })
+        assert by_name["ok"], by_name
+        assert by_name["data"]["items"], by_name
+        assert all(row["name"] == "a_result_known"
+                   for row in by_name["data"]["items"])
+    finally:
+        session.close()
+
+
+def test_ref_csv_round_trip_replays_in_new_session(loop, vdb, tmp_path):
+    """A ref-origin code row is replayable by the C++ CSV apply path."""
+    reference = _first_gap_ref(loop, tmp_path)
+    added = loop.call("exclude.add", {
+        "coverage_refs": [{"coverage_ref": reference, "reason": "ref csv"}],
+    })
+    assert added["ok"], added
+    csv_dir = tmp_path / "ref-csv"
+    assert loop.call("exclude.csv.export", {
+        "directory": str(csv_dir), "allow_absolute_path": True,
+    })["ok"]
+    rows = [row for row in (csv_dir / "code_exclusions.csv").read_text().splitlines()
+            if row and not row.startswith("#") and not row.startswith("scope,")]
+    assert len(rows) == 1, rows
+
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs-2")
+    fresh = Loop([str(CPP_BINARY), "--stdio-loop"], env, vdb)
+    try:
+        applied = fresh.call("exclude.csv.apply", {"directory": str(csv_dir)})
+        assert applied["ok"], applied
+        assert applied["data"]["items"][0]["status"] == "changed"
+    finally:
+        fresh.close()
+
+
+def test_csv_export_preserves_source_file_groups(loop, tmp_path):
+    """Merging an existing Python-style CSV must not drop source_file groups."""
+    csv_dir = tmp_path / "grouped-csv"
+    csv_dir.mkdir()
+    original = (
+        "# schema_version=xcov-code-exclusions.v1\n"
+        "# coverage_kind=code\n"
+        "scope,metric,line,object,bin,reason\n"
+        "\n"
+        "# source_file=design.sv\n"
+        "top,line,126,,,external reason\n"
+    )
+    (csv_dir / "code_exclusions.csv").write_text(original)
+    exported = loop.call("exclude.csv.export", {
+        "directory": str(csv_dir), "allow_absolute_path": True,
+    })
+    assert exported["ok"], exported
+    text = (csv_dir / "code_exclusions.csv").read_text()
+    assert "# source_file=design.sv" in text
+    assert "external reason" in text
+    kind_row = next(item for item in exported["data"]["items"]
+                    if item["coverage_kind"] == "code")
+    assert kind_row["record_count"] == 1, kind_row
+    # A second export counts the existing record instead of reporting zero.
+    again = loop.call("exclude.csv.export", {
+        "directory": str(csv_dir), "allow_absolute_path": True,
+    })
+    assert again["ok"], again
+    kind_row = next(item for item in again["data"]["items"]
+                    if item["coverage_kind"] == "code")
+    assert kind_row["record_count"] == 1, kind_row
+
+
+def test_instance_exclusion_annotates_every_el_section(loop, tmp_path):
+    """Each INSTANCE section of an instance exclusion carries the reason."""
+    scope = "top.u_core0.g_pipe.u_proc.u_reg_a"
+    added = loop.call("exclude.instance.add", {
+        "items": [{"scope": scope, "reason": "section reason"}],
+    })
+    assert added["ok"], added
+    el_path = tmp_path / "sections.el"
+    exported = loop.call("export.exclude", {
+        "output": {"path": str(el_path), "allow_absolute_path": True},
+    })
+    assert exported["ok"], exported
+    text = el_path.read_text()
+    assert text.count("INSTANCE:") == text.count("ANNOTATION:"), text[:600]
+
+
+def test_functional_csv_bin_does_not_leave_record(loop, vdb, tmp_path):
+    """A functional CSV bin column must not keep a removed record alive."""
+    summary = loop.call("functional_coverage.summary", {
+        "group_by": "covergroup", "limits": {"max_items": 1},
+    })
+    assert summary["ok"], summary
+    covergroup = summary["data"]["items"][0]["covergroup"]
+    scope = covergroup.split("::", 1)[0]
+    csv_dir = tmp_path / "bin-csv"
+    csv_dir.mkdir()
+    (csv_dir / "functional_exclusions.csv").write_text(
+        "# schema_version=xcov-functional-exclusions.v1\n"
+        "# coverage_kind=functional\n"
+        "scope,line,covergroup,coverpoint,cross,bin,reason\n"
+        "\n"
+        "# source_file=design.sv\n"
+        f"{scope},10,{covergroup},cp_data,,binR,bin reason\n",
+        encoding="utf-8",
+    )
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs")
+    fresh = Loop([str(CPP_BINARY), "--stdio-loop"], env, vdb)
+    try:
+        compiled = fresh.call("exclude.csv.compile", {
+            "directory": str(csv_dir), "output_directory": str(tmp_path / "bin-el"),
+            "allow_absolute_path": True,
+        })
+        if not compiled["ok"]:
+            pytest.skip("fixture coverpoint cp_data not present")
+        removed = fresh.call("exclude.functional.remove", {
+            "items": [{"target_kind": "coverpoint", "scope": scope,
+                       "covergroup": covergroup, "item": "cp_data"}],
+        })
+        assert removed["ok"], removed
+        after = tmp_path / "bin-after"
+        assert fresh.call("exclude.csv.export", {
+            "directory": str(after), "allow_absolute_path": True,
+        })["ok"]
+        assert "bin reason" not in (
+            after / "functional_exclusions.csv").read_text()
+    finally:
+        fresh.close()

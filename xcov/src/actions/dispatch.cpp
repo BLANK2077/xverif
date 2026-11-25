@@ -14,6 +14,7 @@
 #include <cmath>
 #include <deque>
 #include <limits>
+#include <unistd.h>
 #include <optional>
 #include <set>
 #include <fstream>
@@ -1516,7 +1517,8 @@ bool same_record(const ExclusionRecord& a, const ExclusionRecord& b) {
            a.metric == b.metric && a.name == b.name &&
            a.full_name == b.full_name && a.target_kind == b.target_kind &&
            a.covergroup == b.covergroup && a.item == b.item &&
-           a.bin == b.bin && a.line == b.line;
+           a.bin == b.bin && a.line == b.line &&
+           a.source_file == b.source_file;
 }
 
 /// Insert/update one reason record under the canonical key. Returns true when
@@ -1553,11 +1555,14 @@ void assign_locator_record(const std::string& scope, const std::string& metric,
     const std::string prefix = scope + ".";
     if (locator_name.compare(0, prefix.size(), prefix) == 0) {
         record->full_name = locator_name;
-        record->name = locator_name.substr(prefix.size());
+        // Keep the fully qualified name in the CSV object column: the apply
+        // path resolves refs by accumulated path and cannot disambiguate a
+        // bare leaf name such as a toggle transition.
+        record->name = locator_name;
     } else {
         record->full_name = scope.empty() ? locator_name
                                           : scope + "." + locator_name;
-        record->name = locator_name;
+        record->name = record->full_name;
     }
 }
 
@@ -1701,6 +1706,33 @@ nlohmann::json Dispatcher::action_export_exclude(const nlohmann::json& req) {
 
 namespace {
 
+std::string make_temp_baseline(const char* prefix) {
+    const char* configured = std::getenv("TMPDIR");
+    std::string tmpl = configured != nullptr && *configured != '\0'
+                           ? std::string(configured)
+                           : std::string(P_tmpdir);
+    if (tmpl.empty() || tmpl.back() != '/') tmpl.push_back('/');
+    tmpl += prefix;
+    tmpl += "XXXXXX";
+    std::vector<char> buffer(tmpl.begin(), tmpl.end());
+    buffer.push_back('\0');
+    char* directory = ::mkdtemp(buffer.data());
+    if (directory == nullptr) {
+        throw Error("EXCLUSION_BASELINE_FAILED",
+                    "cannot create a temporary exclusion baseline directory");
+    }
+    return std::string(directory) + "/baseline.el";
+}
+
+void remove_temp_baseline(const std::string& path) {
+    if (path.empty()) return;
+    ::unlink(path.c_str());
+    const std::size_t slash = path.find_last_of('/');
+    if (slash != std::string::npos && slash > 0) {
+        ::rmdir(path.substr(0, slash).c_str());
+    }
+}
+
 bool parse_canonical_line(const std::string& text, int* out) {
     if (text.empty()) return false;
     std::size_t consumed = 0;
@@ -1786,10 +1818,14 @@ nlohmann::json Dispatcher::action_csv_export(const nlohmann::json& req) {
         }
         return spec.header.size();
     };
-    std::map<std::string, std::vector<std::vector<std::string>>> new_rows;
-    auto push_row = [&](const std::string& kind,
+    struct OutRow {
+        std::string source_file;
+        std::vector<std::string> fields;
+    };
+    std::map<std::string, std::vector<OutRow>> new_rows;
+    auto push_row = [&](const std::string& kind, const std::string& source_file,
                         std::vector<std::string> fields) {
-        new_rows[kind].push_back(std::move(fields));
+        new_rows[kind].push_back(OutRow{source_file, std::move(fields)});
     };
     for (const auto& item : sess.exclusion_records) {
         const ExclusionRecord& record = item.second;
@@ -1798,23 +1834,23 @@ nlohmann::json Dispatcher::action_csv_export(const nlohmann::json& req) {
                 record.target_kind == "coverpoint" ? record.item : std::string();
             const std::string cross =
                 record.target_kind == "cross" ? record.item : std::string();
-            push_row("functional",
+            push_row("functional", record.source_file,
                      {record.scope, record.line, record.covergroup, coverpoint,
                       cross, record.bin, record.reason});
         } else if (record.kind == "assertion") {
-            push_row("assertion",
+            push_row("assertion", record.source_file,
                      {record.scope, record.line,
                       record.full_name.empty() ? record.name : record.full_name,
                       record.target_kind, record.reason});
         } else if (record.kind == "container") {
-            push_row("container",
+            push_row("container", record.source_file,
                      {record.target_kind, record.scope, record.covergroup,
                       record.item,
                       record.target_kind == "instance" ? record.scope
                                                        : std::string(),
                       record.reason});
         } else {
-            push_row("code",
+            push_row("code", record.source_file,
                      {record.scope, record.metric, record.line, record.name,
                       record.bin, record.reason});
         }
@@ -1831,7 +1867,7 @@ nlohmann::json Dispatcher::action_csv_export(const nlohmann::json& req) {
                 metric = "fsm";
             else if (entry.object_kind == "Assert") metric = "assert";
             else continue;
-            push_row("code",
+            push_row("code", "",
                      {entry.section_name, metric, entry.object_line, "", "",
                       entry.annotation});
         }
@@ -1852,31 +1888,46 @@ nlohmann::json Dispatcher::action_csv_export(const nlohmann::json& req) {
 
     // Build every output in memory first so a reason conflict leaves all four
     // files untouched (Python contract).
+    auto render_fields = [](const std::vector<std::string>& fields) {
+        std::string line;
+        for (std::size_t index = 0; index < fields.size(); ++index) {
+            if (index > 0) line.push_back(',');
+            line += csv_escape(fields[index]);
+        }
+        line.push_back('\n');
+        return line;
+    };
     std::vector<std::pair<std::string, std::string>> outputs;
     std::vector<nlohmann::json> items;
-    nlohmann::json summary_json = completeness_summary(0, 0);
-    std::size_t returned = 0;
     for (const auto& spec : specs) {
         const std::string target = directory + "/" + spec.file;
         std::map<std::string, std::string> identity_reason;
-        std::vector<std::vector<std::string>> existing_rows;
+        std::vector<OutRow> existing_rows;
         if (file_exists(target)) {
             try {
                 const CsvDocument existing = parse_csv(target);
+                if (existing.header != spec.header) {
+                    throw Error("EXCLUSION_CSV_INVALID",
+                                "existing exclusion CSV header does not match "
+                                "the current contract",
+                                {{"path", target}});
+                }
                 for (const auto& row : existing.rows) {
-                    std::vector<std::string> fields;
-                    fields.reserve(spec.header.size());
-                    for (const auto& column : spec.header) {
-                        fields.push_back(row.value(column));
+                    if (row.fields.size() != spec.header.size()) {
+                        throw Error("EXCLUSION_CSV_INVALID",
+                                    "existing exclusion CSV row has the wrong "
+                                    "field count",
+                                    {{"path", target},
+                                     {"line", row.line_number}});
                     }
                     std::vector<std::string> identity_values;
+                    identity_values.push_back(row.source_file);
                     for (const auto& column : spec.identity_fields) {
-                        identity_values.push_back(
-                            fields[field_index(spec, column)]);
+                        identity_values.push_back(row.value(column));
                     }
                     const std::string identity = join_identity(identity_values);
                     const std::string reason =
-                        fields[field_index(spec, "reason")];
+                        row.value("reason");
                     auto seen = identity_reason.find(identity);
                     if (seen != identity_reason.end()) {
                         if (seen->second != reason) {
@@ -1890,20 +1941,24 @@ nlohmann::json Dispatcher::action_csv_export(const nlohmann::json& req) {
                         continue;
                     }
                     identity_reason.emplace(identity, reason);
-                    existing_rows.push_back(std::move(fields));
+                    existing_rows.push_back(
+                        OutRow{row.source_file, row.fields});
                 }
             } catch (const Error& exc) {
                 if (exc.code() != "CSV_INVALID") throw;
             }
         }
-        std::vector<std::vector<std::string>> added;
-        for (const auto& fields : new_rows[spec.kind]) {
+        std::vector<OutRow> added;
+        for (const auto& row : new_rows[spec.kind]) {
             std::vector<std::string> identity_values;
+            identity_values.push_back(row.source_file);
             for (const auto& column : spec.identity_fields) {
-                identity_values.push_back(fields[field_index(spec, column)]);
+                identity_values.push_back(
+                    row.fields[field_index(spec, column)]);
             }
             const std::string identity = join_identity(identity_values);
-            const std::string reason = fields[field_index(spec, "reason")];
+            const std::string reason =
+                row.fields[field_index(spec, "reason")];
             auto seen = identity_reason.find(identity);
             if (seen != identity_reason.end()) {
                 if (seen->second != reason) {
@@ -1917,7 +1972,7 @@ nlohmann::json Dispatcher::action_csv_export(const nlohmann::json& req) {
                 continue;
             }
             identity_reason.emplace(identity, reason);
-            added.push_back(fields);
+            added.push_back(row);
         }
 
         std::string content;
@@ -1929,32 +1984,43 @@ nlohmann::json Dispatcher::action_csv_export(const nlohmann::json& req) {
             content += spec.header[index];
         }
         content.push_back('\n');
-        for (const auto& fields : existing_rows) {
-            for (std::size_t index = 0; index < fields.size(); ++index) {
-                if (index > 0) content.push_back(',');
-                content += csv_escape(fields[index]);
-            }
-            content.push_back('\n');
+
+        std::map<std::string, std::vector<const OutRow*>> groups;
+        for (const auto& row : existing_rows) {
+            groups[row.source_file].push_back(&row);
         }
-        for (const auto& fields : added) {
-            for (std::size_t index = 0; index < fields.size(); ++index) {
-                if (index > 0) content.push_back(',');
-                content += csv_escape(fields[index]);
+        for (const auto& row : added) {
+            groups[row.source_file].push_back(&row);
+        }
+        auto group_rows = groups.find(std::string());
+        if (group_rows != groups.end()) {
+            for (const OutRow* row : group_rows->second) {
+                content += render_fields(row->fields);
             }
+        }
+        std::size_t group_count = 0;
+        for (const auto& group : groups) {
+            if (group.first.empty()) continue;
+            ++group_count;
             content.push_back('\n');
+            content += "# source_file=" + group.first + "\n";
+            for (const OutRow* row : group.second) {
+                content += render_fields(row->fields);
+            }
         }
         outputs.emplace_back(target, std::move(content));
         added_rows += added.size();
         items.push_back({{"coverage_kind", spec.kind},
                          {"path", target},
                          {"status", "published"},
-                         {"group_count", added.empty() ? 0 : 1},
-                         {"record_count", added.size()}});
-        ++returned;
+                         {"group_count", group_count},
+                         {"record_count", existing_rows.size() +
+                                              added.size()}});
     }
     for (const auto& output : outputs) write_file(output.first, output.second);
     sess.mark_reasons_persisted();
-    summary_json = completeness_summary(returned, returned);
+    nlohmann::json summary_json =
+        completeness_summary(items.size(), items.size());
     summary_json["exported_session_record_count"] = sess.exclusion_records.size();
     summary_json["added_record_count"] = added_rows;
     summary_json["unexportable_session_record_count"] = unexportable;
@@ -1975,13 +2041,18 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
     ensure_directory(output_directory);
     // Snapshot the current exclusion state so a failed compile can roll back
     // instead of wiping pre-existing exclusions.
-    const std::string baseline_el = output_directory + "/.xcov_compile_baseline.el";
-    bool baseline_ok = false;
+    const std::string baseline_el = make_temp_baseline("xcov-compile-");
     try {
         sess.backend->save_exclusions(baseline_el);
-        baseline_ok = file_exists(baseline_el);
-    } catch (const Error&) {
-        baseline_ok = false;
+        if (!file_exists(baseline_el)) {
+            throw Error("EXCLUSION_BASELINE_FAILED",
+                        "compiled exclusion baseline was not created");
+        }
+    } catch (const Error& exc) {
+        remove_temp_baseline(baseline_el);
+        throw Error("EXCLUSION_BASELINE_FAILED",
+                    "cannot snapshot the current exclusion state before compile",
+                    {{"cause_message", exc.message()}});
     }
     nlohmann::json items = nlohmann::json::array();
     struct KindFile {
@@ -2042,6 +2113,7 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                 record.item = item;
                 record.bin = row.value("bin");
                 record.line = line_text;
+                record.source_file = row.source_file;
                 if (target_kind == "instance") {
                     record.name = scope;
                     record.full_name = scope;
@@ -2078,6 +2150,7 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                     record.reason = reason;
                     record.scope = scope;
                     record.line = line_text;
+                    record.source_file = row.source_file;
                     record.target_kind = row.value("assertion_kind");
                     record.name = row.value("assertion");
                     record.full_name = full_name;
@@ -2110,6 +2183,7 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                 record.scope = scope;
                 record.metric = metric;
                 record.line = line_text;
+                record.source_file = row.source_file;
                 record.name = name;
                 record.bin = row.value("bin");
                 record.full_name = scope + "." + name;
@@ -2128,15 +2202,18 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
         // Contract: a partial compile must not publish artifacts; restore the
         // pre-compile snapshot instead of clearing everything.
         sess.backend->unload_exclusions();
-        if (baseline_ok) {
-            try {
-                sess.backend->load_exclusions(baseline_el);
-            } catch (const Error&) {
-                // Fall through with an empty state if the snapshot is unusable.
-            }
+        try {
+            sess.backend->load_exclusions(baseline_el);
+        } catch (const Error& exc) {
+            sess.exclusion_records = baseline_records;
+            remove_temp_baseline(baseline_el);
+            throw Error("EXCLUSION_ROLLBACK_FAILED",
+                        "compile failed and the pre-compile baseline could not "
+                        "be restored",
+                        {{"cause_message", exc.message()}});
         }
         sess.exclusion_records = baseline_records;
-        std::remove(baseline_el.c_str());
+        remove_temp_baseline(baseline_el);
         throw Error("EXCLUSION_RESOLVE_FAILED",
                     "every CSV record must resolve exactly once before compile; "
                     "no artifacts were published",
@@ -2144,7 +2221,7 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
     }
     if (records_changed) sess.mark_reason_mutation();
     sess.mark_reasons_persisted();
-    std::remove(baseline_el.c_str());
+    remove_temp_baseline(baseline_el);
     const std::string code_el = output_directory + "/code.el";
     sess.backend->save_exclusions(code_el);
     for (const char* extra : {"functional.el", "assertion.el", "container.el"}) {
@@ -2330,13 +2407,18 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
         throw Error("SCHEMA_INVALID", "directory is required",
                     {{"path", "$.args.directory"}});
     }
-    const std::string baseline_el = directory + "/.xcov_apply_baseline.el";
-    bool baseline_ok = false;
+    const std::string baseline_el = make_temp_baseline("xcov-apply-");
     try {
         sess.backend->save_exclusions(baseline_el);
-        baseline_ok = file_exists(baseline_el);
-    } catch (const Error&) {
-        baseline_ok = false;
+        if (!file_exists(baseline_el)) {
+            throw Error("EXCLUSION_BASELINE_FAILED",
+                        "apply exclusion baseline was not created");
+        }
+    } catch (const Error& exc) {
+        remove_temp_baseline(baseline_el);
+        throw Error("EXCLUSION_BASELINE_FAILED",
+                    "cannot snapshot the current exclusion state before apply",
+                    {{"cause_message", exc.message()}});
     }
     const std::map<std::string, ExclusionRecord> baseline_records =
         sess.exclusion_records;
@@ -2358,6 +2440,7 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
             record.reason = reason;
             record.scope = scope;
             record.line = line_text;
+            record.source_file = row.source_file;
             if (kind_name == "container" || kind_name == "functional") {
                 std::string target_kind = row.value("target_kind");
                 std::string item;
@@ -2437,22 +2520,24 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
     }
     if (total_failed > 0) {
         sess.backend->unload_exclusions();
-        if (baseline_ok) {
-            try {
-                sess.backend->load_exclusions(baseline_el);
-            } catch (const Error&) {
-                // The state is already reported as failed; keep the snapshot
-                // removal below so a retry starts clean.
-            }
+        try {
+            sess.backend->load_exclusions(baseline_el);
+        } catch (const Error& exc) {
+            sess.exclusion_records = baseline_records;
+            remove_temp_baseline(baseline_el);
+            throw Error("EXCLUSION_ROLLBACK_FAILED",
+                        "apply failed and the pre-apply baseline could not be "
+                        "restored",
+                        {{"cause_message", exc.message()}});
         }
         sess.exclusion_records = baseline_records;
-        std::remove(baseline_el.c_str());
+        remove_temp_baseline(baseline_el);
         throw Error("EXCLUSION_RESOLVE_FAILED",
                     "every CSV record must resolve exactly once before apply; "
                     "the request was rolled back",
                     {{"failed_count", total_failed}});
     }
-    std::remove(baseline_el.c_str());
+    remove_temp_baseline(baseline_el);
     if (records_changed) sess.mark_reason_mutation();
     return ok_response(req, completeness_summary(items.size(), items.size()),
                        {{"items", items}});
@@ -2476,12 +2561,28 @@ nlohmann::json Dispatcher::action_csv_format(const nlohmann::json& req) {
                 out << document.header[index];
             }
             out << "\n";
-            for (const auto& row : document.rows) {
+            auto emit_row = [&](const CsvRow& row) {
                 for (std::size_t index = 0; index < row.fields.size(); ++index) {
                     if (index > 0) out << ",";
                     out << csv_escape_field(row.fields[index]);
                 }
                 out << "\n";
+            };
+            std::string kind_name(kind.kind);
+            std::map<std::string, std::vector<const CsvRow*>> groups;
+            for (const auto& row : document.rows) {
+                groups[kind_name == "container" ? std::string()
+                                                : row.source_file]
+                    .push_back(&row);
+            }
+            auto ungrouped = groups.find(std::string());
+            if (ungrouped != groups.end()) {
+                for (const CsvRow* row : ungrouped->second) emit_row(*row);
+            }
+            for (const auto& group : groups) {
+                if (group.first.empty()) continue;
+                out << "\n# source_file=" << group.first << "\n";
+                for (const CsvRow* row : group.second) emit_row(*row);
             }
             if (write) write_file(path, out.str());
             items.push_back({{"status", "formatted"},

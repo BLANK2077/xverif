@@ -39,6 +39,12 @@ Schema/action 元数据是**生成物**：`xcov/xcov/schemas_data/v1/`（63 个 
 由 `xcov/tools/export_schemas.py` / `export_actions.py` 从 Python 定义导出；
 `test_schema_export.py` 校验等价性。**不要手改 JSON**，改 Python 定义后重新导出。
 
+> 2026-11-25 更新：已完成两轮独立 review 驱动的修复（HEAD 之后另行提交）。
+> `xcov.cpp_actions` 现为 46 个用例；query/sort/overflow、run_manifest、
+> session.close dirty reason、CSV line selector/身份、ref 缓存上限均已实现。
+> 详细修复表与最新已知限制见 `doc/agents/xcov-ucapi-plan-v2.md`
+> 「第六轮 review 修复」和「剩余已知限制」。
+
 ## 3. 当前能力状态
 
 ### 已验证通过（多次回归）
@@ -69,21 +75,21 @@ Schema/action 元数据是**生成物**：`xcov/xcov/schemas_data/v1/`（63 个 
 1. **recursive instance 排除在超大库 >60 s**：`covdb_set_exclude_all_iter` 实测不产生 exclusion，
    只能逐 leaf；1180 万 leaf 时不可用。单 leaf 正常。
 2. **coverpoint/cross 的 exclusion 在 EL 中不产出对象**（status 可写，EL 空）。
-3. functional CSV 的 bin-only 行会退化为整个 covergroup。
-4. `exclude.add` 的 `exports` 参数未实现；code export 的 `gap_id` 为空。
-5. `group_by=coverpoint|cross` 返回 `ACTION_NOT_IMPLEMENTED`（schema 仍声明支持）。
+3. `group_by=coverpoint|cross` 返回 `ACTION_NOT_IMPLEMENTED`（schema 仍声明支持）。
+4. functional summary 的 `missing` 与 `export.functional_coverage.gap_count` 粒度不同。
+5. 零权重 covergroup：UCAPI 报真实 bin 数而 URG 报 0/0，`metrics.list`/`scope.summary`
+   的 functional 行可见差异（zero_coverable fixture）。
 6. `csv.validate` 不校验 enum/空 reason/引号完整性。
-7. functional 的 `summary.missing` 与 `export.gap_count` 粒度不同。
-8. `session.close` 未实现 dirty reason / `confirm_discard_reasons`。
-9. `sort` / `query` / `limits.overflow` / `max_items=0` 未实现。
-10. `export.code_coverage` 的 `raw` 字段指向不存在的文件。
-11. `session.open.target.run_manifest` 未实现（provenance gate 缺失）。
-12. EL→CSV 不可回放（写原始 EL 行）；`csv.export` 不去重（重复导出会追加）。
-13. `ref_locators_` 无上限（多 scope 导出内存线性增长，约 1 MB/leaf scope）。
-14. strict 未覆盖 `exclude.load`；EL 的 `ExclMode` 字段由 UCAPI 固定为 default。
-15. 已存在输出目录时 export 会覆盖（Python 返回 `OUTPUT_ALREADY_EXISTS`）。
+7. `csv.compile` 仍把全部 kind 写进 code.el，另外三个 EL 为空；响应 items 形状与 Python 不同。
+8. ref 来源的 code CSV 行 C++ 可回放，但不兼容 Python URG CSV 方言（source_file 分组、
+   toggle/bin 身份）；合并既有 CSV 会保留分组/列并失败关闭。
+9. export 路径未完全对齐 Python 的 `XVERIF_XCOV_EXPORT_ROOTS`/symlink/`..` 策略。
+10. `export.code_coverage` 的 `raw` 指向不存在文件；line 分组/路径是 C++ 语义。
+11. `export.code_coverage` 在部分 fixture 上 line/branch 只统计 leaf gap，容器型 gap
+    可能少于 `coverage.missing`。
+12. EL→CSV 不可完全回放；仅从 EL 导入的条目没有 reason。
 
-### 第 9 轮 review 剩余（P1/P2，未全部修）
+### 第 9 轮 review 剩余（历史记录；其中 1/2/3/4/8/9/11/12 已在后续提交修复）
 
 - `metrics.list` 对零指标/未知 scope/synthetic scope 的行数与 Python 不一致
   （C++ 无条件追加 assert/functional 行；synthetic scope 返回后代聚合）

@@ -25,6 +25,7 @@ struct ExclusionRecord {
     std::string item;
     std::string bin;
     std::string line;
+    std::string source_file;
 };
 
 /// Canonical session-map key for an exclusion reason record. Every mutation

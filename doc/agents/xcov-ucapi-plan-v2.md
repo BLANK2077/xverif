@@ -252,6 +252,36 @@ review 发现的问题与处理：
 - `sort` / `query` / `limits.overflow` / `max_items=0` 未实现
 - `export.code_coverage` 的 `raw` 字段指向不存在的文件
 
+## 第六轮 review 修复（2026-11-25，HEAD ca6a744 之后）
+
+第二轮独立 review 复验了 8 项 P1 修复，并新报 3 项 P1、7 项 P2。本轮处理：
+
+| # | 问题 | 处理 |
+|---|---|---|
+| 1 | CSV apply/compile 的 baseline 写在用户目录，建失败会 unload 后不恢复，丢失既有 exclusion | baseline 改到系统临时目录；建失败直接 `EXCLUSION_BASELINE_FAILED` 且不改状态；rollback 失败抛 `EXCLUSION_ROLLBACK_FAILED` |
+| 2 | generate block 内 assertion 的父 scope 不存在时整条丢弃；`name` 带容器前缀 | 向上挂到最近真实祖先 scope；`AssertionRow.name` 取 basename；modinfo_complex assert 18/6 与 URG 一致 |
+| 3 | CSV 导出缺 `# source_file` 分组、ref 行 object 用短名导致自身不可回放、合并会重写 Python 文件 | 记录增加 `source_file`；导出按 source_file 分组并保留既有分组；合并前校验 header/字段数，失败关闭；ref 行 object 写全限定名，C++ 可回放（Python URG 方言仍不可互操作，记录为限制） |
+| 4 | functional CSV 带 bin 的行 remove 后记录残留 | functional 身份 key 不再包含 bin |
+| 5 | instance 排除的 EL 只有第一个 INSTANCE 段有 ANNOTATION | 每个 metric INSTANCE 段写一条 durable annotation |
+| 6 | `limits.max_items=null` 被当成缺省 action 默认值 | 显式 null 按 Python 语义使用 `MAX_RESPONSE_ROWS` |
+| 7 | `csv.export` 第二次导出 record_count/group_count 报 0 | 统计合并后文件总量与分组数 |
+| 8 | `csv.apply/compile` 失败仍返回 ok | 任一行失败即回滚并抛 `EXCLUSION_RESOLVE_FAILED` |
+| 9 | run_manifest 资源不可读返回 `IO_ERROR`；8MB 假上限 | 统一映射 `RESOURCE_PROVENANCE_MISMATCH`；移除大小上限 |
+
+## 剩余已知限制（2026-11-25 第二轮 review 后）
+
+- recursive instance 排除在超大库仍 >60s（`covdb_set_exclude_all_iter` 不可用，只能逐 leaf）。
+- coverpoint/cross 的 exclusion 在 EL 中不产出对象（UCAPI 限制）。
+- `group_by=coverpoint|cross` 返回 `ACTION_NOT_IMPLEMENTED`（schema 仍声明支持）。
+- functional summary 的 `missing` 与 `export.functional_coverage.gap_count` 粒度不同。
+- 零权重 covergroup：UCAPI 报告真实 bin 数（如 1/2），URG 报告 0/0；因此 `metrics.list functional`、`scope.summary functional_pct` 在 zero_coverable fixture 上可见差异。
+- `csv.validate` 不校验 enum/空 reason/引号完整性。
+- `csv.compile` 仍把全部 kind 写进 code.el，另外三个 EL 为空；响应 items 为 8 项（4 输入 + 4 发布），与 Python 的 4 项形状不同。
+- ref 来源的 code CSV 行携带全限定 object，C++ 自身可回放；Python URG CSV 方言要求 source_file 分组 + toggle/bin 身份，二者仍不可互操作。合并既有 Python CSV 时保留分组/列并失败关闭，不再静默重写。
+- export 输出路径策略未完全对齐 Python：C++ 只检查绝对路径开关，不强制 `XVERIF_XCOV_EXPORT_ROOTS`、`..` 与 symlink 策略。
+- `export.code_coverage` 的 `raw` 指向不存在文件；code JSON 的 line 分组/路径仍是 C++ 语义（保留行为不变量，不承诺逐字符对齐 URG 文本）。
+- `export.code_coverage` line/branch 在部分 fixture 上只统计 leaf gap，容器型 gap 可能少于 `coverage.missing`（未在本轮改动）。
+
 ## 进度表
 
 | 阶段 | 状态 |
