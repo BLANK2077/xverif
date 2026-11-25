@@ -1,5 +1,9 @@
 # xcov UCAPI C++ 重写：任务说明与验收指标
 
+> **状态：已完成（2026-11-25）。** 最终 review 状态、已知限制和提交索引以
+> [xcov-ucapi-handoff.md](xcov-ucapi-handoff.md) 与
+> [xcov-ucapi-plan-v2.md](xcov-ucapi-plan-v2.md) 为准；本文保留原始实施合同。
+
 本文是 `xcov` 从 Python 重写为 C++ 的实施合同。所有阶段以本文的验收项为准；
 未全部通过前不得推送 release。
 

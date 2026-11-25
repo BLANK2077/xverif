@@ -1,3 +1,7 @@
+> 本文档记录 Python 参考后端（`XVERIF_XCOV_BACKEND=urg`）的 Verdi/Python NPI 能力审计。
+> 默认 C++/UCAPI 后端不依赖 pynpi 或 URG summary，公开字段仍以 `xcov.v1` schema 和
+> `xcov/README.md` 为准；本文的 NPI method/signature 细节不适用于 C++ 路径。
+
 # xcov Coverage API 能力审计
 
 本审计用于约束 xcov 公开接口：只有 Verdi/Python NPI 文档、headers 和真实 VDB

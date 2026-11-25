@@ -5,15 +5,35 @@
 `xout`；需要机器 JSON 时使用 `tools/xcov --json -`。响应格式属于 CLI transport
 选项，不是 request 字段；top-level `output` 会被严格 schema 拒绝。
 
-xcov 的 summary 读取固定使用 URG
-`-full64 -xml_verbose -format text -show summary` 生成的 typed `session.xml`
-和五个 summary 文本文件，不生成完整 HTML、`modinfo.txt` 或 `grpinfo.txt`。
-code、assertion 和 functional coverage 按各自 XML `type` 建模；详细 gap 导出
-使用受限 URG text report。公开 summary 只发布该固定产物能够稳定支持的字段。
+## 后端
 
-action、session、transport、backend 或 VDB 查询失败时不会静默切换 surface、
-backend、data source 或测试层级。失败返回结构化错误；任何不同路径必须由调用方
-显式发起。
+`tools/xcov` 按 `XVERIF_XCOV_BACKEND` 选择实现，两种实现共享同一套 `xcov.v1`
+request/response/schema/XOUT 合同：
+
+| 取值 | 实现 | coverage 读取 | exclusion | 运行依赖 |
+| --- | --- | --- | --- | --- |
+| `ucapi`（默认） | C++ `xcov/bin/xcov` | UCAPI 直接读 VDB | UCAPI `covdb_*` | Verdi UCAPI runtime/license |
+| `urg` | Python `xcov/xcov` | 固定 URG summary + text report | pynpi `cov` | URG + Python NPI/license |
+
+默认后端不启动 URG 子进程，也不 import pynpi。C++ 二进制未构建时
+`tools/xcov` 直接报错，不自动切到 Python：
+
+```bash
+make -C xcov
+tools/xcov --json -
+```
+
+Python 参考后端用于 parity/对照：
+
+```bash
+XVERIF_XCOV_BACKEND=urg tools/xcov --json -
+```
+
+后端失败不会静默切换 surface、backend、data source 或测试层级；任何不同路径必须由
+调用方显式发起。C++ 后端的 summary 从 UCAPI 读取；下面标记为 URG/pynpi 的细节仅适用
+`XVERIF_XCOV_BACKEND=urg`。
+
+action、session、transport、backend 或 VDB 查询失败时返回结构化错误，不会自动换后端。
 
 ## 快速开始
 
@@ -44,15 +64,16 @@ stdio 请求
 {"api_version":"xcov.v1","request_id":"quit","action":"stdio.quit"}
 ```
 
-普通 session/read/export 路径不会加载 pynpi。只有 `exclude.*`、
-`exclude.csv.*` 和 `export.exclude` 首次需要修改或读取原生 exclusion 状态时，
-才在该 session 内惰性创建一次 NPI 上下文；NPI 诊断输出会导向 stderr，stdout
-保持机器可解析。
+Python 参考后端的普通 session/read/export 路径不会加载 pynpi；只有 `exclude.*`、
+`exclude.csv.*` 和 `export.exclude` 首次需要修改或读取原生 exclusion 状态时，才在该
+session 内惰性创建一次 NPI 上下文。C++ 后端不依赖 pynpi，读取与 exclusion 都通过 UCAPI。
+Python NPI 诊断输出会导向 stderr，stdout 保持机器可解析。
 
-## 真实 exclusion NPI 运行
+## Python 参考后端（`XVERIF_XCOV_BACKEND=urg`）
 
-URG coverage 查询需要 Synopsys URG；原生 exclusion 处理另需 Verdi/Python NPI
-和 license。按项目规则，NPI、VCS、VIP、真实 coverage probe 必须在沙箱外运行。
+默认 C++/UCAPI 后端只需要 Verdi UCAPI runtime/license。以下 URG/pynpi 运行形态仅适用
+Python 参考后端：coverage 读取需要 Synopsys URG，原生 exclusion 处理另需 Verdi/Python
+NPI 和 license。按项目规则，NPI、VCS、VIP、真实 coverage probe 必须在沙箱外运行。
 
 已验证的本地形态：
 
@@ -85,14 +106,16 @@ xverif_cov_get_schema
 MCP 始终提供 coverage 工具。MCP 原样传递导出参数，不改写相对路径，
 也不自动设置 `output.allow_absolute_path`；下述原生输出目录限制仍生效。
 
-环境变量：
+环境变量（未特别说明时，URG/pynpi 项仅适用 `XVERIF_XCOV_BACKEND=urg`）：
 
-- `VCS_HOME`：必填；URG 只允许使用规范化后的 `$VCS_HOME/bin/urg`，不会从 `PATH`
+- `XVERIF_XCOV_BACKEND`：`ucapi`（默认）或 `urg`；非法值直接报错，不 fallback。
+- `VCS_HOME`：Python 参考后端必填；URG 只允许使用规范化后的 `$VCS_HOME/bin/urg`，不会从 `PATH`
   查找或改用其它安装。
-- `VERDI_HOME`：首次 exclusion 操作时必填；pynpi/cov/npisys 必须全部来自该安装的
-  `share/NPI/python`，不会接受预加载的外部同名模块。
+- `VERDI_HOME`：C++ 后端读取 UCAPI 时需要；Python 参考后端首次 exclusion 操作时必填。
+  Python 的 pynpi/cov/npisys 必须全部来自该安装的 `share/NPI/python`，不会接受预加载的
+  外部同名模块。
 - `XVERIF_XCOV_BIN`：覆盖 xcov 可执行文件。
-- `XVERIF_XCOV_PYTHON`：覆盖 xcov Python runtime。
+- `XVERIF_XCOV_PYTHON`：覆盖 Python 参考后端的 runtime。
 - `XVERIF_XCOV_VERDI_HOME`：覆盖 `VERDI_HOME`。
 - `XVERIF_XCOV_LOG_DIR`：覆盖日志目录。
 - `XVERIF_XCOV_LOG=0`：关闭日志。
@@ -151,8 +174,9 @@ bsub process；失败不会改走 direct。
 ```
 
 `session.open` 的公开 `args` 只有 `name` 和可选
-`exclusion_policy:"default|strict"`。打开 session 只生成/读取固定 URG summary，
-不会 import pynpi 或调用 `cov.open`。首次 exclusion 操作才创建 NPI 上下文；此时
+`exclusion_policy:"default|strict"`。C++ 后端直接打开 UCAPI VDB；Python 参考后端在
+open 时生成/读取固定 URG summary，不会 import pynpi 或调用 `cov.open`。Python 后端首次
+exclusion 操作才创建 NPI 上下文；此时
 `strict` 在双参数接口上把 `cov.ConfigOpt.ExclusionInStrictMode` 传给 `cov.open`，
 拒绝把已覆盖对象设为 report-time exclusion；xcov 从不公开 `ExcludeByStmtLevel`。同名
 alive session 返回 `SESSION_EXISTS`；同一 native 进程的其它 alive name 返回
@@ -162,14 +186,14 @@ alive session 返回 `SESSION_EXISTS`；同一 native 进程的其它 alive name
 `target.vdb:"fake"` 也没有特殊含义；`FakeCoverageBackend` 只允许测试通过
 `SessionManager` 的 backend factory 注入。
 
-首次 exclusion 操作会检查当前 pynpi 的真实 `cov.open` 签名。单参数旧版在默认模式调用
+Python 参考后端首次 exclusion 操作会检查当前 pynpi 的真实 `cov.open` 签名。单参数旧版在默认模式调用
 `cov.open(vdb)`；双参数版本调用 `cov.open(vdb, config_opt)`。单参数旧版不支持 strict，
 会返回明确错误；不会先调用失败再 fallback。
 
 ### 可复现输入：run manifest
 
-`target.run_manifest` 是可选的 provenance gate。提供时，xcov 在运行 URG 或打开
-Python NPI 前校验 `xcov.run-manifest.v2` 的 `state:"published"`，以及相对 manifest 文件的
+`target.run_manifest` 是可选的 provenance gate。提供时，xcov 在打开 UCAPI、运行 URG 或
+打开 Python NPI 前校验 `xcov.run-manifest.v2` 的 `state:"published"`，以及相对 manifest 文件的
 `resources.vdb.path`、资源类型、`sha256-entry-tree-v2`、真实 regular-file 总字节数、
 file/directory/symlink 计数和 SHA-256。目录摘要对 entry type、路径长度、路径、文件大小与
 独立内容摘要做无歧义编码；symlink 只编码 link target 且从不跟随。不匹配返回
@@ -246,7 +270,8 @@ CSV 用 `# source_file=...` 划分连续源码分组；`reason` 必填，同一
 
 - `exclude.list`：列出 merged test 的 compile/report-time exclusion，并给出当前
   session 的 `coverage_ref`。
-- `exclude.load`：按输入顺序加载一个或多个 EL，使用 pynpi union 语义。
+- `exclude.load`：按输入顺序加载一个或多个 EL；C++ 后端使用 UCAPI load 语义，Python
+  参考后端使用 pynpi union 语义。
 - `exclude.add`：每个 `coverage_ref` 或 export gap 都必须携带非空 `reason`；reason 仅保存在当前 session
 - `exclude.remove`：按精确 `coverage_ref` 撤销 report-time exclusion
   before/after，返回 `changed`、`already_in_state`、
@@ -482,10 +507,31 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest \
 ```
 
 该 suite 验证 3,001 scopes、code/assertion/functional 三类 typed IR、root SCORE、read-only
-零 pynpi、cold 恰好一次 URG 和 warm 零 URG；1,000/10,000 scope 的严格 2N adjacency 操作数
+其中 Python 参考路径验证零 pynpi、cold 恰好一次 URG 和 warm 零 URG；1,000/10,000 scope 的严格 2N adjacency 操作数
 门禁保留在 `xcov.unit`。
+
+## 测试入口
+
+```bash
+# C++/UCAPI focused suites
+.conda-xverif/bin/pytest --xverif-gate regression --xverif-suite xcov.unit
+.conda-xverif/bin/pytest --xverif-gate regression --xverif-suite xcov.cpp_parity
+.conda-xverif/bin/pytest --xverif-gate regression --xverif-suite xcov.cpp_actions
+# 全量回归
+XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest --xverif-gate regression -n auto
+```
+
+`xcov.cpp_parity` 对比 C++/UCAPI 与 Python `urg` 参考后端；当前收尾基线为
+`xcov.unit` 179、`xcov.cpp_parity` 3、`xcov.cpp_actions` 87 个用例。已知限制以
+[doc/agents/xcov-ucapi-plan-v2.md](../doc/agents/xcov-ucapi-plan-v2.md) 的
+“剩余已知限制”为准。
 
 ## 当前限制
 
 - summary 查询固定使用 merged selection；请求 schema 不接受 per-test `test` selector。
+- `exclude.add exports` 在默认 C++ 后端未实现，显式返回 `ACTION_NOT_IMPLEMENTED`；请使用
+  `coverage_refs`。仅 Python 参考后端实现 `exports`。
+- 已知限制（loaded EL 重放/删除、0-coverable instance、多 family O(K²)、事务 baseline
+  TMPDIR fail-closed 等）以
+  [doc/agents/xcov-ucapi-plan-v2.md](../doc/agents/xcov-ucapi-plan-v2.md) 为准。
 - source file/type 和 functional bin 不属于 summary 合同；需要具体 gap 时使用对应 export。

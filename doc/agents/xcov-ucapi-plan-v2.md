@@ -477,7 +477,7 @@ tombstone 身份匹配漏了 assertion 的 `metric`（CSV 复加断言在 family
 | 4 | exports 文档与实现不一致 | skills/xverif/references/xcov.md 与 xcov/README.md 改为 coverage_refs 示例，明确 C++ 返回 ACTION_NOT_IMPLEMENTED |
 
 验证：xcov.unit 179、xcov.cpp_parity 3、xcov.cpp_actions 87、skills.xverif 20；
-全量 host regression 1679 passed（最终值见提交说明）。
+全量 host regression 1679 passed, 39 subtests passed。
 
 ## 剩余已知限制（2026-11-25 第十七轮 review 后）
 

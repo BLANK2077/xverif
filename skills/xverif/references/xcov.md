@@ -20,17 +20,31 @@ tools/xcov --stdio-loop
 tools/xcov_lsf --json -  # 仅无 MCP 且必须经 LSF 时
 ```
 
+## 后端
+
+`tools/xcov` 由 `XVERIF_XCOV_BACKEND` 选择实现，公共 `xcov.v1` envelope/schema/XOUT 不变：
+
+| 取值 | 实现 | 读取 | exclusion | 依赖 |
+| --- | --- | --- | --- | --- |
+| `ucapi`（默认） | C++ `xcov/bin/xcov` | UCAPI 直接读 VDB | UCAPI `covdb_*` | Verdi UCAPI runtime/license |
+| `urg` | Python `xcov/xcov` | 固定 URG summary/text report | pynpi `cov` | URG + Python NPI/license |
+
+C++ 二进制不存在时 `tools/xcov` 直接报错，不自动切 Python。构建：`make -C xcov`。
+C++/UCAPI 是默认路径，不启动 URG 子进程、不 import pynpi；Python 参考后端用于 parity，
+详细 URG/pynpi 说明只适用 `XVERIF_XCOV_BACKEND=urg`。
+
 一个 native stdio-loop 最多一个 live xcov session；需要多个 VDB session 时，由 MCP 或
 `xcov_lsf` 内部 manager 为每个 session 启动独立 loop（LSF 下即独立 `bsub -I` job）。
 
 本文件只讲原生 `xcov.v1` JSON envelope。MCP tool 参数和 MCP session 请使用
 `xverif-mcp`；SDK-free LSF 的同 envelope 入口见 `xverif-admin`。
 
-普通 coverage 查询与三类 gap 导出固定使用 URG，不加载 NPI。只有 exclusion
-处理才惰性加载 pynpi、打开 VDB 并执行必要遍历；真实 exclusion 需要 Synopsys
-license，受限沙箱内 license 可能不可达。
+默认 C++/UCAPI 后端直接打开 VDB 读取 coverage 并处理 exclusion，不启动 URG、不加载
+pynpi；任何 coverage 或 exclusion 操作都需要可用的 Verdi UCAPI runtime/license。Python
+参考后端（`XVERIF_XCOV_BACKEND=urg`）才使用固定 URG summary/text report 读取 coverage，
+并仅在 exclusion 时惰性加载 pynpi、打开 VDB；受限沙箱内 license 可能不可达。
 
-离线 Python 自定义 coverage 报告也使用 x-npi 的 `x_npi.urg`：固定命令为
+离线 Python 自定义 coverage 报告（无论 xcov 后端）可使用 x-npi 的 `x_npi.urg`：固定命令为
 `$VCS_HOME/bin/urg -full64 -dir <vdb> -report <staging> -xml_verbose -format text -show summary`，
 已有 exclusion 时只追加 `-elfile <el>`。Python NPI coverage wrapper 没有 bulk summary，必须按
 instance/metric/object/bin 全树遍历且容易重复计入 aggregate/leaf，因此不再用于 coverage read。
@@ -82,8 +96,8 @@ assert summary：
 {"api_version":"xcov.v1","action":"assert.summary","target":{"session_id":"cov0"}}
 ```
 
-code coverage export（首次读取同一 VDB/selection/EL 时生成并缓存固定 URG summary；
-后续命中缓存，不再次调用 URG）：
+code coverage export（C++ 后端直接经 UCAPI 读取；Python 参考后端首次读取同一
+VDB/selection/EL 时生成并缓存固定 URG summary，后续命中缓存）：
 
 ```json
 {"api_version":"xcov.v1","action":"export.code_coverage","target":{"session_id":"cov0"},"args":{"scopes":["uart_tb.u_uart"],"metrics":["line","toggle"],"output":{"path":"coverage_artifacts"}}}
@@ -198,8 +212,10 @@ assert export（输出目录内保留 `asserts.txt`，并生成 `assert.json`、
 
 ## 排障
 
-- 普通查询失败：检查 URG、VDB 和固定六件套错误，不要切换到 NPI fallback。
-- URG summary 默认缓存于 `.xverif/xcov/cache/urg-summary`；可用
+- 普通查询失败：先确认当前后端。默认 C++/UCAPI 检查 Verdi UCAPI runtime/license 与 VDB；
+  `urg` 后端检查 URG、VDB 和固定六件套。不要自动切换后端或转 NPI fallback。
+- 以下 URG cache/LSF 条目仅适用 `XVERIF_XCOV_BACKEND=urg`。URG summary 默认缓存于
+  `.xverif/xcov/cache/urg-summary`；可用
   `XVERIF_XCOV_CACHE_DIR` 指定共享可见的绝对缓存根。`session.status` 的
   `cached_indexes.state/key/hit/urg_execution` 可区分尚未读取、cold miss、warm hit 与
   direct/LSF job；warm hit 的 `submitted=false`。
@@ -222,3 +238,12 @@ assert export（输出目录内保留 `asserts.txt`，并生成 `assert.json`、
 - action 参数不确定：先用原生 `actions` 和 `schema` action 查询。
 - 大结果：设置 limit，必要时 `overflow:"to_file"` 或 output path。
 - MCP/LSF/session 问题：改用 `xverif-mcp` 对应 troubleshooting。
+
+## 已知限制
+
+- `exclude.add exports` 仅 Python 参考后端实现；默认 C++ 后端返回
+  `ACTION_NOT_IMPLEMENTED`，应使用 `coverage_refs`。
+- loaded EL 重放会复活 EL 中已有 exclusion（Python 同行为）；EL 源文件删除后 reload
+  可能丢失该文件贡献；多 family remove 存在 O(K²) 重放；0-coverable instance 的
+  add/remove 不对称；事务级 baseline 在 TMPDIR 不可用时 fail-closed。
+- 完整清单以 `doc/agents/xcov-ucapi-plan-v2.md` 的“剩余已知限制”为准。

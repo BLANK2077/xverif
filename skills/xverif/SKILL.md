@@ -17,8 +17,10 @@ description: >
 > assert/function exclusion 先读取结构化 XOUT/JSON 的 `Axxxx`/`FCxxxx` gap；禁止使用已删除的
 > exclusion selector 参数。关闭或丢失 session 后，尚未导出的 reason 无法恢复。
 > Instance/covergroup/coverpoint/cross 容器使用专用 `exclude.instance.*` 与
-> `exclude.functional.*` action；不支持 module selector。递归 instance 只依据 URG XML 真实层次，
-> remove 只依据 session 已记录的 exact ownership。
+> `exclude.functional.*` action；不支持 module selector。递归 instance 只依据 VDB/URG XML
+> 真实层次，remove 只依据 session 已记录的 exact ownership。
+> xcov 默认 `XVERIF_XCOV_BACKEND=ucapi`（C++，直接读 UCAPI，不启动 URG/不加载 pynpi）；
+> Python 参考后端 `urg` 才使用 URG summary + pynpi exclusion。
 
 ## 任务路由
 
@@ -37,8 +39,8 @@ description: >
 | 统一证据字段和完整性判定 | [证据合同](references/core/evidence-contract.md) |
 | 同一 canonical example 的三种请求包装 | [生成的 surface 示例](references/generated/surface-examples.md) |
 
-批量 FSDB 扫描或自定义报告使用 `x-npi`；coverage 读取即使通过 x-npi 编写离线脚本也应使用
-其固定 full64 URG helper，不能启动 NPI 全树遍历。x-npi 的 coverage NPI 仅用于 exclusion target
+批量 FSDB 扫描或自定义报告使用 `x-npi`；用 x-npi 编写离线 coverage 脚本时使用其固定
+full64 URG helper，不能启动 NPI 全树遍历。xcov 默认 C++ 后端本身不依赖 URG/pynpi。x-npi 的 coverage NPI 仅用于 exclusion target
 必要遍历和 EL load/set/save/unload。安装、LSF、transport、timeout、session 运维使用
 `xverif-admin`；项目长期知识使用 `xwiki`。
 

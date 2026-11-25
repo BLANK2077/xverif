@@ -1,3 +1,6 @@
+> 这些示例对 `ucapi`（默认 C++）与 `urg`（Python 参考）后端通用；示例中的
+> `NPI_CONTRACT_VIOLATION` 等 NPI 错误码只可能来自 Python 参考后端。
+
 # xcov Action 与 XOUT 合同样例
 
 本文覆盖 `xcov.v1` 的全部 canonical action、最小请求和统一 XOUT grammar。
