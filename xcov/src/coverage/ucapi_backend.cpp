@@ -1252,6 +1252,15 @@ bool UcapiBackend::exclude_assertion(const std::string& full_name,
                                   : (excluded
                                          ? status | ucapi::kStatusExcludedAtReportTime
                                          : status & ~ucapi::kStatusExcludedAtReportTime);
+                if (excluded && exclusion_policy_ == "strict") {
+                    const long covered =
+                        api.get(persistent, nullptr, test_, ucapi::kCovered);
+                    if (covered > 0) {
+                        api.release(persistent);
+                        done = false;
+                        break;
+                    }
+                }
                 invalidate_caches();
                 const int rc = api.set(persistent, nullptr, test_,
                                        ucapi::kCovStatus, updated);
@@ -1287,6 +1296,14 @@ bool UcapiBackend::exclude_leaf(const std::string& scope_name,
     ucapi::Handle region = nullptr;
     if (!find_leaf_by_locator(api, test_, *scope, metric, name, &object, &region)) {
         return false;
+    }
+    if (exclusion_policy_ == "strict") {
+        const long covered = api.get(object, region, test_, ucapi::kCovered);
+        if (covered > 0) {
+            api.release(object);
+            api.release(region);
+            return false;
+        }
     }
     invalidate_caches();
     const int status = api.get(object, region, test_, ucapi::kCovStatus);
@@ -1401,9 +1418,14 @@ namespace {
 
 std::size_t exclude_leaf_node(const UcapiLibrary& api, ucapi::Handle obj,
                               ucapi::Handle region, ucapi::Handle test,
-                              const std::string& reason, bool excluded = true) {
+                              const std::string& reason, bool excluded = true,
+                              bool strict = false) {
     const int type = api.get(obj, region, test, ucapi::kType);
     if (type != ucapi::kContainer) {
+        if (excluded && strict) {
+            const long covered = api.get(obj, region, test, ucapi::kCovered);
+            if (covered > 0) return 0;
+        }
         const int status = api.get(obj, region, test, ucapi::kCovStatus);
         int updated = status < 0
                           ? (excluded ? ucapi::kStatusExcludedAtReportTime : 0)
@@ -1423,7 +1445,8 @@ std::size_t exclude_leaf_node(const UcapiLibrary& api, ucapi::Handle obj,
     if (kids == nullptr) return 0;
     ucapi::Handle kid;
     while ((kid = api.scan(kids)) != nullptr) {
-        changed += exclude_leaf_node(api, kid, region, test, reason, excluded);
+        changed += exclude_leaf_node(api, kid, region, test, reason, excluded,
+                                     strict);
     }
     api.release(kids);
     return changed;
@@ -1464,9 +1487,9 @@ std::size_t UcapiBackend::exclude_functional(const std::string& scope,
                          full_name == scope + "::" + covergroup);
                     if (name_match) {
                         if (target_kind == "covergroup") {
-                            changed += exclude_leaf_node(api, persistent_variant,
-                                                         nullptr, test_, reason,
-                                                         excluded);
+                            changed += exclude_leaf_node(
+                                api, persistent_variant, nullptr, test_, reason,
+                                excluded, exclusion_policy_ == "strict");
                         } else {
                             ucapi::Handle kids =
                                 api.iterate(persistent_variant, ucapi::kObjects);
@@ -1478,7 +1501,8 @@ std::size_t UcapiBackend::exclude_functional(const std::string& scope,
                                     if (kid_name == item) {
                                         changed += exclude_leaf_node(
                                             api, kid, nullptr, test_, reason,
-                                            excluded);
+                                            excluded,
+                                            exclusion_policy_ == "strict");
                                     }
                                 }
                                 api.release(kids);
