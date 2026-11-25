@@ -820,9 +820,18 @@ nlohmann::json Dispatcher::action_export(const nlohmann::json& req) {
 
     if (action == "export.assert") {
         nlohmann::json gaps = nlohmann::json::array();
+        const std::string assert_scope_filter =
+            args.value("scope", std::string());
         int index = 0;
         for (const auto& item : sess.backend->assertions()) {
             if (item.excluded) continue;
+            if (!assert_scope_filter.empty()) {
+                const std::size_t dot = item.full_name.rfind('.');
+                const std::string item_scope =
+                    dot == std::string::npos ? std::string()
+                                             : item.full_name.substr(0, dot);
+                if (!is_descendant(item_scope, assert_scope_filter)) continue;
+            }
             const long success =
                 item.type == 1 ? item.all_successes : item.real_successes;
             if (success > 0) continue;
@@ -1073,21 +1082,36 @@ nlohmann::json Dispatcher::action_export(const nlohmann::json& req) {
                             terms.push_back({{"marker", arm.pattern},
                                              {"expression", arm.expression}});
                         }
-                        for (long k = 0; k < group.missing_gaps; ++k) {
+                        // Emit the arms that are genuinely uncovered first;
+                        // anything left is a leaf deeper in the subtree that
+                        // has no matching cross arm.
+                        long arm_gaps = 0;
+                        for (const auto& arm : group.arms) {
+                            const long missing_arms =
+                                arm.coverable > arm.covered
+                                    ? arm.coverable - arm.covered
+                                    : 0;
+                            for (long k = 0; k < missing_arms; ++k) {
+                                ++covered_object_gaps;
+                                ++arm_gaps;
+                                char gap_id[16];
+                                std::snprintf(gap_id, sizeof gap_id, "B%04d",
+                                              covered_object_gaps);
+                                uncovered.push_back(
+                                    {{"gap_id", gap_id},
+                                     {"values", arm.pattern},
+                                     {"status", "not_covered"}});
+                            }
+                        }
+                        for (long k = arm_gaps; k < group.missing_gaps; ++k) {
                             ++covered_object_gaps;
                             char gap_id[16];
                             std::snprintf(gap_id, sizeof gap_id, "B%04d",
                                           covered_object_gaps);
-                            const std::string pattern =
-                                group.arms.empty()
-                                    ? std::string()
-                                    : group.arms[static_cast<std::size_t>(k) %
-                                                 group.arms.size()]
-                                          .pattern;
                             uncovered.push_back(
                                 {{"gap_id", gap_id},
-                                 {"values", pattern},
-                                 {"status", "not_covered"}});
+                                 {"values", std::string()},
+                                 {"status", "unattributed"}});
                         }
                         entry["terms"] = terms;
                         entry["uncovered"] = uncovered;
@@ -1211,8 +1235,10 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
         const nlohmann::json paths = args.value("paths", nlohmann::json::array());
         for (const auto& path_value : paths) {
             const std::string path = path_value.get<std::string>();
-            sess.backend->load_exclusions(path);
+            // Parse first: UCAPI applies the file immediately, so a parse
+            // failure after load would leave the session modified.
             const ElDocument document = parse_el(path);
+            sess.backend->load_exclusions(path);
             for (const auto& entry : document.entries) {
                 sess.loaded_el_entries.push_back(entry);
             }

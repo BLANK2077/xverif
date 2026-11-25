@@ -89,6 +89,9 @@ UcapiBackend::UcapiBackend(const std::string& vdb, const std::string& exclusion_
                     {{"vdb", vdb_}});
     }
     try {
+        if (exclusion_policy_ == "strict" && api.configure != nullptr) {
+            api.configure(ucapi::kConfigExcludeMode, "strict");
+        }
         load_tests();
         walk_instances();
     } catch (...) {

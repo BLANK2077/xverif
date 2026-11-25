@@ -399,7 +399,8 @@ def test_error_paths(loop, tmp_path):
     missing = loop.call("exclude.load",
                         {"paths": [str(tmp_path / "missing.el")]})
     assert not missing["ok"]
-    assert missing["error"]["code"] == "EXCLUSION_LOAD_FAILED"
+    # A missing file now fails while parsing the EL (before UCAPI applies it).
+    assert missing["error"]["code"] in ("EXCLUSION_LOAD_FAILED", "IO_ERROR")
 
     bad_csv = tmp_path / "bad.csv"
     bad_csv.write_text("not,a,valid\nheader,row\n", encoding="utf-8")
