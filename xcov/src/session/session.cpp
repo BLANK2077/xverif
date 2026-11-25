@@ -21,6 +21,18 @@ bool is_writable_directory(const std::string& path) {
 
 } // namespace
 
+std::string exclusion_record_key(const ExclusionRecord& record) {
+    if (!record.coverage_ref.empty()) {
+        return record.kind + ":ref:" + record.coverage_ref;
+    }
+    // One formula for every non-ref record: remove/export/compile all address
+    // the same entry even when only the CSV identity (covergroup/item/bin) is
+    // available.
+    return record.kind + ":" + record.scope + "|" + record.metric + "|" +
+           record.name + "|" + record.target_kind + "|" + record.covergroup +
+           "|" + record.item + "|" + record.bin;
+}
+
 Session& SessionManager::open(const std::string& name,
                               const std::string& vdb,
                               const std::string& cache_dir,

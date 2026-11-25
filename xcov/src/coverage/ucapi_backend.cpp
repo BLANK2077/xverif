@@ -74,6 +74,17 @@ MetricKind metric_from_key(const std::string& key) {
 
 UcapiBackend::UcapiBackend(const std::string& vdb, const std::string& exclusion_policy)
     : vdb_(vdb), exclusion_policy_(exclusion_policy) {
+    // Coverage refs are session-local handles. Large multi-scope exports used
+    // to grow this map linearly with every exported leaf (~1 MB per leaf
+    // scope); keep a bounded FIFO cache and fall back to the (slower) full-tree
+    // locator scan when an entry has been evicted. 0 disables the cache.
+    if (const char* raw_limit = std::getenv("XVERIF_XCOV_REF_LOCATOR_MAX")) {
+        char* end = nullptr;
+        const unsigned long long parsed = std::strtoull(raw_limit, &end, 10);
+        if (end != raw_limit && *end == '\0') {
+            ref_locator_limit_ = static_cast<std::size_t>(parsed);
+        }
+    }
     const UcapiLibrary& api = UcapiLibrary::instance();
     if (!is_directory(vdb_)) {
         throw Error("VDB_OPEN_FAILED", "coverage database is not a directory",
@@ -913,38 +924,58 @@ bool find_by_ref(const UcapiLibrary& api, ucapi::Handle test,
                 }
             }
             if (objects != nullptr) {
-                ucapi::Handle object;
-                while ((object = api.scan(objects)) != nullptr) {
-                    if (!is_leaf_object(api, object, region)) continue;
-                    nlohmann::json row = nlohmann::json::object();
-                    row["metric"] = ucapi_metric_key(mname);
-                    row["scope"] = scope.full_name;
-                    row["type"] = coverage_type_for_metric(ucapi_metric_key(mname));
+                // Nested container leaves (toggle transitions, branch arms,
+                // condition terms) need their accumulated path to reproduce
+                // the exported coverage_ref identity after a locator-cache
+                // eviction.
+                std::function<bool(ucapi::Handle, const std::string&)> visit =
+                    [&](ucapi::Handle object,
+                        const std::string& parent_path) -> bool {
+                    const int type =
+                        api.get(object, region, nullptr, ucapi::kType);
                     const std::string name =
                         safe_str(api.get_str(object, ucapi::kName));
-                    row["name"] = name;
-                    row["full_name"] = scope.full_name + "." + name;
-                    if (debug_enabled()) {
-                        static int once = 0;
-                        if (once < 2) {
-                            ++once;
-                            std::fprintf(stderr, "cand ref=%s row=%s\n",
-                                         coverage_ref(row).c_str(),
-                                         row.dump().c_str());
+                    const std::string path =
+                        parent_path.empty() ? name : parent_path + "." + name;
+                    if (is_leaf_type(type)) {
+                        nlohmann::json row = nlohmann::json::object();
+                        row["metric"] = ucapi_metric_key(mname);
+                        row["scope"] = scope.full_name;
+                        row["type"] =
+                            coverage_type_for_metric(ucapi_metric_key(mname));
+                        row["name"] = name;
+                        row["full_name"] = scope.full_name + "." + path;
+                        if (ref_matches(row, wanted)) {
+                            *out_obj = api.make_persistent(object);
+                            *out_region = api.make_persistent(region);
+                            if (out_row != nullptr) *out_row = row;
+                            return true;
                         }
+                        return false;
                     }
-                    if (ref_matches(row, wanted)) {
-                        *out_obj = api.make_persistent(object);
-                        *out_region = api.make_persistent(region);
-                        if (out_row != nullptr) *out_row = row;
-                        api.release(objects);
-                        api.release(region);
-                        api.release(persistent_metric);
-                        api.release(metrics);
-                        return true;
+                    if (type != ucapi::kContainer) return false;
+                    ucapi::Handle kids = api.iterate(object, ucapi::kObjects);
+                    if (kids == nullptr) return false;
+                    ucapi::Handle kid;
+                    bool found = false;
+                    while (!found && (kid = api.scan(kids)) != nullptr) {
+                        found = visit(kid, path);
                     }
+                    api.release(kids);
+                    return found;
+                };
+                ucapi::Handle object;
+                bool found = false;
+                while (!found && (object = api.scan(objects)) != nullptr) {
+                    found = visit(object, "");
                 }
                 api.release(objects);
+                if (found) {
+                    api.release(region);
+                    api.release(persistent_metric);
+                    api.release(metrics);
+                    return true;
+                }
             }
             api.release(region);
         }
@@ -960,6 +991,16 @@ void UcapiBackend::register_ref(const std::string& coverage_ref_value,
                                 const std::string& scope,
                                 const std::string& metric,
                                 const std::string& name) {
+    if (ref_locator_limit_ == 0) return;
+    const auto existing = ref_locators_.find(coverage_ref_value);
+    if (existing == ref_locators_.end()) {
+        while (ref_locators_.size() >= ref_locator_limit_ &&
+               !ref_locator_order_.empty()) {
+            ref_locators_.erase(ref_locator_order_.front());
+            ref_locator_order_.pop_front();
+        }
+        ref_locator_order_.push_back(coverage_ref_value);
+    }
     ref_locators_[coverage_ref_value] = std::make_tuple(scope, metric, name);
 }
 
@@ -1198,6 +1239,14 @@ bool UcapiBackend::set_exclusion(const std::string& coverage_ref_value,
                          &row)) {
             return false;
         }
+        // The locator cache is bounded; a full-scan hit lets us repopulate it
+        // so a subsequent remove/export can address the same object quickly.
+        if (row.contains("scope") && row.contains("metric") &&
+            row.contains("full_name")) {
+            register_ref(coverage_ref_value, row.at("scope").get<std::string>(),
+                         row.at("metric").get<std::string>(),
+                         row.at("full_name").get<std::string>());
+        }
     }
     const int status = api.get(object, region, test_, ucapi::kCovStatus);
     int updated = status;
@@ -1354,6 +1403,78 @@ bool UcapiBackend::exclude_leaf(const std::string& scope_name,
     api.release(object);
     api.release(region);
     return rc == 0;
+}
+
+std::size_t UcapiBackend::exclude_line(const std::string& scope_name,
+                                      int line_no,
+                                      const std::string& reason) {
+    const UcapiLibrary& api = UcapiLibrary::instance();
+    const ScopeInfo* scope = find_scope(scope_name);
+    if (scope == nullptr || scope->handle == nullptr || line_no <= 0) return 0;
+    ucapi::Handle metrics = api.iterate(test_, ucapi::kMetrics);
+    if (metrics == nullptr) return 0;
+    std::size_t changed = 0;
+    bool annotation_written = false;
+    ucapi::Handle metric;
+    while ((metric = api.scan(metrics)) != nullptr) {
+        if (!api.is_line_metric(metric)) continue;
+        ucapi::Handle persistent_metric = api.make_persistent(metric);
+        ucapi::Handle region = api.get_qualified_handle(
+            scope->handle, persistent_metric, ucapi::kIdentity);
+        if (region != nullptr) {
+            std::vector<ucapi::Handle> leaves;
+            std::function<void(ucapi::Handle)> collect = [&](ucapi::Handle obj) {
+                const int type = api.get(obj, region, nullptr, ucapi::kType);
+                if (is_leaf_type(type)) {
+                    const int object_line =
+                        api.get(obj, region, test_, ucapi::kLineNo);
+                    if (object_line == line_no) {
+                        leaves.push_back(api.make_persistent(obj));
+                    }
+                    return;
+                }
+                if (type != ucapi::kContainer) return;
+                ucapi::Handle kids = api.iterate(obj, ucapi::kObjects);
+                if (kids == nullptr) return;
+                ucapi::Handle kid;
+                while ((kid = api.scan(kids)) != nullptr) collect(kid);
+                api.release(kids);
+            };
+            ucapi::Handle objects = api.iterate(region, ucapi::kObjects);
+            if (objects != nullptr) {
+                ucapi::Handle object;
+                while ((object = api.scan(objects)) != nullptr) collect(object);
+                api.release(objects);
+            }
+            for (ucapi::Handle leaf : leaves) {
+                if (exclusion_policy_ == "strict") {
+                    const long covered =
+                        api.get(leaf, region, test_, ucapi::kCovered);
+                    if (covered > 0) {
+                        api.release(leaf);
+                        continue;
+                    }
+                }
+                const int status = api.get(leaf, region, test_, ucapi::kCovStatus);
+                const int updated = status | ucapi::kStatusExcludedAtReportTime;
+                if (updated != status &&
+                    api.set(leaf, region, test_, ucapi::kCovStatus, updated) == 0) {
+                    ++changed;
+                    if (!reason.empty() && !annotation_written) {
+                        api.set_annotation(leaf, "cov_comment", reason.c_str());
+                        api.set_durable(region, test_, leaf, 1);
+                        annotation_written = true;
+                    }
+                }
+                api.release(leaf);
+            }
+            api.release(region);
+        }
+        api.release(persistent_metric);
+    }
+    api.release(metrics);
+    if (changed > 0) invalidate_caches();
+    return changed;
 }
 
 std::size_t UcapiBackend::exclude_scope(const std::string& scope_name,

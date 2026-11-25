@@ -434,3 +434,313 @@ def test_one_shot_json_and_xout(vdb, tmp_path):
     )
     assert xout.returncode == 0, xout.stderr
     assert xout.stdout.startswith("@xcov.v1 ok")
+
+
+def test_metrics_list_zero_and_synthetic_scope_semantics(loop):
+    """Only real scopes contribute; synthetic generate levels and unknown names
+    return no rows instead of descendant aggregates."""
+    response = loop.call("metrics.list", {})
+    assert response["ok"], response
+    assert response["data"]["items"]
+    for key in ("session_id", "scope", "test"):
+        assert key in response["summary"], response["summary"]
+
+    unknown = loop.call("metrics.list", {"scope": "top.no_such_scope"})
+    assert unknown["ok"], unknown
+    assert unknown["data"]["items"] == []
+
+    synthetic = loop.call("metrics.list", {"scope": "top.u_core0.g_pipe"})
+    assert synthetic["ok"], synthetic
+    assert synthetic["data"]["items"] == []
+
+
+def test_scope_summary_single_metric_counts(loop):
+    """Single selected metric carries covered/coverable/missing, multi does not."""
+    single = loop.call("scope.summary", {
+        "scope": "top.u_core0", "metrics": ["line"],
+    })
+    assert single["ok"], single
+    item = single["data"]["items"][0]
+    assert {"covered", "coverable", "missing"} <= set(item), item
+    assert item["coverable"] - item["covered"] == item["missing"]
+
+    multiple = loop.call("scope.summary", {
+        "scope": "top.u_core0", "metrics": ["line", "branch"],
+    })
+    assert multiple["ok"], multiple
+    assert "covered" not in multiple["data"]["items"][0]
+
+
+def test_query_sort_overflow_and_zero_limit(loop):
+    """Query/sort/overflow are applied, not merely schema-validated."""
+    filtered = loop.call("scope.search", {
+        "metrics": ["line"],
+        "query": {"include_patterns": ["*u_alu*"]},
+    })
+    assert filtered["ok"], filtered
+    assert filtered["data"]["items"]
+    assert all("u_alu" in item["full_name"]
+               for item in filtered["data"]["items"])
+
+    sorted_rows = loop.call("scope.summary", {
+        "metrics": ["line"],
+        "sort": {"by": "coverage_pct", "order": "desc"},
+    })
+    assert sorted_rows["ok"], sorted_rows
+    pcts = [item["coverage_pct"] for item in sorted_rows["data"]["items"]
+            if item["coverage_pct"] is not None]
+    assert pcts == sorted(pcts, reverse=True), pcts
+
+    zero = loop.call("scope.summary", {"limits": {"max_items": 0}})
+    assert zero["ok"], zero
+    assert zero["data"]["items"] == []
+    assert zero["summary"]["returned_count"] == 0
+    assert zero["summary"]["response_truncated"] is True
+
+    summary_only = loop.call("scope.summary", {
+        "limits": {"max_items": 1, "overflow": "summary_only"},
+    })
+    assert summary_only["ok"], summary_only
+    assert summary_only["data"]["items"] == []
+    assert summary_only["summary"]["total_count"] >= 1
+
+    overflow = loop.call("scope.search", {
+        "limits": {"max_items": 1, "overflow": "error"},
+    })
+    assert not overflow["ok"], overflow
+    assert overflow["error"]["code"] == "INVALID_LIMIT"
+
+    bad_sort = loop.call("scope.summary", {"sort": {"by": "covered"}})
+    assert not bad_sort["ok"], bad_sort
+    assert bad_sort["error"]["code"] == "INVALID_SORT_FIELD"
+
+
+def test_session_close_requires_discard_confirmation(loop, tmp_path):
+    """Unpersisted exclusion reasons block a graceful close."""
+    reference = _first_gap_ref(loop, tmp_path)
+    added = loop.call("exclude.add", {
+        "coverage_refs": [{"coverage_ref": reference, "reason": "dirty reason"}],
+    })
+    assert added["ok"], added
+    assert added["data"]["items"][0]["status"] == "changed"
+
+    closed = loop.call("session.close", {})
+    assert not closed["ok"], closed
+    assert closed["error"]["code"] == "UNPERSISTED_EXCLUSION_REASON"
+
+    discarded = loop.call("session.close", {"confirm_discard_reasons": True})
+    assert discarded["ok"], discarded
+    assert discarded["summary"]["reasons_discarded"] is True
+    assert discarded["summary"]["discarded_reason_count"] >= 1
+
+
+def test_csv_line_selector_applies_and_compiles(xverif_fixture, tmp_path):
+    """A metric=line row with only a source line selects that line's objects."""
+    resources = xverif_fixture("xcov.modinfo_edge_layouts")
+    database = resources / "edge_cases.vdb"
+    if not database.is_dir():
+        pytest.skip(f"fixture VDB missing: {database}")
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs")
+    session = Loop([str(CPP_BINARY), "--stdio-loop"], env, database)
+    scope = "route_matrix.u_value_dark"
+    try:
+        exported = session.call("export.code_coverage", {
+            "scopes": [scope], "metrics": ["line"],
+            "output": {"path": str(tmp_path / "line-gaps"),
+                       "allow_absolute_path": True},
+        })
+        assert exported["ok"], exported
+        payload = json.loads(
+            (tmp_path / "line-gaps" / "instance-0001" / "line.json").read_text()
+        )
+        assert payload["line_groups"], payload
+        line = payload["line_groups"][0]["uncovered"][0]["at"].rsplit(":", 1)[1]
+
+        csv_dir = tmp_path / "line-csv"
+        csv_dir.mkdir()
+        (csv_dir / "code_exclusions.csv").write_text(
+            "# schema_version=xcov-code-exclusions.v1\n"
+            "# coverage_kind=code\n"
+            "scope,metric,line,object,bin,reason\n"
+            f"{scope},line,{line},,,line selector\n",
+            encoding="utf-8",
+        )
+        applied = session.call("exclude.csv.apply",
+                               {"directory": str(csv_dir)})
+        assert applied["ok"], applied
+        assert applied["data"]["items"][0]["status"] == "changed"
+    finally:
+        session.close()
+
+    # A fresh session compiles the same line row.
+    second = Loop([str(CPP_BINARY), "--stdio-loop"], env, database)
+    try:
+        compiled = second.call("exclude.csv.compile", {
+            "directory": str(csv_dir),
+            "output_directory": str(tmp_path / "line-el"),
+            "allow_absolute_path": True,
+        })
+        assert compiled["ok"], compiled
+        statuses = {item["status"] for item in compiled["data"]["items"]}
+        assert "compiled" in statuses, compiled["data"]["items"]
+        assert "line selector" in (tmp_path / "line-el" / "code.el").read_text()
+    finally:
+        second.close()
+
+
+def test_csv_export_deduplicates_and_container_remove_round_trips(loop,
+                                                                 tmp_path):
+    """Repeat exports do not duplicate rows; remove uses the same key."""
+    reference = _first_gap_ref(loop, tmp_path)
+    added = loop.call("exclude.add", {
+        "coverage_refs": [{"coverage_ref": reference, "reason": "dedupe"}],
+    })
+    assert added["ok"], added
+    first_dir = tmp_path / "csv-a"
+    second_dir = tmp_path / "csv-b"
+    for directory in (first_dir, second_dir):
+        exported = loop.call("exclude.csv.export", {
+            "directory": str(directory), "allow_absolute_path": True,
+        })
+        assert exported["ok"], exported
+    rows_a = (first_dir / "code_exclusions.csv").read_text().splitlines()
+    rows_b = (second_dir / "code_exclusions.csv").read_text().splitlines()
+    data_a = [row for row in rows_a if row and not row.startswith("#")
+              and not row.startswith("scope,")]
+    data_b = [row for row in rows_b if row and not row.startswith("#")
+              and not row.startswith("scope,")]
+    assert len(data_a) == len(set(data_a)) == 1, data_a
+    assert data_a == data_b, (data_a, data_b)
+
+    # Container add -> remove -> fresh export has no container row.
+    scopes = _scopes(loop)
+    target = next((name for name in scopes if name.count(".") == 1), scopes[0])
+    functional = loop.call("functional_coverage.summary", {
+        "group_by": "covergroup", "limits": {"max_items": 1},
+    })
+    assert functional["ok"], functional
+    covergroup = functional["data"]["items"][0]["covergroup"]
+    cover_scope = covergroup.split("::", 1)[0]
+    added_cg = loop.call("exclude.functional.add", {
+        "items": [{"target_kind": "covergroup", "scope": cover_scope,
+                   "covergroup": covergroup, "reason": "cg round trip"}],
+    })
+    assert added_cg["ok"], added_cg
+    before_dir = tmp_path / "csv-cg-before"
+    assert loop.call("exclude.csv.export", {
+        "directory": str(before_dir), "allow_absolute_path": True,
+    })["ok"]
+    assert "cg round trip" in (before_dir / "container_exclusions.csv").read_text()
+    removed = loop.call("exclude.functional.remove", {
+        "items": [{"target_kind": "covergroup", "scope": cover_scope,
+                   "covergroup": covergroup}],
+    })
+    assert removed["ok"], removed
+    after_dir = tmp_path / "csv-cg-after"
+    assert loop.call("exclude.csv.export", {
+        "directory": str(after_dir), "allow_absolute_path": True,
+    })["ok"]
+    assert "cg round trip" not in (after_dir / "container_exclusions.csv").read_text()
+
+
+def test_ref_locator_cache_is_bounded(vdb, tmp_path):
+    """A tiny locator cache must not break export->exclude.add resolution."""
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs")
+    env["XVERIF_XCOV_REF_LOCATOR_MAX"] = "1"
+    session = Loop([str(CPP_BINARY), "--stdio-loop"], env, vdb)
+    try:
+        refs = []
+        for index, scope in enumerate(["top", "top.u_core0"]):
+            response = session.call("export.code_coverage", {
+                "scopes": [scope], "metrics": ["toggle"],
+                "output": {"path": str(tmp_path / f"cache-{index}"),
+                           "allow_absolute_path": True},
+            })
+            assert response["ok"], response
+            for item in response["data"]["items"]:
+                for metric in item["metrics"]:
+                    path = Path(item["directory"], metric["json"])
+                    if not path.is_file():
+                        continue
+                    payload = json.loads(path.read_text())
+                    if payload.get("gaps"):
+                        refs.append(payload["gaps"][0]["coverage_ref"])
+        assert len(refs) >= 2, refs
+        for ref in refs:
+            added = session.call("exclude.add", {
+                "coverage_refs": [{"coverage_ref": ref, "reason": "bounded"}],
+            })
+            assert added["ok"], added
+            assert added["data"]["items"][0]["status"] in {
+                "changed", "already_in_state"}, added
+    finally:
+        session.close()
+
+
+def test_run_manifest_gate(vdb, tmp_path):
+    """run_manifest validates the v2 tree identity before opening the backend."""
+    import shutil
+    from xcov.provenance import resource_identity
+
+    copied = tmp_path / vdb.name
+    shutil.copytree(vdb, copied, symlinks=True)
+    manifest = tmp_path / "run-manifest.json"
+    manifest.write_text(json.dumps({
+        "schema_version": "xcov.run-manifest.v2",
+        "state": "published",
+        "resources": {"vdb": {"path": copied.name, **resource_identity(copied)}},
+    }))
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs")
+    request = json.dumps({
+        "api_version": "xcov.v1", "request_id": "manifest",
+        "action": "session.open",
+        "target": {"vdb": str(copied), "run_manifest": str(manifest)},
+        "args": {"name": "cov0"},
+    }) + "\n"
+    good = subprocess.run(
+        [str(XCOV_ENTRY), "--json", "-"], input=request, capture_output=True,
+        text=True, env=env, check=False, encoding="utf-8", errors="replace",
+    )
+    payload = json.loads(good.stdout)
+    assert payload["ok"], payload
+    assert payload["data"]["resource_snapshot"]["run_manifest"]["manifest_path"]
+    assert (payload["data"]["resource_snapshot"]["run_manifest"]
+            ["resources"]["vdb"]["sha256"])
+
+    # Mutating the resource after publishing must fail closed.
+    target = copied / "coverage.bin"
+    files = [path for path in copied.rglob("*") if path.is_file()]
+    victim = target if target.is_file() else files[0]
+    victim.write_bytes(victim.read_bytes() + b"x")
+    bad = subprocess.run(
+        [str(XCOV_ENTRY), "--json", "-"], input=request, capture_output=True,
+        text=True, env=env, check=False, encoding="utf-8", errors="replace",
+    )
+    payload = json.loads(bad.stdout)
+    assert payload["ok"] is False, payload
+    assert payload["error"]["code"] == "RESOURCE_PROVENANCE_MISMATCH"
+
+    # Duplicate JSON keys are rejected before the backend opens.
+    dup = tmp_path / "dup.json"
+    dup.write_text(
+        '{"schema_version":"xcov.run-manifest.v2",'
+        '"schema_version":"xcov.run-manifest.v2",'
+        '"state":"published","resources":{}}'
+    )
+    dup_request = json.dumps({
+        "api_version": "xcov.v1", "request_id": "dup",
+        "action": "session.open",
+        "target": {"vdb": str(copied), "run_manifest": str(dup)},
+        "args": {"name": "cov0"},
+    }) + "\n"
+    dup_out = subprocess.run(
+        [str(XCOV_ENTRY), "--json", "-"], input=dup_request,
+        capture_output=True, text=True, env=env, check=False,
+        encoding="utf-8", errors="replace",
+    )
+    payload = json.loads(dup_out.stdout)
+    assert payload["ok"] is False, payload
+    assert payload["error"]["code"] == "RESOURCE_PROVENANCE_MISMATCH"

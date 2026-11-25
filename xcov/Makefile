@@ -11,13 +11,14 @@ CXXFLAGS = $(COMMON_CXXFLAGS) $(OPT) -g -pthread \
            -I$(BUILD) -Isrc \
            -isystem $(TOP)/xdebug/third_party
 
-LDFLAGS = -pthread -ldl -lcrypto
+LDFLAGS = -pthread -ldl -lcrypto -lstdc++fs
 
 CORE_SRCS = \
 	src/core/errors.cpp \
 	src/core/fs.cpp \
 	src/core/logging.cpp \
-	src/core/sha256.cpp
+	src/core/sha256.cpp \
+	src/core/run_manifest.cpp
 
 API_SRCS = \
 	src/api/schema.cpp \

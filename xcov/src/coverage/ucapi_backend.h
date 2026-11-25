@@ -5,6 +5,7 @@
 #include <json.hpp>
 
 #include <map>
+#include <deque>
 #include <set>
 #include <tuple>
 #include <string>
@@ -122,6 +123,9 @@ public:
                            const std::string& reason);
     bool exclude_leaf(const std::string& scope_name, const std::string& metric,
                       const std::string& name, const std::string& reason);
+    /// Exclude every line-metric leaf in one instance whose source line matches.
+    std::size_t exclude_line(const std::string& scope_name, int line_no,
+                             const std::string& reason);
     std::size_t exclude_scope(const std::string& scope_name, bool recursive,
                               const std::string& reason);
     std::size_t restore_scope(const std::string& scope_name, bool recursive);
@@ -237,6 +241,9 @@ private:
     }
     std::map<std::string, std::tuple<std::string, std::string, std::string>>
         ref_locators_;
+    // FIFO eviction order for the bounded coverage_ref locator cache.
+    std::deque<std::string> ref_locator_order_;
+    std::size_t ref_locator_limit_ = 200000;
 };
 
 
