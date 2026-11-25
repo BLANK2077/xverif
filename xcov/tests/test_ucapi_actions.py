@@ -2189,3 +2189,63 @@ def test_removed_ref_survives_unrelated_load(loop, vdb, tmp_path):
             [key(row) for row in removed_state["data"]["items"]]
     finally:
         fresh.close()
+
+
+def test_failed_csv_transaction_does_not_poison_family_baseline(loop,
+                                                                tmp_path):
+    """A failed CSV apply that creates the session baseline must not leave the
+    partial transaction in that baseline."""
+    reference = _first_gap_ref(loop, tmp_path)
+    pristine = loop.call("metrics.list", {})
+    assert pristine["ok"], pristine
+    csv_dir = tmp_path / "failed-csv-baseline"
+    _seed_required_csvs(csv_dir)
+    (csv_dir / "container_exclusions.csv").write_text(
+        "# schema_version=xcov-container-exclusions.v1\n"
+        "# coverage_kind=container\n"
+        "target_kind,scope,covergroup,item,expansion_root,reason\n"
+        "instance,top.u_core0,,,top.u_core0,partial\n"
+        "instance,top.no_such_instance,,,top.no_such_instance,bad\n",
+        encoding="utf-8",
+    )
+    failed = loop.call("exclude.csv.apply", {"directory": str(csv_dir)})
+    assert not failed["ok"], failed
+    assert failed["error"]["code"] == "EXCLUSION_RESOLVE_FAILED"
+    assert loop.call("exclude.instance.add", {
+        "items": [{"scope": "top.u_core1", "reason": "unrelated"}],
+    })["ok"]
+    assert loop.call("exclude.instance.remove", {
+        "items": [{"scope": "top.u_core1"}],
+    })["ok"]
+    after = loop.call("metrics.list", {})
+    key = lambda row: (row["metric"], row["covered"], row["coverable"])
+    assert [key(row) for row in after["data"]["items"]] == \
+        [key(row) for row in pristine["data"]["items"]]
+
+
+def test_readded_ref_survives_family_remove(loop, tmp_path):
+    """remove -> re-add must clear the tombstone so a later family restore
+    keeps the newly added reason."""
+    reference = _first_gap_ref(loop, tmp_path)
+    pristine = loop.call("metrics.list", {})
+    assert loop.call("exclude.add", {
+        "coverage_refs": [{"coverage_ref": reference, "reason": "first"}],
+    })["ok"]
+    assert loop.call("exclude.remove",
+                     {"coverage_refs": [reference]})["ok"]
+    assert loop.call("exclude.add", {
+        "coverage_refs": [{"coverage_ref": reference, "reason": "second"}],
+    })["ok"]
+    leaf_state = loop.call("metrics.list", {})
+    assert loop.call("exclude.instance.add", {
+        "items": [{"scope": "top.u_core1", "reason": "unrelated"}],
+    })["ok"]
+    assert loop.call("exclude.instance.remove", {
+        "items": [{"scope": "top.u_core1"}],
+    })["ok"]
+    after = loop.call("metrics.list", {})
+    key = lambda row: (row["metric"], row["covered"], row["coverable"])
+    assert [key(row) for row in after["data"]["items"]] == \
+        [key(row) for row in leaf_state["data"]["items"]]
+    assert [key(row) for row in after["data"]["items"]] != \
+        [key(row) for row in pristine["data"]["items"]]

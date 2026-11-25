@@ -1515,17 +1515,34 @@ namespace {
 std::string make_temp_baseline(const char* prefix);
 void remove_temp_baseline(const std::string& path);
 
+void clear_removed_ref_tombstone(Session& sess,
+                                  const std::string& full_name) {
+    for (auto it = sess.removed_refs.begin();
+         it != sess.removed_refs.end();) {
+        std::string scope;
+        std::string metric;
+        std::string name;
+        if (sess.backend->locator_for_ref(*it, &scope, &metric, &name) &&
+            name == full_name) {
+            it = sess.removed_refs.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 bool ensure_family_baseline(Session& sess) {
     if (!sess.family_baseline.empty()) return true;
-    const std::string path = make_temp_baseline("xcov-family-");
+    std::string path;
     try {
+        path = make_temp_baseline("xcov-family-");
         sess.backend->save_exclusions(path);
         if (!file_exists(path)) {
             remove_temp_baseline(path);
             return false;
         }
     } catch (const Error&) {
-        remove_temp_baseline(path);
+        if (!path.empty()) remove_temp_baseline(path);
         return false;
     }
     sess.family_baseline = path;
@@ -1830,6 +1847,7 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
             if (known && already == adding) {
                 item["status"] = "already_in_state";
                 item["error"] = nullptr;
+                if (adding) sess.removed_refs.erase(ref);
                 if (!adding) {
                     sess.removed_refs.insert(ref);
                     records_changed |= erase_exclusion_record_by_ref(sess, ref);
@@ -1861,6 +1879,7 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
             }
             const bool applied =
                 sess.backend->set_exclusion(ref, adding, reason);
+            if (adding && applied) sess.removed_refs.erase(ref);
             item["status"] = applied ? "changed" : (known ? "failed" : "invalid");
             item["error"] = nullptr;
             if (applied && adding) {
@@ -2418,6 +2437,7 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
     // Validate every input before creating a baseline or touching any EL.
     const std::map<std::string, CsvDocument> validated_documents =
         load_validated_csv_directory(directory);
+    ensure_family_baseline(sess);
     ensure_directory(output_directory);
     // Snapshot the current exclusion state so a failed compile can roll back
     // instead of wiping pre-existing exclusions.
@@ -2568,6 +2588,9 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                     if (target_kind != "instance" || already_recorded ||
                         !delta.empty()) {
                         records_changed |= put_exclusion_record(sess, record);
+                    }
+                    if (target_kind != "instance") {
+                        clear_removed_ref_tombstone(sess, record.full_name);
                     }
 
                 } else {
@@ -2836,7 +2859,24 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
                     }
                 }
                 for (const auto& ref : sess.removed_refs) {
-                    sess.backend->set_exclusion(ref, false, std::string());
+                    std::string ref_scope;
+                    std::string ref_metric;
+                    std::string ref_name;
+                    bool live_record = false;
+                    if (sess.backend->locator_for_ref(
+                            ref, &ref_scope, &ref_metric, &ref_name)) {
+                        for (const auto& existing : sess.exclusion_records) {
+                            if (existing.second.full_name == ref_name) {
+                                live_record = true;
+                                break;
+                            }
+                        }
+                    }
+                    // A tombstone must not override a record that was
+                    // explicitly re-added after the removal.
+                    if (!live_record) {
+                        sess.backend->set_exclusion(ref, false, std::string());
+                    }
                 }
                 records_changed = true;
                 row["status"] = changed > 0 ? "changed" : "already_in_state";
@@ -3164,6 +3204,9 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
                 if (record.target_kind != "instance" || already_recorded ||
                     !delta.empty()) {
                     records_changed |= put_exclusion_record(sess, record);
+                }
+                if (record.target_kind != "instance") {
+                    clear_removed_ref_tombstone(sess, record.full_name);
                 }
 
             } else {

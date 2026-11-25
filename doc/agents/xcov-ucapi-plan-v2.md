@@ -416,7 +416,24 @@ baseline 也会造成同类污染。本轮改为会话级单一 baseline：
 | 5 | 多 family 性能 | 单一 baseline 使 add 只快照一次；单 family remove 仍为 bulk（edge 5126 leaf 0.018 s） |
 | 6 | 测试 | 新增多 family 顺序 remove、失败请求不污染 baseline、removed ref + 中间 load 3 个用例（cpp_actions 76 passed） |
 
-## 剩余已知限制（2026-11-25 第十三轮 review 后）
+## 第十八轮 review 修复（2026-11-25，HEAD efe8f13 之后）
+
+第十四轮独立 review 发现 2 个 P1：CSV apply/compile 失败会在首个 container 行
+才惰性采集 baseline，把同一事务已生效的 code 行写入 baseline；remove 后重新
+add 的 ref 会被 removed_refs 墓碑吞掉。本轮处理：
+
+| # | 问题 | 处理 |
+|---|---|---|
+| 1 | 失败 CSV 事务污染会话 baseline | CSV apply/compile 入口（任何行执行前）即 `ensure_family_baseline`；失败回滚后 baseline 仍是请求前状态 |
+| 2 | remove→re-add 的排除被 tombstone 清除 | re-add 成功时 erase tombstone；应用 tombstone 时若已有同名 live record 则跳过 |
+| 3 | TMPDIR 不可用时 baseline 硬失败 | `make_temp_baseline` 也纳入 try，失败回退 delta 清除路径（fails soft） |
+| 4 | 测试 | 新增失败 CSV 事务 + 无关 family 往返、remove→re-add→family 往返 2 个用例（cpp_actions 78 passed） |
+
+已知限制新增：loaded EL 重放会复活已在 EL 中的 instance/functional 排除（Python 同行为）；
+EL 文件删除后 reload 失败会丢失该文件贡献的排除并留下 loaded entries；多 family remove
+的重放为 O(K²)（20 family 约 9s，3 family 内与 add 同量级）。
+
+## 剩余已知限制（2026-11-25 第十四轮 review 后）
 
 - recursive instance 排除在超大库仍 >60s（`covdb_set_exclude_all_iter` 不可用，只能逐 leaf）。
 - coverpoint/cross 的 exclusion 在 EL 中不产出对象（UCAPI 限制）。
@@ -434,6 +451,10 @@ baseline 也会造成同类污染。本轮改为会话级单一 baseline：
 - 0-coverable instance 的 `exclude.instance.add` 返回 `already_in_state` 但不建
   ownership record，随后 `remove` 返回 `EXCLUSION_NOT_OWNED`（无数据损坏，与
   Python 的 add/remove 双成功不同）。
+- loaded EL 重放会复活 EL 中已存在的 instance/functional 排除（Python 参考同行为）；
+  EL 源文件删除后 reload 失败会丢失该文件贡献的排除并保留 loaded entries。
+- 多 family remove 的重放为 O(K²)：20 个 large leaf family 合计约 9s；3 family
+  以内与 add 同量级。
 
 ## 进度表
 
