@@ -1960,9 +1960,7 @@ def test_duplicate_full_name_transfer_keeps_siblings_in_family(
             "items": [{"scope": scope}],
         })
         assert removed_family["ok"], removed_family
-        # One key was transferred to the leaf owner, so remove processes one
-        # fewer owned key than the original family add.
-        assert add["data"]["items"][0]["target_count"] - 1 == \
+        assert add["data"]["items"][0]["target_count"] == \
             removed_family["data"]["items"][0]["target_count"]
         removed_leaf = session.call("exclude.remove", {
             "coverage_refs": [duplicate_ref],
@@ -1975,3 +1973,107 @@ def test_duplicate_full_name_transfer_keeps_siblings_in_family(
             [key(row) for row in pristine["data"]["items"]]
     finally:
         session.close()
+
+
+def test_repeated_duplicate_refs_restore_pristine(xverif_fixture, tmp_path):
+    """Adding every exported gap (including duplicate refs) must not strand
+    sibling objects after the family and leaf exclusions are removed."""
+    resources = xverif_fixture("xcov.modinfo_edge_layouts")
+    database = resources / "edge_cases.vdb"
+    if not database.is_dir():
+        pytest.skip(f"fixture VDB missing: {database}")
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs")
+    session = Loop([str(CPP_BINARY), "--stdio-loop"], env, database)
+    scope = "route_matrix.u_value_dark"
+    out_dir = tmp_path / "dup-line-gaps"
+    try:
+        pristine = session.call("metrics.list", {})
+        assert pristine["ok"], pristine
+        exported = session.call("export.code_coverage", {
+            "scopes": [scope], "metrics": ["line"],
+            "output": {"path": str(out_dir), "allow_absolute_path": True},
+        })
+        assert exported["ok"], exported
+        gaps = json.loads(
+            (out_dir / "instance-0001" / "line.json").read_text())["gaps"]
+        refs = [gap["coverage_ref"] for gap in gaps if gap.get("coverage_ref")]
+        if len(refs) == len(set(refs)):
+            pytest.skip("fixture line gaps have no duplicate refs")
+        assert session.call("exclude.instance.add", {
+            "items": [{"scope": scope, "reason": "family"}],
+        })["ok"]
+        added = session.call("exclude.add", {
+            "coverage_refs": [{"coverage_ref": ref, "reason": "leaf"}
+                              for ref in refs],
+        })
+        assert added["ok"], added
+        assert session.call("exclude.instance.remove", {
+            "items": [{"scope": scope}],
+        })["ok"]
+        unique = list(dict.fromkeys(refs))
+        removed = session.call("exclude.remove", {"coverage_refs": unique})
+        assert removed["ok"], removed
+        final = session.call("metrics.list", {})
+        key = lambda row: (row["metric"], row["covered"], row["coverable"])
+        assert [key(row) for row in final["data"]["items"]] == \
+            [key(row) for row in pristine["data"]["items"]]
+    finally:
+        session.close()
+
+
+def test_csv_leaf_after_family_survives_remove(loop, vdb, tmp_path):
+    """A code CSV row applied after a family exclusion must survive the
+    family remove exactly like an exclude.add leaf."""
+    scope = "top.u_core1"
+    out_dir = tmp_path / "csv-family-gaps"
+    exported = loop.call("export.code_coverage", {
+        "scopes": [scope], "metrics": ["toggle"],
+        "output": {"path": str(out_dir), "allow_absolute_path": True},
+    })
+    assert exported["ok"], exported
+    payload = json.loads(
+        (out_dir / "instance-0001" / "toggle.json").read_text())
+    gap = next((gap for gap in payload.get("gaps", [])
+                if gap.get("coverage_ref")), None)
+    if gap is None:
+        pytest.skip("fixture has no toggle gap")
+    csv_dir = tmp_path / "csv-family"
+    _seed_required_csvs(csv_dir)
+    (csv_dir / "code_exclusions.csv").write_text(
+        "# schema_version=xcov-code-exclusions.v1\n"
+        "# coverage_kind=code\n"
+        "scope,metric,line,object,bin,reason\n"
+        f"{scope},toggle,,{gap['full_name']},,csv leaf owner\n",
+        encoding="utf-8",
+    )
+
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs-2")
+    expected_session = Loop([str(CPP_BINARY), "--stdio-loop"], env, vdb)
+    try:
+        applied = expected_session.call("exclude.csv.apply",
+                                        {"directory": str(csv_dir)})
+        assert applied["ok"], applied
+        expected = expected_session.call("metrics.list", {})
+        assert expected["ok"], expected
+    finally:
+        expected_session.close()
+
+    family_session = Loop([str(CPP_BINARY), "--stdio-loop"], env, vdb)
+    try:
+        assert family_session.call("exclude.instance.add", {
+            "items": [{"scope": scope, "reason": "family"}],
+        })["ok"]
+        applied = family_session.call("exclude.csv.apply",
+                                      {"directory": str(csv_dir)})
+        assert applied["ok"], applied
+        assert family_session.call("exclude.instance.remove", {
+            "items": [{"scope": scope}],
+        })["ok"]
+        after = family_session.call("metrics.list", {})
+        key = lambda row: (row["metric"], row["covered"], row["coverable"])
+        assert [key(row) for row in after["data"]["items"]] == \
+            [key(row) for row in expected["data"]["items"]]
+    finally:
+        family_session.close()

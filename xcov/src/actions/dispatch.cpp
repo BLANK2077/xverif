@@ -1549,24 +1549,6 @@ void restore_instance_deltas(
     sess.instance_deltas = baseline;
 }
 
-void transfer_family_ownership(Session& sess, const std::string& full_name) {
-    // A coverage_ref identity can be shared by several distinct UCAPI objects
-    // with the same full_name. set_exclusion resolves exactly one of them, so
-    // transfer exactly one delta key and leave its siblings to the family
-    // remove; removing every textual match used to strand unreachable bits.
-    for (auto& root : sess.instance_deltas) {
-        auto& keys = root.second;
-        for (auto key = keys.begin(); key != keys.end(); ++key) {
-            if (key->full_name == full_name) {
-                std::vector<ExclusionKey> released{*key};
-                sess.backend->release_exclusion_keys(released);
-                keys.erase(key);
-                return;
-            }
-        }
-    }
-}
-
 void check_instance_owner_conflict(const Session& sess,
                                    const std::string& scope,
                                    const std::string& expansion_root,
@@ -1597,6 +1579,46 @@ std::string assertion_kind_for_record(const Session& sess,
         return "assertion";
     }
     return "assertion";
+}
+
+bool reapply_exclusion_record(Session& sess, const ExclusionRecord& record) {
+    if (record.kind == "assertion") {
+        return !record.full_name.empty() &&
+               sess.backend->exclude_assertion(record.full_name, true,
+                                               record.reason);
+    }
+    if (record.target_kind == "instance") {
+        const std::size_t changed =
+            sess.backend->exclude_scope(record.scope, false, record.reason);
+        const ScopeInfo* target = sess.backend->find_scope(record.scope);
+        return changed > 0 || (target != nullptr && target->handle != nullptr);
+    }
+    if (!record.target_kind.empty()) {
+        const std::size_t changed = sess.backend->exclude_functional(
+            record.scope, record.covergroup, record.target_kind, record.item,
+            record.reason);
+        return changed > 0 ||
+               sess.backend->functional_target_exists(
+                   record.scope, record.covergroup, record.target_kind,
+                   record.item);
+    }
+    if (!record.coverage_ref.empty()) {
+        return sess.backend->set_exclusion(record.coverage_ref, true,
+                                           record.reason);
+    }
+    if (record.kind == "code") {
+        if (record.metric == "line" && record.name.empty() &&
+            !record.line.empty()) {
+            int line_no = 0;
+            return parse_canonical_line(record.line, &line_no) &&
+                   sess.backend->exclude_line(record.scope, line_no,
+                                              record.reason,
+                                              record.source_file) > 0;
+        }
+        return sess.backend->exclude_leaf(record.scope, record.metric,
+                                          record.name, record.reason);
+    }
+    return false;
 }
 
 bool same_record(const ExclusionRecord& a, const ExclusionRecord& b) {
@@ -1729,6 +1751,10 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
                 }
                 items.push_back({{"path", path}, {"status", "loaded"}});
             }
+            if (sess.loaded_el_snapshot.empty()) {
+                sess.loaded_el_snapshot = make_temp_baseline("xcov-loaded-");
+            }
+            sess.backend->save_exclusions(sess.loaded_el_snapshot);
         } catch (...) {
             sess.backend->unload_exclusions();
             sess.backend->load_exclusions(baseline_guard.path);
@@ -1753,6 +1779,11 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
             sess.backend->release_exclusion_keys(root.second);
         }
         sess.instance_deltas.clear();
+        sess.removed_refs.clear();
+        if (!sess.loaded_el_snapshot.empty()) {
+            remove_temp_baseline(sess.loaded_el_snapshot);
+            sess.loaded_el_snapshot.clear();
+        }
         // Removing every exclusion also clears the dirty reason set; this
         // mirrors Python clear_exclusions().
         sess.mark_reasons_persisted();
@@ -1782,6 +1813,7 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
                 item["status"] = "already_in_state";
                 item["error"] = nullptr;
                 if (!adding) {
+                    sess.removed_refs.insert(ref);
                     records_changed |= erase_exclusion_record_by_ref(sess, ref);
                     items.push_back(item);
                     continue;
@@ -1805,7 +1837,6 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
                     }
                     records_changed |= put_exclusion_record(sess, record);
                     sess.backend->set_exclusion(ref, true, reason);
-                    transfer_family_ownership(sess, record.full_name);
                 }
                 items.push_back(item);
                 continue;
@@ -1832,8 +1863,8 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
                         assertion_kind_for_record(sess, record.full_name);
                 }
                 records_changed |= put_exclusion_record(sess, record);
-                transfer_family_ownership(sess, record.full_name);
             } else if (applied) {
+                sess.removed_refs.insert(ref);
                 records_changed |= erase_exclusion_record_by_ref(sess, ref);
             }
         } catch (const Error& exc) {
@@ -2519,9 +2550,7 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                         !delta.empty()) {
                         records_changed |= put_exclusion_record(sess, record);
                     }
-                    if (target_kind != "instance") {
-                        transfer_family_ownership(sess, record.full_name);
-                    }
+
                 } else {
                     ++failed;
                 }
@@ -2741,8 +2770,7 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
                 ++remove_matches;
                 std::size_t changed = 0;
                 auto delta_it = sess.instance_deltas.find(scope);
-                if (delta_it != sess.instance_deltas.end() &&
-                    !delta_it->second.empty()) {
+                if (delta_it != sess.instance_deltas.end()) {
                     changed += sess.backend->clear_exclusion_keys(
                         delta_it->second);
                 } else {
@@ -2753,9 +2781,27 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
                                                                false);
                     }
                 }
-                sess.instance_deltas.erase(scope);
                 for (const auto& key : owned_keys) {
                     sess.exclusion_records.erase(key);
+                }
+                sess.instance_deltas.erase(scope);
+                if (!sess.loaded_el_snapshot.empty()) {
+                    // Reload the state captured by exclude.load, then honor
+                    // explicit ref removals and replay reason records.
+                    sess.backend->unload_exclusions();
+                    sess.backend->load_exclusions(sess.loaded_el_snapshot);
+                    for (const auto& ref : sess.removed_refs) {
+                        sess.backend->set_exclusion(ref, false, std::string());
+                    }
+                }
+                for (const auto& existing : sess.exclusion_records) {
+                    if (!reapply_exclusion_record(sess, existing.second)) {
+                        throw Error("EXCLUSION_REAPPLY_FAILED",
+                                    "could not reapply an independently-owned "
+                                    "exclusion after instance restore",
+                                    {{"scope", existing.second.scope},
+                                     {"metric", existing.second.metric}});
+                    }
                 }
                 records_changed = true;
                 row["status"] = changed > 0 ? "changed" : "already_in_state";
@@ -3056,7 +3102,11 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
                 record.metric = metric;
                 record.name = name;
                 record.bin = row.value("bin");
-                record.full_name = scope + "." + name;
+                const std::string prefix = scope + ".";
+                record.full_name =
+                    name.compare(0, prefix.size(), prefix) == 0
+                        ? name
+                        : scope + "." + name;
                 if (metric == "line" && name.empty() && !line_text.empty()) {
                     int line_no = 0;
                     row_ok = parse_canonical_line(line_text, &line_no) &&
@@ -3079,9 +3129,7 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
                     !delta.empty()) {
                     records_changed |= put_exclusion_record(sess, record);
                 }
-                if (record.target_kind != "instance") {
-                    transfer_family_ownership(sess, record.full_name);
-                }
+
             } else {
                 ++total_failed;
             }

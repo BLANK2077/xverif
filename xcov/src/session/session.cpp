@@ -26,6 +26,13 @@ Session::~Session() {
     for (const auto& root : instance_deltas) {
         backend->release_exclusion_keys(root.second);
     }
+    if (!loaded_el_snapshot.empty()) {
+        ::unlink(loaded_el_snapshot.c_str());
+        const std::size_t slash = loaded_el_snapshot.find_last_of('/');
+        if (slash != std::string::npos && slash > 0) {
+            ::rmdir(loaded_el_snapshot.substr(0, slash).c_str());
+        }
+    }
 }
 
 std::string exclusion_record_key(const ExclusionRecord& record) {

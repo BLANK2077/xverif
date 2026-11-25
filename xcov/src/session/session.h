@@ -47,6 +47,10 @@ struct Session {
     // Per expansion-root list of objects actually changed by the family add;
     // remove clears only this delta, preserving loaded/independent exclusions.
     std::map<std::string, std::vector<ExclusionKey>> instance_deltas;
+    // EL snapshot taken by exclude.load (for restoring external exclusions
+    // after an instance family restore) and refs explicitly removed since.
+    std::string loaded_el_snapshot;
+    std::set<std::string> removed_refs;
 
     ~Session();
     // Python's contract: exclusion reasons are "dirty" until a CSV export or

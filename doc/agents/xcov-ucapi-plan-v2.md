@@ -372,7 +372,22 @@ handle 释放、assertion delta 记账 3 个 P2。本轮处理：
 | 2 | 两个新增测试的 leaf 不在 family 子树内，旧二进制也能通过 | 测试改用 family 子树内 leaf，并断言 DB metrics 回到预期、leaf remove 必须 changed |
 | 3 | add 与 remove 的 target_count 口径不一致 | add 使用 delta 唯一 handle 数；clear 返回处理的 owned key 数；transfer 后 remove 比 add 少 1，测试显式断言 |
 
-## 剩余已知限制（2026-11-25 第十轮 review 后）
+## 第十五轮 review 修复（2026-11-25，HEAD 7608c5f 之后）
+
+第十一轮独立 review 在重复 ref / FSM transition / CSV 行 / 空 delta 路径上发现
+所有权转移失效或过度转移，产生永久孤儿排除。本轮取消“按 full_name 转移”的
+脆弱模型，改回“快照 + 重放”：
+
+| # | 问题 | 处理 |
+|---|---|---|
+| 1 | 重复 `exclude.add` 同一 ref 会反复 transfer 同名 sibling，永久孤儿排除 | 删除 transfer 机制；family remove 后统一重放剩余 reason records，不再依赖文本匹配 |
+| 2 | FSM transition ref 的 delta key 不存在，transfer 找不到 | 删除 transfer；remove 后重放 record 用 `set_exclusion(ref)` 恢复 |
+| 3 | CSV code 行 `full_name` 重复拼 scope，transfer 匹配不上 | record.full_name 规范化：object 已含 scope 前缀时不再重复拼接；remove 后重放 |
+| 4 | delta 被 transfer 清空后 remove 走 restore_scope，清掉已转移 leaf | 不再 transfer；remove 后对剩余 records 全量重放（幂等） |
+| 5 | loaded EL 排除在 remove 后丢失 | exclude.load 结束时保存 session EL snapshot；instance remove 后 reload snapshot，清除 removed_refs，再重放 records |
+| 6 | 0-coverable instance add/remove 不对称（P2） | 记录为已知限制：delta 为空时不建 ownership record，remove 返回 NOT_OWNED；无数据损坏 |
+
+## 剩余已知限制（2026-11-25 第十一轮 review 后）
 
 - recursive instance 排除在超大库仍 >60s（`covdb_set_exclude_all_iter` 不可用，只能逐 leaf）。
 - coverpoint/cross 的 exclusion 在 EL 中不产出对象（UCAPI 限制）。
@@ -387,6 +402,9 @@ handle 释放、assertion delta 记账 3 个 P2。本轮处理：
 - `export.code_coverage` line/branch 在部分 fixture 上只统计 leaf gap，容器型 gap 可能少于 `coverage.missing`（未在本轮改动）。
 - 全部指标被排除后，C++ 用 present 语义省略 0/0 metric 行；Python 仍保留 0/0 键（如 branch/condition/line/toggle）。依赖 metric 键集合的下游会看到行数差异。
 - 多行 reason 现在可解析/回放，但不承诺与 Python 的 CSV 字节级格式一致。
+- 0-coverable instance 的 `exclude.instance.add` 返回 `already_in_state` 但不建
+  ownership record，随后 `remove` 返回 `EXCLUSION_NOT_OWNED`（无数据损坏，与
+  Python 的 add/remove 双成功不同）。
 
 ## 进度表
 
