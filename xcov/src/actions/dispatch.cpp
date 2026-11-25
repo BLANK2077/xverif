@@ -1519,7 +1519,8 @@ bool same_record(const ExclusionRecord& a, const ExclusionRecord& b) {
            a.full_name == b.full_name && a.target_kind == b.target_kind &&
            a.covergroup == b.covergroup && a.item == b.item &&
            a.bin == b.bin && a.line == b.line &&
-           a.source_file == b.source_file && a.recursive == b.recursive;
+           a.source_file == b.source_file &&
+           a.expansion_root == b.expansion_root;
 }
 
 /// Insert/update one reason record under the canonical key. Returns true when
@@ -1743,6 +1744,22 @@ struct TempBaselineGuard {
     TempBaselineGuard& operator=(const TempBaselineGuard&) = delete;
 };
 
+std::string trim_copy(const std::string& value) {
+    std::size_t start = 0;
+    std::size_t end = value.size();
+    while (start < end &&
+           (value[start] == ' ' || value[start] == '\t' ||
+            value[start] == '\r' || value[start] == '\n')) {
+        ++start;
+    }
+    while (end > start &&
+           (value[end - 1] == ' ' || value[end - 1] == '\t' ||
+            value[end - 1] == '\r' || value[end - 1] == '\n')) {
+        --end;
+    }
+    return value.substr(start, end - start);
+}
+
 bool parse_canonical_line(const std::string& text, int* out) {
     if (text.empty()) return false;
     std::size_t consumed = 0;
@@ -1853,34 +1870,15 @@ nlohmann::json Dispatcher::action_csv_export(const nlohmann::json& req) {
                       record.full_name.empty() ? record.name : record.full_name,
                       record.target_kind, record.reason});
         } else if (record.kind == "container") {
-            if (record.target_kind == "instance" && record.recursive) {
-                // Mirror Python's expand_xml_instances: a recursive instance
-                // exclusion becomes one CSV row per real instance so a replay
-                // covers the same subtree instead of only the root's leaves.
-                bool expanded = false;
-                for (const auto& scope : sess.backend->scopes()) {
-                    if (scope.handle == nullptr ||
-                        !is_descendant(scope.full_name, record.scope)) {
-                        continue;
-                    }
-                    expanded = true;
-                    push_row("container", record.source_file,
-                             {record.target_kind, scope.full_name, "", "",
-                              record.scope, record.reason});
-                }
-                if (!expanded) {
-                    push_row("container", record.source_file,
-                             {record.target_kind, record.scope, "", "",
-                              record.scope, record.reason});
-                }
-            } else {
-                push_row("container", record.source_file,
-                         {record.target_kind, record.scope, record.covergroup,
-                          record.item,
-                          record.target_kind == "instance" ? record.scope
-                                                           : std::string(),
-                          record.reason});
-            }
+            push_row("container", record.source_file,
+                     {record.target_kind, record.scope, record.covergroup,
+                      record.item,
+                      record.target_kind == "instance"
+                          ? (record.expansion_root.empty() ? record.scope
+                                                           : record.expansion_root)
+                          : std::string(),
+                      record.reason});
+
         } else {
             push_row("code", record.source_file,
                      {record.scope, record.metric, record.line, record.name,
@@ -2126,11 +2124,76 @@ std::map<std::string, CsvDocument> load_validated_csv_directory(
                         "exclusion CSV metadata does not match its file kind",
                         {{"path", path}, {"coverage_kind", spec.kind}});
         }
+        auto fail_row = [&](const CsvRow& row, const std::string& message) {
+            throw Error("EXCLUSION_CSV_INVALID", message,
+                        {{"path", path},
+                         {"line", row.line_number},
+                         {"coverage_kind", spec.kind}});
+        };
         for (const auto& row : document.rows) {
             if (row.fields.size() != spec.header.size()) {
-                throw Error("EXCLUSION_CSV_INVALID",
-                            "exclusion CSV row has the wrong field count",
-                            {{"path", path}, {"line", row.line_number}});
+                fail_row(row, "exclusion CSV row has the wrong field count");
+            }
+            if (trim_copy(row.value("scope")).empty()) {
+                fail_row(row, "scope is required");
+            }
+            if (trim_copy(row.value("reason")).empty()) {
+                fail_row(row, "reason is required");
+            }
+            const std::string kind_name(spec.kind);
+            if (kind_name == "container") {
+                static const std::set<std::string> kTargetKinds = {
+                    "instance", "covergroup", "coverpoint", "cross"};
+                const std::string target_kind = row.value("target_kind");
+                if (kTargetKinds.find(target_kind) == kTargetKinds.end()) {
+                    fail_row(row, "target_kind is not supported");
+                }
+                const std::string covergroup = trim_copy(row.value("covergroup"));
+                const std::string item = trim_copy(row.value("item"));
+                const std::string root = trim_copy(row.value("expansion_root"));
+                if (target_kind == "instance") {
+                    if (!covergroup.empty() || !item.empty()) {
+                        fail_row(row, "instance requires empty covergroup and item");
+                    }
+                    if (root.empty()) {
+                        fail_row(row, "instance requires expansion_root");
+                    }
+                } else {
+                    if (covergroup.empty()) {
+                        fail_row(row, "container item requires covergroup");
+                    }
+                    if (!root.empty()) {
+                        fail_row(row, "non-instance container requires empty "
+                                      "expansion_root");
+                    }
+                    if (target_kind == "covergroup" && !item.empty()) {
+                        fail_row(row, "covergroup requires empty item");
+                    }
+                    if ((target_kind == "coverpoint" || target_kind == "cross") &&
+                        item.empty()) {
+                        fail_row(row, "coverpoint/cross requires item");
+                    }
+                }
+            } else if (kind_name == "functional") {
+                if (trim_copy(row.value("covergroup")).empty()) {
+                    fail_row(row, "functional exclusion requires covergroup");
+                }
+                const bool coverpoint = !trim_copy(row.value("coverpoint")).empty();
+                const bool cross = !trim_copy(row.value("cross")).empty();
+                if (coverpoint && cross) {
+                    fail_row(row, "functional exclusion cannot be both coverpoint "
+                                  "and cross");
+                }
+            } else if (kind_name == "assertion") {
+                if (trim_copy(row.value("assertion")).empty()) {
+                    fail_row(row, "assertion is required");
+                }
+            } else if (kind_name == "code") {
+                static const std::set<std::string> kCodeMetrics = {
+                    "line", "toggle", "branch", "condition", "fsm"};
+                if (kCodeMetrics.find(row.value("metric")) == kCodeMetrics.end()) {
+                    fail_row(row, "code metric is not supported");
+                }
             }
         }
         documents.emplace(spec.kind, std::move(document));
@@ -2225,6 +2288,10 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                 record.reason = reason;
                 record.scope = scope;
                 record.target_kind = target_kind;
+                if (target_kind == "instance") {
+                    record.expansion_root = row.value("expansion_root");
+                    if (record.expansion_root.empty()) record.expansion_root = scope;
+                }
                 record.covergroup = covergroup;
                 record.item = item;
                 record.bin = row.value("bin");
@@ -2246,7 +2313,18 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                     changed = sess.backend->exclude_functional(
                         scope, covergroup, target_kind, item, reason);
                 }
-                if (changed > 0) {
+                bool ok = changed > 0;
+                if (!ok && sess.exclusion_policy != "strict") {
+                    if (target_kind == "instance") {
+                        const ScopeInfo* target =
+                            sess.backend->find_scope(scope);
+                        ok = target != nullptr && target->handle != nullptr;
+                    } else {
+                        ok = sess.backend->functional_target_exists(
+                            scope, covergroup, target_kind, item);
+                    }
+                }
+                if (ok) {
                     ++applied;
                     records_changed |= put_exclusion_record(sess, record);
                 } else {
@@ -2374,15 +2452,76 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
         record.reason = reason;
         if (instance_action) {
             record.target_kind = "instance";
-            record.name = scope;
-            record.full_name = scope;
+            record.expansion_root = scope;
             const bool recursive = item.value("recursive", false);
-            record.recursive = recursive;
-            const std::size_t changed =
-                adding ? sess.backend->exclude_scope(scope, recursive, reason)
-                       : sess.backend->restore_scope(scope, recursive);
-            row["status"] = changed > 0 ? "changed" : "already_in_state";
-            row["target_count"] = changed;
+            if (adding) {
+                std::vector<std::string> expanded;
+                for (const auto& candidate : sess.backend->scopes()) {
+                    if (candidate.handle == nullptr) continue;
+                    if (candidate.full_name == scope ||
+                        (recursive && is_descendant(candidate.full_name, scope))) {
+                        expanded.push_back(candidate.full_name);
+                    }
+                }
+                if (expanded.empty()) {
+                    throw Error("EXCLUSION_NOT_OWNED",
+                                "no real instance matches the requested scope",
+                                {{"scope", scope}});
+                }
+                // Python rejects a second owner (different expansion root or
+                // reason) for the same exact instance target.
+                for (const auto& target_scope : expanded) {
+                    for (const auto& existing : sess.exclusion_records) {
+                        const ExclusionRecord& previous = existing.second;
+                        if (previous.target_kind == "instance" &&
+                            previous.scope == target_scope &&
+                            (previous.expansion_root != scope ||
+                             previous.reason != reason)) {
+                            throw Error("TARGET_OWNERSHIP_CONFLICT",
+                                        "instance target is already owned by a "
+                                        "different expansion root or reason",
+                                        {{"scope", target_scope},
+                                         {"existing_reason", previous.reason},
+                                         {"requested_reason", reason}});
+                        }
+                    }
+                }
+                const std::size_t changed = sess.backend->exclude_scope(
+                    scope, recursive, reason);
+                for (const auto& target_scope : expanded) {
+                    ExclusionRecord expanded_record = record;
+                    expanded_record.scope = target_scope;
+                    expanded_record.name = target_scope;
+                    expanded_record.full_name = target_scope;
+                    records_changed |=
+                        put_exclusion_record(sess, expanded_record);
+                }
+                row["status"] = changed > 0 ? "changed" : "already_in_state";
+                row["target_count"] = changed;
+            } else {
+                std::vector<std::string> owned_keys;
+                for (const auto& existing : sess.exclusion_records) {
+                    const ExclusionRecord& previous = existing.second;
+                    if (previous.target_kind == "instance" &&
+                        previous.expansion_root == scope) {
+                        owned_keys.push_back(existing.first);
+                    }
+                }
+                if (owned_keys.empty()) {
+                    throw Error("EXCLUSION_NOT_OWNED",
+                                "no recorded instance exclusions own this root",
+                                {{"scope", scope}});
+                }
+                std::size_t changed = 0;
+                for (const auto& key : owned_keys) {
+                    const ExclusionRecord previous = sess.exclusion_records.at(key);
+                    changed += sess.backend->restore_scope(previous.scope, false);
+                    sess.exclusion_records.erase(key);
+                }
+                records_changed = true;
+                row["status"] = changed > 0 ? "changed" : "already_in_state";
+                row["target_count"] = changed;
+            }
         } else {
             record.target_kind = item.value("target_kind", std::string());
             record.covergroup = item.value("covergroup", std::string());
@@ -2395,7 +2534,7 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
             row["status"] = changed > 0 ? "changed" : "already_in_state";
             row["target_count"] = changed;
         }
-        if (row["status"] == "changed") {
+        if (!instance_action && row["status"] == "changed") {
             if (adding) {
                 records_changed |= put_exclusion_record(sess, record);
             } else {
@@ -2580,6 +2719,10 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
                 }
                 const std::string covergroup = row.value("covergroup");
                 record.target_kind = target_kind;
+                if (target_kind == "instance") {
+                    record.expansion_root = row.value("expansion_root");
+                    if (record.expansion_root.empty()) record.expansion_root = scope;
+                }
                 record.covergroup = covergroup;
                 record.item = item;
                 record.bin = row.value("bin");
@@ -2592,11 +2735,23 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
                                       : (item.empty() ? covergroup : item);
                     record.full_name = scope + "." + record.name;
                 }
+                std::size_t changed = 0;
                 if (target_kind == "instance") {
-                    row_ok = sess.backend->exclude_scope(scope, false, reason) > 0;
+                    changed = sess.backend->exclude_scope(scope, false, reason);
                 } else {
-                    row_ok = sess.backend->exclude_functional(
-                                 scope, covergroup, target_kind, item, reason) > 0;
+                    changed = sess.backend->exclude_functional(
+                        scope, covergroup, target_kind, item, reason);
+                }
+                row_ok = changed > 0;
+                if (!row_ok && sess.exclusion_policy != "strict") {
+                    if (target_kind == "instance") {
+                        const ScopeInfo* target =
+                            sess.backend->find_scope(scope);
+                        row_ok = target != nullptr && target->handle != nullptr;
+                    } else {
+                        row_ok = sess.backend->functional_target_exists(
+                            scope, covergroup, target_kind, item);
+                    }
                 }
             } else if (kind_name == "assertion") {
                 std::string full_name = row.value("assertion");

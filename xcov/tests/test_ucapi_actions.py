@@ -1309,3 +1309,118 @@ def test_multiline_reason_csv_round_trip(loop, vdb, tmp_path):
         assert applied["data"]["items"][0]["status"] == "changed"
     finally:
         fresh.close()
+
+
+def test_recursive_csv_ownership_is_stable_and_idempotent(loop, vdb, tmp_path):
+    """Apply -> export keeps one row per instance; remove clears the family;
+    a second apply is idempotent; nested roots conflict like Python."""
+    added = loop.call("exclude.instance.add", {
+        "items": [{"scope": "top", "recursive": True, "reason": "tree"}],
+    })
+    assert added["ok"], added
+    csv_dir = tmp_path / "ownership-csv"
+    assert loop.call("exclude.csv.export", {
+        "directory": str(csv_dir), "allow_absolute_path": True,
+    })["ok"]
+    original = [line for line in
+                (csv_dir / "container_exclusions.csv").read_text().splitlines()
+                if line.startswith("instance,")]
+    assert len(original) > 1, original
+
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs-2")
+    fresh = Loop([str(CPP_BINARY), "--stdio-loop"], env, vdb)
+    try:
+        applied = fresh.call("exclude.csv.apply", {"directory": str(csv_dir)})
+        assert applied["ok"], applied
+        again = fresh.call("exclude.csv.apply", {"directory": str(csv_dir)})
+        assert again["ok"], again
+        assert fresh.call("exclude.csv.export", {
+            "directory": str(csv_dir), "allow_absolute_path": True,
+        })["ok"]
+        merged = [line for line in
+                  (csv_dir / "container_exclusions.csv").read_text().splitlines()
+                  if line.startswith("instance,")]
+        assert merged == original, (len(original), len(merged))
+
+        removed = fresh.call("exclude.instance.remove", {
+            "items": [{"scope": "top", "recursive": True}],
+        })
+        assert removed["ok"], removed
+        after_dir = tmp_path / "ownership-after"
+        assert fresh.call("exclude.csv.export", {
+            "directory": str(after_dir), "allow_absolute_path": True,
+        })["ok"]
+        assert not [line for line in
+                    (after_dir / "container_exclusions.csv").read_text().splitlines()
+                    if line.startswith("instance,")]
+    finally:
+        fresh.close()
+
+    nested = Loop([str(CPP_BINARY), "--stdio-loop"], env, vdb)
+    try:
+        child = nested.call("exclude.instance.add", {
+            "items": [{"scope": "top.u_core0", "recursive": True,
+                       "reason": "child"}],
+        })
+        assert child["ok"], child
+        conflict = nested.call("exclude.instance.add", {
+            "items": [{"scope": "top", "recursive": True, "reason": "root"}],
+        })
+        assert not conflict["ok"], conflict
+        assert conflict["error"]["code"] == "TARGET_OWNERSHIP_CONFLICT"
+    finally:
+        nested.close()
+
+
+def test_complex_recursive_csv_round_trip_preserves_asserts(xverif_fixture,
+                                                            tmp_path):
+    """Generate-block assertions survive a recursive instance CSV replay."""
+    resources = xverif_fixture("xcov.modinfo_complex")
+    database = resources / "complex.vdb"
+    if not database.is_dir():
+        pytest.skip(f"fixture VDB missing: {database}")
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs")
+    first = Loop([str(CPP_BINARY), "--stdio-loop"], env, database)
+    csv_dir = tmp_path / "complex-csv"
+    try:
+        added = first.call("exclude.instance.add", {
+            "items": [{"scope": "top", "recursive": True, "reason": "tree"}],
+        })
+        assert added["ok"], added
+        before = first.call("metrics.list", {})
+        assert before["ok"], before
+        assert first.call("exclude.csv.export", {
+            "directory": str(csv_dir), "allow_absolute_path": True,
+        })["ok"]
+    finally:
+        first.close()
+
+    second = Loop([str(CPP_BINARY), "--stdio-loop"], env, database)
+    try:
+        applied = second.call("exclude.csv.apply", {"directory": str(csv_dir)})
+        assert applied["ok"], applied
+        after = second.call("metrics.list", {})
+        assert after["ok"], after
+        key = lambda row: (row["metric"], row["covered"], row["coverable"])
+        assert [key(row) for row in after["data"]["items"]] == \
+            [key(row) for row in before["data"]["items"]]
+    finally:
+        second.close()
+
+
+def test_csv_row_validation_rejects_empty_reason(loop, tmp_path):
+    """Row-level validation refuses empty reason and unsupported target_kind."""
+    csv_dir = tmp_path / "bad-rows"
+    _seed_required_csvs(csv_dir)
+    (csv_dir / "container_exclusions.csv").write_text(
+        "# schema_version=xcov-container-exclusions.v1\n"
+        "# coverage_kind=container\n"
+        "target_kind,scope,covergroup,item,expansion_root,reason\n"
+        "instance,top.u_core0,,,top.u_core0,\n",
+        encoding="utf-8",
+    )
+    rejected = loop.call("exclude.csv.apply", {"directory": str(csv_dir)})
+    assert not rejected["ok"], rejected
+    assert rejected["error"]["code"] == "EXCLUSION_CSV_INVALID"

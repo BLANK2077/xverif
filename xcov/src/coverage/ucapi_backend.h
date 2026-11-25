@@ -162,6 +162,10 @@ public:
                                    bool recursive, bool excluded,
                                    const std::string& reason);
     std::size_t restore_scope(const std::string& scope_name, bool recursive);
+    bool functional_target_exists(const std::string& scope,
+                                  const std::string& covergroup,
+                                  const std::string& target_kind,
+                                  const std::string& item) const;
     std::size_t exclude_functional(const std::string& scope,
                                    const std::string& covergroup,
                                    const std::string& target_kind,

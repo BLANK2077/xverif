@@ -281,7 +281,21 @@ review 发现的问题与处理：
 | 5 | instance 排除不覆盖其下 assertion，URG 会归零 | 新增 `exclude_assertions`：一次扫描 test 级 assertion，按 instance scope/recursive 设置排除；restore 同步恢复 |
 | 6 | baseline 临时目录在解析异常时泄漏 | 改 RAII `TempBaselineGuard`，所有退出路径清理 |
 
-## 剩余已知限制（2026-11-25 第三轮 review 后）
+## 第八轮 review 修复（2026-11-25，HEAD fd7f61b 之后）
+
+第四轮独立 review 复验上一轮 2 个 P1 后，新报 3 个 P1（递归 CSV 的
+expansion-root ownership、assertion 归属、重复 apply 非幂等）和 2 个 P2。本轮处理：
+
+| # | 问题 | 处理 |
+|---|---|---|
+| 1 | 递归 instance CSV 展开后没有 expansion_root；apply 后再 export 重复行、remove 后仍导出陈旧行、嵌套递归不可回放 | `ExclusionRecord` 增加 expansion_root；add 时按真实 instance 建记录并保留 root；remove 按 expansion_root 清理整族；export 直接写记录行不再二次展开；相同 exact target 不同 owner/reason 抛 `TARGET_OWNERSHIP_CONFLICT` |
+| 2 | generate block 内 assertion 的归属按字面 scope 匹配，非 recursive instance 排除少排 assert | `exclude_assertions` 先计算 assertion 的最深真实 instance 祖先，再按 owning instance 匹配；recursive/non-recursive 均与 URG 对齐 |
+| 3 | assertion-only INSTANCE 段只有第一条有 ANNOTATION | 按 owning instance 去重写 annotation，每个 assertion INSTANCE 段一条 |
+| 4 | csv.apply/compile 把 already_in_state 当失败，重复 apply 与 EL+CSV 恢复流程不可用 | instance 目标存在且非 strict 时 changed=0 视为成功；functional 新增 `functional_target_exists`；line selector 无变化但命中行也视为成功 |
+| 5 | 行级 CSV schema 未校验（空 reason、非法 target_kind、functional coverpoint+cross 同时出现） | `load_validated_csv_directory` 增加 reason/scope/container target_kind/expansion_root/functional 互斥/assertion/code metric 校验 |
+| 6 | apply 后 export 覆盖 expansion_root 文档 | 见 #1；新增 apply→同目录 export、apply→remove→export、嵌套递归冲突、重复 apply 用例 |
+
+## 剩余已知限制（2026-11-25 第四轮 review 后）
 
 - recursive instance 排除在超大库仍 >60s（`covdb_set_exclude_all_iter` 不可用，只能逐 leaf）。
 - coverpoint/cross 的 exclusion 在 EL 中不产出对象（UCAPI 限制）。

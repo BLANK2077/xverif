@@ -36,7 +36,9 @@ std::string exclusion_record_key(const ExclusionRecord& record) {
                record.name + "|" + record.bin + "|" + record.line;
     }
     if (record.target_kind == "instance") {
-        return "instance:" + record.scope;
+        // The root owns every expanded instance row, so a recursive remove
+        // can clear its whole family without touching unrelated rows.
+        return "instance:" + record.scope + "|" + record.expansion_root;
     }
     if (!record.target_kind.empty()) {
         // exclude_functional targets the whole point/cross; a CSV bin column

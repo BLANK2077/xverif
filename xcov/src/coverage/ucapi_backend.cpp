@@ -1522,7 +1522,23 @@ std::size_t UcapiBackend::exclude_assertions(const std::string& scope_name,
     ucapi::Handle metrics = api.iterate(test_, ucapi::kMetrics);
     if (metrics == nullptr) return 0;
     std::size_t changed = 0;
-    bool annotation_written = false;
+    std::set<std::string> annotated_scopes;
+    auto owning_instance = [&](const std::string& assert_scope) {
+        // Assertions declared in generate blocks belong to the nearest real
+        // instance ancestor; URG attributes them there.
+        std::string node = assert_scope;
+        while (!node.empty()) {
+            auto pos = scope_positions_.find(node);
+            if (pos != scope_positions_.end() &&
+                scopes_[pos->second].handle != nullptr) {
+                return node;
+            }
+            const std::size_t dot = node.rfind('.');
+            if (dot == std::string::npos) break;
+            node = node.substr(0, dot);
+        }
+        return std::string();
+    };
     ucapi::Handle metric;
     while ((metric = api.scan(metrics)) != nullptr) {
         if (!api.is_assert_metric(metric)) continue;
@@ -1536,11 +1552,12 @@ std::size_t UcapiBackend::exclude_assertions(const std::string& scope_name,
             const std::size_t dot = full.rfind('.');
             const std::string assert_scope =
                 dot == std::string::npos ? std::string() : full.substr(0, dot);
+            const std::string owning = owning_instance(assert_scope);
             const bool in_scope =
-                assert_scope == scope_name ||
-                (recursive && assert_scope.size() > scope_name.size() &&
-                 assert_scope.compare(0, scope_name.size(), scope_name) == 0 &&
-                 assert_scope[scope_name.size()] == '.');
+                owning == scope_name ||
+                (recursive && owning.size() > scope_name.size() &&
+                 owning.compare(0, scope_name.size(), scope_name) == 0 &&
+                 owning[scope_name.size()] == '.');
             if (!in_scope) {
                 api.release(persistent);
                 continue;
@@ -1565,10 +1582,10 @@ std::size_t UcapiBackend::exclude_assertions(const std::string& scope_name,
                 api.set(persistent, nullptr, test_, ucapi::kCovStatus,
                         updated) == 0) {
                 ++changed;
-                if (excluded && !reason.empty() && !annotation_written) {
+                if (excluded && !reason.empty() &&
+                    annotated_scopes.insert(owning).second) {
                     api.set_annotation(persistent, "cov_comment", reason.c_str());
                     api.set_durable(nullptr, test_, persistent, 1);
-                    annotation_written = true;
                 }
             }
             api.release(persistent);
@@ -1623,6 +1640,8 @@ std::size_t UcapiBackend::exclude_line(const std::string& scope_name,
     ucapi::Handle metrics = api.iterate(test_, ucapi::kMetrics);
     if (metrics == nullptr) return 0;
     std::size_t changed = 0;
+    std::size_t matched = 0;
+    bool strict_skipped = false;
     bool annotation_written = false;
     ucapi::Handle metric;
     while ((metric = api.scan(metrics)) != nullptr) {
@@ -1667,10 +1686,12 @@ std::size_t UcapiBackend::exclude_line(const std::string& scope_name,
                 api.release(objects);
             }
             for (ucapi::Handle leaf : leaves) {
+                ++matched;
                 if (exclusion_policy_ == "strict") {
                     const long covered =
                         api.get(leaf, region, test_, ucapi::kCovered);
                     if (covered > 0) {
+                        strict_skipped = true;
                         api.release(leaf);
                         continue;
                     }
@@ -1694,7 +1715,8 @@ std::size_t UcapiBackend::exclude_line(const std::string& scope_name,
     }
     api.release(metrics);
     if (changed > 0) invalidate_caches();
-    return changed;
+    if (strict_skipped) return 0;
+    return changed > 0 ? changed : matched;
 }
 
 std::size_t UcapiBackend::exclude_scope(const std::string& scope_name,
@@ -1839,6 +1861,67 @@ std::size_t exclude_leaf_node(const UcapiLibrary& api, ucapi::Handle obj,
 }
 
 } // namespace
+
+bool UcapiBackend::functional_target_exists(const std::string& scope,
+                                           const std::string& covergroup,
+                                           const std::string& target_kind,
+                                           const std::string& item) const {
+    const UcapiLibrary& api = UcapiLibrary::instance();
+    ucapi::Handle metrics = api.iterate(test_, ucapi::kMetrics);
+    if (metrics == nullptr) return false;
+    ucapi::Handle metric;
+    bool found = false;
+    while (!found && (metric = api.scan(metrics)) != nullptr) {
+        if (!api.is_testbench_metric(metric)) continue;
+        ucapi::Handle groups =
+            api.qualified_iterate(test_, metric, ucapi::kDefinitions);
+        if (groups == nullptr) continue;
+        ucapi::Handle group;
+        while (!found && (group = api.scan(groups)) != nullptr) {
+            ucapi::Handle persistent_group = api.make_persistent(group);
+            ucapi::Handle variants = api.qualified_iterate(
+                persistent_group, metric, ucapi::kDefinitions);
+            if (variants != nullptr) {
+                ucapi::Handle variant;
+                while (!found && (variant = api.scan(variants)) != nullptr) {
+                    ucapi::Handle persistent_variant =
+                        api.make_persistent(variant);
+                    const std::string full_name = safe_str(
+                        api.get_str(persistent_variant, ucapi::kFullName));
+                    const bool name_match =
+                        full_name == covergroup ||
+                        (!scope.empty() &&
+                         full_name == scope + "::" + covergroup);
+                    if (name_match) {
+                        if (target_kind == "covergroup") {
+                            found = true;
+                        } else {
+                            ucapi::Handle kids = api.iterate(
+                                persistent_variant, ucapi::kObjects);
+                            if (kids != nullptr) {
+                                ucapi::Handle kid;
+                                while ((kid = api.scan(kids)) != nullptr) {
+                                    if (safe_str(api.get_str(kid, ucapi::kName)) ==
+                                        item) {
+                                        found = true;
+                                        break;
+                                    }
+                                }
+                                api.release(kids);
+                            }
+                        }
+                    }
+                    api.release(persistent_variant);
+                }
+                api.release(variants);
+            }
+            api.release(persistent_group);
+        }
+        api.release(groups);
+    }
+    api.release(metrics);
+    return found;
+}
 
 std::size_t UcapiBackend::exclude_functional(const std::string& scope,
                                              const std::string& covergroup,
