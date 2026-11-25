@@ -744,3 +744,243 @@ def test_run_manifest_gate(vdb, tmp_path):
     payload = json.loads(dup_out.stdout)
     assert payload["ok"] is False, payload
     assert payload["error"]["code"] == "RESOURCE_PROVENANCE_MISMATCH"
+
+
+def test_sort_accepts_nullable_fields(loop):
+    """Null values participate in sorting; only absent fields are an error."""
+    response = loop.call("scope.search", {
+        "query": {"include_patterns": ["*"]},
+        "sort": {"by": "coverage_pct", "order": "desc"},
+    })
+    assert response["ok"], response
+    rows = response["data"]["items"]
+    assert rows
+    values = [item["coverage_pct"] for item in rows]
+    first_non_null = next(index for index, value in enumerate(values)
+                          if value is not None)
+    # Python's reverse ordering puts nulls first in descending order.
+    assert all(value is None for value in values[:first_non_null]), values
+    non_null = [value for value in values if value is not None]
+    assert non_null == sorted(non_null, reverse=True), non_null
+
+    children = loop.call("scope.children", {
+        "scope": "top", "recursive": True,
+        "sort": {"by": "coverage_pct", "order": "desc"},
+    })
+    assert children["ok"], children
+
+    coverage = loop.call("code_coverage.summary", {
+        "group_by": "scope",
+        "sort": {"by": "coverage_pct", "order": "desc"},
+    })
+    assert coverage["ok"], coverage
+
+
+def test_metrics_list_omits_absent_zero_regions(loop):
+    """A zero-valued UCAPI region must not become a Python-style metric row."""
+    response = loop.call("metrics.list", {
+        "scope": "top.u_core0.g_pipe.u_proc.u_alu",
+    })
+    assert response["ok"], response
+    rows = response["data"]["items"]
+    assert rows
+    assert all(row["coverable"] > 0 for row in rows), rows
+
+
+def test_single_metric_counts_on_sparse_scope(xverif_fixture, tmp_path):
+    """Single present metric carries counts even when other regions are empty."""
+    resources = xverif_fixture("xcov.modinfo_edge_layouts")
+    database = resources / "edge_cases.vdb"
+    if not database.is_dir():
+        pytest.skip(f"fixture VDB missing: {database}")
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs")
+    session = Loop([str(CPP_BINARY), "--stdio-loop"], env, database)
+    try:
+        summary = session.call("scope.summary", {
+            "scope": "route_matrix.u_stim", "metrics": ["toggle"],
+        })
+        assert summary["ok"], summary
+        item = summary["data"]["items"][0]
+        assert item["covered"] == 12 and item["coverable"] == 14, item
+        assert item["missing"] == 2, item
+
+        metrics = session.call("metrics.list", {
+            "scope": "route_matrix.u_stim",
+        })
+        assert [row["metric"] for row in metrics["data"]["items"]] == ["toggle"]
+    finally:
+        session.close()
+
+
+def test_functional_query_name_and_full_name(loop):
+    """Schema-declared functional match_field name/full_name must filter rows."""
+    for field in ("name", "full_name"):
+        response = loop.call("functional_coverage.summary", {
+            "group_by": "covergroup",
+            "query": {"match_field": field, "include_patterns": ["*"]},
+        })
+        assert response["ok"], response
+        assert response["data"]["items"], field
+        assert response["data"]["items"][0]["covergroup"].startswith("top")
+
+
+def test_csv_container_round_trip_removes_records(loop, vdb, tmp_path):
+    """instance/coverpoint CSV rows export, compile and remove by identity."""
+    scope = "top.u_core0.g_pipe.u_proc.u_alu"
+    added = loop.call("exclude.instance.add", {
+        "items": [{"scope": scope, "reason": "inst round trip"}],
+    })
+    assert added["ok"], added
+    first = tmp_path / "inst-csv-1"
+    assert loop.call("exclude.csv.export", {
+        "directory": str(first), "allow_absolute_path": True,
+    })["ok"]
+    container = (first / "container_exclusions.csv").read_text()
+    assert "instance," in container and "inst round trip" in container
+
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs-2")
+    fresh = Loop([str(CPP_BINARY), "--stdio-loop"], env, vdb)
+    try:
+        el_dir = tmp_path / "inst-el"
+        compiled = fresh.call("exclude.csv.compile", {
+            "directory": str(first), "output_directory": str(el_dir),
+            "allow_absolute_path": True,
+        })
+        assert compiled["ok"], compiled
+        removed = fresh.call("exclude.instance.remove", {
+            "items": [{"scope": scope}],
+        })
+        assert removed["ok"], removed
+        second = tmp_path / "inst-csv-2"
+        assert fresh.call("exclude.csv.export", {
+            "directory": str(second), "allow_absolute_path": True,
+        })["ok"]
+        assert "inst round trip" not in (
+            second / "container_exclusions.csv").read_text()
+    finally:
+        fresh.close()
+
+    # The original session still owns the instance record; clear it so the
+    # coverpoint CSV compile is evaluated from a known state.
+    assert loop.call("exclude.instance.remove", {
+        "items": [{"scope": scope}],
+    })["ok"]
+    covergroup = loop.call("functional_coverage.summary", {
+        "group_by": "covergroup", "limits": {"max_items": 1},
+    })["data"]["items"][0]["covergroup"]
+    cover_scope = covergroup.split("::", 1)[0]
+    cp_added = loop.call("exclude.functional.add", {
+        "items": [{"target_kind": "coverpoint", "scope": cover_scope,
+                   "covergroup": covergroup, "item": "cp_data",
+                   "reason": "cp round trip"}],
+    })
+    if not cp_added["ok"] or cp_added["data"]["items"][0]["status"] != "changed":
+        pytest.skip("fixture has no coverpoint cp_data")
+    cp_dir = tmp_path / "cp-csv"
+    assert loop.call("exclude.csv.export", {
+        "directory": str(cp_dir), "allow_absolute_path": True,
+    })["ok"]
+    cp_text = (cp_dir / "container_exclusions.csv").read_text()
+    assert "coverpoint," in cp_text and "cp_data" in cp_text, cp_text
+    cp_el = tmp_path / "cp-el"
+    cp_compiled = loop.call("exclude.csv.compile", {
+        "directory": str(cp_dir), "output_directory": str(cp_el),
+        "allow_absolute_path": True,
+    })
+    assert cp_compiled["ok"], cp_compiled
+    # coverpoint EL emission is a documented UCAPI limitation; the compile
+    # contract verified here is that the CSV row resolves and publishes.
+    assert (cp_el / "code.el").is_file()
+
+
+def test_csv_export_reason_conflict_is_atomic(loop, tmp_path):
+    """A changed reason for the same identity fails before any file changes."""
+    reference = _first_gap_ref(loop, tmp_path)
+    assert loop.call("exclude.add", {
+        "coverage_refs": [{"coverage_ref": reference, "reason": "one"}],
+    })["ok"]
+    directory = tmp_path / "conflict-csv"
+    assert loop.call("exclude.csv.export", {
+        "directory": str(directory), "allow_absolute_path": True,
+    })["ok"]
+    before = (directory / "code_exclusions.csv").read_text()
+    assert loop.call("exclude.add", {
+        "coverage_refs": [{"coverage_ref": reference, "reason": "two"}],
+    })["ok"]
+    conflict = loop.call("exclude.csv.export", {
+        "directory": str(directory), "allow_absolute_path": True,
+    })
+    assert not conflict["ok"], conflict
+    assert conflict["error"]["code"] == "EXCLUSION_REASON_CONFLICT"
+    assert (directory / "code_exclusions.csv").read_text() == before
+
+
+def test_csv_line_selector_rejects_wrong_source_file(xverif_fixture, tmp_path):
+    """A line selector must honor the CSV source_file group."""
+    resources = xverif_fixture("xcov.modinfo_edge_layouts")
+    database = resources / "edge_cases.vdb"
+    if not database.is_dir():
+        pytest.skip(f"fixture VDB missing: {database}")
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs")
+    session = Loop([str(CPP_BINARY), "--stdio-loop"], env, database)
+    scope = "route_matrix.u_value_dark"
+    try:
+        exported = session.call("export.code_coverage", {
+            "scopes": [scope], "metrics": ["line"],
+            "output": {"path": str(tmp_path / "line-src"),
+                       "allow_absolute_path": True},
+        })
+        assert exported["ok"], exported
+        payload = json.loads(
+            (tmp_path / "line-src" / "instance-0001" / "line.json").read_text()
+        )
+        line = payload["line_groups"][0]["uncovered"][0]["at"].rsplit(":", 1)[1]
+        csv_dir = tmp_path / "line-wrong-file"
+        csv_dir.mkdir()
+        (csv_dir / "code_exclusions.csv").write_text(
+            "# schema_version=xcov-code-exclusions.v1\n"
+            "# coverage_kind=code\n"
+            "# source_file=definitely_wrong_file.sv\n"
+            "scope,metric,line,object,bin,reason\n"
+            f"{scope},line,{line},,,wrong file\n",
+            encoding="utf-8",
+        )
+        rejected = session.call("exclude.csv.apply",
+                                {"directory": str(csv_dir)})
+        assert not rejected["ok"], rejected
+        assert rejected["error"]["code"] == "EXCLUSION_RESOLVE_FAILED"
+    finally:
+        session.close()
+
+
+def test_evicted_assert_refs_still_resolve(xverif_fixture, tmp_path):
+    """The bounded locator cache must not lose assertion refs."""
+    resources = xverif_fixture("xcov.modinfo_edge_layouts")
+    database = resources / "edge_cases.vdb"
+    if not database.is_dir():
+        pytest.skip(f"fixture VDB missing: {database}")
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs")
+    env["XVERIF_XCOV_REF_LOCATOR_MAX"] = "1"
+    session = Loop([str(CPP_BINARY), "--stdio-loop"], env, database)
+    try:
+        exported = session.call("export.assert", {
+            "output": {"path": str(tmp_path / "assert-refs"),
+                       "allow_absolute_path": True},
+        })
+        assert exported["ok"], exported
+        gaps = json.loads(
+            (tmp_path / "assert-refs" / "assert.json").read_text())["gaps"]
+        assert len(gaps) >= 2, gaps
+        for gap in gaps[:3]:
+            added = session.call("exclude.add", {
+                "coverage_refs": [{"coverage_ref": gap["coverage_ref"],
+                                   "reason": "assert evicted"}],
+            })
+            assert added["ok"], added
+            assert added["data"]["items"][0]["status"] == "changed", added
+    finally:
+        session.close()

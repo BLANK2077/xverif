@@ -23,14 +23,26 @@ bool is_writable_directory(const std::string& path) {
 
 std::string exclusion_record_key(const ExclusionRecord& record) {
     if (!record.coverage_ref.empty()) {
-        return record.kind + ":ref:" + record.coverage_ref;
+        return "ref:" + record.coverage_ref;
     }
-    // One formula for every non-ref record: remove/export/compile all address
-    // the same entry even when only the CSV identity (covergroup/item/bin) is
-    // available.
-    return record.kind + ":" + record.scope + "|" + record.metric + "|" +
-           record.name + "|" + record.target_kind + "|" + record.covergroup +
-           "|" + record.item + "|" + record.bin;
+    // Identity deliberately ignores the source CSV kind: the same exclusion
+    // may arrive through exclude.* (container) or a functional/container CSV
+    // file, and remove/export must address it identically.
+    if (record.kind == "assertion") {
+        return "assertion:" + record.scope + "|" + record.full_name;
+    }
+    if (record.kind == "code") {
+        return "code:" + record.scope + "|" + record.metric + "|" +
+               record.name + "|" + record.bin + "|" + record.line;
+    }
+    if (record.target_kind == "instance") {
+        return "instance:" + record.scope;
+    }
+    if (!record.target_kind.empty()) {
+        return "functional:" + record.scope + "|" + record.target_kind + "|" +
+               record.covergroup + "|" + record.item + "|" + record.bin;
+    }
+    return record.kind + ":" + record.scope + "|" + record.name;
 }
 
 Session& SessionManager::open(const std::string& name,

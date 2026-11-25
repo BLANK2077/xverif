@@ -8,6 +8,7 @@ namespace xcov {
 struct CsvRow {
     std::vector<std::string> fields;
     int line_number = 0;
+    std::string source_file;
     std::vector<std::string> header;
     std::string value(const std::string& name) const;
     bool has(const std::string& name) const;

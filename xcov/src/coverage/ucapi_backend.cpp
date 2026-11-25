@@ -85,6 +85,13 @@ UcapiBackend::UcapiBackend(const std::string& vdb, const std::string& exclusion_
             ref_locator_limit_ = static_cast<std::size_t>(parsed);
         }
     }
+    if (const char* raw_hints = std::getenv("XVERIF_XCOV_REF_HINT_MAX")) {
+        char* end = nullptr;
+        const unsigned long long parsed = std::strtoull(raw_hints, &end, 10);
+        if (end != raw_hints && *end == '\0') {
+            ref_hint_limit_ = static_cast<std::size_t>(parsed);
+        }
+    }
     const UcapiLibrary& api = UcapiLibrary::instance();
     if (!is_directory(vdb_)) {
         throw Error("VDB_OPEN_FAILED", "coverage database is not a directory",
@@ -250,6 +257,8 @@ void UcapiBackend::refresh_metrics() {
     for (auto& scope : scopes_) {
         scope.metrics.clear();
         scope.deep_metrics.clear();
+        scope.present_metrics.clear();
+        scope.deep_present.clear();
         if (scope.handle == nullptr) continue;  // synthetic generate level
         aggregate_scope(scope);
     }
@@ -332,6 +341,9 @@ void UcapiBackend::aggregate_scope(ScopeInfo& scope) {
         }
         api.release(region);
         scope.metrics[kind] = aggregate;
+        if (aggregate.covered > 0 || aggregate.coverable > 0) {
+            scope.present_metrics.insert(kind);
+        }
     }
     api.release(metrics);
 }
@@ -522,7 +534,17 @@ void UcapiBackend::finalize_scope_metrics() {
         api.release(metrics);
     }
 
-    for (auto& scope : scopes_) scope.deep_metrics = scope.metrics;
+    // Assert/functional aggregates are appended after aggregate_scope();
+    // derive presence once from the final self maps.
+    for (auto& scope : scopes_) {
+        for (const auto& item : scope.metrics) {
+            if (item.second.covered > 0 || item.second.coverable > 0) {
+                scope.present_metrics.insert(item.first);
+            }
+        }
+        scope.deep_metrics = scope.metrics;
+        scope.deep_present = scope.present_metrics;
+    }
     std::vector<std::size_t> order(scopes_.size());
     for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
     std::sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
@@ -540,6 +562,9 @@ void UcapiBackend::finalize_scope_metrics() {
             MetricAggregate& entry = parent.deep_metrics[item.first];
             entry.covered += item.second.covered;
             entry.coverable += item.second.coverable;
+        }
+        for (MetricKind kind : scope.deep_present) {
+            parent.deep_present.insert(kind);
         }
     }
 }
@@ -846,14 +871,6 @@ std::string ucapi_metric_key(const std::string& name) {
     return name;
 }
 
-bool is_leaf_object(const UcapiLibrary& api, ucapi::Handle object,
-                    ucapi::Handle region) {
-    const int type = api.get(object, region, nullptr, ucapi::kType);
-    return is_leaf_type(type);
-}
-
-
-
 bool match_leaf_recursive(const UcapiLibrary& api, ucapi::Handle obj,
                           ucapi::Handle region, const std::string& metric,
                           const std::string& scope_name,
@@ -888,7 +905,7 @@ bool match_leaf_recursive(const UcapiLibrary& api, ucapi::Handle obj,
 
 // Find one coverable object by its session-local coverage_ref.
 bool find_by_ref(const UcapiLibrary& api, ucapi::Handle test,
-                 const std::vector<ScopeInfo>& scopes,
+                 const std::vector<ScopeInfo>& scopes, int hinted_scope,
                  const std::string& wanted, ucapi::Handle* out_obj,
                  ucapi::Handle* out_region, nlohmann::json* out_row) {
     if (debug_enabled()) {
@@ -900,15 +917,65 @@ bool find_by_ref(const UcapiLibrary& api, ucapi::Handle test,
         if (debug_enabled()) std::fprintf(stderr, "no metrics\n");
         return false;
     }
+    std::vector<const ScopeInfo*> scopes_to_scan;
+    if (hinted_scope >= 0 &&
+        static_cast<std::size_t>(hinted_scope) < scopes.size() &&
+        scopes[static_cast<std::size_t>(hinted_scope)].handle != nullptr) {
+        scopes_to_scan.push_back(&scopes[static_cast<std::size_t>(hinted_scope)]);
+    } else {
+        for (const auto& scope : scopes) scopes_to_scan.push_back(&scope);
+    }
     ucapi::Handle metric;
     while ((metric = api.scan(metrics)) != nullptr) {
-        if (api.is_assert_metric(metric) || api.is_testbench_metric(metric) ||
-            api.is_path_metric(metric)) {
+        if (api.is_assert_metric(metric)) {
+            // Assertion refs live on the test handle, not on instance
+            // regions; resolve them by full_name so an evicted locator still
+            // works.
+            ucapi::Handle objects =
+                api.qualified_iterate(test, metric, ucapi::kObjects);
+            if (objects != nullptr) {
+                ucapi::Handle object;
+                bool found = false;
+                while (!found && (object = api.scan(objects)) != nullptr) {
+                    ucapi::Handle persistent = api.make_persistent(object);
+                    const std::string full = safe_str(
+                        api.get_str(persistent, ucapi::kFullName));
+                    const std::size_t dot = full.rfind('.');
+                    nlohmann::json row = nlohmann::json::object();
+                    row["metric"] = "assert";
+                    row["scope"] = dot == std::string::npos
+                                       ? std::string()
+                                       : full.substr(0, dot);
+                    // export.assert builds the ref identity with type
+                    // "assert" (not npiCovAssert); match it exactly.
+                    row["type"] = "assert";
+                    row["name"] = safe_str(
+                        api.get_str(persistent, ucapi::kName));
+                    row["full_name"] = full;
+                    if (ref_matches(row, wanted)) {
+                        *out_obj = persistent;
+                        *out_region = nullptr;
+                        if (out_row != nullptr) *out_row = row;
+                        found = true;
+                    } else {
+                        api.release(persistent);
+                    }
+                }
+                api.release(objects);
+                if (found) {
+                    api.release(metrics);
+                    return true;
+                }
+            }
+            continue;
+        }
+        if (api.is_testbench_metric(metric) || api.is_path_metric(metric)) {
             continue;
         }
         const std::string mname = safe_str(api.get_str(metric, ucapi::kName));
         ucapi::Handle persistent_metric = api.make_persistent(metric);
-        for (const auto& scope : scopes) {
+        for (const ScopeInfo* scope_ptr : scopes_to_scan) {
+            const ScopeInfo& scope = *scope_ptr;
             if (scope.handle == nullptr) continue;
             ucapi::Handle region = api.get_qualified_handle(
                 scope.handle, persistent_metric, ucapi::kIdentity);
@@ -987,16 +1054,65 @@ bool find_by_ref(const UcapiLibrary& api, ucapi::Handle test,
 
 } // namespace
 
+namespace {
+
+bool ref_hash_key(const std::string& coverage_ref_value, RefHashKey* key) {
+    static const std::string kPrefix = "xcovref.v1:";
+    if (coverage_ref_value.compare(0, kPrefix.size(), kPrefix) != 0) {
+        return false;
+    }
+    const std::string hex = coverage_ref_value.substr(kPrefix.size());
+    if (hex.size() != 64) return false;
+    auto nibble = [](char ch) -> int {
+        if (ch >= '0' && ch <= '9') return ch - '0';
+        if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+        if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+        return -1;
+    };
+    for (std::size_t index = 0; index < 32; ++index) {
+        const int high = nibble(hex[index * 2]);
+        const int low = nibble(hex[index * 2 + 1]);
+        if (high < 0 || low < 0) return false;
+        key->bytes[index] = static_cast<unsigned char>((high << 4) | low);
+    }
+    return true;
+}
+
+} // namespace
+
 void UcapiBackend::register_ref(const std::string& coverage_ref_value,
                                 const std::string& scope,
                                 const std::string& metric,
                                 const std::string& name) {
-    if (ref_locator_limit_ == 0) return;
+    auto add_scope_hint = [&](const std::string& ref,
+                              const std::string& hinted_scope) {
+        if (ref_hint_limit_ == 0) return;
+        RefHashKey key;
+        if (!ref_hash_key(ref, &key)) return;
+        auto position = scope_positions_.find(hinted_scope);
+        if (position == scope_positions_.end()) return;
+        if (ref_scope_hints_.size() >= ref_hint_limit_ &&
+            ref_scope_hints_.find(key) == ref_scope_hints_.end()) {
+            // unordered_map has no FIFO order; dropping any hint only costs a
+            // slower fallback and never changes correctness.
+            ref_scope_hints_.erase(ref_scope_hints_.begin());
+        }
+        ref_scope_hints_[key] = static_cast<std::uint32_t>(position->second);
+    };
+    if (ref_locator_limit_ == 0) {
+        add_scope_hint(coverage_ref_value, scope);
+        return;
+    }
     const auto existing = ref_locators_.find(coverage_ref_value);
     if (existing == ref_locators_.end()) {
         while (ref_locators_.size() >= ref_locator_limit_ &&
                !ref_locator_order_.empty()) {
-            ref_locators_.erase(ref_locator_order_.front());
+            const std::string evicted = ref_locator_order_.front();
+            auto evicted_it = ref_locators_.find(evicted);
+            if (evicted_it != ref_locators_.end()) {
+                add_scope_hint(evicted, std::get<0>(evicted_it->second));
+                ref_locators_.erase(evicted_it);
+            }
             ref_locator_order_.pop_front();
         }
         ref_locator_order_.push_back(coverage_ref_value);
@@ -1235,8 +1351,16 @@ bool UcapiBackend::set_exclusion(const std::string& coverage_ref_value,
     }
     if (object == nullptr) {
         nlohmann::json row;
-        if (!find_by_ref(api, test_, scopes_, coverage_ref_value, &object, &region,
-                         &row)) {
+        int hinted_scope = -1;
+        RefHashKey hint_key;
+        if (ref_hash_key(coverage_ref_value, &hint_key)) {
+            auto hint = ref_scope_hints_.find(hint_key);
+            if (hint != ref_scope_hints_.end()) {
+                hinted_scope = static_cast<int>(hint->second);
+            }
+        }
+        if (!find_by_ref(api, test_, scopes_, hinted_scope, coverage_ref_value,
+                         &object, &region, &row)) {
             return false;
         }
         // The locator cache is bounded; a full-scan hit lets us repopulate it
@@ -1407,7 +1531,8 @@ bool UcapiBackend::exclude_leaf(const std::string& scope_name,
 
 std::size_t UcapiBackend::exclude_line(const std::string& scope_name,
                                       int line_no,
-                                      const std::string& reason) {
+                                      const std::string& reason,
+                                      const std::string& source_file) {
     const UcapiLibrary& api = UcapiLibrary::instance();
     const ScopeInfo* scope = find_scope(scope_name);
     if (scope == nullptr || scope->handle == nullptr || line_no <= 0) return 0;
@@ -1428,7 +1553,18 @@ std::size_t UcapiBackend::exclude_line(const std::string& scope_name,
                 if (is_leaf_type(type)) {
                     const int object_line =
                         api.get(obj, region, test_, ucapi::kLineNo);
-                    if (object_line == line_no) {
+                    const std::string object_file =
+                        safe_str(api.get_str(obj, ucapi::kFileName));
+                    const bool file_matches =
+                        source_file.empty() || object_file == source_file ||
+                        (object_file.size() > source_file.size() &&
+                         object_file.compare(object_file.size() -
+                                                 source_file.size(),
+                                             source_file.size(),
+                                             source_file) == 0 &&
+                         object_file[object_file.size() -
+                                     source_file.size() - 1] == '/');
+                    if (object_line == line_no && file_matches) {
                         leaves.push_back(api.make_persistent(obj));
                     }
                     return;

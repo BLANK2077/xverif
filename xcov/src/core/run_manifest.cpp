@@ -24,8 +24,6 @@ namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 constexpr const char* kHashVersion = "sha256-entry-tree-v2";
-constexpr std::size_t kMaxManifestBytes = 8u * 1024u * 1024u;
-
 Error mismatch(const std::string& message) {
     return Error("RESOURCE_PROVENANCE_MISMATCH", message);
 }
@@ -37,7 +35,7 @@ std::string read_text_file(const std::string& path) {
     }
     input.seekg(0, std::ios::end);
     const std::streamoff size = input.tellg();
-    if (size < 0 || static_cast<std::uint64_t>(size) > kMaxManifestBytes) {
+    if (size < 0) {
         throw mismatch("run manifest is not valid JSON");
     }
     input.seekg(0, std::ios::beg);
@@ -547,7 +545,14 @@ nlohmann::json validate_run_manifest(const nlohmann::json& target) {
     if (expected_path != actual_path) {
         throw mismatch("run manifest resource path does not match target: vdb");
     }
-    const ResourceIdentity actual = resource_identity(actual_path);
+    ResourceIdentity actual;
+    try {
+        actual = resource_identity(actual_path);
+    } catch (const Error&) {
+        // Keep the provenance contract closed: unreadable resources are a
+        // provenance mismatch, not an IO_ERROR escaping the gate.
+        throw mismatch("run manifest resource cannot be hashed: vdb");
+    }
     if (actual.kind != declared_kind || actual.size_bytes != declared_size ||
         actual.file_count != declared_files ||
         actual.directory_count != declared_directories ||

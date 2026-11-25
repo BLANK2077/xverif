@@ -461,6 +461,18 @@ bool query_match_any(const std::vector<std::string>& patterns,
     return false;
 }
 
+bool query_value_matches(const QuerySpec& spec, const std::string& value) {
+    if (!spec.include_patterns.empty() &&
+        !query_match_any(spec.include_patterns, value, spec.case_sensitive)) {
+        return false;
+    }
+    if (!spec.exclude_patterns.empty() &&
+        query_match_any(spec.exclude_patterns, value, spec.case_sensitive)) {
+        return false;
+    }
+    return true;
+}
+
 std::vector<nlohmann::json> filter_rows(const std::vector<nlohmann::json>& rows,
                                         const QuerySpec& spec) {
     std::vector<nlohmann::json> out;
@@ -502,6 +514,27 @@ bool json_less(const nlohmann::json& a, const nlohmann::json& b) {
     return a.dump() < b.dump();
 }
 
+/// Python's sort contract distinguishes "field absent" (error) from
+/// "field present with null" (participates in ordering). Query filtering is
+/// stricter and drops null rows, so it keeps using row_field_value().
+bool sort_key_value(const nlohmann::json& row, const std::string& field,
+                    nlohmann::json* value) {
+    auto it = row.find(field);
+    if (it != row.end()) {
+        *value = *it;
+        return true;
+    }
+    if ((field == "file" || field == "line") && row.contains("evidence") &&
+        row.at("evidence").is_object()) {
+        const nlohmann::json& evidence = row.at("evidence");
+        if (evidence.contains(field)) {
+            *value = evidence.at(field);
+            return true;
+        }
+    }
+    return false;
+}
+
 std::vector<nlohmann::json> sort_rows(const std::string& action,
                                       const nlohmann::json& args,
                                       const std::vector<nlohmann::json>& rows) {
@@ -517,34 +550,37 @@ std::vector<nlohmann::json> sort_rows(const std::string& action,
     if (order != "asc" && order != "desc") {
         throw Error("INVALID_SORT_ORDER", "sort.order must be asc or desc");
     }
+    std::vector<nlohmann::json> keys(rows.size());
     for (std::size_t index = 0; index < rows.size(); ++index) {
-        std::string ignored;
-        if (row_field_value(rows[index], key, &ignored)) continue;
+        if (sort_key_value(rows[index], key, &keys[index])) continue;
         throw Error("INVALID_SORT_FIELD",
                     "sort.by is not present in the " + action + " response variant",
                     {{"field", key}, {"row_index", index}});
     }
     std::vector<nlohmann::json> out = rows;
-    auto less = [&](const nlohmann::json& a, const nlohmann::json& b) {
-        std::string a_text;
-        std::string b_text;
-        const bool a_has = row_field_value(a, key, &a_text);
-        const bool b_has = row_field_value(b, key, &b_text);
-        if (a_has != b_has) return !a_has;  // missing values sort first
-        if (!a_has) return false;
-        const nlohmann::json& a_value = a.contains(key) ? a.at(key)
-                                                        : nlohmann::json();
-        const nlohmann::json& b_value = b.contains(key) ? b.at(key)
-                                                        : nlohmann::json();
-        return json_less(a_value, b_value);
+    std::vector<std::size_t> order_index(rows.size());
+    for (std::size_t index = 0; index < order_index.size(); ++index) {
+        order_index[index] = index;
+    }
+    auto key_less = [&](std::size_t left, std::size_t right) {
+        const nlohmann::json& a = keys[left];
+        const nlohmann::json& b = keys[right];
+        const bool a_null = a.is_null();
+        const bool b_null = b.is_null();
+        if (a_null != b_null) return !a_null;  // null last in ascending order
+        if (a_null) return false;
+        return json_less(a, b);
     };
     if (order == "asc") {
-        std::stable_sort(out.begin(), out.end(), less);
+        std::stable_sort(order_index.begin(), order_index.end(), key_less);
     } else {
-        std::stable_sort(out.begin(), out.end(),
-                         [&](const nlohmann::json& a, const nlohmann::json& b) {
-                             return less(b, a);
+        std::stable_sort(order_index.begin(), order_index.end(),
+                         [&](std::size_t a, std::size_t b) {
+                             return key_less(b, a);
                          });
+    }
+    for (std::size_t index = 0; index < out.size(); ++index) {
+        out[index] = rows[order_index[index]];
     }
     return out;
 }
@@ -562,8 +598,12 @@ OutputSlice apply_output(const std::string& action, const nlohmann::json& args,
             : nlohmann::json::object();
     const std::size_t default_limit = action_default_limit(action);
     std::size_t max_items = default_limit;
-    if (limits.contains("max_items") && !limits.at("max_items").is_null()) {
-        max_items = limits.at("max_items").get<std::size_t>();
+    if (limits.contains("max_items")) {
+        // Python treats an explicit null as MAX_RESPONSE_ROWS while an absent
+        // field uses the per-action default.
+        max_items = limits.at("max_items").is_null()
+                        ? kMaxResponseRows
+                        : limits.at("max_items").get<std::size_t>();
     }
     const std::string overflow =
         limits.value("overflow", std::string("truncate"));
@@ -615,7 +655,8 @@ nlohmann::json scope_row(const ScopeInfo& scope, bool summary,
             continue;
         }
         auto it = scope.deep_metrics.find(kind);
-        if (it == scope.deep_metrics.end()) {
+        if (it == scope.deep_metrics.end() ||
+            scope.deep_present.find(kind) == scope.deep_present.end()) {
             if (summary) row[std::string(metric_key(kind)) + "_pct"] = nullptr;
             continue;
         }
@@ -732,10 +773,14 @@ nlohmann::json Dispatcher::action_scope(const nlohmann::json& req) {
         }
     }
 
-    const nlohmann::json query = args.value("query", nlohmann::json::object());
-    (void)query;
+    const QuerySpec query_spec = parse_query(args, "full_name");
     std::vector<nlohmann::json> rows;
     for (const ScopeInfo* row : selected) {
+        // Filter before materializing rows so a narrow query stays cheap on
+        // large scope trees.
+        const std::string field =
+            query_spec.match_field == "name" ? row->name : row->full_name;
+        if (!query_value_matches(query_spec, field)) continue;
         rows.push_back(scope_row(*row, summary, selected_metrics));
     }
     auto depth_of = [](const nlohmann::json& row) {
@@ -754,8 +799,6 @@ nlohmann::json Dispatcher::action_scope(const nlohmann::json& req) {
                          return a.value("full_name", std::string()) <
                                 b.value("full_name", std::string());
                      });
-    const QuerySpec query_spec = parse_query(args, "full_name");
-    rows = filter_rows(rows, query_spec);
     rows = sort_rows(action, args, rows);
     const OutputSlice slice = apply_output(action, args, rows);
     nlohmann::json summary_json = slice.summary;
@@ -834,6 +877,10 @@ nlohmann::json Dispatcher::action_code_coverage(const nlohmann::json& req) {
         }
         for (const ScopeInfo* root : roots) {
             for (MetricKind kind : metrics) {
+                if (root->deep_present.find(kind) ==
+                    root->deep_present.end()) {
+                    continue;
+                }
                 auto it = root->deep_metrics.find(kind);
                 if (it == root->deep_metrics.end()) continue;
                 has_metric[kind] = true;
@@ -856,6 +903,10 @@ nlohmann::json Dispatcher::action_code_coverage(const nlohmann::json& req) {
             std::vector<double> percentages;
             std::vector<MetricAggregate> selected;
             for (MetricKind kind : metrics) {
+                if (scope.deep_present.find(kind) ==
+                    scope.deep_present.end()) {
+                    continue;
+                }
                 auto it = scope.deep_metrics.find(kind);
                 if (it == scope.deep_metrics.end()) continue;
                 selected.push_back(it->second);
@@ -936,6 +987,10 @@ nlohmann::json Dispatcher::action_functional(const nlohmann::json& req) {
     for (const auto* group : matched) {
         nlohmann::json row = nlohmann::json::object();
         row["covergroup"] = group->full_name;
+        // Query filtering happens before the Python projection; name and
+        // full_name exist there even though the response omits them.
+        row["name"] = group->full_name;
+        row["full_name"] = group->full_name;
         row["covered"] = group->covered;
         row["coverable"] = group->coverable;
         row["missing"] = group->coverable > group->covered
@@ -951,6 +1006,10 @@ nlohmann::json Dispatcher::action_functional(const nlohmann::json& req) {
     const QuerySpec query_spec = parse_query(args, group_by);
     rows = filter_rows(rows, query_spec);
     rows = sort_rows(action, args, rows);
+    for (auto& row : rows) {
+        row.erase("name");
+        row.erase("full_name");
+    }
     const OutputSlice slice = apply_output(action, args, rows);
     nlohmann::json summary_json = slice.summary;
     summary_json["session_id"] = sess.session_id;
@@ -1642,6 +1701,23 @@ nlohmann::json Dispatcher::action_export_exclude(const nlohmann::json& req) {
 
 namespace {
 
+bool parse_canonical_line(const std::string& text, int* out) {
+    if (text.empty()) return false;
+    std::size_t consumed = 0;
+    long parsed = 0;
+    try {
+        parsed = std::stol(text, &consumed);
+    } catch (const std::exception&) {
+        return false;
+    }
+    if (consumed != text.size() || parsed <= 0 ||
+        std::to_string(parsed) != text) {
+        return false;
+    }
+    *out = static_cast<int>(parsed);
+    return true;
+}
+
 std::string csv_escape(const std::string& value) {
     if (value.find_first_of(",\"\n") == std::string::npos) return value;
     std::string out = "\"";
@@ -1670,22 +1746,51 @@ nlohmann::json Dispatcher::action_csv_export(const nlohmann::json& req) {
                     {{"path", directory}});
     }
     ensure_directory(directory);
-    std::ostringstream code;
-    std::ostringstream functional;
-    std::ostringstream assertion;
-    std::ostringstream container;
-    code << "# schema_version=xcov-code-exclusions.v1\n";
-    code << "# coverage_kind=code\n";
-    code << "scope,metric,line,object,bin,reason\n";
-    functional << "# schema_version=xcov-functional-exclusions.v1\n";
-    functional << "# coverage_kind=functional\n";
-    functional << "scope,line,covergroup,coverpoint,cross,bin,reason\n";
-    assertion << "# schema_version=xcov-assertion-exclusions.v1\n";
-    assertion << "# coverage_kind=assertion\n";
-    assertion << "scope,line,assertion,assertion_kind,reason\n";
-    container << "# schema_version=xcov-container-exclusions.v1\n";
-    container << "# coverage_kind=container\n";
-    container << "target_kind,scope,covergroup,item,expansion_root,reason\n";
+    struct CsvKindSpec {
+        const char* kind;
+        const char* file;
+        std::vector<std::string> header;
+        std::vector<std::string> identity_fields;
+    };
+    const std::vector<CsvKindSpec> specs = {
+        {"code",
+         "code_exclusions.csv",
+         {"scope", "metric", "line", "object", "bin", "reason"},
+         {"scope", "metric", "line", "object", "bin"}},
+        {"functional",
+         "functional_exclusions.csv",
+         {"scope", "line", "covergroup", "coverpoint", "cross", "bin",
+          "reason"},
+         {"scope", "line", "covergroup", "coverpoint", "cross", "bin"}},
+        {"assertion",
+         "assertion_exclusions.csv",
+         {"scope", "line", "assertion", "assertion_kind", "reason"},
+         {"scope", "line", "assertion", "assertion_kind"}},
+        {"container",
+         "container_exclusions.csv",
+         {"target_kind", "scope", "covergroup", "item", "expansion_root",
+          "reason"},
+         {"target_kind", "scope", "covergroup", "item", "expansion_root"}},
+    };
+    auto join_identity = [](const std::vector<std::string>& fields) {
+        std::string identity;
+        for (const auto& field : fields) {
+            identity += field;
+            identity.push_back('\x1f');
+        }
+        return identity;
+    };
+    auto field_index = [&](const CsvKindSpec& spec, const std::string& name) {
+        for (std::size_t index = 0; index < spec.header.size(); ++index) {
+            if (spec.header[index] == name) return index;
+        }
+        return spec.header.size();
+    };
+    std::map<std::string, std::vector<std::vector<std::string>>> new_rows;
+    auto push_row = [&](const std::string& kind,
+                        std::vector<std::string> fields) {
+        new_rows[kind].push_back(std::move(fields));
+    };
     for (const auto& item : sess.exclusion_records) {
         const ExclusionRecord& record = item.second;
         if (record.kind == "functional") {
@@ -1693,31 +1798,25 @@ nlohmann::json Dispatcher::action_csv_export(const nlohmann::json& req) {
                 record.target_kind == "coverpoint" ? record.item : std::string();
             const std::string cross =
                 record.target_kind == "cross" ? record.item : std::string();
-            functional << csv_escape(record.scope) << "," << csv_escape(record.line)
-                       << "," << csv_escape(record.covergroup) << ","
-                       << csv_escape(coverpoint) << "," << csv_escape(cross) << ","
-                       << csv_escape(record.bin) << ","
-                       << csv_escape(record.reason) << "\n";
+            push_row("functional",
+                     {record.scope, record.line, record.covergroup, coverpoint,
+                      cross, record.bin, record.reason});
         } else if (record.kind == "assertion") {
-            assertion << csv_escape(record.scope) << "," << csv_escape(record.line)
-                      << ","
-                      << csv_escape(record.full_name.empty() ? record.name
-                                                             : record.full_name)
-                      << "," << csv_escape(record.target_kind) << ","
-                      << csv_escape(record.reason) << "\n";
+            push_row("assertion",
+                     {record.scope, record.line,
+                      record.full_name.empty() ? record.name : record.full_name,
+                      record.target_kind, record.reason});
         } else if (record.kind == "container") {
-            container << csv_escape(record.target_kind) << ","
-                      << csv_escape(record.scope) << ","
-                      << csv_escape(record.covergroup) << ","
-                      << csv_escape(record.item) << ","
-                      << csv_escape(record.target_kind == "instance" ? record.scope
-                                                                     : std::string())
-                      << "," << csv_escape(record.reason) << "\n";
+            push_row("container",
+                     {record.target_kind, record.scope, record.covergroup,
+                      record.item,
+                      record.target_kind == "instance" ? record.scope
+                                                       : std::string(),
+                      record.reason});
         } else {
-            code << csv_escape(record.scope) << "," << record.metric << ","
-                 << csv_escape(record.line) << "," << csv_escape(record.name) << ","
-                 << csv_escape(record.bin) << ","
-                 << csv_escape(record.reason) << "\n";
+            push_row("code",
+                     {record.scope, record.metric, record.line, record.name,
+                      record.bin, record.reason});
         }
     }
     if (sess.exclusion_records.empty()) {
@@ -1732,77 +1831,135 @@ nlohmann::json Dispatcher::action_csv_export(const nlohmann::json& req) {
                 metric = "fsm";
             else if (entry.object_kind == "Assert") metric = "assert";
             else continue;
-            code << csv_escape(entry.section_name) << "," << metric << ",,"
-                 << csv_escape(entry.object_line) << ",,"
-                 << csv_escape(entry.annotation) << "\n";
+            push_row("code",
+                     {entry.section_name, metric, entry.object_line, "", "",
+                      entry.annotation});
         }
     }
-    // Merge with any existing CSV: keep the previous data rows so an export
-    // never destroys exclusions written by another session or tool, but never
-    // append a row that is already present (repeat exports used to duplicate).
-    const std::pair<const char*, std::ostringstream*> csv_writes[] = {
-        {"code_exclusions.csv", &code},
-        {"functional_exclusions.csv", &functional},
-        {"assertion_exclusions.csv", &assertion},
-        {"container_exclusions.csv", &container},
-    };
-    for (const auto& entry : csv_writes) {
-        const std::string target = directory + "/" + entry.first;
-        std::string merged = entry.second->str();
-        std::set<std::string> seen;
-        {
-            std::istringstream current(merged);
-            std::string line;
-            while (std::getline(current, line)) {
-                if (line.rfind("#", 0) == 0) continue;
-                if (line.empty()) continue;
-                seen.insert(line);
-            }
-        }
+
+    std::size_t added_rows = 0;
+    std::size_t unexportable = 0;
+    for (const auto& item : sess.exclusion_records) {
+        const ExclusionRecord& record = item.second;
+        const bool empty_target =
+            (record.kind == "code" && record.name.empty() && record.line.empty()) ||
+            (record.kind == "container" && record.target_kind.empty()) ||
+            (record.kind == "functional" && record.covergroup.empty() &&
+             record.item.empty()) ||
+            (record.kind == "assertion" && record.full_name.empty());
+        if (empty_target) ++unexportable;
+    }
+
+    // Build every output in memory first so a reason conflict leaves all four
+    // files untouched (Python contract).
+    std::vector<std::pair<std::string, std::string>> outputs;
+    std::vector<nlohmann::json> items;
+    nlohmann::json summary_json = completeness_summary(0, 0);
+    std::size_t returned = 0;
+    for (const auto& spec : specs) {
+        const std::string target = directory + "/" + spec.file;
+        std::map<std::string, std::string> identity_reason;
+        std::vector<std::vector<std::string>> existing_rows;
         if (file_exists(target)) {
-            const std::string existing = read_file(target);
-            std::istringstream lines(existing);
-            std::string line;
-            int header_lines = 0;
-            while (std::getline(lines, line)) {
-                if (line.rfind("#", 0) == 0) continue;
-                ++header_lines;
-                if (header_lines == 1) continue;  // column header
-                if (line.empty()) continue;
-                if (!seen.insert(line).second) continue;  // already exported
-                merged += line + "\n";
+            try {
+                const CsvDocument existing = parse_csv(target);
+                for (const auto& row : existing.rows) {
+                    std::vector<std::string> fields;
+                    fields.reserve(spec.header.size());
+                    for (const auto& column : spec.header) {
+                        fields.push_back(row.value(column));
+                    }
+                    std::vector<std::string> identity_values;
+                    for (const auto& column : spec.identity_fields) {
+                        identity_values.push_back(
+                            fields[field_index(spec, column)]);
+                    }
+                    const std::string identity = join_identity(identity_values);
+                    const std::string reason =
+                        fields[field_index(spec, "reason")];
+                    auto seen = identity_reason.find(identity);
+                    if (seen != identity_reason.end()) {
+                        if (seen->second != reason) {
+                            throw Error(
+                                "EXCLUSION_REASON_CONFLICT",
+                                "CSV already holds a different reason for the "
+                                "same exclusion identity",
+                                {{"existing_reason", seen->second},
+                                 {"requested_reason", reason}});
+                        }
+                        continue;
+                    }
+                    identity_reason.emplace(identity, reason);
+                    existing_rows.push_back(std::move(fields));
+                }
+            } catch (const Error& exc) {
+                if (exc.code() != "CSV_INVALID") throw;
             }
         }
-        write_file(target, merged);
+        std::vector<std::vector<std::string>> added;
+        for (const auto& fields : new_rows[spec.kind]) {
+            std::vector<std::string> identity_values;
+            for (const auto& column : spec.identity_fields) {
+                identity_values.push_back(fields[field_index(spec, column)]);
+            }
+            const std::string identity = join_identity(identity_values);
+            const std::string reason = fields[field_index(spec, "reason")];
+            auto seen = identity_reason.find(identity);
+            if (seen != identity_reason.end()) {
+                if (seen->second != reason) {
+                    throw Error(
+                        "EXCLUSION_REASON_CONFLICT",
+                        "export would write two different reasons for the same "
+                        "exclusion identity",
+                        {{"existing_reason", seen->second},
+                         {"requested_reason", reason}});
+                }
+                continue;
+            }
+            identity_reason.emplace(identity, reason);
+            added.push_back(fields);
+        }
+
+        std::string content;
+        content += "# schema_version=xcov-" + std::string(spec.kind) +
+                   "-exclusions.v1\n";
+        content += "# coverage_kind=" + std::string(spec.kind) + "\n";
+        for (std::size_t index = 0; index < spec.header.size(); ++index) {
+            if (index > 0) content.push_back(',');
+            content += spec.header[index];
+        }
+        content.push_back('\n');
+        for (const auto& fields : existing_rows) {
+            for (std::size_t index = 0; index < fields.size(); ++index) {
+                if (index > 0) content.push_back(',');
+                content += csv_escape(fields[index]);
+            }
+            content.push_back('\n');
+        }
+        for (const auto& fields : added) {
+            for (std::size_t index = 0; index < fields.size(); ++index) {
+                if (index > 0) content.push_back(',');
+                content += csv_escape(fields[index]);
+            }
+            content.push_back('\n');
+        }
+        outputs.emplace_back(target, std::move(content));
+        added_rows += added.size();
+        items.push_back({{"coverage_kind", spec.kind},
+                         {"path", target},
+                         {"status", "published"},
+                         {"group_count", added.empty() ? 0 : 1},
+                         {"record_count", added.size()}});
+        ++returned;
     }
+    for (const auto& output : outputs) write_file(output.first, output.second);
     sess.mark_reasons_persisted();
-    // Only seed the other three files when they do not exist yet; overwriting
-    // them with an empty header destroyed user data on every export.
-    const std::pair<const char*, const char*> empty_files[] = {
-        {"functional_exclusions.csv",
-         "# schema_version=xcov-functional-exclusions.v1\n"
-         "# coverage_kind=functional\n"
-         "scope,line,covergroup,coverpoint,cross,bin,reason\n"},
-        {"assertion_exclusions.csv",
-         "# schema_version=xcov-assertion-exclusions.v1\n"
-         "# coverage_kind=assertion\n"
-         "scope,line,assertion,assertion_kind,reason\n"},
-        {"container_exclusions.csv",
-         "# schema_version=xcov-container-exclusions.v1\n"
-         "# coverage_kind=container\n"
-         "target_kind,scope,covergroup,item,expansion_root,reason\n"},
-    };
-    for (const auto& entry : empty_files) {
-        const std::string target = directory + "/" + entry.first;
-        if (file_exists(target)) continue;
-        write_file(target, entry.second);
-    }
-    nlohmann::json items = nlohmann::json::array();
-    items.push_back({{"status", "exported"},
-                     {"path", directory},
-                     {"record_count", sess.exclusion_records.size()}});
-    return ok_response(req, completeness_summary(items.size(), items.size()),
-                       {{"items", items}});
+    summary_json = completeness_summary(returned, returned);
+    summary_json["exported_session_record_count"] = sess.exclusion_records.size();
+    summary_json["added_record_count"] = added_rows;
+    summary_json["unexportable_session_record_count"] = unexportable;
+    summary_json["el_reason_unknown"] = !sess.loaded_el_entries.empty();
+    return ok_response(req, summary_json, {{"items", items}});
 }
 
 nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
@@ -1856,17 +2013,17 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
             if (kind_name == "container" || kind_name == "functional") {
                 std::string target_kind = row.value("target_kind");
                 std::string item;
-                if (target_kind.empty()) {
-                    if (kind_name == "functional") {
-                        if (!row.value("cross").empty()) {
-                            target_kind = "cross";
-                            item = row.value("cross");
-                        } else if (!row.value("coverpoint").empty()) {
-                            target_kind = "coverpoint";
-                            item = row.value("coverpoint");
-                        } else {
-                            target_kind = "covergroup";
-                        }
+                if (kind_name == "container") {
+                    // Container CSV owns the explicit target_kind/item columns.
+                    item = row.value("item");
+                    if (target_kind.empty()) target_kind = "covergroup";
+                } else if (target_kind.empty()) {
+                    if (!row.value("cross").empty()) {
+                        target_kind = "cross";
+                        item = row.value("cross");
+                    } else if (!row.value("coverpoint").empty()) {
+                        target_kind = "coverpoint";
+                        item = row.value("coverpoint");
                     } else {
                         target_kind = "covergroup";
                     }
@@ -1885,10 +2042,15 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                 record.item = item;
                 record.bin = row.value("bin");
                 record.line = line_text;
-                record.name = !record.bin.empty()
-                                  ? record.bin
-                                  : (item.empty() ? covergroup : item);
-                record.full_name = scope + "." + record.name;
+                if (target_kind == "instance") {
+                    record.name = scope;
+                    record.full_name = scope;
+                } else {
+                    record.name = !record.bin.empty()
+                                      ? record.bin
+                                      : (item.empty() ? covergroup : item);
+                    record.full_name = scope + "." + record.name;
+                }
                 std::size_t changed = 0;
                 if (target_kind == "instance") {
                     changed = sess.backend->exclude_scope(scope, false, reason);
@@ -1933,12 +2095,10 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
             if (metric == "line" && name.empty() && !line_text.empty()) {
                 // CSV line selector: exclude the line-metric leaves on the
                 // requested source line inside this scope.
-                try {
-                    const int line_no = std::stoi(line_text);
-                    ok = sess.backend->exclude_line(scope, line_no, reason) > 0;
-                } catch (const std::exception&) {
-                    ok = false;
-                }
+                int line_no = 0;
+                ok = parse_canonical_line(line_text, &line_no) &&
+                     sess.backend->exclude_line(scope, line_no, reason,
+                                                row.source_file) > 0;
             } else {
                 ok = sess.backend->exclude_leaf(scope, metric, name, reason);
             }
@@ -1977,8 +2137,10 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
         }
         sess.exclusion_records = baseline_records;
         std::remove(baseline_el.c_str());
-        return ok_response(req, completeness_summary(items.size(), items.size()),
-                           {{"items", items}});
+        throw Error("EXCLUSION_RESOLVE_FAILED",
+                    "every CSV record must resolve exactly once before compile; "
+                    "no artifacts were published",
+                    {{"failed_count", total_failed}});
     }
     if (records_changed) sess.mark_reason_mutation();
     sess.mark_reasons_persisted();
@@ -2128,18 +2290,10 @@ nlohmann::json Dispatcher::action_csv_validate(const nlohmann::json& req) {
                 if (kCodeMetrics.find(metric) == kCodeMetrics.end()) {
                     row_ok = false;
                 } else if (metric == "line" && row.value("object").empty()) {
-                    const std::string line_text = row.value("line");
-                    bool canonical = !line_text.empty();
-                    std::size_t consumed = 0;
-                    try {
-                        const long line = std::stol(line_text, &consumed);
-                        canonical = canonical && consumed == line_text.size() &&
-                                    line > 0 &&
-                                    std::to_string(line) == line_text;
-                    } catch (const std::exception&) {
-                        canonical = false;
+                    int parsed_line = 0;
+                    if (!parse_canonical_line(row.value("line"), &parsed_line)) {
+                        row_ok = false;
                     }
-                    if (!canonical) row_ok = false;
                 }
             }
             if (row_ok && (kind_name == "container" ||
@@ -2176,8 +2330,19 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
         throw Error("SCHEMA_INVALID", "directory is required",
                     {{"path", "$.args.directory"}});
     }
+    const std::string baseline_el = directory + "/.xcov_apply_baseline.el";
+    bool baseline_ok = false;
+    try {
+        sess.backend->save_exclusions(baseline_el);
+        baseline_ok = file_exists(baseline_el);
+    } catch (const Error&) {
+        baseline_ok = false;
+    }
+    const std::map<std::string, ExclusionRecord> baseline_records =
+        sess.exclusion_records;
     nlohmann::json items = nlohmann::json::array();
     bool records_changed = false;
+    std::size_t total_failed = 0;
     for (const auto& kind : kCsvKindFiles) {
         const std::string path = directory + "/" + kind.file;
         if (!file_exists(path)) continue;
@@ -2196,17 +2361,16 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
             if (kind_name == "container" || kind_name == "functional") {
                 std::string target_kind = row.value("target_kind");
                 std::string item;
-                if (target_kind.empty()) {
-                    if (kind_name == "functional") {
-                        if (!row.value("cross").empty()) {
-                            target_kind = "cross";
-                            item = row.value("cross");
-                        } else if (!row.value("coverpoint").empty()) {
-                            target_kind = "coverpoint";
-                            item = row.value("coverpoint");
-                        } else {
-                            target_kind = "covergroup";
-                        }
+                if (kind_name == "container") {
+                    item = row.value("item");
+                    if (target_kind.empty()) target_kind = "covergroup";
+                } else if (target_kind.empty()) {
+                    if (!row.value("cross").empty()) {
+                        target_kind = "cross";
+                        item = row.value("cross");
+                    } else if (!row.value("coverpoint").empty()) {
+                        target_kind = "coverpoint";
+                        item = row.value("coverpoint");
                     } else {
                         target_kind = "covergroup";
                     }
@@ -2220,10 +2384,15 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
                 record.covergroup = covergroup;
                 record.item = item;
                 record.bin = row.value("bin");
-                record.name = !record.bin.empty()
-                                  ? record.bin
-                                  : (item.empty() ? covergroup : item);
-                record.full_name = scope + "." + record.name;
+                if (target_kind == "instance") {
+                    record.name = scope;
+                    record.full_name = scope;
+                } else {
+                    record.name = !record.bin.empty()
+                                      ? record.bin
+                                      : (item.empty() ? covergroup : item);
+                    record.full_name = scope + "." + record.name;
+                }
                 if (target_kind == "instance") {
                     row_ok = sess.backend->exclude_scope(scope, false, reason) > 0;
                 } else {
@@ -2249,24 +2418,41 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
                 record.bin = row.value("bin");
                 record.full_name = scope + "." + name;
                 if (metric == "line" && name.empty() && !line_text.empty()) {
-                    try {
-                        const int line_no = std::stoi(line_text);
-                        row_ok = sess.backend->exclude_line(scope, line_no,
-                                                            reason) > 0;
-                    } catch (const std::exception&) {
-                        row_ok = false;
-                    }
+                    int line_no = 0;
+                    row_ok = parse_canonical_line(line_text, &line_no) &&
+                             sess.backend->exclude_line(scope, line_no, reason,
+                                                        row.source_file) > 0;
                 } else {
                     row_ok = sess.backend->exclude_leaf(scope, metric, name, reason);
                 }
             }
             if (row_ok) {
                 records_changed |= put_exclusion_record(sess, record);
+            } else {
+                ++total_failed;
             }
             items.push_back({{"coverage_ref", nullptr},
                              {"status", row_ok ? "changed" : "invalid"}});
         }
     }
+    if (total_failed > 0) {
+        sess.backend->unload_exclusions();
+        if (baseline_ok) {
+            try {
+                sess.backend->load_exclusions(baseline_el);
+            } catch (const Error&) {
+                // The state is already reported as failed; keep the snapshot
+                // removal below so a retry starts clean.
+            }
+        }
+        sess.exclusion_records = baseline_records;
+        std::remove(baseline_el.c_str());
+        throw Error("EXCLUSION_RESOLVE_FAILED",
+                    "every CSV record must resolve exactly once before apply; "
+                    "the request was rolled back",
+                    {{"failed_count", total_failed}});
+    }
+    std::remove(baseline_el.c_str());
     if (records_changed) sess.mark_reason_mutation();
     return ok_response(req, completeness_summary(items.size(), items.size()),
                        {{"items", items}});
@@ -2328,6 +2514,10 @@ nlohmann::json Dispatcher::action_metrics_list(const nlohmann::json& req) {
     std::map<std::string, MetricAggregate> totals;
     for (const ScopeInfo* root : roots) {
         for (const auto& item : root->deep_metrics) {
+            if (root->deep_present.find(item.first) ==
+                root->deep_present.end()) {
+                continue;
+            }
             MetricAggregate& entry = totals[metric_key(item.first)];
             entry.covered += item.second.covered;
             entry.coverable += item.second.coverable;

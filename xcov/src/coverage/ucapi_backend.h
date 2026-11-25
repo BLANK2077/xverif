@@ -4,11 +4,14 @@
 
 #include <json.hpp>
 
+#include <array>
+#include <cstdint>
 #include <map>
 #include <deque>
 #include <set>
 #include <tuple>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace xcov {
@@ -32,6 +35,25 @@ struct MetricAggregate {
     }
 };
 
+/// Compact key for the evicted-ref scope hint map (32-byte SHA-256 payload).
+struct RefHashKey {
+    std::array<unsigned char, 32> bytes{};
+    bool operator==(const RefHashKey& other) const {
+        return bytes == other.bytes;
+    }
+};
+
+struct RefHashKeyHasher {
+    std::size_t operator()(const RefHashKey& key) const {
+        std::size_t value = 1469598103934665603ull;
+        for (unsigned char byte : key.bytes) {
+            value ^= byte;
+            value *= 1099511628211ull;
+        }
+        return value;
+    }
+};
+
 struct ScopeInfo {
     std::string name;
     std::string full_name;
@@ -41,6 +63,11 @@ struct ScopeInfo {
     ucapi::Handle handle = nullptr;
     std::map<MetricKind, MetricAggregate> metrics;      // self (code metrics)
     std::map<MetricKind, MetricAggregate> deep_metrics; // subtree aggregate
+    // "Metric exists for this scope" flags. UCAPI returns a region for every
+    // metric on every instance, so a zero-valued aggregate alone cannot tell
+    // us whether URG would have emitted that metric key.
+    std::set<MetricKind> present_metrics;
+    std::set<MetricKind> deep_present;
 };
 
 /// UCAPI-backed coverage backend, semantically aligned with URG.
@@ -125,7 +152,8 @@ public:
                       const std::string& name, const std::string& reason);
     /// Exclude every line-metric leaf in one instance whose source line matches.
     std::size_t exclude_line(const std::string& scope_name, int line_no,
-                             const std::string& reason);
+                             const std::string& reason,
+                             const std::string& source_file = std::string());
     std::size_t exclude_scope(const std::string& scope_name, bool recursive,
                               const std::string& reason);
     std::size_t restore_scope(const std::string& scope_name, bool recursive);
@@ -244,6 +272,11 @@ private:
     // FIFO eviction order for the bounded coverage_ref locator cache.
     std::deque<std::string> ref_locator_order_;
     std::size_t ref_locator_limit_ = 200000;
+    // When the full locator cache evicts an entry, retain only its scope id so
+    // a later lookup scans one instance instead of the whole tree.
+    std::unordered_map<RefHashKey, std::uint32_t, RefHashKeyHasher>
+        ref_scope_hints_;
+    std::size_t ref_hint_limit_ = 2000000;
 };
 
 

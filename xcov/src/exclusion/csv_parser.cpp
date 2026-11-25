@@ -80,6 +80,7 @@ CsvDocument parse_csv(const std::string& path) {
     std::string line;
     int line_number = 0;
     bool header_seen = false;
+    std::string current_source_file;
     while (std::getline(stream, line)) {
         ++line_number;
         const std::string stripped = trimmed(line);
@@ -90,6 +91,10 @@ CsvDocument parse_csv(const std::string& path) {
                 document.schema_version = trimmed(body.substr(15));
             } else if (body.rfind("coverage_kind=", 0) == 0) {
                 document.coverage_kind = trimmed(body.substr(14));
+            } else if (body.rfind("source_file=", 0) == 0) {
+                // Python groups data rows under "# source_file=<rel>"; keep the
+                // group so line selectors can match the right file.
+                current_source_file = trimmed(body.substr(12));
             }
             continue;
         }
@@ -104,6 +109,7 @@ CsvDocument parse_csv(const std::string& path) {
         CsvRow row;
         row.fields = fields;
         row.line_number = line_number;
+        row.source_file = current_source_file;
         row.header = document.header;
         document.rows.push_back(row);
     }
