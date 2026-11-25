@@ -167,6 +167,30 @@
 `decision_groups` 保持在独立扫描中（已验证稳定），未并入 `scan_code`，因为
 container/cross 判定在合并扫描里出现过回归。
 
+## 子 agent review 后的修复（2026-11-25）
+
+review 发现的问题与处理：
+
+| # | 问题 | 处理 | 状态 |
+|---|---|---|---|
+| 1 | 构建无 `-O`（`-O0`），全链路 3-8× 慢 | `xcov/Makefile` 加 `OPT ?= -O2` + `-g` | 已修 |
+| 2 | 聚合指标（metrics/deep_metrics）不在失效体系，排除后 summary 数字不变 | `refresh_metrics()` 懒重算，`invalidate_caches` 置脏；dispatch 在需要指标的 action 前调用 | 已修 |
+| 3 | `scan_code` 丢失 FSM `transitions` 语义，fsm gap 恒为 0 | 恢复 `now = in_transitions \|\| (fsm && name == "transitions")` 并向下传递 | 已修 |
+| 4 | `exclude.unload_all` 在 design handle 上调用，不生效 | 改为 test handle 优先，design 兜底 | 已修 |
+| 5 | response schema 校验做了两遍，且 `properties` 深拷贝 | render 路径去掉二次校验；`properties` 改指针 | 已修 |
+| 6 | `metrics.list` 重扫 assert/testbench | 改为从 `assertions()` / `functional_groups()` 缓存累加 | 已修 |
+| 7 | `scan_code` / `exclude_scope` 的 region 句柄泄漏 | 收集完成后 release | 已修 |
+| 8 | `read_source_line` 每个 gap 重开文件重扫 | 进程级文件行缓存 | 已修 |
+| 9 | `find_by_ref` 每对象 `getenv` | 改为 `debug_enabled()` 静态缓存 | 已修 |
+
+未修（记录）：
+
+- `exclude.csv.apply` 响应的 items 缺 `coverage_ref`，会被响应校验转成 error。
+- CSV 的 assertion / functional 行没有 `metric` 列，`exclude_leaf` 永远匹配不到，静默计入 failed。
+- `export.functional_coverage` 仍用 `dump(2)` 且按值拷贝 gaps。
+- `code_coverage.summary` 的无效排序、`scope.summary` 的 comparator 内重复计算 depth。
+- `payload_format` 在 stdio-loop 里未被读取，json/xout 总是双份渲染。
+
 ## 进度表
 
 | 阶段 | 状态 |

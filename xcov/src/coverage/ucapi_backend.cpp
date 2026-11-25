@@ -15,6 +15,13 @@
 namespace xcov {
 
 namespace {
+inline bool debug_enabled() {
+    static const bool enabled = std::getenv("XCOV_CPP_DEBUG") != nullptr;
+    return enabled;
+}
+} // namespace
+
+namespace {
 
 std::string safe_str(char* text) {
     return text == nullptr ? std::string() : std::string(text);
@@ -75,7 +82,7 @@ UcapiBackend::UcapiBackend(const std::string& vdb, const std::string& exclusion_
     design_ = api.load(ucapi::kDesignObj, nullptr, vdb_.c_str());
     if (design_ == nullptr) {
         const std::string ucapi_error = api.last_error();
-        if (std::getenv("XCOV_CPP_DEBUG") && !ucapi_error.empty()) {
+        if (debug_enabled() && !ucapi_error.empty()) {
             std::fprintf(stderr, "ucapi load failed: %s\n", ucapi_error.c_str());
         }
         throw Error("VDB_OPEN_FAILED", "failed to load coverage database",
@@ -139,7 +146,7 @@ void UcapiBackend::load_tests() {
     test_ = api.load(ucapi::kTestObj, design_, test_names_.front().c_str());
     if (test_ == nullptr) {
         const std::string ucapi_error = api.last_error();
-        if (std::getenv("XCOV_CPP_DEBUG") && !ucapi_error.empty()) {
+        if (debug_enabled() && !ucapi_error.empty()) {
             std::fprintf(stderr, "ucapi test load failed: %s\n",
                          ucapi_error.c_str());
         }
@@ -213,6 +220,23 @@ void UcapiBackend::walk_instances() {
     }
     fill_missing_scopes();
     finalize_scope_metrics();
+}
+
+void UcapiBackend::refresh_metrics() {
+    if (!metrics_dirty_) return;
+    const UcapiLibrary& api = UcapiLibrary::instance();
+    for (auto handle : persistent_handles_) {
+        if (handle != nullptr) api.release(handle);
+    }
+    persistent_handles_.clear();
+    for (auto& scope : scopes_) {
+        scope.metrics.clear();
+        scope.deep_metrics.clear();
+        if (scope.handle == nullptr) continue;  // synthetic generate level
+        aggregate_scope(scope);
+    }
+    finalize_scope_metrics();
+    metrics_dirty_ = false;
 }
 
 void UcapiBackend::aggregate_scope(ScopeInfo& scope) {
@@ -454,90 +478,33 @@ void UcapiBackend::finalize_scope_metrics() {
 }
 
 MetricAggregate UcapiBackend::assert_totals() const {
-    const UcapiLibrary& api = UcapiLibrary::instance();
     MetricAggregate aggregate;
-    ucapi::Handle metrics = api.iterate(test_, ucapi::kMetrics);
-    if (metrics == nullptr) return aggregate;
-    ucapi::Handle metric;
-    while ((metric = api.scan(metrics)) != nullptr) {
-        if (!api.is_assert_metric(metric)) continue;
-        ucapi::Handle objects = api.qualified_iterate(test_, metric, ucapi::kObjects);
-        if (objects == nullptr) continue;
-        ucapi::Handle object;
-        while ((object = api.scan(objects)) != nullptr) {
-            ucapi::Handle persistent = api.make_persistent(object);
-            const int type = api.get_assert_type(persistent);
-            long real_successes = 0;
-            long all_successes = 0;
-            ucapi::Handle blocks = api.iterate(persistent, ucapi::kObjects);
-            if (blocks != nullptr) {
-                ucapi::Handle block;
-                while ((block = api.scan(blocks)) != nullptr) {
-                    const std::string name = safe_str(api.get_str(block, ucapi::kName));
-                    if (name != "realsuccesses" && name != "allsuccesses") continue;
-                    const long count =
-                        api.get(block, persistent, test_, ucapi::kCovCount);
-                    if (name == "realsuccesses") real_successes = count;
-                    else all_successes = count;
-                }
-                api.release(blocks);
-            }
-            const long hit =
-                (type == ucapi::kAssertionTypeCoverProperty ? all_successes
-                                                            : real_successes) > 0
-                    ? 1
-                    : 0;
-            aggregate.covered += hit;
-            aggregate.coverable += 1;
-            api.release(persistent);
-        }
-        api.release(objects);
+    for (const auto& row : assertions()) {
+        const long success = row.type == 1 ? row.all_successes : row.real_successes;
+        aggregate.covered += success > 0 ? 1 : 0;
+        aggregate.coverable += 1;
     }
-    api.release(metrics);
     return aggregate;
 }
 
 MetricAggregate UcapiBackend::functional_totals() const {
-    const UcapiLibrary& api = UcapiLibrary::instance();
     MetricAggregate aggregate;
-    ucapi::Handle metrics = api.iterate(test_, ucapi::kMetrics);
-    if (metrics == nullptr) return aggregate;
-    ucapi::Handle metric;
-    while ((metric = api.scan(metrics)) != nullptr) {
-        if (!api.is_testbench_metric(metric)) continue;
-        ucapi::Handle groups = api.qualified_iterate(test_, metric, ucapi::kDefinitions);
-        if (groups == nullptr) continue;
-        ucapi::Handle group;
-        while ((group = api.scan(groups)) != nullptr) {
-            ucapi::Handle persistent_group = api.make_persistent(group);
-            ucapi::Handle variants =
-                api.qualified_iterate(persistent_group, metric, ucapi::kDefinitions);
-            if (variants != nullptr) {
-                ucapi::Handle variant;
-                while ((variant = api.scan(variants)) != nullptr) {
-                    ucapi::Handle persistent_variant = api.make_persistent(variant);
-                    aggregate.covered +=
-                        api.get(persistent_variant, nullptr, test_, ucapi::kCovered);
-                    aggregate.coverable +=
-                        api.get(persistent_variant, nullptr, test_, ucapi::kCoverable);
-                    api.release(persistent_variant);
-                }
-                api.release(variants);
-            }
-            api.release(persistent_group);
-        }
-        api.release(groups);
+    for (const auto& group : functional_groups()) {
+        aggregate.covered += group.covered;
+        aggregate.coverable += group.coverable;
     }
-    api.release(metrics);
     return aggregate;
 }
 
-std::vector<UcapiBackend::FunctionalGroup> UcapiBackend::functional_groups() const {
+const std::vector<UcapiBackend::FunctionalGroup>& UcapiBackend::functional_groups() const {
     if (functional_cache_valid_) return functional_cache_;
     const UcapiLibrary& api = UcapiLibrary::instance();
     std::vector<FunctionalGroup> out;
     ucapi::Handle metrics = api.iterate(test_, ucapi::kMetrics);
-    if (metrics == nullptr) return out;
+    if (metrics == nullptr) {
+        functional_cache_valid_ = true;
+        return functional_cache_;
+    }
     ucapi::Handle metric;
     while ((metric = api.scan(metrics)) != nullptr) {
         if (!api.is_testbench_metric(metric)) continue;
@@ -601,17 +568,20 @@ std::vector<UcapiBackend::FunctionalGroup> UcapiBackend::functional_groups() con
         api.release(groups);
     }
     api.release(metrics);
-    functional_cache_ = out;
+    functional_cache_ = std::move(out);
     functional_cache_valid_ = true;
-    return out;
+    return functional_cache_;
 }
 
-std::vector<UcapiBackend::AssertionRow> UcapiBackend::assertions() const {
+const std::vector<UcapiBackend::AssertionRow>& UcapiBackend::assertions() const {
     if (assertion_cache_valid_) return assertion_cache_;
     const UcapiLibrary& api = UcapiLibrary::instance();
     std::vector<AssertionRow> out;
     ucapi::Handle metrics = api.iterate(test_, ucapi::kMetrics);
-    if (metrics == nullptr) return out;
+    if (metrics == nullptr) {
+        assertion_cache_valid_ = true;
+        return assertion_cache_;
+    }
     ucapi::Handle metric;
     while ((metric = api.scan(metrics)) != nullptr) {
         if (!api.is_assert_metric(metric)) continue;
@@ -645,10 +615,13 @@ std::vector<UcapiBackend::AssertionRow> UcapiBackend::assertions() const {
         api.release(objects);
     }
     api.release(metrics);
-    return out;
+    assertion_cache_ = std::move(out);
+    assertion_cache_valid_ = true;
+    return assertion_cache_;
 }
 
 std::vector<UcapiBackend::FunctionalGap> UcapiBackend::functional_gaps() const {
+    if (functional_gap_cache_valid_) return functional_gap_cache_;
     const UcapiLibrary& api = UcapiLibrary::instance();
     std::vector<FunctionalGap> out;
     ucapi::Handle metrics = api.iterate(test_, ucapi::kMetrics);
@@ -674,11 +647,10 @@ std::vector<UcapiBackend::FunctionalGap> UcapiBackend::functional_gaps() const {
                     if (coverpoints != nullptr) {
                         ucapi::Handle coverpoint;
                         while ((coverpoint = api.scan(coverpoints)) != nullptr) {
-                            ucapi::Handle persistent_cp = api.make_persistent(coverpoint);
                             const std::string cp_name =
-                                safe_str(api.get_str(persistent_cp, ucapi::kName));
+                                safe_str(api.get_str(coverpoint, ucapi::kName));
                             ucapi::Handle bin_groups =
-                                api.iterate(persistent_cp, ucapi::kObjects);
+                                api.iterate(coverpoint, ucapi::kObjects);
                             if (bin_groups != nullptr) {
                                 ucapi::Handle bin_group;
                                 while ((bin_group = api.scan(bin_groups)) != nullptr) {
@@ -715,7 +687,6 @@ std::vector<UcapiBackend::FunctionalGap> UcapiBackend::functional_gaps() const {
                                 }
                                 api.release(bin_groups);
                             }
-                            api.release(persistent_cp);
                         }
                         api.release(coverpoints);
                     }
@@ -728,6 +699,8 @@ std::vector<UcapiBackend::FunctionalGap> UcapiBackend::functional_gaps() const {
         api.release(groups);
     }
     api.release(metrics);
+    functional_gap_cache_ = out;
+    functional_gap_cache_valid_ = true;
     return out;
 }
 
@@ -830,13 +803,13 @@ bool find_by_ref(const UcapiLibrary& api, ucapi::Handle test,
                  const std::vector<ScopeInfo>& scopes,
                  const std::string& wanted, ucapi::Handle* out_obj,
                  ucapi::Handle* out_region, nlohmann::json* out_row) {
-    if (std::getenv("XCOV_CPP_DEBUG")) {
+    if (debug_enabled()) {
         std::fprintf(stderr, "find_by_ref start scopes=%zu wanted=%s\n",
                      scopes.size(), wanted.c_str());
     }
     ucapi::Handle metrics = api.iterate(test, ucapi::kMetrics);
     if (metrics == nullptr) {
-        if (std::getenv("XCOV_CPP_DEBUG")) std::fprintf(stderr, "no metrics\n");
+        if (debug_enabled()) std::fprintf(stderr, "no metrics\n");
         return false;
     }
     ucapi::Handle metric;
@@ -853,7 +826,7 @@ bool find_by_ref(const UcapiLibrary& api, ucapi::Handle test,
                 scope.handle, persistent_metric, ucapi::kIdentity);
             if (region == nullptr) continue;
             ucapi::Handle objects = api.iterate(region, ucapi::kObjects);
-            if (std::getenv("XCOV_CPP_DEBUG")) {
+            if (debug_enabled()) {
                 static int once = 0;
                 if (once < 3) {
                     ++once;
@@ -874,7 +847,7 @@ bool find_by_ref(const UcapiLibrary& api, ucapi::Handle test,
                         safe_str(api.get_str(object, ucapi::kName));
                     row["name"] = name;
                     row["full_name"] = scope.full_name + "." + name;
-                    if (std::getenv("XCOV_CPP_DEBUG")) {
+                    if (debug_enabled()) {
                         static int once = 0;
                         if (once < 2) {
                             ++once;
@@ -1000,7 +973,7 @@ bool UcapiBackend::set_exclusion(const std::string& coverage_ref_value,
     const UcapiLibrary& api = UcapiLibrary::instance();
     ucapi::Handle object = nullptr;
     ucapi::Handle region = nullptr;
-    if (std::getenv("XCOV_CPP_DEBUG")) {
+    if (debug_enabled()) {
         std::fprintf(stderr, "set_exclusion refs=%zu lookup=%d\n",
                      ref_locators_.size(),
                      (int)(ref_locators_.find(coverage_ref_value) !=
@@ -1014,7 +987,7 @@ bool UcapiBackend::set_exclusion(const std::string& coverage_ref_value,
             const bool found = find_leaf_by_locator(
                 api, test_, *scope, std::get<1>(locator->second),
                 std::get<2>(locator->second), &object, &region);
-            if (std::getenv("XCOV_CPP_DEBUG")) {
+            if (debug_enabled()) {
                 std::fprintf(stderr, "locator scope=%s metric=%s name=%s found=%d\n",
                              std::get<0>(locator->second).c_str(),
                              std::get<1>(locator->second).c_str(),
@@ -1149,6 +1122,7 @@ std::size_t UcapiBackend::exclude_scope(const std::string& scope_name,
                 }
                 api.release(objects);
             }
+            api.release(region);
         }
         api.release(persistent_metric);
     }
@@ -1318,7 +1292,10 @@ void UcapiBackend::load_exclusions(const std::string& path) {
 void UcapiBackend::unload_exclusions() {
     invalidate_caches();
     const UcapiLibrary& api = UcapiLibrary::instance();
-    api.unload_exclusion(design_);
+    // UCAPI applies report-time exclusion bits on the test handle; unloading
+    // from the design handle silently does nothing.
+    if (test_ != nullptr) api.unload_exclusion(test_);
+    if (design_ != nullptr) api.unload_exclusion(design_);
 }
 
 std::size_t UcapiBackend::excluded_count() const {
@@ -1508,12 +1485,13 @@ void collect_code_node(const UcapiLibrary& api, ucapi::Handle obj,
         return;
     }
     if (type != ucapi::kContainer) return;
+    const bool now = in_transitions || (fsm && name == "transitions");
     ucapi::Handle kids = api.iterate(obj, ucapi::kObjects);
     if (kids == nullptr) return;
     ucapi::Handle kid;
     while ((kid = api.scan(kids)) != nullptr) {
         collect_code_node(api, kid, region, test, metric, scope_name, name, fsm,
-                          in_transitions, scan);
+                          now, scan);
     }
     api.release(kids);
 }
@@ -1588,6 +1566,7 @@ UcapiBackend::CodeScan UcapiBackend::scan_code(
                 }
                 api.release(objects);
             }
+            api.release(region);
         }
         api.release(persistent_metric);
     }

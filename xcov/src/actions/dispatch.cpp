@@ -23,20 +23,25 @@ namespace {
 
 std::string read_source_line(const std::string& path, int line_no) {
     if (line_no <= 0 || path.empty()) return std::string();
-    std::ifstream in(path);
-    if (!in) return std::string();
-    std::string line;
-    int current = 0;
-    while (std::getline(in, line)) {
-        ++current;
-        if (current == line_no) {
-            while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) {
-                line.pop_back();
-            }
-            return line;
+    // Cache the whole file once: gap-heavy exports used to reopen and rescan
+    // the source for every uncovered line.
+    static std::map<std::string, std::vector<std::string>> cache;
+    auto it = cache.find(path);
+    if (it == cache.end()) {
+        std::vector<std::string> lines;
+        std::ifstream in(path);
+        if (in) {
+            std::string line;
+            while (std::getline(in, line)) lines.push_back(line);
         }
+        it = cache.emplace(path, std::move(lines)).first;
     }
-    return std::string();
+    if (static_cast<std::size_t>(line_no) > it->second.size()) return std::string();
+    std::string line = it->second[static_cast<std::size_t>(line_no) - 1];
+    while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) {
+        line.pop_back();
+    }
+    return line;
 }
 
 std::string lower_copy(std::string text) {
@@ -101,6 +106,27 @@ nlohmann::json Dispatcher::dispatch(const nlohmann::json& req) {
 
 nlohmann::json Dispatcher::handle(const ActionContract& contract,
                                   const nlohmann::json& req) {
+    // Exclusion mutations mark aggregates dirty; recompute once before any
+    // action that reports scope metrics.
+    if (contract.handler == "_scope" || contract.handler == "_code_coverage" ||
+        contract.handler == "_metrics_list" || contract.handler == "_export" ||
+        contract.handler == "_tests_list" || contract.handler == "_functional" ||
+        contract.handler == "_assert_report" || contract.handler == "_exclude" ||
+        contract.handler == "_exclude_container" ||
+        contract.handler == "_exclude_csv_apply" ||
+        contract.handler == "_exclude_csv_compile" ||
+        contract.handler == "_exclude_csv_export" ||
+        contract.handler == "_export_exclude" ||
+        contract.handler == "_exclude_load" ||
+        contract.handler == "_exclude_unload_all") {
+        try {
+            Session& sess = session(req);
+            sess.backend->refresh_metrics();
+        } catch (const Error&) {
+            // Session may be absent (e.g. schema validation errors); the
+            // action handler will raise the authoritative error.
+        }
+    }
     if (contract.handler == "_actions") return action_actions(req);
     if (contract.handler == "_schema") return action_schema(req);
     if (contract.handler == "_session_open") return action_session_open(req);
@@ -643,8 +669,10 @@ nlohmann::json Dispatcher::action_functional(const nlohmann::json& req) {
                     "only group_by=covergroup is implemented by the C++ backend yet",
                     {{"action", action}});
     }
-    std::vector<nlohmann::json> rows;
-    for (const auto& group : sess.backend->functional_groups()) {
+    const auto& groups = sess.backend->functional_groups();
+    std::vector<const UcapiBackend::FunctionalGroup*> matched;
+    matched.reserve(groups.size());
+    for (const auto& group : groups) {
         if (!scope_filter.empty()) {
             const std::size_t marker = group.full_name.find("::");
             const std::string scope_name =
@@ -652,34 +680,37 @@ nlohmann::json Dispatcher::action_functional(const nlohmann::json& req) {
                                             : group.full_name.substr(0, marker);
             if (!is_descendant(scope_name, scope_filter)) continue;
         }
-        nlohmann::json row = nlohmann::json::object();
-        row["covergroup"] = group.full_name;
-        row["covered"] = group.covered;
-        row["coverable"] = group.coverable;
-        row["missing"] = group.coverable > group.covered
-                             ? group.coverable - group.covered
-                             : 0;
-        if (group.score_item_count > 0) {
-            row["coverage_pct"] = py_round(group.score_pct, 4);
-        } else {
-            row["coverage_pct"] = nullptr;
-        }
-        rows.push_back(row);
+        matched.push_back(&group);
     }
-    std::stable_sort(rows.begin(), rows.end(),
-                     [](const nlohmann::json& a, const nlohmann::json& b) {
-                         return a.value("covergroup", std::string()) <
-                                b.value("covergroup", std::string());
-                     });
-    const std::size_t total = rows.size();
+    std::stable_sort(
+        matched.begin(), matched.end(),
+        [](const UcapiBackend::FunctionalGroup* a,
+           const UcapiBackend::FunctionalGroup* b) {
+            return a->full_name < b->full_name;
+        });
+    const std::size_t total = matched.size();
     const std::size_t max_items = limit_max_items(action, args);
     bool truncated = false;
-    if (max_items > 0 && rows.size() > max_items) {
-        rows.resize(max_items);
+    if (max_items > 0 && matched.size() > max_items) {
+        matched.resize(max_items);
         truncated = true;
     }
     nlohmann::json items = nlohmann::json::array();
-    for (const auto& row : rows) items.push_back(row);
+    for (const auto* group : matched) {
+        nlohmann::json row = nlohmann::json::object();
+        row["covergroup"] = group->full_name;
+        row["covered"] = group->covered;
+        row["coverable"] = group->coverable;
+        row["missing"] = group->coverable > group->covered
+                             ? group->coverable - group->covered
+                             : 0;
+        if (group->score_item_count > 0) {
+            row["coverage_pct"] = py_round(group->score_pct, 4);
+        } else {
+            row["coverage_pct"] = nullptr;
+        }
+        items.push_back(row);
+    }
     nlohmann::json filters = {
         {"exclude", nlohmann::json::array()},
         {"include", nlohmann::json::array()},
@@ -698,46 +729,49 @@ nlohmann::json Dispatcher::action_assert(const nlohmann::json& req) {
     const std::string action = req.value("action", std::string());
     const nlohmann::json args = req.value("args", nlohmann::json::object());
     const std::string scope_filter = args.value("scope", std::string());
-    std::vector<nlohmann::json> rows;
-    for (const auto& item : sess.backend->assertions()) {
+    const auto& assertion_rows = sess.backend->assertions();
+    std::vector<const UcapiBackend::AssertionRow*> matched;
+    matched.reserve(assertion_rows.size());
+    for (const auto& item : assertion_rows) {
         const std::size_t dot = item.full_name.rfind('.');
         const std::string scope_name =
             dot == std::string::npos ? std::string() : item.full_name.substr(0, dot);
         if (!scope_filter.empty() && !is_descendant(scope_name, scope_filter)) {
             continue;
         }
-        const long success = item.type == 1 ? item.all_successes : item.real_successes;
+        matched.push_back(&item);
+    }
+    std::stable_sort(
+        matched.begin(), matched.end(),
+        [](const UcapiBackend::AssertionRow* a,
+           const UcapiBackend::AssertionRow* b) {
+            if (a->name != b->name) return a->name < b->name;
+            return a->full_name < b->full_name;
+        });
+    const std::size_t total = matched.size();
+    const std::size_t max_items = limit_max_items(action, args);
+    bool truncated = false;
+    if (max_items > 0 && matched.size() > max_items) {
+        matched.resize(max_items);
+        truncated = true;
+    }
+    nlohmann::json items = nlohmann::json::array();
+    for (const auto* item : matched) {
+        const long success = item->type == 1 ? item->all_successes : item->real_successes;
         const long covered = success > 0 ? 1 : 0;
         nlohmann::json row = nlohmann::json::object();
-        row["name"] = item.name;
-        row["full_name"] = item.full_name;
+        row["name"] = item->name;
+        row["full_name"] = item->full_name;
         row["covered"] = covered;
         row["coverable"] = 1;
         row["missing"] = 1 - covered;
         row["coverage_pct"] = covered > 0 ? 100.0 : 0.0;
         row["status"] = nlohmann::json::array({covered > 0 ? "covered" : "not_covered"});
-        row["attempts"] = item.attempts;
+        row["attempts"] = item->attempts;
         row["real_successes"] = success;
-        row["without_attempts"] = item.attempts == 0 ? 1 : 0;
-        rows.push_back(row);
+        row["without_attempts"] = item->attempts == 0 ? 1 : 0;
+        items.push_back(row);
     }
-    std::stable_sort(rows.begin(), rows.end(),
-                     [](const nlohmann::json& a, const nlohmann::json& b) {
-                         const std::string an = a.value("name", std::string());
-                         const std::string bn = b.value("name", std::string());
-                         if (an != bn) return an < bn;
-                         return a.value("full_name", std::string()) <
-                                b.value("full_name", std::string());
-                     });
-    const std::size_t total = rows.size();
-    const std::size_t max_items = limit_max_items(action, args);
-    bool truncated = false;
-    if (max_items > 0 && rows.size() > max_items) {
-        rows.resize(max_items);
-        truncated = true;
-    }
-    nlohmann::json items = nlohmann::json::array();
-    for (const auto& row : rows) items.push_back(row);
     nlohmann::json filters = {
         {"exclude", nlohmann::json::array()},
         {"include", nlohmann::json::array()},

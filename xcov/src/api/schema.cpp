@@ -151,8 +151,11 @@ void validate_node_as(const nlohmann::json& value,
         (schema.value("type", std::string()) == "object" ||
          schema.contains("properties") || schema.contains("additionalProperties"));
     if (object_like) {
-        const nlohmann::json properties =
-            schema.value("properties", nlohmann::json::object());
+        const nlohmann::json* properties_ptr = nullptr;
+        auto properties_it = schema.find("properties");
+        if (properties_it != schema.end() && properties_it->is_object()) {
+            properties_ptr = &(*properties_it);
+        }
         if (schema.contains("required")) {
             for (const auto& key : schema.at("required")) {
                 const std::string name = key.get<std::string>();
@@ -167,8 +170,9 @@ void validate_node_as(const nlohmann::json& value,
             schema.at("additionalProperties").get<bool>();
         for (auto it = value.begin(); it != value.end(); ++it) {
             const std::string child_path = path + "." + it.key();
-            if (properties.is_object() && properties.contains(it.key())) {
-                validate_node_as(it.value(), properties.at(it.key()), child_path, code);
+            if (properties_ptr != nullptr && properties_ptr->contains(it.key())) {
+                validate_node_as(it.value(), properties_ptr->at(it.key()), child_path,
+                                 code);
                 continue;
             }
             if (!additional_allowed) {

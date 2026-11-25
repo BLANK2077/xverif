@@ -6,7 +6,8 @@ include $(TOP)/mk/common_flags.mk
 BUILD = build
 EXE   = bin/xcov
 
-CXXFLAGS = $(COMMON_CXXFLAGS) -pthread \
+OPT ?= -O2
+CXXFLAGS = $(COMMON_CXXFLAGS) $(OPT) -g -pthread \
            -I$(BUILD) -Isrc \
            -isystem $(TOP)/xdebug/third_party
 

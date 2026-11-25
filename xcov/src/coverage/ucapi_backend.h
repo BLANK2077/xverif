@@ -91,8 +91,8 @@ public:
         long incomplete = 0;
     };
 
-    std::vector<FunctionalGroup> functional_groups() const;
-    std::vector<AssertionRow> assertions() const;
+    const std::vector<FunctionalGroup>& functional_groups() const;
+    const std::vector<AssertionRow>& assertions() const;
 
     struct FunctionalGap {
         std::string scope;
@@ -106,6 +106,8 @@ public:
     /// Session-local exclusion operations (UCAPI report-time exclusion bits).
     void register_ref(const std::string& coverage_ref, const std::string& scope,
                       const std::string& metric, const std::string& name);
+    /// Recompute aggregate metrics after exclusion mutations.
+    void refresh_metrics();
     bool locator_for_ref(const std::string& coverage_ref, std::string* scope,
                          std::string* metric, std::string* name) const;
     bool set_exclusion(const std::string& coverage_ref, bool excluded,
@@ -209,12 +211,17 @@ private:
     std::map<std::string, std::vector<std::string>> children_;
     std::vector<ucapi::Handle> persistent_handles_;
     // Cached full-scan results; invalidated by every exclusion mutation.
+    mutable std::vector<FunctionalGap> functional_gap_cache_;
+    mutable bool functional_gap_cache_valid_ = false;
     mutable std::vector<FunctionalGroup> functional_cache_;
     mutable bool functional_cache_valid_ = false;
     mutable std::vector<AssertionRow> assertion_cache_;
     mutable bool assertion_cache_valid_ = false;
+    mutable bool metrics_dirty_ = false;
     void invalidate_caches() const {
+        metrics_dirty_ = true;
         functional_cache_valid_ = false;
+        functional_gap_cache_valid_ = false;
         assertion_cache_valid_ = false;
     }
     std::map<std::string, std::tuple<std::string, std::string, std::string>>

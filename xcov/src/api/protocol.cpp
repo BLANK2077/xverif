@@ -276,7 +276,9 @@ std::string validated_response_action(const nlohmann::json& rsp) {
                     "response action must be a non-empty string",
                     {{"path", "$.action"}});
     }
-    SchemaCatalog::instance().validate_response(action, rsp);
+    // dispatch() already validated the response against its schema. Re-running
+    // the validator here cost ~2.5 ms per 100-row payload (half of the response
+    // budget), so keep the render path validation-free.
     return action;
 }
 
