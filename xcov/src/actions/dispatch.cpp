@@ -14,6 +14,7 @@
 #include <cmath>
 #include <deque>
 #include <limits>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <optional>
 #include <set>
@@ -1518,7 +1519,7 @@ bool same_record(const ExclusionRecord& a, const ExclusionRecord& b) {
            a.full_name == b.full_name && a.target_kind == b.target_kind &&
            a.covergroup == b.covergroup && a.item == b.item &&
            a.bin == b.bin && a.line == b.line &&
-           a.source_file == b.source_file;
+           a.source_file == b.source_file && a.recursive == b.recursive;
 }
 
 /// Insert/update one reason record under the canonical key. Returns true when
@@ -1733,6 +1734,15 @@ void remove_temp_baseline(const std::string& path) {
     }
 }
 
+struct TempBaselineGuard {
+    std::string path;
+    explicit TempBaselineGuard(const char* prefix)
+        : path(make_temp_baseline(prefix)) {}
+    ~TempBaselineGuard() { remove_temp_baseline(path); }
+    TempBaselineGuard(const TempBaselineGuard&) = delete;
+    TempBaselineGuard& operator=(const TempBaselineGuard&) = delete;
+};
+
 bool parse_canonical_line(const std::string& text, int* out) {
     if (text.empty()) return false;
     std::size_t consumed = 0;
@@ -1843,12 +1853,34 @@ nlohmann::json Dispatcher::action_csv_export(const nlohmann::json& req) {
                       record.full_name.empty() ? record.name : record.full_name,
                       record.target_kind, record.reason});
         } else if (record.kind == "container") {
-            push_row("container", record.source_file,
-                     {record.target_kind, record.scope, record.covergroup,
-                      record.item,
-                      record.target_kind == "instance" ? record.scope
-                                                       : std::string(),
-                      record.reason});
+            if (record.target_kind == "instance" && record.recursive) {
+                // Mirror Python's expand_xml_instances: a recursive instance
+                // exclusion becomes one CSV row per real instance so a replay
+                // covers the same subtree instead of only the root's leaves.
+                bool expanded = false;
+                for (const auto& scope : sess.backend->scopes()) {
+                    if (scope.handle == nullptr ||
+                        !is_descendant(scope.full_name, record.scope)) {
+                        continue;
+                    }
+                    expanded = true;
+                    push_row("container", record.source_file,
+                             {record.target_kind, scope.full_name, "", "",
+                              record.scope, record.reason});
+                }
+                if (!expanded) {
+                    push_row("container", record.source_file,
+                             {record.target_kind, record.scope, "", "",
+                              record.scope, record.reason});
+                }
+            } else {
+                push_row("container", record.source_file,
+                         {record.target_kind, record.scope, record.covergroup,
+                          record.item,
+                          record.target_kind == "instance" ? record.scope
+                                                           : std::string(),
+                          record.reason});
+            }
         } else {
             push_row("code", record.source_file,
                      {record.scope, record.metric, record.line, record.name,
@@ -1998,10 +2030,9 @@ nlohmann::json Dispatcher::action_csv_export(const nlohmann::json& req) {
                 content += render_fields(row->fields);
             }
         }
-        std::size_t group_count = 0;
+        std::size_t group_count = groups.empty() ? 0 : groups.size();
         for (const auto& group : groups) {
             if (group.first.empty()) continue;
-            ++group_count;
             content.push_back('\n');
             content += "# source_file=" + group.first + "\n";
             for (const OutRow* row : group.second) {
@@ -2028,6 +2059,87 @@ nlohmann::json Dispatcher::action_csv_export(const nlohmann::json& req) {
     return ok_response(req, summary_json, {{"items", items}});
 }
 
+namespace {
+
+struct CsvInputSpec {
+    const char* kind;
+    const char* file;
+    std::vector<std::string> header;
+};
+
+const std::vector<CsvInputSpec>& csv_input_specs() {
+    static const std::vector<CsvInputSpec> specs = {
+        {"code",
+         "code_exclusions.csv",
+         {"scope", "metric", "line", "object", "bin", "reason"}},
+        {"functional",
+         "functional_exclusions.csv",
+         {"scope", "line", "covergroup", "coverpoint", "cross", "bin",
+          "reason"}},
+        {"assertion",
+         "assertion_exclusions.csv",
+         {"scope", "line", "assertion", "assertion_kind", "reason"}},
+        {"container",
+         "container_exclusions.csv",
+         {"target_kind", "scope", "covergroup", "item", "expansion_root",
+          "reason"}},
+    };
+    return specs;
+}
+
+bool is_directory_path(const std::string& path) {
+    struct stat info;
+    return ::stat(path.c_str(), &info) == 0 && S_ISDIR(info.st_mode);
+}
+
+/// Parse and validate the four exclusion CSVs before any state mutation.
+/// Missing code/functional/assertion files fail closed (container optional,
+/// matching the Python reference); headers, schema versions and field counts
+/// must match the closed contract.
+std::map<std::string, CsvDocument> load_validated_csv_directory(
+    const std::string& directory, bool require_all = true) {
+    if (!is_directory_path(directory)) {
+        throw Error("EXCLUSION_CSV_NOT_FOUND",
+                    "exclusion CSV directory does not exist",
+                    {{"path", directory}});
+    }
+    std::map<std::string, CsvDocument> documents;
+    for (const auto& spec : csv_input_specs()) {
+        const std::string path = directory + "/" + spec.file;
+        if (!file_exists(path)) {
+            if (!require_all || std::string(spec.kind) == "container") continue;
+            throw Error("EXCLUSION_CSV_NOT_FOUND",
+                        "required exclusion CSV does not exist",
+                        {{"path", path}, {"coverage_kind", spec.kind}});
+        }
+        CsvDocument document = parse_csv(path);
+        if (document.header != spec.header) {
+            throw Error("EXCLUSION_CSV_INVALID",
+                        "exclusion CSV header does not match the contract",
+                        {{"path", path}, {"coverage_kind", spec.kind}});
+        }
+        const std::string expected_schema =
+            "xcov-" + std::string(spec.kind) + "-exclusions.v1";
+        if (document.schema_version != expected_schema ||
+            document.coverage_kind != spec.kind) {
+            throw Error("EXCLUSION_CSV_INVALID",
+                        "exclusion CSV metadata does not match its file kind",
+                        {{"path", path}, {"coverage_kind", spec.kind}});
+        }
+        for (const auto& row : document.rows) {
+            if (row.fields.size() != spec.header.size()) {
+                throw Error("EXCLUSION_CSV_INVALID",
+                            "exclusion CSV row has the wrong field count",
+                            {{"path", path}, {"line", row.line_number}});
+            }
+        }
+        documents.emplace(spec.kind, std::move(document));
+    }
+    return documents;
+}
+
+} // namespace
+
 nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
     Session& sess = session(req);
     const nlohmann::json args = req.value("args", nlohmann::json::object());
@@ -2038,10 +2150,14 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                     {{"path", "$.args.directory"}});
     }
     if (output_directory.empty()) output_directory = directory;
+    // Validate every input before creating a baseline or touching any EL.
+    const std::map<std::string, CsvDocument> validated_documents =
+        load_validated_csv_directory(directory);
     ensure_directory(output_directory);
     // Snapshot the current exclusion state so a failed compile can roll back
     // instead of wiping pre-existing exclusions.
-    const std::string baseline_el = make_temp_baseline("xcov-compile-");
+    TempBaselineGuard baseline_guard("xcov-compile-");
+    const std::string& baseline_el = baseline_guard.path;
     try {
         sess.backend->save_exclusions(baseline_el);
         if (!file_exists(baseline_el)) {
@@ -2049,7 +2165,6 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                         "compiled exclusion baseline was not created");
         }
     } catch (const Error& exc) {
-        remove_temp_baseline(baseline_el);
         throw Error("EXCLUSION_BASELINE_FAILED",
                     "cannot snapshot the current exclusion state before compile",
                     {{"cause_message", exc.message()}});
@@ -2072,8 +2187,9 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
     std::size_t total_failed = 0;
     for (const auto& kind : kinds) {
         const std::string path = directory + "/" + kind.file;
-        if (!file_exists(path)) continue;
-        const CsvDocument document = parse_csv(path);
+        auto document_it = validated_documents.find(kind.kind);
+        if (document_it == validated_documents.end()) continue;
+        const CsvDocument& document = document_it->second;
         std::size_t applied = 0;
         std::size_t failed = 0;
         for (const auto& row : document.rows) {
@@ -2206,14 +2322,12 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
             sess.backend->load_exclusions(baseline_el);
         } catch (const Error& exc) {
             sess.exclusion_records = baseline_records;
-            remove_temp_baseline(baseline_el);
             throw Error("EXCLUSION_ROLLBACK_FAILED",
                         "compile failed and the pre-compile baseline could not "
                         "be restored",
                         {{"cause_message", exc.message()}});
         }
         sess.exclusion_records = baseline_records;
-        remove_temp_baseline(baseline_el);
         throw Error("EXCLUSION_RESOLVE_FAILED",
                     "every CSV record must resolve exactly once before compile; "
                     "no artifacts were published",
@@ -2221,7 +2335,6 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
     }
     if (records_changed) sess.mark_reason_mutation();
     sess.mark_reasons_persisted();
-    remove_temp_baseline(baseline_el);
     const std::string code_el = output_directory + "/code.el";
     sess.backend->save_exclusions(code_el);
     for (const char* extra : {"functional.el", "assertion.el", "container.el"}) {
@@ -2264,6 +2377,7 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
             record.name = scope;
             record.full_name = scope;
             const bool recursive = item.value("recursive", false);
+            record.recursive = recursive;
             const std::size_t changed =
                 adding ? sess.backend->exclude_scope(scope, recursive, reason)
                        : sess.backend->restore_scope(scope, recursive);
@@ -2407,7 +2521,10 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
         throw Error("SCHEMA_INVALID", "directory is required",
                     {{"path", "$.args.directory"}});
     }
-    const std::string baseline_el = make_temp_baseline("xcov-apply-");
+    const std::map<std::string, CsvDocument> validated_documents =
+        load_validated_csv_directory(directory);
+    TempBaselineGuard baseline_guard("xcov-apply-");
+    const std::string& baseline_el = baseline_guard.path;
     try {
         sess.backend->save_exclusions(baseline_el);
         if (!file_exists(baseline_el)) {
@@ -2415,7 +2532,6 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
                         "apply exclusion baseline was not created");
         }
     } catch (const Error& exc) {
-        remove_temp_baseline(baseline_el);
         throw Error("EXCLUSION_BASELINE_FAILED",
                     "cannot snapshot the current exclusion state before apply",
                     {{"cause_message", exc.message()}});
@@ -2426,9 +2542,9 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
     bool records_changed = false;
     std::size_t total_failed = 0;
     for (const auto& kind : kCsvKindFiles) {
-        const std::string path = directory + "/" + kind.file;
-        if (!file_exists(path)) continue;
-        const CsvDocument document = parse_csv(path);
+        auto document_it = validated_documents.find(kind.kind);
+        if (document_it == validated_documents.end()) continue;
+        const CsvDocument& document = document_it->second;
         for (const auto& row : document.rows) {
             const std::string reason = row.value("reason");
             const std::string scope = row.value("scope");
@@ -2524,20 +2640,17 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
             sess.backend->load_exclusions(baseline_el);
         } catch (const Error& exc) {
             sess.exclusion_records = baseline_records;
-            remove_temp_baseline(baseline_el);
             throw Error("EXCLUSION_ROLLBACK_FAILED",
                         "apply failed and the pre-apply baseline could not be "
                         "restored",
                         {{"cause_message", exc.message()}});
         }
         sess.exclusion_records = baseline_records;
-        remove_temp_baseline(baseline_el);
         throw Error("EXCLUSION_RESOLVE_FAILED",
                     "every CSV record must resolve exactly once before apply; "
                     "the request was rolled back",
                     {{"failed_count", total_failed}});
     }
-    remove_temp_baseline(baseline_el);
     if (records_changed) sess.mark_reason_mutation();
     return ok_response(req, completeness_summary(items.size(), items.size()),
                        {{"items", items}});
@@ -2549,10 +2662,13 @@ nlohmann::json Dispatcher::action_csv_format(const nlohmann::json& req) {
     const bool write = args.value("write", false);
     nlohmann::json items = nlohmann::json::array();
     if (!directory.empty()) {
+        const std::map<std::string, CsvDocument> validated =
+            load_validated_csv_directory(directory, false);
         for (const auto& kind : kCsvKindFiles) {
+            auto document_it = validated.find(kind.kind);
+            if (document_it == validated.end()) continue;
             const std::string path = directory + "/" + kind.file;
-            if (!file_exists(path)) continue;
-            const CsvDocument document = parse_csv(path);
+            const CsvDocument& document = document_it->second;
             std::ostringstream out;
             out << "# schema_version=" << document.schema_version << "\n";
             out << "# coverage_kind=" << document.coverage_kind << "\n";

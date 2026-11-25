@@ -156,6 +156,11 @@ public:
                              const std::string& source_file = std::string());
     std::size_t exclude_scope(const std::string& scope_name, bool recursive,
                               const std::string& reason);
+    /// Exclude/restore assertions owned by one instance subtree (assertions
+    /// live on the test handle, so the instance walk cannot reach them).
+    std::size_t exclude_assertions(const std::string& scope_name,
+                                   bool recursive, bool excluded,
+                                   const std::string& reason);
     std::size_t restore_scope(const std::string& scope_name, bool recursive);
     std::size_t exclude_functional(const std::string& scope,
                                    const std::string& covergroup,

@@ -126,6 +126,29 @@ def _first_gap_ref(loop: Loop, tmp_path: Path) -> str:
     pytest.skip("fixture has no uncovered code gap")
 
 
+
+def _seed_required_csvs(directory: Path) -> None:
+    """Create the three CSVs required by the Python apply/compile contract."""
+    directory.mkdir(parents=True, exist_ok=True)
+    files = {
+        "code_exclusions.csv":
+            "# schema_version=xcov-code-exclusions.v1\n"
+            "# coverage_kind=code\n"
+            "scope,metric,line,object,bin,reason\n",
+        "functional_exclusions.csv":
+            "# schema_version=xcov-functional-exclusions.v1\n"
+            "# coverage_kind=functional\n"
+            "scope,line,covergroup,coverpoint,cross,bin,reason\n",
+        "assertion_exclusions.csv":
+            "# schema_version=xcov-assertion-exclusions.v1\n"
+            "# coverage_kind=assertion\n"
+            "scope,line,assertion,assertion_kind,reason\n",
+    }
+    for name, content in files.items():
+        path = directory / name
+        if not path.exists():
+            path.write_text(content, encoding="utf-8")
+
 def _el_annotations(path: Path) -> list[str]:
     return [
         line.strip()[len('ANNOTATION: "'):-1]
@@ -138,6 +161,7 @@ def test_all_actions_respond(loop, tmp_path):
     """Every canonical action must answer with a schema-valid response."""
     scopes = _scopes(loop)
     code_scope = next((name for name in scopes if name.count(".") >= 1), scopes[0])
+    _seed_required_csvs(tmp_path)
     requests = [
         ("session.status", {}),
         ("tests.list", {}),
@@ -273,6 +297,7 @@ def test_csv_compiles_to_el_with_annotation(loop, vdb, tmp_path):
         f"{leaf},{metric},,{object_name},,{reason}\n",
         encoding="utf-8",
     )
+    _seed_required_csvs(csv_dir)
     el_dir = tmp_path / "compiled"
     response = loop.call("exclude.csv.compile", {
         "directory": str(csv_dir),
@@ -566,6 +591,7 @@ def test_csv_line_selector_applies_and_compiles(xverif_fixture, tmp_path):
             f"{scope},line,{line},,,line selector\n",
             encoding="utf-8",
         )
+        _seed_required_csvs(csv_dir)
         applied = session.call("exclude.csv.apply",
                                {"directory": str(csv_dir)})
         assert applied["ok"], applied
@@ -948,6 +974,7 @@ def test_csv_line_selector_rejects_wrong_source_file(xverif_fixture, tmp_path):
             f"{scope},line,{line},,,wrong file\n",
             encoding="utf-8",
         )
+        _seed_required_csvs(csv_dir)
         rejected = session.call("exclude.csv.apply",
                                 {"directory": str(csv_dir)})
         assert not rejected["ok"], rejected
@@ -1002,6 +1029,7 @@ def test_csv_failure_rolls_back_previous_exclusions(loop, tmp_path):
         "top,line,999999,,,bad line\n",
         encoding="utf-8",
     )
+    _seed_required_csvs(csv_dir)
     csv_dir.chmod(0o555)
     try:
         failed = loop.call("exclude.csv.apply", {"directory": str(csv_dir)})
@@ -1150,6 +1178,7 @@ def test_functional_csv_bin_does_not_leave_record(loop, vdb, tmp_path):
         f"{scope},10,{covergroup},cp_data,,binR,bin reason\n",
         encoding="utf-8",
     )
+    _seed_required_csvs(csv_dir)
     env = _env()
     env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs")
     fresh = Loop([str(CPP_BINARY), "--stdio-loop"], env, vdb)
@@ -1171,5 +1200,112 @@ def test_functional_csv_bin_does_not_leave_record(loop, vdb, tmp_path):
         })["ok"]
         assert "bin reason" not in (
             after / "functional_exclusions.csv").read_text()
+    finally:
+        fresh.close()
+
+
+def test_recursive_instance_csv_round_trip(loop, vdb, tmp_path):
+    """Recursive instance exclusions expand to one CSV row per real instance."""
+    added = loop.call("exclude.instance.add", {
+        "items": [{"scope": "top", "recursive": True, "reason": "tree"}],
+    })
+    assert added["ok"], added
+    before = loop.call("metrics.list", {})
+    assert before["ok"], before
+    csv_dir = tmp_path / "recursive-csv"
+    exported = loop.call("exclude.csv.export", {
+        "directory": str(csv_dir), "allow_absolute_path": True,
+    })
+    assert exported["ok"], exported
+    container = (csv_dir / "container_exclusions.csv").read_text()
+    instance_rows = [line for line in container.splitlines()
+                     if line.startswith("instance,")]
+    assert len(instance_rows) > 1, container
+
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs-2")
+    fresh = Loop([str(CPP_BINARY), "--stdio-loop"], env, vdb)
+    try:
+        applied = fresh.call("exclude.csv.apply", {"directory": str(csv_dir)})
+        assert applied["ok"], applied
+        after = fresh.call("metrics.list", {})
+        assert after["ok"], after
+        key = lambda row: (row["metric"], row["covered"], row["coverable"])
+        assert [key(row) for row in after["data"]["items"]] == \
+            [key(row) for row in before["data"]["items"]]
+    finally:
+        fresh.close()
+
+
+def test_csv_invalid_input_fails_closed_and_preserves_artifacts(loop,
+                                                                 tmp_path):
+    """Missing directories/bad headers must not silently succeed or overwrite
+    previously published EL artifacts."""
+    missing = tmp_path / "does-not-exist"
+    for action in ("exclude.csv.apply", "exclude.csv.compile"):
+        response = loop.call(action, {"directory": str(missing)})
+        assert not response["ok"], response
+        assert response["error"]["code"] == "EXCLUSION_CSV_NOT_FOUND"
+
+    bad_dir = tmp_path / "bad-header"
+    _seed_required_csvs(bad_dir)
+    (bad_dir / "code_exclusions.csv").write_text(
+        "# schema_version=xcov-code-exclusions.v1\n"
+        "# coverage_kind=code\n"
+        "not,a,valid,header\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "existing-out"
+    out_dir.mkdir()
+    previous = "// PREVIOUS IMPORTANT EXCLUSIONS\n"
+    (out_dir / "code.el").write_text(previous)
+    compiled = loop.call("exclude.csv.compile", {
+        "directory": str(bad_dir), "output_directory": str(out_dir),
+        "allow_absolute_path": True,
+    })
+    assert not compiled["ok"], compiled
+    assert compiled["error"]["code"] == "EXCLUSION_CSV_INVALID"
+    assert (out_dir / "code.el").read_text() == previous
+
+
+def test_recursive_instance_excludes_assertions(loop, tmp_path):
+    """URG zeroes assertions under an excluded instance; the C++ backend must
+    not keep reporting them as live."""
+    added = loop.call("exclude.instance.add", {
+        "items": [{"scope": "top", "recursive": True, "reason": "all"}],
+    })
+    assert added["ok"], added
+    metrics = loop.call("metrics.list", {})
+    assert metrics["ok"], metrics
+    assert not any(row["metric"] == "assert" for row in metrics["data"]["items"])
+    summary = loop.call("scope.summary", {
+        "scope": "top", "metrics": ["assert"],
+    })
+    assert summary["ok"], summary
+    assert summary["data"]["items"][0]["assert_pct"] is None
+
+
+def test_multiline_reason_csv_round_trip(loop, vdb, tmp_path):
+    """A schema-legal reason with a newline survives export and replay."""
+    reference = _first_gap_ref(loop, tmp_path)
+    reason = "line one\nline two"
+    added = loop.call("exclude.add", {
+        "coverage_refs": [{"coverage_ref": reference, "reason": reason}],
+    })
+    assert added["ok"], added
+    csv_dir = tmp_path / "multiline-csv"
+    assert loop.call("exclude.csv.export", {
+        "directory": str(csv_dir), "allow_absolute_path": True,
+    })["ok"]
+    text = (csv_dir / "code_exclusions.csv").read_text()
+    assert '"line one\nline two"' in text, text
+
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs-2")
+    fresh = Loop([str(CPP_BINARY), "--stdio-loop"], env, vdb)
+    try:
+        applied = fresh.call("exclude.csv.apply", {"directory": str(csv_dir)})
+        assert applied["ok"], applied
+        assert applied["data"]["items"][0]["status"] == "changed"
     finally:
         fresh.close()

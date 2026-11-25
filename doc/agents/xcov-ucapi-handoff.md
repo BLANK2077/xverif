@@ -39,7 +39,7 @@ Schema/action 元数据是**生成物**：`xcov/xcov/schemas_data/v1/`（63 个 
 由 `xcov/tools/export_schemas.py` / `export_actions.py` 从 Python 定义导出；
 `test_schema_export.py` 校验等价性。**不要手改 JSON**，改 Python 定义后重新导出。
 
-> 2026-11-25 更新：已完成两轮独立 review 驱动的修复（HEAD 之后另行提交）。
+> 2026-11-25 更新：已完成三轮独立 review 驱动的修复（HEAD 之后另行提交）。
 > `xcov.cpp_actions` 现为 46 个用例；query/sort/overflow、run_manifest、
 > session.close dirty reason、CSV line selector/身份、ref 缓存上限均已实现。
 > 详细修复表与最新已知限制见 `doc/agents/xcov-ucapi-plan-v2.md`
@@ -87,7 +87,9 @@ Schema/action 元数据是**生成物**：`xcov/xcov/schemas_data/v1/`（63 个 
 10. `export.code_coverage` 的 `raw` 指向不存在文件；line 分组/路径是 C++ 语义。
 11. `export.code_coverage` 在部分 fixture 上 line/branch 只统计 leaf gap，容器型 gap
     可能少于 `coverage.missing`。
-12. EL→CSV 不可完全回放；仅从 EL 导入的条目没有 reason。
+12. 全部指标被排除后 C++ 省略 0/0 metric 行（Python 保留 0/0 键），依赖 metric
+    键集合的下游会看到行数差异。
+13. EL→CSV 不可完全回放；仅从 EL 导入的条目没有 reason。
 
 ### 第 9 轮 review 剩余（历史记录；其中 1/2/3/4/8/9/11/12 已在后续提交修复）
 

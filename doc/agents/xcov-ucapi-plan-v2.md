@@ -268,7 +268,20 @@ review 发现的问题与处理：
 | 8 | `csv.apply/compile` 失败仍返回 ok | 任一行失败即回滚并抛 `EXCLUSION_RESOLVE_FAILED` |
 | 9 | run_manifest 资源不可读返回 `IO_ERROR`；8MB 假上限 | 统一映射 `RESOURCE_PROVENANCE_MISMATCH`；移除大小上限 |
 
-## 剩余已知限制（2026-11-25 第二轮 review 后）
+## 第七轮 review 修复（2026-11-25，HEAD d57ddcc 之后）
+
+第三轮独立 review 复验第二轮 3 个 P1 均通过，并新报 2 个 P1、5 个 P2。本轮处理：
+
+| # | 问题 | 处理 |
+|---|---|---|
+| 1 | recursive instance 排除导出成单行 CSV，回放只排根 scope 自己的叶子，丢失子树 | `ExclusionRecord` 记录 recursive；导出时按真实 instance 展开成每 instance 一行（expansion_root 保留根），apply/compile 逐 instance 回放；新增 recursive CSV 往返测试 |
+| 2 | apply/compile 对缺失目录/坏 header 静默成功；compile 用空 EL 覆盖旧产物 | 新增 `load_validated_csv_directory`：目录存在、code/functional/assertion 必需、header/schema/coverage_kind/字段数全部校验后才建 baseline；format 同样校验；失败不发布 |
+| 3 | 多行 quoted reason 无法解析（物理行解析） | `parse_csv` 改为逻辑记录解析，支持跨行引号字段，未闭合报错 |
+| 4 | container 的 group_count 报 0，Python 报 1 | group_count 统计含空 source_file 组 |
+| 5 | instance 排除不覆盖其下 assertion，URG 会归零 | 新增 `exclude_assertions`：一次扫描 test 级 assertion，按 instance scope/recursive 设置排除；restore 同步恢复 |
+| 6 | baseline 临时目录在解析异常时泄漏 | 改 RAII `TempBaselineGuard`，所有退出路径清理 |
+
+## 剩余已知限制（2026-11-25 第三轮 review 后）
 
 - recursive instance 排除在超大库仍 >60s（`covdb_set_exclude_all_iter` 不可用，只能逐 leaf）。
 - coverpoint/cross 的 exclusion 在 EL 中不产出对象（UCAPI 限制）。
@@ -281,6 +294,8 @@ review 发现的问题与处理：
 - export 输出路径策略未完全对齐 Python：C++ 只检查绝对路径开关，不强制 `XVERIF_XCOV_EXPORT_ROOTS`、`..` 与 symlink 策略。
 - `export.code_coverage` 的 `raw` 指向不存在文件；code JSON 的 line 分组/路径仍是 C++ 语义（保留行为不变量，不承诺逐字符对齐 URG 文本）。
 - `export.code_coverage` line/branch 在部分 fixture 上只统计 leaf gap，容器型 gap 可能少于 `coverage.missing`（未在本轮改动）。
+- 全部指标被排除后，C++ 用 present 语义省略 0/0 metric 行；Python 仍保留 0/0 键（如 branch/condition/line/toggle）。依赖 metric 键集合的下游会看到行数差异。
+- 多行 reason 现在可解析/回放，但不承诺与 Python 的 CSV 字节级格式一致。
 
 ## 进度表
 

@@ -30,6 +30,29 @@ ROOT = Path(__file__).resolve().parents[2]
 CPP_BINARY = ROOT / "xcov" / "bin" / "xcov"
 
 
+
+def _seed_required_csvs(directory: Path) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    files = {
+        "code_exclusions.csv":
+            "# schema_version=xcov-code-exclusions.v1\n"
+            "# coverage_kind=code\n"
+            "scope,metric,line,object,bin,reason\n",
+        "functional_exclusions.csv":
+            "# schema_version=xcov-functional-exclusions.v1\n"
+            "# coverage_kind=functional\n"
+            "scope,line,covergroup,coverpoint,cross,bin,reason\n",
+        "assertion_exclusions.csv":
+            "# schema_version=xcov-assertion-exclusions.v1\n"
+            "# coverage_kind=assertion\n"
+            "scope,line,assertion,assertion_kind,reason\n",
+    }
+    for name, content in files.items():
+        path = directory / name
+        if not path.exists():
+            path.write_text(content, encoding="utf-8")
+
+
 def _session(command, env, vdb: Path, name: str = "cov0"):
     proc = subprocess.Popen(
         command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -130,6 +153,7 @@ def test_csv_reason_with_comma_and_quotes_survives_compile(cpp_env, xverif_fixtu
         f'"{reason.replace(chr(34), chr(34) * 2)}"\n',
         encoding="utf-8",
     )
+    _seed_required_csvs(csv_dir)
     proc, send, name = _session([str(CPP_BINARY), "--stdio-loop"], cpp_env, vdb)
     try:
         el_dir = tmp_path / "el"
@@ -189,6 +213,7 @@ def test_csv_compile_publishes_four_artifacts_and_loads_union(cpp_env,
         f"{scope},{metric},,{gap['full_name']},,compile union\n",
         encoding="utf-8",
     )
+    _seed_required_csvs(csv_dir)
     el_dir = tmp_path / "el"
     proc, send, name = _session([str(CPP_BINARY), "--stdio-loop"], cpp_env, vdb)
     try:

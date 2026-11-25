@@ -73,45 +73,83 @@ bool CsvRow::has(const std::string& name) const {
     return false;
 }
 
+namespace {
+
+bool advance_quote_state(const std::string& text, bool quoted) {
+    std::size_t index = 0;
+    while (index < text.size()) {
+        if (text[index] == '"') {
+            if (quoted && index + 1 < text.size() && text[index + 1] == '"') {
+                index += 2;
+                continue;
+            }
+            quoted = !quoted;
+        }
+        ++index;
+    }
+    return quoted;
+}
+
+} // namespace
+
 CsvDocument parse_csv(const std::string& path) {
     const std::string text = read_file(path);
     CsvDocument document;
     std::istringstream stream(text);
     std::string line;
     int line_number = 0;
+    int record_line = 0;
     bool header_seen = false;
+    bool quoted = false;
+    std::string buffer;
     std::string current_source_file;
-    while (std::getline(stream, line)) {
-        ++line_number;
-        const std::string stripped = trimmed(line);
-        if (stripped.empty()) continue;
-        if (stripped.rfind("#", 0) == 0) {
-            const std::string body = trimmed(stripped.substr(1));
-            if (body.rfind("schema_version=", 0) == 0) {
-                document.schema_version = trimmed(body.substr(15));
-            } else if (body.rfind("coverage_kind=", 0) == 0) {
-                document.coverage_kind = trimmed(body.substr(14));
-            } else if (body.rfind("source_file=", 0) == 0) {
-                // Python groups data rows under "# source_file=<rel>"; keep the
-                // group so line selectors can match the right file.
-                current_source_file = trimmed(body.substr(12));
-            }
-            continue;
-        }
-        const std::vector<std::string> fields = split_record(stripped);
+    auto process_record = [&](const std::string& record, int start_line) {
+        const std::vector<std::string> fields = split_record(record);
         if (!header_seen) {
             for (const auto& field : fields) {
                 document.header.push_back(trimmed(field));
             }
             header_seen = true;
-            continue;
+            return;
         }
         CsvRow row;
         row.fields = fields;
-        row.line_number = line_number;
+        row.line_number = start_line;
         row.source_file = current_source_file;
         row.header = document.header;
         document.rows.push_back(row);
+    };
+    while (std::getline(stream, line)) {
+        ++line_number;
+        if (buffer.empty()) {
+            const std::string stripped = trimmed(line);
+            if (stripped.empty()) continue;
+            if (stripped.rfind("#", 0) == 0) {
+                const std::string body = trimmed(stripped.substr(1));
+                if (body.rfind("schema_version=", 0) == 0) {
+                    document.schema_version = trimmed(body.substr(15));
+                } else if (body.rfind("coverage_kind=", 0) == 0) {
+                    document.coverage_kind = trimmed(body.substr(14));
+                } else if (body.rfind("source_file=", 0) == 0) {
+                    // Python groups data rows under "# source_file=<rel>";
+                    // keep the group so line selectors can match the file.
+                    current_source_file = trimmed(body.substr(12));
+                }
+                continue;
+            }
+            record_line = line_number;
+        }
+        buffer += line;
+        buffer.push_back('\n');
+        quoted = advance_quote_state(line, quoted);
+        if (quoted) continue;
+        buffer.pop_back();  // trailing newline is not part of the record
+        process_record(buffer, record_line);
+        buffer.clear();
+    }
+    if (quoted || !buffer.empty()) {
+        throw Error("CSV_INVALID", "unterminated quoted CSV field",
+                    {{"path", path}, {"line", record_line}});
     }
     if (!header_seen) {
         throw Error("CSV_INVALID", "exclusion CSV has no header row",

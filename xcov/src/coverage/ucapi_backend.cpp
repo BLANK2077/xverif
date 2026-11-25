@@ -1515,6 +1515,71 @@ bool UcapiBackend::exclude_assertion(const std::string& full_name,
     return done;
 }
 
+std::size_t UcapiBackend::exclude_assertions(const std::string& scope_name,
+                                            bool recursive, bool excluded,
+                                            const std::string& reason) {
+    const UcapiLibrary& api = UcapiLibrary::instance();
+    ucapi::Handle metrics = api.iterate(test_, ucapi::kMetrics);
+    if (metrics == nullptr) return 0;
+    std::size_t changed = 0;
+    bool annotation_written = false;
+    ucapi::Handle metric;
+    while ((metric = api.scan(metrics)) != nullptr) {
+        if (!api.is_assert_metric(metric)) continue;
+        ucapi::Handle objects = api.qualified_iterate(test_, metric, ucapi::kObjects);
+        if (objects == nullptr) continue;
+        ucapi::Handle object;
+        while ((object = api.scan(objects)) != nullptr) {
+            ucapi::Handle persistent = api.make_persistent(object);
+            const std::string full =
+                safe_str(api.get_str(persistent, ucapi::kFullName));
+            const std::size_t dot = full.rfind('.');
+            const std::string assert_scope =
+                dot == std::string::npos ? std::string() : full.substr(0, dot);
+            const bool in_scope =
+                assert_scope == scope_name ||
+                (recursive && assert_scope.size() > scope_name.size() &&
+                 assert_scope.compare(0, scope_name.size(), scope_name) == 0 &&
+                 assert_scope[scope_name.size()] == '.');
+            if (!in_scope) {
+                api.release(persistent);
+                continue;
+            }
+            if (excluded && exclusion_policy_ == "strict") {
+                const long covered =
+                    api.get(persistent, nullptr, test_, ucapi::kCovered);
+                if (covered > 0) {
+                    api.release(persistent);
+                    continue;
+                }
+            }
+            const int status =
+                api.get(persistent, nullptr, test_, ucapi::kCovStatus);
+            int updated = status < 0
+                              ? (excluded ? ucapi::kStatusExcludedAtReportTime : 0)
+                              : (excluded
+                                     ? status | ucapi::kStatusExcludedAtReportTime
+                                     : status &
+                                           ~ucapi::kStatusExcludedAtReportTime);
+            if (updated != status &&
+                api.set(persistent, nullptr, test_, ucapi::kCovStatus,
+                        updated) == 0) {
+                ++changed;
+                if (excluded && !reason.empty() && !annotation_written) {
+                    api.set_annotation(persistent, "cov_comment", reason.c_str());
+                    api.set_durable(nullptr, test_, persistent, 1);
+                    annotation_written = true;
+                }
+            }
+            api.release(persistent);
+        }
+        api.release(objects);
+    }
+    api.release(metrics);
+    if (changed > 0) invalidate_caches();
+    return changed;
+}
+
 bool UcapiBackend::exclude_leaf(const std::string& scope_name,
                                 const std::string& metric,
                                 const std::string& name,
@@ -1685,6 +1750,7 @@ std::size_t UcapiBackend::exclude_scope(const std::string& scope_name,
     }
     api.release(metrics);
     (void)reason;
+    changed += exclude_assertions(scope_name, recursive, true, reason);
     return changed;
 }
 
@@ -1730,6 +1796,7 @@ std::size_t UcapiBackend::restore_scope(const std::string& scope_name,
         api.release(persistent_metric);
     }
     api.release(metrics);
+    changed += exclude_assertions(scope_name, recursive, false, std::string());
     return changed;
 }
 
