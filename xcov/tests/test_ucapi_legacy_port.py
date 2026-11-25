@@ -126,7 +126,7 @@ def test_csv_reason_with_comma_and_quotes_survives_compile(cpp_env, xverif_fixtu
         "# schema_version=xcov-code-exclusions.v1\n"
         "# coverage_kind=code\n"
         "scope,metric,line,object,bin,reason\n"
-        f'{scope},{metric},,"{gap["name"].replace(chr(34), chr(34) * 2)}",,'
+        f'{scope},{metric},,"{gap["full_name"].replace(chr(34), chr(34) * 2)}",,'
         f'"{reason.replace(chr(34), chr(34) * 2)}"\n',
         encoding="utf-8",
     )
@@ -186,7 +186,7 @@ def test_csv_compile_publishes_four_artifacts_and_loads_union(cpp_env,
         "# schema_version=xcov-code-exclusions.v1\n"
         "# coverage_kind=code\n"
         "scope,metric,line,object,bin,reason\n"
-        f"{scope},{metric},,{gap['name']},,compile union\n",
+        f"{scope},{metric},,{gap['full_name']},,compile union\n",
         encoding="utf-8",
     )
     el_dir = tmp_path / "el"

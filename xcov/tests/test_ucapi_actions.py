@@ -258,7 +258,7 @@ def test_csv_compiles_to_el_with_annotation(loop, vdb, tmp_path):
                 continue
             payload = json.loads(path.read_text())
             if payload.get("gaps"):
-                object_name = payload["gaps"][0]["name"]
+                object_name = payload["gaps"][0]["full_name"]
                 metric = artifact["metric"]
                 break
         if object_name:

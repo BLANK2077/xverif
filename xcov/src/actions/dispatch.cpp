@@ -595,14 +595,28 @@ nlohmann::json Dispatcher::action_code_coverage(const nlohmann::json& req) {
     if (group_by == "metric") {
         std::map<MetricKind, MetricAggregate> totals;
         for (MetricKind kind : metrics) totals[kind] = MetricAggregate();
-        for (const auto& root_name : sess.backend->top_scopes()) {
-            const ScopeInfo* root = sess.backend->find_scope(root_name);
-            if (root == nullptr) continue;
+        if (!scope_filter.empty()) {
+            const ScopeInfo* root = sess.backend->find_scope(scope_filter);
+            if (root == nullptr) {
+                throw Error("SCOPE_NOT_FOUND", "scope was not found",
+                            {{"scope_name", scope_filter}});
+            }
             for (MetricKind kind : metrics) {
                 auto it = root->deep_metrics.find(kind);
                 if (it == root->deep_metrics.end()) continue;
                 totals[kind].covered += it->second.covered;
                 totals[kind].coverable += it->second.coverable;
+            }
+        } else {
+            for (const auto& root_name : sess.backend->top_scopes()) {
+                const ScopeInfo* root = sess.backend->find_scope(root_name);
+                if (root == nullptr) continue;
+                for (MetricKind kind : metrics) {
+                    auto it = root->deep_metrics.find(kind);
+                    if (it == root->deep_metrics.end()) continue;
+                    totals[kind].covered += it->second.covered;
+                    totals[kind].coverable += it->second.coverable;
+                }
             }
         }
         for (MetricKind kind : metrics) rows.push_back(code_metric_row(kind, totals[kind]));
@@ -778,11 +792,18 @@ nlohmann::json Dispatcher::action_assert(const nlohmann::json& req) {
         row["covered"] = covered;
         row["coverable"] = coverable;
         row["missing"] = coverable > covered ? coverable - covered : 0;
-        row["coverage_pct"] = covered > 0 ? 100.0 : 0.0;
-        row["status"] = nlohmann::json::array({covered > 0 ? "covered" : "not_covered"});
+        if (item->excluded) {
+            row["coverage_pct"] = nullptr;
+            row["status"] = nlohmann::json::array({"excluded"});
+            row["without_attempts"] = 0;
+        } else {
+            row["coverage_pct"] = covered > 0 ? 100.0 : 0.0;
+            row["status"] = nlohmann::json::array(
+                {covered > 0 ? "covered" : "not_covered"});
+            row["without_attempts"] = item->attempts == 0 ? 1 : 0;
+        }
         row["attempts"] = item->attempts;
         row["real_successes"] = success;
-        row["without_attempts"] = item->attempts == 0 ? 1 : 0;
         items.push_back(row);
     }
     nlohmann::json filters = {
@@ -1280,6 +1301,16 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
             if (known && already == adding) {
                 item["status"] = "already_in_state";
                 item["error"] = nullptr;
+                if (adding && !reason.empty()) {
+                    ExclusionRecord record;
+                    record.coverage_ref = ref;
+                    record.reason = reason;
+                    sess.backend->locator_for_ref(ref, &record.scope,
+                                                  &record.metric, &record.name);
+                    record.full_name = record.scope + "." + record.name;
+                    sess.exclusion_records[ref] = record;
+                    sess.backend->set_exclusion(ref, true, reason);
+                }
                 items.push_back(item);
                 continue;
             }
@@ -1323,6 +1354,10 @@ nlohmann::json Dispatcher::action_export_exclude(const nlohmann::json& req) {
         throw Error("OUTPUT_PATH_UNSAFE",
                     "absolute output path requires allow_absolute_path=true",
                     {{"path", path}});
+    }
+    const std::size_t slash = path.find_last_of('/');
+    if (slash != std::string::npos && slash > 0) {
+        ensure_directory(path.substr(0, slash));
     }
     sess.backend->save_exclusions(path);
     nlohmann::json summary_json = completeness_summary(0, 0);
@@ -1413,10 +1448,32 @@ nlohmann::json Dispatcher::action_csv_export(const nlohmann::json& req) {
                  << csv_escape(entry.annotation) << "\n";
         }
     }
-    write_file(directory + "/code_exclusions.csv", code.str());
-    write_file(directory + "/functional_exclusions.csv", functional.str());
-    write_file(directory + "/assertion_exclusions.csv", assertion.str());
-    write_file(directory + "/container_exclusions.csv", container.str());
+    // Merge with any existing CSV: keep the previous data rows so an export
+    // never destroys exclusions written by another session or tool.
+    const std::pair<const char*, std::ostringstream*> csv_writes[] = {
+        {"code_exclusions.csv", &code},
+        {"functional_exclusions.csv", &functional},
+        {"assertion_exclusions.csv", &assertion},
+        {"container_exclusions.csv", &container},
+    };
+    for (const auto& entry : csv_writes) {
+        const std::string target = directory + "/" + entry.first;
+        std::string merged = entry.second->str();
+        if (file_exists(target)) {
+            const std::string existing = read_file(target);
+            std::istringstream lines(existing);
+            std::string line;
+            int header_lines = 0;
+            while (std::getline(lines, line)) {
+                if (line.rfind("#", 0) == 0) continue;
+                ++header_lines;
+                if (header_lines == 1) continue;  // column header
+                if (line.empty()) continue;
+                merged += line + "\n";
+            }
+        }
+        write_file(target, merged);
+    }
     // Only seed the other three files when they do not exist yet; overwriting
     // them with an empty header destroyed user data on every export.
     const std::pair<const char*, const char*> empty_files[] = {
@@ -1549,9 +1606,7 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
         sess.backend->unload_exclusions();
         sess.exclusion_records.clear();
         return ok_response(req, completeness_summary(items.size(), items.size()),
-                           {{"items", items},
-                            {"published", false},
-                            {"failed_count", total_failed}});
+                           {{"items", items}});
     }
     const std::string code_el = output_directory + "/code.el";
     sess.backend->save_exclusions(code_el);
@@ -1600,6 +1655,20 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
                 item.value("item", std::string()), reason, adding);
             row["status"] = changed > 0 ? "changed" : "already_in_state";
             row["target_count"] = changed;
+        }
+        if (adding && row["status"] == "changed") {
+            ExclusionRecord record;
+            record.kind = instance_action ? "container" : "functional";
+            record.reason = reason;
+            record.scope = scope;
+            record.name = instance_action ? scope : item.value("item", std::string());
+            if (!instance_action && record.name.empty()) {
+                record.name = item.value("covergroup", std::string());
+            }
+            record.full_name = scope + "." + record.name;
+            sess.exclusion_records[record.full_name] = record;
+        } else if (!adding && row["status"] == "changed") {
+            sess.exclusion_records.erase(scope + "." + scope);
         }
         items.push_back(row);
     }

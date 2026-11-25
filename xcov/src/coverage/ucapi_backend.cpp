@@ -927,7 +927,7 @@ bool find_leaf_in_subtree(const UcapiLibrary& api, ucapi::Handle obj,
                           ucapi::Handle region, const std::string& scope_prefix,
                           const std::string& wanted_full,
                           const std::string& parent_path,
-                          ucapi::Handle* out_obj) {
+                          ucapi::Handle* out_obj, bool allow_name_fallback) {
     const int type = api.get(obj, region, nullptr, ucapi::kType);
     const std::string name = safe_str(api.get_str(obj, ucapi::kName));
     const std::string path =
@@ -935,7 +935,8 @@ bool find_leaf_in_subtree(const UcapiLibrary& api, ucapi::Handle obj,
     if (is_leaf_type(type)) {
         // Prefer the canonical path; fall back to the bare leaf name for CSV
         // selector rows, which carry the object name only.
-        if (scope_prefix + path == wanted_full || name == wanted_full) {
+        if (scope_prefix + path == wanted_full ||
+            (allow_name_fallback && name == wanted_full)) {
             *out_obj = api.make_persistent(obj);
             return true;
         }
@@ -948,7 +949,7 @@ bool find_leaf_in_subtree(const UcapiLibrary& api, ucapi::Handle obj,
     bool found = false;
     while (!found && (kid = api.scan(kids)) != nullptr) {
         found = find_leaf_in_subtree(api, kid, region, scope_prefix, wanted_full,
-                                     path, out_obj);
+                                     path, out_obj, allow_name_fallback);
     }
     api.release(kids);
     return found;
@@ -978,32 +979,29 @@ bool find_leaf_by_locator(const UcapiLibrary& api, ucapi::Handle test,
         if (objects != nullptr) {
             ucapi::Handle object;
             bool found = false;
-            int name_hits = 0;
-            ucapi::Handle name_hit = nullptr;
+            std::vector<ucapi::Handle> candidates;
             while ((object = api.scan(objects)) != nullptr) {
                 ucapi::Handle hit = nullptr;
-                const bool exact = find_leaf_in_subtree(
-                    api, object, region, scope.full_name + ".", name, "", &hit);
-                if (exact) {
+                if (find_leaf_in_subtree(api, object, region,
+                                         scope.full_name + ".", name, "", &hit,
+                                         false)) {
                     *out_obj = hit;
                     found = true;
                     break;
                 }
-                // Bare-name fallback: only accept a unique match.
-                if (hit == nullptr) continue;
-                ++name_hits;
-                if (name_hits == 1) {
-                    name_hit = hit;
-                } else {
-                    api.release(hit);
+                if (find_leaf_in_subtree(api, object, region,
+                                         scope.full_name + ".", name, "", &hit,
+                                         true)) {
+                    candidates.push_back(hit);
                 }
             }
             api.release(objects);
-            if (!found && name_hits == 1 && name_hit != nullptr) {
-                *out_obj = name_hit;
+            // Bare-name fallback only when exactly one object matches.
+            if (!found && candidates.size() == 1) {
+                *out_obj = candidates.front();
                 found = true;
-            } else if (name_hit != nullptr) {
-                api.release(name_hit);
+            } else if (!found) {
+                for (auto handle : candidates) api.release(handle);
             }
             if (found) {
                 *out_region = api.make_persistent(region);
@@ -1095,7 +1093,7 @@ bool UcapiBackend::exclusion_state(const std::string& coverage_ref_value,
             while ((o = api.scan(objects)) != nullptr) {
                 found = find_leaf_in_subtree(api, o, region,
                                              scope->full_name + ".", full_name, "",
-                                             &object);
+                                             &object, true);
                 if (found) break;
             }
             api.release(objects);
