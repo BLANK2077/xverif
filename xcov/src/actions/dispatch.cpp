@@ -1525,6 +1525,54 @@ void merge_instance_delta(Session& sess, const std::string& root,
 
 bool parse_canonical_line(const std::string& text, int* out);
 
+void restore_instance_deltas(
+    Session& sess,
+    const std::map<std::string, std::vector<ExclusionKey>>& baseline) {
+    std::set<const void*> baseline_handles;
+    for (const auto& root : baseline) {
+        for (const auto& key : root.second) {
+            baseline_handles.insert(key.object_handle);
+        }
+    }
+    std::vector<ExclusionKey> discarded;
+    for (const auto& root : sess.instance_deltas) {
+        for (const auto& key : root.second) {
+            if (baseline_handles.find(key.object_handle) ==
+                baseline_handles.end()) {
+                discarded.push_back(key);
+            }
+        }
+    }
+    if (!discarded.empty()) {
+        sess.backend->release_exclusion_keys(discarded);
+    }
+    sess.instance_deltas = baseline;
+}
+
+void transfer_family_ownership(Session& sess, const std::string& full_name) {
+    for (auto root = sess.instance_deltas.begin();
+         root != sess.instance_deltas.end();) {
+        std::vector<ExclusionKey> released;
+        auto& keys = root->second;
+        for (auto key = keys.begin(); key != keys.end();) {
+            if (key->full_name == full_name) {
+                released.push_back(*key);
+                key = keys.erase(key);
+            } else {
+                ++key;
+            }
+        }
+        if (!released.empty()) {
+            sess.backend->release_exclusion_keys(released);
+        }
+        if (keys.empty()) {
+            root = sess.instance_deltas.erase(root);
+        } else {
+            ++root;
+        }
+    }
+}
+
 void check_instance_owner_conflict(const Session& sess,
                                    const std::string& scope,
                                    const std::string& expansion_root,
@@ -1707,6 +1755,9 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
         sess.exclusion_records.clear();
         sess.loaded_el_entries.clear();
         sess.loaded_el_paths.clear();
+        for (const auto& root : sess.instance_deltas) {
+            sess.backend->release_exclusion_keys(root.second);
+        }
         sess.instance_deltas.clear();
         // Removing every exclusion also clears the dirty reason set; this
         // mirrors Python clear_exclusions().
@@ -1736,6 +1787,11 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
             if (known && already == adding) {
                 item["status"] = "already_in_state";
                 item["error"] = nullptr;
+                if (!adding) {
+                    records_changed |= erase_exclusion_record_by_ref(sess, ref);
+                    items.push_back(item);
+                    continue;
+                }
                 if (adding && !reason.empty()) {
                     ExclusionRecord record;
                     record.coverage_ref = ref;
@@ -1755,6 +1811,7 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
                     }
                     records_changed |= put_exclusion_record(sess, record);
                     sess.backend->set_exclusion(ref, true, reason);
+                    transfer_family_ownership(sess, record.full_name);
                 }
                 items.push_back(item);
                 continue;
@@ -1781,6 +1838,7 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
                         assertion_kind_for_record(sess, record.full_name);
                 }
                 records_changed |= put_exclusion_record(sess, record);
+                transfer_family_ownership(sess, record.full_name);
             } else if (applied) {
                 records_changed |= erase_exclusion_record_by_ref(sess, ref);
             }
@@ -2346,6 +2404,8 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
     };
     const std::map<std::string, ExclusionRecord> baseline_records =
         sess.exclusion_records;
+    const std::map<std::string, std::vector<ExclusionKey>> baseline_deltas =
+        sess.instance_deltas;
     auto rollback = [&]() {
         sess.backend->unload_exclusions();
         try {
@@ -2358,6 +2418,7 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                         {{"cause_message", exc.message()}});
         }
         sess.exclusion_records = baseline_records;
+        restore_instance_deltas(sess, baseline_deltas);
     };
     bool records_changed = false;
     std::size_t applied_total = 0;
@@ -2463,6 +2524,9 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                     if (target_kind != "instance" || already_recorded ||
                         !delta.empty()) {
                         records_changed |= put_exclusion_record(sess, record);
+                    }
+                    if (target_kind != "instance") {
+                        transfer_family_ownership(sess, record.full_name);
                     }
                 } else {
                     ++failed;
@@ -2582,6 +2646,8 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
     }
     const std::map<std::string, ExclusionRecord> baseline_records =
         sess.exclusion_records;
+    const std::map<std::string, std::vector<ExclusionKey>> baseline_deltas =
+        sess.instance_deltas;
     nlohmann::json items = nlohmann::json::array();
     bool records_changed = false;
     std::size_t remove_matches = 0;
@@ -2738,6 +2804,7 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
                         {{"cause_message", exc.message()}});
         }
         sess.exclusion_records = baseline_records;
+        restore_instance_deltas(sess, baseline_deltas);
         throw;
     }
     return ok_response(req, completeness_summary(items.size(), items.size()),
@@ -2872,6 +2939,8 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
     }
     const std::map<std::string, ExclusionRecord> baseline_records =
         sess.exclusion_records;
+    const std::map<std::string, std::vector<ExclusionKey>> baseline_deltas =
+        sess.instance_deltas;
     auto rollback = [&]() {
         sess.backend->unload_exclusions();
         try {
@@ -2884,6 +2953,7 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
                         {{"cause_message", exc.message()}});
         }
         sess.exclusion_records = baseline_records;
+        restore_instance_deltas(sess, baseline_deltas);
     };
     nlohmann::json items = nlohmann::json::array();
     bool records_changed = false;
@@ -3012,6 +3082,9 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
                 if (record.target_kind != "instance" || already_recorded ||
                     !delta.empty()) {
                     records_changed |= put_exclusion_record(sess, record);
+                }
+                if (record.target_kind != "instance") {
+                    transfer_family_ownership(sess, record.full_name);
                 }
             } else {
                 ++total_failed;

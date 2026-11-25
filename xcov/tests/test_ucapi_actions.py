@@ -1849,3 +1849,53 @@ def test_load_is_atomic_across_multiple_files(loop, vdb, tmp_path):
             [key(row) for row in before["data"]["items"]]
     finally:
         fresh.close()
+
+
+def test_failed_container_request_does_not_poison_deltas(loop, tmp_path):
+    """A rolled-back multi-item request must not leave stale instance deltas
+    that later clear an independently added leaf exclusion."""
+    reference = _first_gap_ref(loop, tmp_path)
+    failed = loop.call("exclude.instance.add", {
+        "items": [
+            {"scope": "top.u_core1", "reason": "temporary"},
+            {"scope": "top.no_such_instance", "reason": "bad"},
+        ],
+    })
+    assert not failed["ok"], failed
+    assert loop.call("exclude.add", {
+        "coverage_refs": [{"coverage_ref": reference, "reason": "leaf"}],
+    })["ok"]
+    leaf_state = loop.call("metrics.list", {})
+    assert loop.call("exclude.instance.add", {
+        "items": [{"scope": "top.u_core1", "reason": "temporary"}],
+    })["ok"]
+    assert loop.call("exclude.instance.remove", {
+        "items": [{"scope": "top.u_core1"}],
+    })["ok"]
+    after = loop.call("metrics.list", {})
+    key = lambda row: (row["metric"], row["covered"], row["coverable"])
+    assert [key(row) for row in after["data"]["items"]] == \
+        [key(row) for row in leaf_state["data"]["items"]]
+
+
+def test_leaf_added_after_instance_family_survives_remove(loop, tmp_path):
+    """Adding a leaf after an instance family transfers ownership so a later
+    family remove keeps the leaf and its reason record."""
+    reference = _first_gap_ref(loop, tmp_path)
+    assert loop.call("exclude.instance.add", {
+        "items": [{"scope": "top.u_core1", "reason": "tree"}],
+    })["ok"]
+    assert loop.call("exclude.add", {
+        "coverage_refs": [{"coverage_ref": reference, "reason": "leaf owner"}],
+    })["ok"]
+    assert loop.call("exclude.instance.remove", {
+        "items": [{"scope": "top.u_core1"}],
+    })["ok"]
+    csv_dir = tmp_path / "transferred-leaf"
+    assert loop.call("exclude.csv.export", {
+        "directory": str(csv_dir), "allow_absolute_path": True,
+    })["ok"]
+    assert "leaf owner" in (csv_dir / "code_exclusions.csv").read_text()
+    removed = loop.call("exclude.remove", {"coverage_refs": [reference]})
+    assert removed["ok"], removed
+    assert removed["data"]["items"][0]["status"] == "changed"

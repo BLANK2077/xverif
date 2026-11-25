@@ -1593,6 +1593,7 @@ std::size_t UcapiBackend::exclude_assertions(
                     continue;
                 }
             }
+            bool keep_persistent = false;
             const int status =
                 api.get(persistent, nullptr, test_, ucapi::kCovStatus);
             int updated = status < 0
@@ -1611,8 +1612,11 @@ std::size_t UcapiBackend::exclude_assertions(
                     key.metric = "assert";
                     key.full_name = full;
                     key.assertion = true;
-                    key.object_handle = api.make_persistent(persistent);
+                    // Transfer ownership of the persistent handle to the
+                    // delta instead of creating a second one.
+                    key.object_handle = persistent;
                     changed_keys->push_back(std::move(key));
+                    keep_persistent = true;
                 }
                 if (excluded && !reason.empty() &&
                     annotated_scopes.insert(owning).second) {
@@ -1620,7 +1624,7 @@ std::size_t UcapiBackend::exclude_assertions(
                     api.set_durable(nullptr, test_, persistent, 1);
                 }
             }
-            api.release(persistent);
+            if (!keep_persistent) api.release(persistent);
         }
         api.release(objects);
     }
@@ -1686,18 +1690,20 @@ bool UcapiBackend::restore_leaf(const std::string& scope_name,
     return rc == 0;
 }
 
+void UcapiBackend::release_exclusion_keys(
+    const std::vector<ExclusionKey>& keys) {
+    const UcapiLibrary& api = UcapiLibrary::instance();
+    for (const auto& key : keys) {
+        if (key.object_handle != nullptr) api.release(key.object_handle);
+        if (key.region_handle != nullptr) api.release(key.region_handle);
+    }
+}
+
 std::size_t UcapiBackend::clear_exclusion_keys(
     const std::vector<ExclusionKey>& keys) {
     const UcapiLibrary& api = UcapiLibrary::instance();
     std::size_t changed = 0;
     for (const auto& key : keys) {
-        if (key.assertion) {
-            if (exclude_assertion(key.full_name, false, std::string())) {
-                ++changed;
-            }
-            if (key.object_handle != nullptr) api.release(key.object_handle);
-            continue;
-        }
         if (key.object_handle != nullptr) {
             const int status =
                 api.get(key.object_handle, key.region_handle, test_,

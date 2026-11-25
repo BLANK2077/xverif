@@ -175,6 +175,8 @@ public:
         std::vector<ExclusionKey>* changed_keys = nullptr);
     /// Clear exactly the objects recorded in an instance-family delta.
     std::size_t clear_exclusion_keys(const std::vector<ExclusionKey>& keys);
+    /// Release persistent handles held by a delta without touching state.
+    void release_exclusion_keys(const std::vector<ExclusionKey>& keys);
     /// True when any code leaf under the instance subtree is already covered
     /// (used for strict container preflight).
     bool scope_has_covered_objects(const std::string& scope_name,

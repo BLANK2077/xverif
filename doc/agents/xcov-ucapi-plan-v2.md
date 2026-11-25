@@ -346,7 +346,21 @@ instance remove 语义（已删排除复活、remove 假成功、EL 文件消失
 | 3 | strict 只覆盖 direct instance add | strict 预检下沉到 csv.apply/compile 的 instance 行；`scope_has_covered_objects` 同时检查 covered assertion；任一 covered 即整请求 EXCLUSION_APPLY_FAILED |
 | 4 | exclude.load 多文件非原子 | 请求级 EL baseline，任一路径 parse/load 失败 unload+load baseline，并回滚 loaded entries/paths |
 
-## 剩余已知限制（2026-11-25 第八轮 review 后）
+## 第十三轮 review 修复（2026-11-25，HEAD 959e4e1 之后）
+
+第九轮独立 review 复验第八轮修复后，发现 1 个 P1：事务回滚只恢复 DB 与
+exclusion_records，不恢复 instance_deltas，失败请求之后同一 scope 的
+instance remove 会清掉 loaded EL/独立 leaf；另有 leaf 所有权转移、delta
+handle 释放、assertion delta 记账 3 个 P2。本轮处理：
+
+| # | 问题 | 处理 |
+|---|---|---|
+| 1 | 容器/CSV 事务回滚残留 instance_deltas | 三个事务入口（container、compile、apply）快照 instance_deltas，失败时恢复 baseline 并 release 本次新增的 persistent handles |
+| 2 | instance add 之后新增 leaf 再 remove 会丢失 leaf reason | `transfer_family_ownership` 在 leaf/assertion record 建立后，把对应 key 从 family delta 移出（转移所有权），family remove 不再清它；`exclude.remove` 对已不存在排除也删除 stale record |
+| 3 | delta handles 在 unload_all/session 关闭时泄漏 | `release_exclusion_keys`；unload_all、回滚、Session 析构统一释放 |
+| 4 | assertion delta 二次 make_persistent + 按地址去重失效 | assertion key 转移原 persistent handle；delta 去重按 handle（assertion 也稳定）；clear 直接清 handle status，target_count 不再虚高 |
+
+## 剩余已知限制（2026-11-25 第九轮 review 后）
 
 - recursive instance 排除在超大库仍 >60s（`covdb_set_exclude_all_iter` 不可用，只能逐 leaf）。
 - coverpoint/cross 的 exclusion 在 EL 中不产出对象（UCAPI 限制）。

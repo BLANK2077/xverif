@@ -47,6 +47,8 @@ struct Session {
     // Per expansion-root list of objects actually changed by the family add;
     // remove clears only this delta, preserving loaded/independent exclusions.
     std::map<std::string, std::vector<ExclusionKey>> instance_deltas;
+
+    ~Session();
     // Python's contract: exclusion reasons are "dirty" until a CSV export or
     // compile persists them. session.close must not silently drop them.
     std::size_t reason_revision = 0;

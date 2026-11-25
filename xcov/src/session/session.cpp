@@ -21,6 +21,13 @@ bool is_writable_directory(const std::string& path) {
 
 } // namespace
 
+Session::~Session() {
+    if (!backend) return;
+    for (const auto& root : instance_deltas) {
+        backend->release_exclusion_keys(root.second);
+    }
+}
+
 std::string exclusion_record_key(const ExclusionRecord& record) {
     if (!record.coverage_ref.empty()) {
         return "ref:" + record.coverage_ref;
