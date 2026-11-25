@@ -1702,7 +1702,7 @@ void UcapiBackend::release_exclusion_keys(
 std::size_t UcapiBackend::clear_exclusion_keys(
     const std::vector<ExclusionKey>& keys) {
     const UcapiLibrary& api = UcapiLibrary::instance();
-    std::size_t changed = 0;
+    std::size_t processed = 0;
     for (const auto& key : keys) {
         if (key.object_handle != nullptr) {
             const int status =
@@ -1710,19 +1710,20 @@ std::size_t UcapiBackend::clear_exclusion_keys(
                         ucapi::kCovStatus);
             int updated = status;
             updated &= ~ucapi::kStatusExcludedAtReportTime;
-            if (updated != status &&
+            if (updated != status) {
                 api.set(key.object_handle, key.region_handle, test_,
-                        ucapi::kCovStatus, updated) == 0) {
-                ++changed;
+                        ucapi::kCovStatus, updated);
             }
             api.release(key.object_handle);
             if (key.region_handle != nullptr) api.release(key.region_handle);
+            ++processed;
             continue;
         }
-        if (restore_leaf(key.scope, key.metric, key.full_name)) ++changed;
+        restore_leaf(key.scope, key.metric, key.full_name);
+        ++processed;
     }
-    if (changed > 0) invalidate_caches();
-    return changed;
+    if (processed > 0) invalidate_caches();
+    return processed;
 }
 
 std::size_t UcapiBackend::exclude_line(const std::string& scope_name,

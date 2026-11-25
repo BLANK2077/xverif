@@ -360,7 +360,19 @@ handle 释放、assertion delta 记账 3 个 P2。本轮处理：
 | 3 | delta handles 在 unload_all/session 关闭时泄漏 | `release_exclusion_keys`；unload_all、回滚、Session 析构统一释放 |
 | 4 | assertion delta 二次 make_persistent + 按地址去重失效 | assertion key 转移原 persistent handle；delta 去重按 handle（assertion 也稳定）；clear 直接清 handle status，target_count 不再虚高 |
 
-## 剩余已知限制（2026-11-25 第九轮 review 后）
+## 第十四轮 review 修复（2026-11-25，HEAD fede83c 之后）
+
+第十轮独立 review 复验第九轮修复全部通过，但发现 1 个 P1：所有权转移按
+`full_name` 删除会多转移同名兄弟对象，family remove 后留下无 reason 的
+孤儿排除；另有 2 个 P2（新增测试未守住、target_count 口径）。本轮处理：
+
+| # | 问题 | 处理 |
+|---|---|---|
+| 1 | 同名多对象时 transfer 删除全部匹配 delta key | 改为只转移第一个匹配 key；兄弟对象留在 family delta 由 remove 正常清除；新增 modinfo_complex 重复 condition ref 用例，最终 metrics 必须回 pristine |
+| 2 | 两个新增测试的 leaf 不在 family 子树内，旧二进制也能通过 | 测试改用 family 子树内 leaf，并断言 DB metrics 回到预期、leaf remove 必须 changed |
+| 3 | add 与 remove 的 target_count 口径不一致 | add 使用 delta 唯一 handle 数；clear 返回处理的 owned key 数；transfer 后 remove 比 add 少 1，测试显式断言 |
+
+## 剩余已知限制（2026-11-25 第十轮 review 后）
 
 - recursive instance 排除在超大库仍 >60s（`covdb_set_exclude_all_iter` 不可用，只能逐 leaf）。
 - coverpoint/cross 的 exclusion 在 EL 中不产出对象（UCAPI 限制）。

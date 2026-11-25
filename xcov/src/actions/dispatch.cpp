@@ -1550,25 +1550,19 @@ void restore_instance_deltas(
 }
 
 void transfer_family_ownership(Session& sess, const std::string& full_name) {
-    for (auto root = sess.instance_deltas.begin();
-         root != sess.instance_deltas.end();) {
-        std::vector<ExclusionKey> released;
-        auto& keys = root->second;
-        for (auto key = keys.begin(); key != keys.end();) {
+    // A coverage_ref identity can be shared by several distinct UCAPI objects
+    // with the same full_name. set_exclusion resolves exactly one of them, so
+    // transfer exactly one delta key and leave its siblings to the family
+    // remove; removing every textual match used to strand unreachable bits.
+    for (auto& root : sess.instance_deltas) {
+        auto& keys = root.second;
+        for (auto key = keys.begin(); key != keys.end(); ++key) {
             if (key->full_name == full_name) {
-                released.push_back(*key);
-                key = keys.erase(key);
-            } else {
-                ++key;
+                std::vector<ExclusionKey> released{*key};
+                sess.backend->release_exclusion_keys(released);
+                keys.erase(key);
+                return;
             }
-        }
-        if (!released.empty()) {
-            sess.backend->release_exclusion_keys(released);
-        }
-        if (keys.empty()) {
-            root = sess.instance_deltas.erase(root);
-        } else {
-            ++root;
         }
     }
 }
@@ -2725,8 +2719,10 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
                     records_changed |=
                         put_exclusion_record(sess, expanded_record);
                 }
-                row["status"] = changed > 0 ? "changed" : "already_in_state";
-                row["target_count"] = changed;
+                row["status"] =
+                    (changed > 0 || !delta.empty()) ? "changed"
+                                                    : "already_in_state";
+                row["target_count"] = delta.size();
             } else {
                 std::vector<std::string> owned_keys;
                 for (const auto& existing : sess.exclusion_records) {

@@ -108,9 +108,9 @@ def _scopes(loop: Loop) -> list[str]:
     return [item["full_name"] for item in response["data"]["items"]]
 
 
-def _first_gap_ref(loop: Loop, tmp_path: Path) -> str:
+def _first_gap_ref_for(loop: Loop, tmp_path: Path, scope: str) -> str:
     response = loop.call("export.code_coverage", {
-        "scopes": ["top.u_core0"],
+        "scopes": [scope],
         "output": {"path": str(tmp_path / "code"), "allow_absolute_path": True},
     })
     assert response["ok"], json.dumps(response.get("error"))[:300]
@@ -124,6 +124,10 @@ def _first_gap_ref(loop: Loop, tmp_path: Path) -> str:
                 if gap.get("coverage_ref"):
                     return gap["coverage_ref"]
     pytest.skip("fixture has no uncovered code gap")
+
+
+def _first_gap_ref(loop: Loop, tmp_path: Path) -> str:
+    return _first_gap_ref_for(loop, tmp_path, "top.u_core0")
 
 
 
@@ -1854,10 +1858,10 @@ def test_load_is_atomic_across_multiple_files(loop, vdb, tmp_path):
 def test_failed_container_request_does_not_poison_deltas(loop, tmp_path):
     """A rolled-back multi-item request must not leave stale instance deltas
     that later clear an independently added leaf exclusion."""
-    reference = _first_gap_ref(loop, tmp_path)
+    reference = _first_gap_ref_for(loop, tmp_path, "top.u_core0")
     failed = loop.call("exclude.instance.add", {
         "items": [
-            {"scope": "top.u_core1", "reason": "temporary"},
+            {"scope": "top.u_core0", "reason": "temporary"},
             {"scope": "top.no_such_instance", "reason": "bad"},
         ],
     })
@@ -1867,10 +1871,10 @@ def test_failed_container_request_does_not_poison_deltas(loop, tmp_path):
     })["ok"]
     leaf_state = loop.call("metrics.list", {})
     assert loop.call("exclude.instance.add", {
-        "items": [{"scope": "top.u_core1", "reason": "temporary"}],
+        "items": [{"scope": "top.u_core0", "reason": "temporary"}],
     })["ok"]
     assert loop.call("exclude.instance.remove", {
-        "items": [{"scope": "top.u_core1"}],
+        "items": [{"scope": "top.u_core0"}],
     })["ok"]
     after = loop.call("metrics.list", {})
     key = lambda row: (row["metric"], row["covered"], row["coverable"])
@@ -1881,7 +1885,9 @@ def test_failed_container_request_does_not_poison_deltas(loop, tmp_path):
 def test_leaf_added_after_instance_family_survives_remove(loop, tmp_path):
     """Adding a leaf after an instance family transfers ownership so a later
     family remove keeps the leaf and its reason record."""
-    reference = _first_gap_ref(loop, tmp_path)
+    reference = _first_gap_ref_for(loop, tmp_path, "top.u_core1")
+    pristine = loop.call("metrics.list", {})
+    assert pristine["ok"], pristine
     assert loop.call("exclude.instance.add", {
         "items": [{"scope": "top.u_core1", "reason": "tree"}],
     })["ok"]
@@ -1899,3 +1905,73 @@ def test_leaf_added_after_instance_family_survives_remove(loop, tmp_path):
     removed = loop.call("exclude.remove", {"coverage_refs": [reference]})
     assert removed["ok"], removed
     assert removed["data"]["items"][0]["status"] == "changed"
+    final = loop.call("metrics.list", {})
+    key = lambda row: (row["metric"], row["covered"], row["coverable"])
+    assert [key(row) for row in final["data"]["items"]] == \
+        [key(row) for row in pristine["data"]["items"]]
+
+
+def test_duplicate_full_name_transfer_keeps_siblings_in_family(
+        xverif_fixture, tmp_path):
+    """A ref shared by two same-name objects must transfer only one delta key;
+    the sibling stays owned by the family and is cleared on remove."""
+    resources = xverif_fixture("xcov.modinfo_complex")
+    database = resources / "complex.vdb"
+    if not database.is_dir():
+        pytest.skip(f"fixture VDB missing: {database}")
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs")
+    session = Loop([str(CPP_BINARY), "--stdio-loop"], env, database)
+    scope = ("top.u_cluster_a.g_wrapper_level.u_fabric.g_lane[0]"
+             ".g_even.u_worker")
+    out_dir = tmp_path / "dup-gaps"
+    try:
+        pristine = session.call("metrics.list", {})
+        assert pristine["ok"], pristine
+        exported = session.call("export.code_coverage", {
+            "scopes": [scope], "metrics": ["condition"],
+            "output": {"path": str(out_dir), "allow_absolute_path": True},
+        })
+        assert exported["ok"], exported
+        payload = json.loads(
+            (out_dir / "instance-0001" / "condition.json").read_text())
+        by_ref = {}
+        duplicate_ref = None
+        for gap in payload.get("gaps", []):
+            ref = gap.get("coverage_ref")
+            if not ref:
+                continue
+            if ref in by_ref:
+                duplicate_ref = ref
+                break
+            by_ref[ref] = gap
+        if duplicate_ref is None:
+            pytest.skip("fixture has no duplicate condition ref")
+        add = session.call("exclude.instance.add", {
+            "items": [{"scope": scope, "reason": "family"}],
+        })
+        assert add["ok"], add
+        leaf = session.call("exclude.add", {
+            "coverage_refs": [{"coverage_ref": duplicate_ref,
+                               "reason": "leaf owner"}],
+        })
+        assert leaf["ok"], leaf
+        removed_family = session.call("exclude.instance.remove", {
+            "items": [{"scope": scope}],
+        })
+        assert removed_family["ok"], removed_family
+        # One key was transferred to the leaf owner, so remove processes one
+        # fewer owned key than the original family add.
+        assert add["data"]["items"][0]["target_count"] - 1 == \
+            removed_family["data"]["items"][0]["target_count"]
+        removed_leaf = session.call("exclude.remove", {
+            "coverage_refs": [duplicate_ref],
+        })
+        assert removed_leaf["ok"], removed_leaf
+        assert removed_leaf["data"]["items"][0]["status"] == "changed"
+        final = session.call("metrics.list", {})
+        key = lambda row: (row["metric"], row["covered"], row["coverable"])
+        assert [key(row) for row in final["data"]["items"]] == \
+            [key(row) for row in pristine["data"]["items"]]
+    finally:
+        session.close()
