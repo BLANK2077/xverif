@@ -306,7 +306,20 @@ expansion-root ownership、assertion 归属、重复 apply 非幂等）和 2 个
 | 3 | csv.apply/compile 可建立重叠 instance ownership（child-root + root 两套 records） | instance 行写入前执行与 `exclude.instance.add` 相同的 `TARGET_OWNERSHIP_CONFLICT` 检查；apply/compile 循环异常时回滚到 baseline |
 | 4 | 行级校验缺 line/object 约束，错误相位退化为 resolve 失败 | code 行：line metric 空 object 时必须 canonical 正整数；非 line metric 必须 object 非空 |
 
-## 剩余已知限制（2026-11-25 第五轮 review 后）
+## 第十轮 review 修复（2026-11-25，HEAD 5cfcf4d 之后）
+
+第六轮独立 review 复验上一轮 2 个 P1 后，确认仍有一个 P1：line selector 的独立
+排除在 instance add/remove 后丢失（reapply 只处理普通 code leaf），且 reapply
+失败被静默吞掉；另有 assertion scope/kind、line 溢出 3 个 P2。本轮处理：
+
+| # | 问题 | 处理 |
+|---|---|---|
+| 1 | line selector 记录 reapply 用 `exclude_leaf(name="")` 失败，DB 丢失但 CSV 仍保留 | `reapply_exclusion_record` 对 `metric=line && object 为空` 改用 `exclude_line(scope,line,reason,source_file)`；返回 bool 并被 remove 检查，失败抛 `EXCLUSION_REAPPLY_FAILED`（事务回滚） |
+| 2 | CSV assertion 行 scope 与断言实际 scope 不一致时，remove 后 reapply gating 漏掉 | assertion 的 gating 改用 `full_name` 的父 scope 计算，同时仍按 restored root 过滤 |
+| 3 | `assertion_kind` 未校验 enum；空/非法值被接受 | `load_validated_csv_directory` 校验 `assertion`/`cover_property`/`cover_sequence`；ref 来源 assertion 记录默认 `target_kind=assertion` |
+| 4 | `line > INT_MAX` 通过行校验后才在 resolve 失败 | `parse_canonical_line` 增加 `INT_MAX` 检查，统一报 `EXCLUSION_CSV_INVALID` |
+
+## 剩余已知限制（2026-11-25 第六轮 review 后）
 
 - recursive instance 排除在超大库仍 >60s（`covdb_set_exclude_all_iter` 不可用，只能逐 leaf）。
 - coverpoint/cross 的 exclusion 在 EL 中不产出对象（UCAPI 限制）。

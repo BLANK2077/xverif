@@ -1512,6 +1512,8 @@ nlohmann::json Dispatcher::action_export(const nlohmann::json& req) {
 
 namespace {
 
+bool parse_canonical_line(const std::string& text, int* out);
+
 void check_instance_owner_conflict(const Session& sess,
                                    const std::string& scope,
                                    const std::string& expansion_root,
@@ -1533,32 +1535,45 @@ void check_instance_owner_conflict(const Session& sess,
     }
 }
 
-void reapply_exclusion_record(Session& sess, const ExclusionRecord& record) {
+bool reapply_exclusion_record(Session& sess, const ExclusionRecord& record) {
     if (record.kind == "assertion") {
-        if (!record.full_name.empty()) {
-            sess.backend->exclude_assertion(record.full_name, true,
-                                            record.reason);
-        }
-        return;
+        return !record.full_name.empty() &&
+               sess.backend->exclude_assertion(record.full_name, true,
+                                               record.reason);
     }
     if (record.target_kind == "instance") {
-        sess.backend->exclude_scope(record.scope, false, record.reason);
-        return;
+        const std::size_t changed =
+            sess.backend->exclude_scope(record.scope, false, record.reason);
+        const ScopeInfo* target = sess.backend->find_scope(record.scope);
+        return changed > 0 ||
+               (target != nullptr && target->handle != nullptr);
     }
     if (!record.target_kind.empty()) {
-        sess.backend->exclude_functional(record.scope, record.covergroup,
-                                         record.target_kind, record.item,
-                                         record.reason);
-        return;
+        const std::size_t changed = sess.backend->exclude_functional(
+            record.scope, record.covergroup, record.target_kind, record.item,
+            record.reason);
+        return changed > 0 ||
+               sess.backend->functional_target_exists(
+                   record.scope, record.covergroup, record.target_kind,
+                   record.item);
     }
     if (!record.coverage_ref.empty()) {
-        sess.backend->set_exclusion(record.coverage_ref, true, record.reason);
-        return;
+        return sess.backend->set_exclusion(record.coverage_ref, true,
+                                           record.reason);
     }
     if (record.kind == "code") {
-        sess.backend->exclude_leaf(record.scope, record.metric, record.name,
-                                   record.reason);
+        if (record.metric == "line" && record.name.empty() &&
+            !record.line.empty()) {
+            int line_no = 0;
+            return parse_canonical_line(record.line, &line_no) &&
+                   sess.backend->exclude_line(record.scope, line_no,
+                                              record.reason,
+                                              record.source_file) > 0;
+        }
+        return sess.backend->exclude_leaf(record.scope, record.metric,
+                                          record.name, record.reason);
     }
+    return false;
 }
 
 bool same_record(const ExclusionRecord& a, const ExclusionRecord& b) {
@@ -1691,6 +1706,9 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
                                           locator_name, &record);
                     record.kind =
                         record.metric == "assert" ? "assertion" : "code";
+                    if (record.kind == "assertion") {
+                        record.target_kind = "assertion";
+                    }
                     records_changed |= put_exclusion_record(sess, record);
                     sess.backend->set_exclusion(ref, true, reason);
                 }
@@ -1714,6 +1732,9 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
                 assign_locator_record(locator_scope, locator_metric,
                                       locator_name, &record);
                 record.kind = record.metric == "assert" ? "assertion" : "code";
+                if (record.kind == "assertion") {
+                    record.target_kind = "assertion";
+                }
                 records_changed |= put_exclusion_record(sess, record);
             } else if (applied) {
                 records_changed |= erase_exclusion_record_by_ref(sess, ref);
@@ -1819,6 +1840,7 @@ bool parse_canonical_line(const std::string& text, int* out) {
         return false;
     }
     if (consumed != text.size() || parsed <= 0 ||
+        parsed > std::numeric_limits<int>::max() ||
         std::to_string(parsed) != text) {
         return false;
     }
@@ -2237,6 +2259,13 @@ std::map<std::string, CsvDocument> load_validated_csv_directory(
                 if (trim_copy(row.value("assertion")).empty()) {
                     fail_row(row, "assertion is required");
                 }
+                static const std::set<std::string> kAssertionKinds = {
+                    "assertion", "cover_property", "cover_sequence"};
+                if (kAssertionKinds.find(
+                        trim_copy(row.value("assertion_kind"))) ==
+                    kAssertionKinds.end()) {
+                    fail_row(row, "assertion_kind is not supported");
+                }
             } else if (kind_name == "code") {
                 static const std::set<std::string> kCodeMetrics = {
                     "line", "toggle", "branch", "condition", "fsm"};
@@ -2647,14 +2676,27 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
         // instance-family remove cannot silently drop other owners.
         for (const auto& existing : sess.exclusion_records) {
             const ExclusionRecord& record = existing.second;
+            std::string gate_scope = record.scope;
+            if (record.kind == "assertion") {
+                const std::size_t dot = record.full_name.rfind('.');
+                if (dot != std::string::npos) {
+                    gate_scope = record.full_name.substr(0, dot);
+                }
+            }
             bool in_restored = false;
             for (const auto& root : restored_scopes) {
-                if (is_descendant(record.scope, root)) {
+                if (is_descendant(gate_scope, root)) {
                     in_restored = true;
                     break;
                 }
             }
-            if (in_restored) reapply_exclusion_record(sess, record);
+            if (in_restored && !reapply_exclusion_record(sess, record)) {
+                throw Error("EXCLUSION_REAPPLY_FAILED",
+                            "could not reapply an independently-owned exclusion "
+                            "after restoring an instance family",
+                            {{"scope", record.scope},
+                             {"metric", record.metric}});
+            }
         }
     }
     if (records_changed) sess.mark_reason_mutation();

@@ -1510,3 +1510,85 @@ def test_csv_overlapping_instance_owners_conflict(loop, vdb, tmp_path):
         assert conflict["error"]["code"] == "TARGET_OWNERSHIP_CONFLICT"
     finally:
         session.close()
+
+
+def test_line_selector_survives_instance_remove(xverif_fixture, tmp_path):
+    """A line-selector exclusion must be reapplied after an instance family
+    restore, otherwise DB and CSV disagree."""
+    resources = xverif_fixture("xcov.modinfo_edge_layouts")
+    database = resources / "edge_cases.vdb"
+    if not database.is_dir():
+        pytest.skip(f"fixture VDB missing: {database}")
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs")
+    session = Loop([str(CPP_BINARY), "--stdio-loop"], env, database)
+    scope = "route_matrix.u_value_dark"
+    csv_dir = tmp_path / "line-preserve"
+    try:
+        gaps = session.call("export.code_coverage", {
+            "scopes": [scope], "metrics": ["line"],
+            "output": {"path": str(tmp_path / "line-src"),
+                       "allow_absolute_path": True},
+        })
+        assert gaps["ok"], gaps
+        payload = json.loads(
+            (tmp_path / "line-src" / "instance-0001" / "line.json").read_text())
+        line = payload["line_groups"][0]["uncovered"][0]["at"].rsplit(":", 1)[1]
+        _seed_required_csvs(csv_dir)
+        (csv_dir / "code_exclusions.csv").write_text(
+            "# schema_version=xcov-code-exclusions.v1\n"
+            "# coverage_kind=code\n"
+            "scope,metric,line,object,bin,reason\n"
+            f"{scope},line,{line},,,line preserve\n",
+            encoding="utf-8",
+        )
+        assert session.call("exclude.csv.apply",
+                            {"directory": str(csv_dir)})["ok"]
+        before = session.call("metrics.list", {})
+        assert before["ok"], before
+        assert session.call("exclude.instance.add", {
+            "items": [{"scope": scope, "reason": "tree"}],
+        })["ok"]
+        assert session.call("exclude.instance.remove", {
+            "items": [{"scope": scope}],
+        })["ok"]
+        after = session.call("metrics.list", {})
+        key = lambda row: (row["metric"], row["covered"], row["coverable"])
+        assert [key(row) for row in after["data"]["items"]] == \
+            [key(row) for row in before["data"]["items"]]
+        el_path = tmp_path / "line-preserved.el"
+        assert session.call("export.exclude", {
+            "output": {"path": str(el_path), "allow_absolute_path": True},
+        })["ok"]
+        assert "Block" in el_path.read_text()
+    finally:
+        session.close()
+
+
+def test_csv_row_validation_rejects_assertion_kind_and_line_overflow(
+        loop, tmp_path):
+    csv_dir = tmp_path / "bad-assert-kind"
+    _seed_required_csvs(csv_dir)
+    (csv_dir / "assertion_exclusions.csv").write_text(
+        "# schema_version=xcov-assertion-exclusions.v1\n"
+        "# coverage_kind=assertion\n"
+        "scope,line,assertion,assertion_kind,reason\n"
+        "top,1,top.a_check,bogus,reason\n",
+        encoding="utf-8",
+    )
+    rejected = loop.call("exclude.csv.apply", {"directory": str(csv_dir)})
+    assert not rejected["ok"], rejected
+    assert rejected["error"]["code"] == "EXCLUSION_CSV_INVALID"
+
+    overflow_dir = tmp_path / "line-overflow"
+    _seed_required_csvs(overflow_dir)
+    (overflow_dir / "code_exclusions.csv").write_text(
+        "# schema_version=xcov-code-exclusions.v1\n"
+        "# coverage_kind=code\n"
+        "scope,metric,line,object,bin,reason\n"
+        "top,line,3000000000,,,overflow\n",
+        encoding="utf-8",
+    )
+    overflow = loop.call("exclude.csv.apply", {"directory": str(overflow_dir)})
+    assert not overflow["ok"], overflow
+    assert overflow["error"]["code"] == "EXCLUSION_CSV_INVALID"
