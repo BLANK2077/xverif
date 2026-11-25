@@ -94,6 +94,7 @@ UcapiBackend::UcapiBackend(const std::string& vdb, const std::string& exclusion_
         }
         load_tests();
         walk_instances();
+        fill_missing_scopes();
     } catch (...) {
         close();
         throw;
@@ -225,7 +226,6 @@ void UcapiBackend::walk_instances() {
             }
         }
     }
-    fill_missing_scopes();
     finalize_scope_metrics();
 }
 
@@ -242,6 +242,7 @@ void UcapiBackend::refresh_metrics() {
         if (scope.handle == nullptr) continue;  // synthetic generate level
         aggregate_scope(scope);
     }
+    fill_missing_scopes();
     finalize_scope_metrics();
     metrics_dirty_ = false;
 }
@@ -360,6 +361,25 @@ void UcapiBackend::fill_missing_scopes() {
         } else {
             top_scopes_.push_back(full);
         }
+    }
+    // Re-parent real instances under the deepest existing full_name prefix so
+    // the hierarchy matches URG's generate-block view.
+    for (auto& scope : scopes_) {
+        if (scope.handle == nullptr || !scope.has_parent) continue;
+        std::string best;
+        std::size_t pos = scope.full_name.find('.');
+        while (pos != std::string::npos) {
+            const std::string prefix = scope.full_name.substr(0, pos);
+            if (scope_positions_.count(prefix) > 0) best = prefix;
+            pos = scope.full_name.find('.', pos + 1);
+        }
+        if (best.empty() || best == scope.parent) continue;
+        auto& old_siblings = children_[scope.parent];
+        old_siblings.erase(
+            std::remove(old_siblings.begin(), old_siblings.end(), scope.full_name),
+            old_siblings.end());
+        children_[best].push_back(scope.full_name);
+        scope.parent = best;
     }
 }
 
@@ -486,6 +506,8 @@ void UcapiBackend::finalize_scope_metrics() {
         if (!scope.has_parent) continue;
         auto pos = scope_positions_.find(scope.parent);
         if (pos == scope_positions_.end()) continue;
+        // Synthetic generate levels stay metric-less, matching URG.
+        if (scopes_[pos->second].handle == nullptr) continue;
         ScopeInfo& parent = scopes_[pos->second];
         for (const auto& item : scope.deep_metrics) {
             MetricAggregate& entry = parent.deep_metrics[item.first];

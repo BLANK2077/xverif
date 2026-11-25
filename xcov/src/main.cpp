@@ -96,13 +96,13 @@ int stdio_loop(xcov::Dispatcher& dispatcher) {
         nlohmann::json rsp;
         try {
             nlohmann::json req = xcov::parse_request(text);
-            xcov::SchemaCatalog::instance().validate_stdio_request(req);
-            request_id = req.value("request_id", std::string("req-unknown"));
-            action = req.value("action", std::string());
             // payload_format is a transport-level hint, not an action argument;
             // strip it before schema validation.
             payload_format = req.value("payload_format", std::string("xout"));
             req.erase("payload_format");
+            xcov::SchemaCatalog::instance().validate_stdio_request(req);
+            request_id = req.value("request_id", std::string("req-unknown"));
+            action = req.value("action", std::string());
             if (action == "stdio.quit") {
                 nlohmann::json envelope = {
                     {"request_id", request_id},

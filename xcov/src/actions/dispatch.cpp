@@ -110,15 +110,8 @@ nlohmann::json Dispatcher::handle(const ActionContract& contract,
     // action that reports scope metrics.
     if (contract.handler == "_scope" || contract.handler == "_code_coverage" ||
         contract.handler == "_metrics_list" || contract.handler == "_export" ||
-        contract.handler == "_tests_list" || contract.handler == "_functional" ||
-        contract.handler == "_assert_report" || contract.handler == "_exclude" ||
-        contract.handler == "_exclude_container" ||
-        contract.handler == "_exclude_csv_apply" ||
-        contract.handler == "_exclude_csv_compile" ||
-        contract.handler == "_exclude_csv_export" ||
-        contract.handler == "_export_exclude" ||
-        contract.handler == "_exclude_load" ||
-        contract.handler == "_exclude_unload_all") {
+        contract.handler == "_functional" ||
+        contract.handler == "_assert_report") {
         try {
             Session& sess = session(req);
             sess.backend->refresh_metrics();
@@ -1846,6 +1839,14 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
                         sess.exclusion_records[record.full_name] = record;
                     }
                 }
+                if (row_ok) {
+                    ++applied;
+                } else {
+                    ++failed;
+                }
+                items.push_back({{"coverage_ref", nullptr},
+                                 {"status", row_ok ? "changed" : "invalid"}});
+                continue;
             } else if (kind_name == "assertion") {
                 std::string full_name = row.value("assertion");
                 if (full_name.find('.') == std::string::npos && !scope.empty()) {

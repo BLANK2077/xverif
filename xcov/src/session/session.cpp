@@ -29,6 +29,12 @@ Session& SessionManager::open(const std::string& name,
         throw Error("SCHEMA_INVALID", "session name is required",
                     {{"path", "$.args.name"}});
     }
+    if (!sessions_.empty()) {
+        throw Error("SESSION_CAPACITY_EXCEEDED",
+                    "only one live session is allowed per process",
+                    {{"capacity", 1},
+                     {"live_session_id", sessions_.begin()->first}});
+    }
     if (sessions_.find(name) != sessions_.end()) {
         throw Error("SESSION_EXISTS", "coverage session already exists",
                     {{"session_id", name}});
