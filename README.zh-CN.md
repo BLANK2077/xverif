@@ -5,7 +5,7 @@
 > [!IMPORTANT]
 > **开源范围与 Synopsys proprietary dependencies**
 >
-> 本仓库以 MIT License 发布的范围仅包括仓库中由本项目独立开发的 source code 和 documentation。仓库不包含、也不授权 Synopsys Verdi NPI、FSDB Reader、coverage runtime、headers、libraries 或 documentation。
+> 本仓库以 MIT License 发布的范围仅包括仓库中由本项目独立开发的 source code 和 documentation。仓库不包含、也不授权 Synopsys Verdi NPI、**UCAPI**、FSDB Reader、coverage runtime、headers、libraries、source 或 documentation。xcov 的可选 `ucapi` 后端需要用户自行构建 C++ 二进制并安装 Verdi/UCAPI；UCAPI 的源码和库不属于本仓库开源范围。
 >
 > `xdebug` 和 `xcov` 的部分能力需要用户在本地另行取得合法授权并安装相应 Synopsys software；设置 `VERDI_HOME` 或能够访问相关文件本身不代表已经获得 NPI/FSDB API 的使用权或 redistribution 权。不得把 `libNPI.so`、`libnpiL1.so`、`libnffr.so`、Synopsys headers/documentation，或包含这些内容的 binary、package、container image 随本仓库分发。具体边界见 [`THIRD_PARTY.md`](THIRD_PARTY.md)。
 

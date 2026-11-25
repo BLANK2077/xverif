@@ -5,9 +5,10 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$script_dir/.." && pwd)"
 export XVERIF_HOME="${XVERIF_HOME:-$root}"
 
-# The backend selects the implementation: UCAPI runs the C++ binary, URG runs
-# the legacy Python implementation. There is no separate implementation switch.
-backend="${XVERIF_XCOV_BACKEND:-ucapi}"
+# Default: the Python/URG implementation. The C++/UCAPI backend is an opt-in
+# trial because it requires a separately installed Verdi UCAPI runtime; this
+# repository does not distribute UCAPI headers or libraries.
+backend="${XVERIF_XCOV_BACKEND:-urg}"
 
 case "$backend" in
   ucapi)

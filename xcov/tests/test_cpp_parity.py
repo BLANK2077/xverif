@@ -112,7 +112,7 @@ def test_cpp_read_actions_match_python(xverif_fixture, tmp_path):
     cpp_env = os.environ.copy()
     cpp_env["XVERIF_HOME"] = str(ROOT)
     py_env = os.environ.copy()
-    # Force the reference implementation; tools/xcov defaults to the C++ binary.
+    # tools/xcov defaults to the Python/URG backend; force it explicitly.
     py_env["XVERIF_XCOV_BACKEND"] = "urg"
     py_env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs")
 

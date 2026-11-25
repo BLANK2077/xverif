@@ -26,12 +26,13 @@ tools/xcov_lsf --json -  # 仅无 MCP 且必须经 LSF 时
 
 | 取值 | 实现 | 读取 | exclusion | 依赖 |
 | --- | --- | --- | --- | --- |
-| `ucapi`（默认） | C++ `xcov/bin/xcov` | UCAPI 直接读 VDB | UCAPI `covdb_*` | Verdi UCAPI runtime/license |
-| `urg` | Python `xcov/xcov` | 固定 URG summary/text report | pynpi `cov` | URG + Python NPI/license |
+| `urg`（默认） | Python `xcov/xcov` | 固定 URG summary/text report | pynpi `cov` | URG + Python NPI/license |
+| `ucapi`（可选试用） | C++ `xcov/bin/xcov` | UCAPI 直接读 VDB | UCAPI `covdb_*` | Verdi UCAPI runtime/license |
 
-C++ 二进制不存在时 `tools/xcov` 直接报错，不自动切 Python。构建：`make -C xcov`。
-C++/UCAPI 是默认路径，不启动 URG 子进程、不 import pynpi；Python 参考后端用于 parity，
-详细 URG/pynpi 说明只适用 `XVERIF_XCOV_BACKEND=urg`。
+默认 `urg` 是稳定路径；`ucapi` 需要自行构建 C++ 二进制并安装 Verdi/UCAPI，仓库不分发
+UCAPI 源码或库。`ucapi` 二进制不存在时 `tools/xcov` 直接报错，不自动切 Python。构建：
+`make -C xcov`。C++/UCAPI 不启动 URG 子进程、不 import pynpi；Python 默认路径使用 URG，
+详细 URG/pynpi 说明适用 `XVERIF_XCOV_BACKEND=urg`。
 
 一个 native stdio-loop 最多一个 live xcov session；需要多个 VDB session 时，由 MCP 或
 `xcov_lsf` 内部 manager 为每个 session 启动独立 loop（LSF 下即独立 `bsub -I` job）。
@@ -39,10 +40,10 @@ C++/UCAPI 是默认路径，不启动 URG 子进程、不 import pynpi；Python 
 本文件只讲原生 `xcov.v1` JSON envelope。MCP tool 参数和 MCP session 请使用
 `xverif-mcp`；SDK-free LSF 的同 envelope 入口见 `xverif-admin`。
 
-默认 C++/UCAPI 后端直接打开 VDB 读取 coverage 并处理 exclusion，不启动 URG、不加载
-pynpi；任何 coverage 或 exclusion 操作都需要可用的 Verdi UCAPI runtime/license。Python
-参考后端（`XVERIF_XCOV_BACKEND=urg`）才使用固定 URG summary/text report 读取 coverage，
-并仅在 exclusion 时惰性加载 pynpi、打开 VDB；受限沙箱内 license 可能不可达。
+默认 `urg` 后端使用固定 URG summary/text report 读取 coverage，并仅在 exclusion 时惰性
+加载 pynpi、打开 VDB；受限沙箱内 license 可能不可达。可选 `ucapi` 后端
+（`XVERIF_XCOV_BACKEND=ucapi`）直接打开 VDB 读取 coverage 并处理 exclusion，不启动 URG、
+不加载 pynpi，但任何 coverage 或 exclusion 操作都需要可用的 Verdi UCAPI runtime/license。
 
 离线 Python 自定义 coverage 报告（无论 xcov 后端）可使用 x-npi 的 `x_npi.urg`：固定命令为
 `$VCS_HOME/bin/urg -full64 -dir <vdb> -report <staging> -xml_verbose -format text -show summary`，
@@ -96,8 +97,8 @@ assert summary：
 {"api_version":"xcov.v1","action":"assert.summary","target":{"session_id":"cov0"}}
 ```
 
-code coverage export（C++ 后端直接经 UCAPI 读取；Python 参考后端首次读取同一
-VDB/selection/EL 时生成并缓存固定 URG summary，后续命中缓存）：
+code coverage export（默认 `urg` 后端首次读取同一 VDB/selection/EL 时生成并缓存固定
+URG summary，后续命中缓存；`ucapi` 试用后端直接经 UCAPI 读取）：
 
 ```json
 {"api_version":"xcov.v1","action":"export.code_coverage","target":{"session_id":"cov0"},"args":{"scopes":["uart_tb.u_uart"],"metrics":["line","toggle"],"output":{"path":"coverage_artifacts"}}}
@@ -109,8 +110,8 @@ VDB/selection/EL 时生成并缓存固定 URG summary，后续命中缓存）：
 {"api_version":"xcov.v1","action":"exclude.add","target":{"session_id":"cov0"},"args":{"coverage_refs":[{"coverage_ref":"xcovref.v1:<sha256>","reason":"规格禁止该模式组合"}]}}
 ```
 
-`exports` 形式仅 Python 参考后端（`XVERIF_XCOV_BACKEND=urg`）实现；默认
-C++/UCAPI 后端会返回 `ACTION_NOT_IMPLEMENTED`，请使用 `coverage_refs`。
+`exports` 形式仅在默认 `urg` 后端实现；`ucapi` 试用后端会返回
+`ACTION_NOT_IMPLEMENTED`，请使用 `coverage_refs`。
 
 关闭 session 前先导出 reason-bearing CSV，再导出原生 EL：
 
@@ -189,8 +190,8 @@ assert export（输出目录内保留 `asserts.txt`，并生成 `assert.json`、
   不启动 NPI。真正执行 `exclude.add` 时先用 URG hierarchy 拒绝未知 scope，再惰性
   打开 NPI 并做必要遍历，将所选语义 gap 唯一解析为临时 target；非 FSM 失败整批回滚，
   只有 FSM 允许返回明确的 `partial_success` 和逐 gap 失败原因。
-- 默认 C++/UCAPI 后端不支持 `exports`，会显式返回 `ACTION_NOT_IMPLEMENTED`，调用方应使用
-  `coverage_refs`；Python 参考后端的 `exports` 支持 code、assert 与 functional 的结构化 JSON；不持久化 NPI handle、
+- `ucapi` 试用后端不支持 `exports`，会显式返回 `ACTION_NOT_IMPLEMENTED`，调用方应使用
+  `coverage_refs`；默认 `urg` 后端的 `exports` 支持 code、assert 与 functional 的结构化 JSON；不持久化 NPI handle、
   traversal path 或数据库内部唯一 ID。旧 artifact 对应的对象若已被排除并从 NPI score
   视图隐藏，应重新导出当前 gap，不能绕过 wrapper 调低层 `handle_by_name` 猜测对象。
   不要构造或发送已删除的 `args.selectors`。`coverage_ref` 只在生成它的 session 内有效。
@@ -212,8 +213,8 @@ assert export（输出目录内保留 `asserts.txt`，并生成 `assert.json`、
 
 ## 排障
 
-- 普通查询失败：先确认当前后端。默认 C++/UCAPI 检查 Verdi UCAPI runtime/license 与 VDB；
-  `urg` 后端检查 URG、VDB 和固定六件套。不要自动切换后端或转 NPI fallback。
+- 普通查询失败：先确认当前后端。默认 `urg` 检查 URG、VDB 和固定六件套；`ucapi` 试用
+  后端检查 Verdi UCAPI runtime/license 与 VDB。不要自动切换后端或转 NPI fallback。
 - 以下 URG cache/LSF 条目仅适用 `XVERIF_XCOV_BACKEND=urg`。URG summary 默认缓存于
   `.xverif/xcov/cache/urg-summary`；可用
   `XVERIF_XCOV_CACHE_DIR` 指定共享可见的绝对缓存根。`session.status` 的
@@ -241,7 +242,7 @@ assert export（输出目录内保留 `asserts.txt`，并生成 `assert.json`、
 
 ## 已知限制
 
-- `exclude.add exports` 仅 Python 参考后端实现；默认 C++ 后端返回
+- `exclude.add exports` 仅在默认 `urg` 后端实现；`ucapi` 试用后端返回
   `ACTION_NOT_IMPLEMENTED`，应使用 `coverage_refs`。
 - loaded EL 重放会复活 EL 中已有 exclusion（Python 同行为）；EL 源文件删除后 reload
   可能丢失该文件贡献；多 family remove 存在 O(K²) 重放；0-coverable instance 的

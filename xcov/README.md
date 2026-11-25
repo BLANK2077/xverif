@@ -12,28 +12,38 @@ request/response/schema/XOUT 合同：
 
 | 取值 | 实现 | coverage 读取 | exclusion | 运行依赖 |
 | --- | --- | --- | --- | --- |
-| `ucapi`（默认） | C++ `xcov/bin/xcov` | UCAPI 直接读 VDB | UCAPI `covdb_*` | Verdi UCAPI runtime/license |
-| `urg` | Python `xcov/xcov` | 固定 URG summary + text report | pynpi `cov` | URG + Python NPI/license |
+| `urg`（默认） | Python `xcov/xcov` | 固定 URG summary + text report | pynpi `cov` | URG + Python NPI/license |
+| `ucapi`（可选试用） | C++ `xcov/bin/xcov` | UCAPI 直接读 VDB | UCAPI `covdb_*` | Verdi UCAPI runtime/license |
 
-默认后端不启动 URG 子进程，也不 import pynpi。C++ 二进制未构建时
-`tools/xcov` 直接报错，不自动切到 Python：
+默认 `urg` 是稳定路径。`ucapi` 为可选试用：需要用户自行构建 C++ 二进制并安装 Verdi/UCAPI，
+仓库不内嵌、不分发 UCAPI 源码或库。未设置 `XVERIF_XCOV_BACKEND` 时：
 
 ```bash
-make -C xcov
 tools/xcov --json -
 ```
 
-Python 参考后端用于 parity/对照：
+试用 C++/UCAPI 后端：
 
 ```bash
-XVERIF_XCOV_BACKEND=urg tools/xcov --json -
+make -C xcov
+XVERIF_XCOV_BACKEND=ucapi tools/xcov --json -
 ```
 
+C++ 二进制未构建时，`XVERIF_XCOV_BACKEND=ucapi` 直接报错，不自动切到 Python；反之
+`urg` 后端失败也不会自动切到 C++。
+
 后端失败不会静默切换 surface、backend、data source 或测试层级；任何不同路径必须由
-调用方显式发起。C++ 后端的 summary 从 UCAPI 读取；下面标记为 URG/pynpi 的细节仅适用
-`XVERIF_XCOV_BACKEND=urg`。
+调用方显式发起。默认 `urg` 后端的 summary 从固定 URG 产物读取；`ucapi` 后端从 UCAPI
+读取。下面标记为 URG/pynpi 的细节适用默认 `urg` 路径。
 
 action、session、transport、backend 或 VDB 查询失败时返回结构化错误，不会自动换后端。
+
+## 开源范围
+
+本仓库开源范围包括 xcov 的 Python 实现和调用 UCAPI 的 C++ 源码；**不包括**
+Synopsys Verdi/UCAPI 的源码、头文件、静态/动态库、license 或安装包。`ucapi`
+后端仅为可选试用，用户需自行安装 Verdi/UCAPI 并遵守其 license；本仓库不内嵌、
+不分发这些组件。
 
 ## 快速开始
 
@@ -69,11 +79,10 @@ Python 参考后端的普通 session/read/export 路径不会加载 pynpi；只�
 session 内惰性创建一次 NPI 上下文。C++ 后端不依赖 pynpi，读取与 exclusion 都通过 UCAPI。
 Python NPI 诊断输出会导向 stderr，stdout 保持机器可解析。
 
-## Python 参考后端（`XVERIF_XCOV_BACKEND=urg`）
+## Python 后端（默认，`XVERIF_XCOV_BACKEND=urg`）
 
-默认 C++/UCAPI 后端只需要 Verdi UCAPI runtime/license。以下 URG/pynpi 运行形态仅适用
-Python 参考后端：coverage 读取需要 Synopsys URG，原生 exclusion 处理另需 Verdi/Python
-NPI 和 license。按项目规则，NPI、VCS、VIP、真实 coverage probe 必须在沙箱外运行。
+`ucapi` 可选后端只需要 Verdi UCAPI runtime/license。默认 `urg` 路径的 coverage 读取需要
+Synopsys URG，原生 exclusion 处理另需 Verdi/Python NPI 和 license。按项目规则，NPI、VCS、VIP、真实 coverage probe 必须在沙箱外运行。
 
 已验证的本地形态：
 
@@ -108,7 +117,7 @@ MCP 始终提供 coverage 工具。MCP 原样传递导出参数，不改写相�
 
 环境变量（未特别说明时，URG/pynpi 项仅适用 `XVERIF_XCOV_BACKEND=urg`）：
 
-- `XVERIF_XCOV_BACKEND`：`ucapi`（默认）或 `urg`；非法值直接报错，不 fallback。
+- `XVERIF_XCOV_BACKEND`：`urg`（默认）或 `ucapi`（可选试用）；非法值直接报错，不 fallback。
 - `VCS_HOME`：Python 参考后端必填；URG 只允许使用规范化后的 `$VCS_HOME/bin/urg`，不会从 `PATH`
   查找或改用其它安装。
 - `VERDI_HOME`：C++ 后端读取 UCAPI 时需要；Python 参考后端首次 exclusion 操作时必填。
@@ -284,8 +293,8 @@ CSV 用 `# source_file=...` 划分连续源码分组；`reason` 必填，同一
 {"api_version":"xcov.v1","action":"exclude.add","target":{"session_id":"cov0"},"args":{"coverage_refs":[{"coverage_ref":"xcovref.v1:<sha256>","reason":"确认无法在当前配置下触发"}]}}
 ```
 
-`exclude.add` 默认 C++/UCAPI 后端按 `coverage_ref` 消费 gap；`exports` 形式仅 Python
-参考后端（`XVERIF_XCOV_BACKEND=urg`）实现，C++ 后端会返回 `ACTION_NOT_IMPLEMENTED`：
+`exclude.add` 在默认 `urg` 后端支持 `coverage_refs` 与 `exports` 两种形式；`ucapi`
+试用后端只实现 `coverage_refs`，收到 `exports` 会返回 `ACTION_NOT_IMPLEMENTED`：
 
 ```json
 {"api_version":"xcov.v1","action":"exclude.add","target":{"session_id":"cov0"},"args":{"coverage_refs":[{"coverage_ref":"xcovref.v1:<sha256>","reason":"非法输入组合"}]}}
@@ -529,8 +538,8 @@ XVERIF_TEST_EXECUTION_ENV=host .conda-xverif/bin/pytest --xverif-gate regression
 ## 当前限制
 
 - summary 查询固定使用 merged selection；请求 schema 不接受 per-test `test` selector。
-- `exclude.add exports` 在默认 C++ 后端未实现，显式返回 `ACTION_NOT_IMPLEMENTED`；请使用
-  `coverage_refs`。仅 Python 参考后端实现 `exports`。
+- `exclude.add exports` 在 `ucapi` 试用后端未实现，显式返回 `ACTION_NOT_IMPLEMENTED`；
+  请使用 `coverage_refs`。默认 `urg` 后端实现 `exports`。
 - 已知限制（loaded EL 重放/删除、0-coverable instance、多 family O(K²)、事务 baseline
   TMPDIR fail-closed 等）以
   [doc/agents/xcov-ucapi-plan-v2.md](../doc/agents/xcov-ucapi-plan-v2.md) 为准。

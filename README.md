@@ -5,7 +5,7 @@
 > [!IMPORTANT]
 > **Open-source scope and Synopsys proprietary dependencies**
 >
-> The MIT License in this repository applies only to source code and documentation independently developed by the xverif project. This repository does not include or license Synopsys Verdi NPI, FSDB Reader, coverage runtime, headers, libraries, or documentation.
+> The MIT License in this repository applies only to source code and documentation independently developed by the xverif project. This repository does not include or license Synopsys Verdi NPI, **UCAPI**, FSDB Reader, coverage runtime, headers, libraries, source, or documentation. The optional xcov `ucapi` backend requires a user-built C++ binary and a separately installed Verdi/UCAPI runtime; UCAPI source code and libraries are not part of this open-source repository.
 >
 > Some `xdebug` and `xcov` capabilities require users to separately obtain the applicable Synopsys license rights and install the required software locally. Setting `VERDI_HOME` or being able to access vendor files does not itself grant NPI/FSDB API usage or redistribution rights. Do not distribute `libNPI.so`, `libnpiL1.so`, `libnffr.so`, Synopsys headers/documentation, or binaries, packages, and container images containing those materials with this project. See [`THIRD_PARTY.md`](THIRD_PARTY.md) for the complete boundary.
 

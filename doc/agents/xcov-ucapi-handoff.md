@@ -10,7 +10,7 @@
 | 仓库 | `$REPO`（仓库根，当前工作目录） |
 | 当前分支 | `master`，HEAD `3e7d7bb`（已推送 GitHub） |
 | 构建 | `make -C xcov`（`-O2 -g`，产物 `xcov/bin/xcov`，不入 git） |
-| 入口 | `tools/xcov`（`XVERIF_XCOV_BACKEND=ucapi` 默认走 C++；`=urg` 走 Python 旧实现） |
+| 入口 | `tools/xcov`（默认 `XVERIF_XCOV_BACKEND=urg` 走 Python；`=ucapi` 走 C++，可选试用） |
 | 计划文档 | `doc/agents/xcov-ucapi-plan-v2.md`（含历次 review 修复记录和已知限制） |
 | 原始合同 | `doc/agents/xcov-ucapi-rewrite.md` |
 | 环境 | VCS `X-2025.06-SP1`，`libucapi.so` 在 `$VCS_HOME/linux64/lib/` |
@@ -133,7 +133,7 @@ Fixtures：`.xverif-test-cache/fixtures/xcov.{comprehensive,exclusion,large_summ
 
 ## 5. 重要约定与坑
 
-1. **`tools/xcov` 默认 C++**：对拍 Python 必须显式 `XVERIF_XCOV_BACKEND=urg`（`test_cpp_parity.py` 已修）。
+1. **`ucapi` 必须显式启用**：`XVERIF_XCOV_BACKEND=ucapi`；默认是 `urg` Python 路径（`test_cpp_parity.py` 已显式设置两边）。
 2. **`set_annotation` 需要持久化 handle**（`make_persistent`），否则 rc=0 但 EL 不写。
 3. **`covdb_get` 对不支持属性返回 0 / -1**，不抛错；批量设置后必须回读 status 验证。
 4. **`covdb_configure(covdbExcludeMode)` 的枚举值是 28**（不是 94）；但 UCAPI 本身不拒绝 covered，

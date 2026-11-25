@@ -1,15 +1,17 @@
 # xcov UCAPI C++ 重写：任务说明与验收指标
 
-> **状态：已完成（2026-11-25）。** 最终 review 状态、已知限制和提交索引以
-> [xcov-ucapi-handoff.md](xcov-ucapi-handoff.md) 与
-> [xcov-ucapi-plan-v2.md](xcov-ucapi-plan-v2.md) 为准；本文保留原始实施合同。
+> **状态：C++/UCAPI 实现已完成（2026-11-25），最终发布策略为默认 `urg`、`ucapi` 可选试用。**
+> 最终 review 状态、已知限制和提交索引以 [xcov-ucapi-handoff.md](xcov-ucapi-handoff.md) 与
+> [xcov-ucapi-plan-v2.md](xcov-ucapi-plan-v2.md) 为准；本文保留原始实施合同，其中“默认 C++”
+> 等表述是原始目标，不再是最终默认。
 
 本文是 `xcov` 从 Python 重写为 C++ 的实施合同。所有阶段以本文的验收项为准；
 未全部通过前不得推送 release。
 
 ## 1. 目标
 
-把 `xcov` 重写为 C++ 可执行，默认直连 UCAPI（`libucapi.so`），移除 pynpi 依赖；
+把 `xcov` 重写为 C++ 可执行，直连 UCAPI（`libucapi.so`），作为可选试用后端；默认仍保留
+Python/URG 实现，不强制移除 pynpi；
 保留原有 30 个 action 的公共合同（action 名、schema、错误码、XOUT grammar、
 stdio-loop 帧）；支持 CSV 与 EL+annotation 双向转换，并能读取 EL 的 annotation。
 
@@ -19,7 +21,7 @@ stdio-loop 帧）；支持 CSV 与 EL+annotation 双向转换，并能读取 EL 
    ready/quit 帧、XOUT grammar 必须与 Python 版逐字段一致。
 2. 不引入 XML 解析：UCAPI 直接读 VDB，C++ 版不实现 URG 后端，也不解析
    `session.xml`。
-3. 显式后端选择：`XVERIF_XCOV_BACKEND=ucapi`（默认）或 `=urg`；非法值或不可用必须
+3. 显式后端选择：`XVERIF_XCOV_BACKEND=urg`（默认）或 `=ucapi`（可选试用）；非法值或不可用必须
    返回结构化错误，不静默 fallback。两种后端都必须通过回归测试：`ucapi` 走 C++
    实现，`urg` 走 legacy 实现（`XVERIF_XCOV_IMPL=py`）。
 4. URG 后端保留 Python 实现：`XVERIF_XCOV_BACKEND=urg` 直接运行旧的 Python 入口。
@@ -110,10 +112,10 @@ stdio-loop 帧）；支持 CSV 与 EL+annotation 双向转换，并能读取 EL 
 
 ### 阶段 5：移除 Python 与发布（未开始）
 
-- [ ] 删除 `xcov/xcov/*.py`、`xcov/pyproject.toml`
-- [ ] 清理 catalog 的 `npi` capability 与 `xcov.exclusion_npi`
-- [ ] 全量回归
-- [ ] 提交 + 推送 + 发布 release
+- [x] 发布时保留 Python 实现作为默认 `urg` 后端（不删除）
+- [x] 保留 catalog 的 `npi` capability 与 `xcov.exclusion_npi`
+- [x] 全量回归
+- [x] 提交 + 推送 + 发布最终 release（`xverif-1.0.7`）
 
 ## 5. 技术要点（实现参考）
 
