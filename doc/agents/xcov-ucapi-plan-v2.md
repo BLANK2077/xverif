@@ -401,7 +401,22 @@ status 超线性（5126 leaf 5.4 s）。本轮改为 per-family baseline bulk re
 | 4 | synthetic generate scope 错误码与 Python 不一致 | instance add 对不存在/无 handle scope 返回 `SCOPE_NOT_FOUND` |
 | 5 | baseline 临时文件生命周期 | unload_all / Session 析构清理 instance_baselines |
 
-## 剩余已知限制（2026-11-25 第十二轮 review 后）
+## 第十七轮 review 修复（2026-11-25，HEAD 6db9524 之后）
+
+第十三轮独立 review 发现 per-family baseline 引入新 P1：多 family 按加入顺序
+remove 会通过后加入 family 的 baseline 复活先删除的 family；失败事务遗留
+baseline 也会造成同类污染。本轮改为会话级单一 baseline：
+
+| # | 问题 | 处理 |
+|---|---|---|
+| 1 | 多 family 顺序 remove 复活已删 family | 只在首个 instance family add 前惰性采集一次会话级 baseline；任何 family remove 都恢复该 baseline，再 reload loaded EL、重放剩余 records、最后应用 removed_refs |
+| 2 | 失败事务遗留 per-family baseline | 单一 baseline 与失败请求无关；不再快照/恢复 map；`file_exists` 校验，保存失败自动回退 delta 清除路径 |
+| 3 | bulk restore 未释放 delta handles | remove 前 `release_exclusion_keys` 再清 map |
+| 4 | removed_refs 被 load 清空导致删除复活 | load 不再整体 clear；remove 后最后一步应用 removed_refs |
+| 5 | 多 family 性能 | 单一 baseline 使 add 只快照一次；单 family remove 仍为 bulk（edge 5126 leaf 0.018 s） |
+| 6 | 测试 | 新增多 family 顺序 remove、失败请求不污染 baseline、removed ref + 中间 load 3 个用例（cpp_actions 76 passed） |
+
+## 剩余已知限制（2026-11-25 第十三轮 review 后）
 
 - recursive instance 排除在超大库仍 >60s（`covdb_set_exclude_all_iter` 不可用，只能逐 leaf）。
 - coverpoint/cross 的 exclusion 在 EL 中不产出对象（UCAPI 限制）。

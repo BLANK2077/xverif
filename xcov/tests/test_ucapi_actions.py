@@ -2111,3 +2111,81 @@ def test_instance_add_on_synthetic_scope_reports_scope_not_found(loop):
     })
     assert not response["ok"], response
     assert response["error"]["code"] == "SCOPE_NOT_FOUND"
+
+
+def test_multiple_families_remove_in_add_order(loop):
+    """Removing families in insertion order must not resurrect an earlier one
+    through a per-family snapshot."""
+    pristine = loop.call("metrics.list", {})
+    assert pristine["ok"], pristine
+    added = loop.call("exclude.instance.add", {
+        "items": [
+            {"scope": "top.u_core0", "reason": "a"},
+            {"scope": "top.u_core1", "reason": "b"},
+        ],
+    })
+    assert added["ok"], added
+    removed = loop.call("exclude.instance.remove", {
+        "items": [{"scope": "top.u_core0"}, {"scope": "top.u_core1"}],
+    })
+    assert removed["ok"], removed
+    after = loop.call("metrics.list", {})
+    key = lambda row: (row["metric"], row["covered"], row["coverable"])
+    assert [key(row) for row in after["data"]["items"]] == \
+        [key(row) for row in pristine["data"]["items"]]
+
+
+def test_failed_family_request_does_not_poison_baseline(loop):
+    pristine = loop.call("metrics.list", {})
+    failed = loop.call("exclude.instance.add", {
+        "items": [
+            {"scope": "top.u_core0", "reason": "temporary"},
+            {"scope": "top.no_such_instance", "reason": "bad"},
+        ],
+    })
+    assert not failed["ok"], failed
+    assert loop.call("exclude.instance.add", {
+        "items": [{"scope": "top.u_core1", "reason": "later"}],
+    })["ok"]
+    assert loop.call("exclude.instance.remove", {
+        "items": [{"scope": "top.u_core1"}],
+    })["ok"]
+    after = loop.call("metrics.list", {})
+    key = lambda row: (row["metric"], row["covered"], row["coverable"])
+    assert [key(row) for row in after["data"]["items"]] == \
+        [key(row) for row in pristine["data"]["items"]]
+
+
+def test_removed_ref_survives_unrelated_load(loop, vdb, tmp_path):
+    reference = _first_gap_ref(loop, tmp_path)
+    assert loop.call("exclude.add", {
+        "coverage_refs": [{"coverage_ref": reference, "reason": "loaded"}],
+    })["ok"]
+    el_path = tmp_path / "loaded-ref.el"
+    assert loop.call("export.exclude", {
+        "output": {"path": str(el_path), "allow_absolute_path": True},
+    })["ok"]
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs-2")
+    fresh = Loop([str(CPP_BINARY), "--stdio-loop"], env, vdb)
+    try:
+        assert fresh.call("exclude.load", {"paths": [str(el_path)]})["ok"]
+        assert fresh.call("exclude.remove", {
+            "coverage_refs": [reference],
+        })["ok"]
+        removed_state = fresh.call("metrics.list", {})
+        empty = tmp_path / "empty-ref.el"
+        empty.write_text("")
+        assert fresh.call("exclude.load", {"paths": [str(empty)]})["ok"]
+        assert fresh.call("exclude.instance.add", {
+            "items": [{"scope": "top.u_core0", "reason": "temporary"}],
+        })["ok"]
+        assert fresh.call("exclude.instance.remove", {
+            "items": [{"scope": "top.u_core0"}],
+        })["ok"]
+        after = fresh.call("metrics.list", {})
+        key = lambda row: (row["metric"], row["covered"], row["coverable"])
+        assert [key(row) for row in after["data"]["items"]] == \
+            [key(row) for row in removed_state["data"]["items"]]
+    finally:
+        fresh.close()

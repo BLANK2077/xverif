@@ -47,9 +47,9 @@ struct Session {
     // Per expansion-root list of objects actually changed by the family add;
     // remove clears only this delta, preserving loaded/independent exclusions.
     std::map<std::string, std::vector<ExclusionKey>> instance_deltas;
-    // Pre-add EL baseline per instance family (bulk restore) and refs
-    // explicitly removed since the last load.
-    std::map<std::string, std::string> instance_baselines;
+    // One session-level EL baseline taken before the first instance family
+    // add; family remove restores it and replays remaining records.
+    std::string family_baseline;
     std::set<std::string> removed_refs;
 
     ~Session();

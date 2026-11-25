@@ -26,12 +26,11 @@ Session::~Session() {
     for (const auto& root : instance_deltas) {
         backend->release_exclusion_keys(root.second);
     }
-    for (const auto& baseline : instance_baselines) {
-        if (baseline.second.empty()) continue;
-        ::unlink(baseline.second.c_str());
-        const std::size_t slash = baseline.second.find_last_of('/');
+    if (!family_baseline.empty()) {
+        ::unlink(family_baseline.c_str());
+        const std::size_t slash = family_baseline.find_last_of('/');
         if (slash != std::string::npos && slash > 0) {
-            ::rmdir(baseline.second.substr(0, slash).c_str());
+            ::rmdir(family_baseline.substr(0, slash).c_str());
         }
     }
 }
