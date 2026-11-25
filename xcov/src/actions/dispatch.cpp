@@ -1508,6 +1508,16 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
     }
     if (output_directory.empty()) output_directory = directory;
     ensure_directory(output_directory);
+    // Snapshot the current exclusion state so a failed compile can roll back
+    // instead of wiping pre-existing exclusions.
+    const std::string baseline_el = output_directory + "/.xcov_compile_baseline.el";
+    bool baseline_ok = false;
+    try {
+        sess.backend->save_exclusions(baseline_el);
+        baseline_ok = file_exists(baseline_el);
+    } catch (const Error&) {
+        baseline_ok = false;
+    }
     nlohmann::json items = nlohmann::json::array();
     struct KindFile {
         const char* kind;
@@ -1626,13 +1636,22 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                          {"record_count", applied}});
     }
     if (total_failed > 0) {
-        // Contract: a partial compile must not publish artifacts; roll the
-        // session back to its pre-compile exclusion state.
+        // Contract: a partial compile must not publish artifacts; restore the
+        // pre-compile snapshot instead of clearing everything.
         sess.backend->unload_exclusions();
+        if (baseline_ok) {
+            try {
+                sess.backend->load_exclusions(baseline_el);
+            } catch (const Error&) {
+                // Fall through with an empty state if the snapshot is unusable.
+            }
+        }
         sess.exclusion_records.clear();
+        std::remove(baseline_el.c_str());
         return ok_response(req, completeness_summary(items.size(), items.size()),
                            {{"items", items}});
     }
+    std::remove(baseline_el.c_str());
     const std::string code_el = output_directory + "/code.el";
     sess.backend->save_exclusions(code_el);
     for (const char* extra : {"functional.el", "assertion.el", "container.el"}) {
@@ -1745,7 +1764,7 @@ nlohmann::json Dispatcher::action_csv_validate(const nlohmann::json& req) {
             kind_name == "code"
                 ? std::vector<std::string>{"scope", "metric", "object"}
                 : kind_name == "functional"
-                      ? std::vector<std::string>{"scope", "covergroup", "bin"}
+                      ? std::vector<std::string>{"scope", "covergroup"}
                       : kind_name == "assertion"
                             ? std::vector<std::string>{"scope", "assertion"}
                             : std::vector<std::string>{"target_kind", "scope"};
@@ -1825,6 +1844,15 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
                 }
                 if (target_kind == "instance") {
                     row_ok = sess.backend->exclude_scope(scope, false, reason) > 0;
+                    if (row_ok) {
+                        ExclusionRecord record;
+                        record.kind = "container";
+                        record.reason = reason;
+                        record.scope = scope;
+                        record.name = scope;
+                        record.full_name = scope;
+                        sess.exclusion_records[record.full_name] = record;
+                    }
                 } else {
                     const std::string covergroup = row.value("covergroup");
                     row_ok = sess.backend->exclude_functional(

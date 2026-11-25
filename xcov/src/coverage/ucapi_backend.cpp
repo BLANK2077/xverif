@@ -95,6 +95,7 @@ UcapiBackend::UcapiBackend(const std::string& vdb, const std::string& exclusion_
         load_tests();
         walk_instances();
         fill_missing_scopes();
+        finalize_scope_metrics();
     } catch (...) {
         close();
         throw;
@@ -226,7 +227,6 @@ void UcapiBackend::walk_instances() {
             }
         }
     }
-    finalize_scope_metrics();
 }
 
 void UcapiBackend::refresh_metrics() {
@@ -381,6 +381,22 @@ void UcapiBackend::fill_missing_scopes() {
         children_[best].push_back(scope.full_name);
         scope.parent = best;
     }
+    // Deep aggregation must skip synthetic levels: point every real scope at
+    // its nearest real ancestor.
+    for (auto& scope : scopes_) {
+        scope.metric_parent = scope.parent;
+        if (scope.handle == nullptr) continue;
+        std::string node = scope.parent;
+        while (!node.empty()) {
+            auto pos = scope_positions_.find(node);
+            if (pos == scope_positions_.end()) break;
+            if (scopes_[pos->second].handle != nullptr) {
+                scope.metric_parent = node;
+                break;
+            }
+            node = scopes_[pos->second].parent;
+        }
+    }
 }
 
 void UcapiBackend::finalize_scope_metrics() {
@@ -504,10 +520,10 @@ void UcapiBackend::finalize_scope_metrics() {
     for (std::size_t index : order) {
         ScopeInfo& scope = scopes_[index];
         if (!scope.has_parent) continue;
-        auto pos = scope_positions_.find(scope.parent);
+        const std::string& agg_parent =
+            scope.metric_parent.empty() ? scope.parent : scope.metric_parent;
+        auto pos = scope_positions_.find(agg_parent);
         if (pos == scope_positions_.end()) continue;
-        // Synthetic generate levels stay metric-less, matching URG.
-        if (scopes_[pos->second].handle == nullptr) continue;
         ScopeInfo& parent = scopes_[pos->second];
         for (const auto& item : scope.deep_metrics) {
             MetricAggregate& entry = parent.deep_metrics[item.first];

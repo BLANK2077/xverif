@@ -34,7 +34,8 @@ struct MetricAggregate {
 struct ScopeInfo {
     std::string name;
     std::string full_name;
-    std::string parent;
+    std::string parent;         // navigation parent (may be synthetic)
+    std::string metric_parent;  // nearest real ancestor for deep aggregation
     bool has_parent = false;
     ucapi::Handle handle = nullptr;
     std::map<MetricKind, MetricAggregate> metrics;      // self (code metrics)
