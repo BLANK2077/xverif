@@ -1512,6 +1512,55 @@ nlohmann::json Dispatcher::action_export(const nlohmann::json& req) {
 
 namespace {
 
+void check_instance_owner_conflict(const Session& sess,
+                                   const std::string& scope,
+                                   const std::string& expansion_root,
+                                   const std::string& reason) {
+    for (const auto& existing : sess.exclusion_records) {
+        const ExclusionRecord& previous = existing.second;
+        if (previous.target_kind != "instance" || previous.scope != scope) {
+            continue;
+        }
+        if (previous.expansion_root != expansion_root ||
+            previous.reason != reason) {
+            throw Error("TARGET_OWNERSHIP_CONFLICT",
+                        "instance target is already owned by a different "
+                        "expansion root or reason",
+                        {{"scope", scope},
+                         {"existing_reason", previous.reason},
+                         {"requested_reason", reason}});
+        }
+    }
+}
+
+void reapply_exclusion_record(Session& sess, const ExclusionRecord& record) {
+    if (record.kind == "assertion") {
+        if (!record.full_name.empty()) {
+            sess.backend->exclude_assertion(record.full_name, true,
+                                            record.reason);
+        }
+        return;
+    }
+    if (record.target_kind == "instance") {
+        sess.backend->exclude_scope(record.scope, false, record.reason);
+        return;
+    }
+    if (!record.target_kind.empty()) {
+        sess.backend->exclude_functional(record.scope, record.covergroup,
+                                         record.target_kind, record.item,
+                                         record.reason);
+        return;
+    }
+    if (!record.coverage_ref.empty()) {
+        sess.backend->set_exclusion(record.coverage_ref, true, record.reason);
+        return;
+    }
+    if (record.kind == "code") {
+        sess.backend->exclude_leaf(record.scope, record.metric, record.name,
+                                   record.reason);
+    }
+}
+
 bool same_record(const ExclusionRecord& a, const ExclusionRecord& b) {
     return a.kind == b.kind && a.coverage_ref == b.coverage_ref &&
            a.reason == b.reason && a.scope == b.scope &&
@@ -2191,8 +2240,22 @@ std::map<std::string, CsvDocument> load_validated_csv_directory(
             } else if (kind_name == "code") {
                 static const std::set<std::string> kCodeMetrics = {
                     "line", "toggle", "branch", "condition", "fsm"};
-                if (kCodeMetrics.find(row.value("metric")) == kCodeMetrics.end()) {
+                const std::string metric = row.value("metric");
+                if (kCodeMetrics.find(metric) == kCodeMetrics.end()) {
                     fail_row(row, "code metric is not supported");
+                }
+                const std::string object = trim_copy(row.value("object"));
+                if (metric == "line") {
+                    if (object.empty()) {
+                        int parsed_line = 0;
+                        if (!parse_canonical_line(row.value("line"),
+                                                  &parsed_line)) {
+                            fail_row(row, "line requires a canonical positive "
+                                          "integer");
+                        }
+                    }
+                } else if (object.empty()) {
+                    fail_row(row, metric + " requires object");
                 }
             }
         }
@@ -2245,9 +2308,23 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
     };
     const std::map<std::string, ExclusionRecord> baseline_records =
         sess.exclusion_records;
+    auto rollback = [&]() {
+        sess.backend->unload_exclusions();
+        try {
+            sess.backend->load_exclusions(baseline_el);
+        } catch (const Error& exc) {
+            sess.exclusion_records = baseline_records;
+            throw Error("EXCLUSION_ROLLBACK_FAILED",
+                        "compile failed and the pre-compile baseline could not "
+                        "be restored",
+                        {{"cause_message", exc.message()}});
+        }
+        sess.exclusion_records = baseline_records;
+    };
     bool records_changed = false;
     std::size_t applied_total = 0;
     std::size_t total_failed = 0;
+    try {
     for (const auto& kind : kinds) {
         const std::string path = directory + "/" + kind.file;
         auto document_it = validated_documents.find(kind.kind);
@@ -2325,6 +2402,10 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                     }
                 }
                 if (ok) {
+                    if (target_kind == "instance") {
+                        check_instance_owner_conflict(
+                            sess, scope, record.expansion_root, reason);
+                    }
                     ++applied;
                     records_changed |= put_exclusion_record(sess, record);
                 } else {
@@ -2392,20 +2473,14 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                          {"path", path},
                          {"record_count", applied}});
     }
+    } catch (...) {
+        rollback();
+        throw;
+    }
     if (total_failed > 0) {
         // Contract: a partial compile must not publish artifacts; restore the
         // pre-compile snapshot instead of clearing everything.
-        sess.backend->unload_exclusions();
-        try {
-            sess.backend->load_exclusions(baseline_el);
-        } catch (const Error& exc) {
-            sess.exclusion_records = baseline_records;
-            throw Error("EXCLUSION_ROLLBACK_FAILED",
-                        "compile failed and the pre-compile baseline could not "
-                        "be restored",
-                        {{"cause_message", exc.message()}});
-        }
-        sess.exclusion_records = baseline_records;
+        rollback();
         throw Error("EXCLUSION_RESOLVE_FAILED",
                     "every CSV record must resolve exactly once before compile; "
                     "no artifacts were published",
@@ -2439,8 +2514,23 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
         throw Error("SCHEMA_INVALID", "items is required",
                     {{"path", "$.args.items"}});
     }
+    // Container writes are transactional: a later item/ownership failure
+    // must not leave earlier items applied.
+    TempBaselineGuard baseline_guard("xcov-container-");
+    try {
+        sess.backend->save_exclusions(baseline_guard.path);
+    } catch (const Error& exc) {
+        throw Error("EXCLUSION_BASELINE_FAILED",
+                    "cannot snapshot the current exclusion state",
+                    {{"cause_message", exc.message()}});
+    }
+    const std::map<std::string, ExclusionRecord> baseline_records =
+        sess.exclusion_records;
     nlohmann::json items = nlohmann::json::array();
     bool records_changed = false;
+    std::size_t remove_matches = 0;
+    std::vector<std::string> restored_scopes;
+    try {
     for (const auto& item : args.at("items")) {
         const std::string scope = item.value("scope", std::string());
         const std::string reason = item.value("reason", std::string());
@@ -2508,14 +2598,17 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
                     }
                 }
                 if (owned_keys.empty()) {
-                    throw Error("EXCLUSION_NOT_OWNED",
-                                "no recorded instance exclusions own this root",
-                                {{"scope", scope}});
+                    row["status"] = "already_in_state";
+                    row["target_count"] = 0;
+                    items.push_back(row);
+                    continue;
                 }
+                ++remove_matches;
                 std::size_t changed = 0;
                 for (const auto& key : owned_keys) {
                     const ExclusionRecord previous = sess.exclusion_records.at(key);
                     changed += sess.backend->restore_scope(previous.scope, false);
+                    restored_scopes.push_back(previous.scope);
                     sess.exclusion_records.erase(key);
                 }
                 records_changed = true;
@@ -2544,7 +2637,41 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
         }
         items.push_back(row);
     }
+    if (!adding && instance_action && remove_matches == 0) {
+        throw Error("EXCLUSION_NOT_OWNED",
+                    "no recorded instance exclusions own the requested roots");
+    }
+    if (!adding && instance_action) {
+        // restore_scope clears every report-time bit in the subtree; reapply
+        // independently-owned leaf/assertion/functional reasons so an
+        // instance-family remove cannot silently drop other owners.
+        for (const auto& existing : sess.exclusion_records) {
+            const ExclusionRecord& record = existing.second;
+            bool in_restored = false;
+            for (const auto& root : restored_scopes) {
+                if (is_descendant(record.scope, root)) {
+                    in_restored = true;
+                    break;
+                }
+            }
+            if (in_restored) reapply_exclusion_record(sess, record);
+        }
+    }
     if (records_changed) sess.mark_reason_mutation();
+    } catch (...) {
+        sess.backend->unload_exclusions();
+        try {
+            sess.backend->load_exclusions(baseline_guard.path);
+        } catch (const Error& exc) {
+            sess.exclusion_records = baseline_records;
+            throw Error("EXCLUSION_ROLLBACK_FAILED",
+                        "container write failed and the baseline could not be "
+                        "restored",
+                        {{"cause_message", exc.message()}});
+        }
+        sess.exclusion_records = baseline_records;
+        throw;
+    }
     return ok_response(req, completeness_summary(items.size(), items.size()),
                        {{"items", items}});
 }
@@ -2677,9 +2804,23 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
     }
     const std::map<std::string, ExclusionRecord> baseline_records =
         sess.exclusion_records;
+    auto rollback = [&]() {
+        sess.backend->unload_exclusions();
+        try {
+            sess.backend->load_exclusions(baseline_el);
+        } catch (const Error& exc) {
+            sess.exclusion_records = baseline_records;
+            throw Error("EXCLUSION_ROLLBACK_FAILED",
+                        "apply failed and the pre-apply baseline could not be "
+                        "restored",
+                        {{"cause_message", exc.message()}});
+        }
+        sess.exclusion_records = baseline_records;
+    };
     nlohmann::json items = nlohmann::json::array();
     bool records_changed = false;
     std::size_t total_failed = 0;
+    try {
     for (const auto& kind : kCsvKindFiles) {
         auto document_it = validated_documents.find(kind.kind);
         if (document_it == validated_documents.end()) continue;
@@ -2781,6 +2922,10 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
                 }
             }
             if (row_ok) {
+                if (record.target_kind == "instance") {
+                    check_instance_owner_conflict(
+                        sess, record.scope, record.expansion_root, reason);
+                }
                 records_changed |= put_exclusion_record(sess, record);
             } else {
                 ++total_failed;
@@ -2789,18 +2934,12 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
                              {"status", row_ok ? "changed" : "invalid"}});
         }
     }
+    } catch (...) {
+        rollback();
+        throw;
+    }
     if (total_failed > 0) {
-        sess.backend->unload_exclusions();
-        try {
-            sess.backend->load_exclusions(baseline_el);
-        } catch (const Error& exc) {
-            sess.exclusion_records = baseline_records;
-            throw Error("EXCLUSION_ROLLBACK_FAILED",
-                        "apply failed and the pre-apply baseline could not be "
-                        "restored",
-                        {{"cause_message", exc.message()}});
-        }
-        sess.exclusion_records = baseline_records;
+        rollback();
         throw Error("EXCLUSION_RESOLVE_FAILED",
                     "every CSV record must resolve exactly once before apply; "
                     "the request was rolled back",

@@ -1424,3 +1424,89 @@ def test_csv_row_validation_rejects_empty_reason(loop, tmp_path):
     rejected = loop.call("exclude.csv.apply", {"directory": str(csv_dir)})
     assert not rejected["ok"], rejected
     assert rejected["error"]["code"] == "EXCLUSION_CSV_INVALID"
+
+
+def test_multi_item_instance_write_is_atomic(loop):
+    """A later item failure rolls back earlier instance items."""
+    before = loop.call("metrics.list", {})
+    assert before["ok"], before
+    conflict = loop.call("exclude.instance.add", {
+        "items": [
+            {"scope": "top", "recursive": True, "reason": "root"},
+            {"scope": "top.u_core0", "recursive": True, "reason": "child"},
+        ],
+    })
+    assert not conflict["ok"], conflict
+    assert conflict["error"]["code"] == "TARGET_OWNERSHIP_CONFLICT"
+    after = loop.call("metrics.list", {})
+    key = lambda row: (row["metric"], row["covered"], row["coverable"])
+    assert [key(row) for row in after["data"]["items"]] == \
+        [key(row) for row in before["data"]["items"]]
+
+    added = loop.call("exclude.instance.add", {
+        "items": [{"scope": "top", "recursive": True, "reason": "root"}],
+    })
+    assert added["ok"], added
+    removed = loop.call("exclude.instance.remove", {
+        "items": [
+            {"scope": "top", "recursive": True},
+            {"scope": "top.no_such_instance", "recursive": True},
+        ],
+    })
+    assert removed["ok"], removed
+    assert removed["data"]["items"][0]["status"] == "changed"
+    assert removed["data"]["items"][1]["status"] == "already_in_state"
+
+
+def test_instance_remove_preserves_independent_leaf_exclusion(loop, tmp_path):
+    """restore_scope must not clear a leaf exclusion owned by exclude.add."""
+    reference = _first_gap_ref(loop, tmp_path)
+    assert loop.call("exclude.add", {
+        "coverage_refs": [{"coverage_ref": reference, "reason": "leaf reason"}],
+    })["ok"]
+    leaf_state = loop.call("metrics.list", {})
+    assert leaf_state["ok"], leaf_state
+    assert loop.call("exclude.instance.add", {
+        "items": [{"scope": "top", "recursive": True, "reason": "tree"}],
+    })["ok"]
+    assert loop.call("exclude.instance.remove", {
+        "items": [{"scope": "top", "recursive": True}],
+    })["ok"]
+    after = loop.call("metrics.list", {})
+    key = lambda row: (row["metric"], row["covered"], row["coverable"])
+    assert [key(row) for row in after["data"]["items"]] == \
+        [key(row) for row in leaf_state["data"]["items"]]
+    csv_dir = tmp_path / "leaf-preserved"
+    assert loop.call("exclude.csv.export", {
+        "directory": str(csv_dir), "allow_absolute_path": True,
+    })["ok"]
+    assert "leaf reason" in (csv_dir / "code_exclusions.csv").read_text()
+
+
+def test_csv_overlapping_instance_owners_conflict(loop, vdb, tmp_path):
+    """Applying child-root and full-root CSVs must not create two owners."""
+    child_dir = tmp_path / "child-csv"
+    root_dir = tmp_path / "root-csv"
+    env = _env()
+    for scope, directory in (("top.u_core0", child_dir), ("top", root_dir)):
+        session = Loop([str(CPP_BINARY), "--stdio-loop"], env, vdb)
+        try:
+            assert session.call("exclude.instance.add", {
+                "items": [{"scope": scope, "recursive": True,
+                           "reason": scope}],
+            })["ok"]
+            assert session.call("exclude.csv.export", {
+                "directory": str(directory), "allow_absolute_path": True,
+            })["ok"]
+        finally:
+            session.close()
+    session = Loop([str(CPP_BINARY), "--stdio-loop"], env, vdb)
+    try:
+        assert session.call("exclude.csv.apply",
+                            {"directory": str(child_dir)})["ok"]
+        conflict = session.call("exclude.csv.apply",
+                                {"directory": str(root_dir)})
+        assert not conflict["ok"], conflict
+        assert conflict["error"]["code"] == "TARGET_OWNERSHIP_CONFLICT"
+    finally:
+        session.close()

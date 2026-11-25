@@ -295,7 +295,18 @@ expansion-root ownership、assertion 归属、重复 apply 非幂等）和 2 个
 | 5 | 行级 CSV schema 未校验（空 reason、非法 target_kind、functional coverpoint+cross 同时出现） | `load_validated_csv_directory` 增加 reason/scope/container target_kind/expansion_root/functional 互斥/assertion/code metric 校验 |
 | 6 | apply 后 export 覆盖 expansion_root 文档 | 见 #1；新增 apply→同目录 export、apply→remove→export、嵌套递归冲突、重复 apply 用例 |
 
-## 剩余已知限制（2026-11-25 第四轮 review 后）
+## 第九轮 review 修复（2026-11-25，HEAD ee9267d 之后）
+
+第五轮独立 review 复验上一轮 3 个 P1 全部通过，但新报 2 个 P1、2 个 P2。本轮处理：
+
+| # | 问题 | 处理 |
+|---|---|---|
+| 1 | 多 item `exclude.instance.add/remove` 非原子：后续 item 冲突/未命中时前面 item 已生效 | 整个容器写请求加临时 EL baseline；任一步抛错 unload+load 回滚并恢复 records；remove 只有全部 item 都无记录时才报 `EXCLUSION_NOT_OWNED`，单个未命中按 `already_in_state` 返回 |
+| 2 | instance remove 的 `restore_scope` 清掉同子树内其它 owner 的 leaf/assertion 排除，且记录未删，导出与 DB 矛盾 | remove 家族后，对剩余且位于被恢复子树内的 records 重新应用（code ref/leaf、assertion、functional、instance）；新增 leaf 排除 + 父 instance add/remove 测试 |
+| 3 | csv.apply/compile 可建立重叠 instance ownership（child-root + root 两套 records） | instance 行写入前执行与 `exclude.instance.add` 相同的 `TARGET_OWNERSHIP_CONFLICT` 检查；apply/compile 循环异常时回滚到 baseline |
+| 4 | 行级校验缺 line/object 约束，错误相位退化为 resolve 失败 | code 行：line metric 空 object 时必须 canonical 正整数；非 line metric 必须 object 非空 |
+
+## 剩余已知限制（2026-11-25 第五轮 review 后）
 
 - recursive instance 排除在超大库仍 >60s（`covdb_set_exclude_all_iter` 不可用，只能逐 leaf）。
 - coverpoint/cross 的 exclusion 在 EL 中不产出对象（UCAPI 限制）。
