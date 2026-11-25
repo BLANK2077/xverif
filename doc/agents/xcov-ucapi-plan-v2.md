@@ -463,7 +463,23 @@ live-record 跳过让陈旧 CSV record 否决显式 remove。本轮处理：
 | 3 | `exports` 静默忽略 | `exclude.add` 检测 exports 立即返回 `ACTION_NOT_IMPLEMENTED`（不再假成功）；文档记录为已知不支持 |
 | 4 | 测试 | 新增 compile 发布失败回滚、line-selector re-add、exports 显式错误 3 个用例（cpp_actions 85 passed） |
 
-## 剩余已知限制（2026-11-25 第十六轮 review 后）
+## 第二十一轮收尾修复（2026-11-25，HEAD bb97e32 之后，有边界收尾）
+
+第十七轮独立 review 确认 compile 发布事务与 exports 显式错误已修，但发现
+tombstone 身份匹配漏了 assertion 的 `metric`（CSV 复加断言在 family remove
+后丢失）。按“有边界收尾”处理剩余 1 个 P1 与 2 个 P2：
+
+| # | 问题 | 处理 |
+|---|---|---|
+| 1 | assertion CSV 复加的 tombstone 不清除 | compile/apply assertion record 设置 `metric="assert"`；helper 对 assertion 按 `assert` metric 匹配；新增 assertion CSV 往返用例 |
+| 2 | compile 发布失败泄漏 staged temp | staged 路径在 catch 中统一 unlink；仅发布成功才 mark persisted |
+| 3 | 目录被当作既有 artifact | 发布前用 lstat 只接受普通文件，目录立即 EXCLUSION_SAVE_FAILED；新增目录 artifact 用例 |
+| 4 | exports 文档与实现不一致 | skills/xverif/references/xcov.md 与 xcov/README.md 改为 coverage_refs 示例，明确 C++ 返回 ACTION_NOT_IMPLEMENTED |
+
+验证：xcov.unit 179、xcov.cpp_parity 3、xcov.cpp_actions 87、skills.xverif 20；
+全量 host regression 1679 passed（最终值见提交说明）。
+
+## 剩余已知限制（2026-11-25 第十七轮 review 后）
 
 - recursive instance 排除在超大库仍 >60s（`covdb_set_exclude_all_iter` 不可用，只能逐 leaf）。
 - coverpoint/cross 的 exclusion 在 EL 中不产出对象（UCAPI 限制）。

@@ -1536,7 +1536,10 @@ void clear_removed_ref_tombstone(
         const std::string ref_metric =
             locator.substr(first + 1, second - first - 1);
         const std::string ref_name = locator.substr(second + 1);
-        bool match = ref_scope == record.scope && ref_metric == record.metric &&
+        const bool metric_match =
+            record.kind == "assertion" ? ref_metric == "assert"
+                                       : ref_metric == record.metric;
+        bool match = ref_scope == record.scope && metric_match &&
                      (ref_name == record.full_name ||
                       affected.find(ref_name) != affected.end());
         if (!match && !record.name.empty()) {
@@ -2666,6 +2669,7 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                     record.kind = "assertion";
                     record.reason = reason;
                     record.scope = scope;
+                    record.metric = "assert";
                     record.line = line_text;
                     record.source_file = row.source_file;
                     record.target_kind = row.value("assertion_kind");
@@ -2747,11 +2751,15 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
     const std::string suffix = ".tmp." + std::to_string(::getpid());
     const std::string code_el = output_directory + "/code.el";
     const std::string code_tmp = code_el + suffix;
-    std::vector<std::pair<std::string, std::string>> published;
+    std::vector<std::pair<std::string, std::string>> staged;
     std::vector<std::pair<std::string, std::string>> backups;
+    std::vector<std::string> published_destinations;
+    auto regular_artifact = [](const std::string& path) {
+        struct stat st {};
+        return ::stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode);
+    };
     try {
         sess.backend->save_exclusions(code_tmp);
-        std::vector<std::pair<std::string, std::string>> staged;
         staged.emplace_back(code_tmp, code_el);
         for (const char* extra : {"functional.el", "assertion.el",
                                   "container.el"}) {
@@ -2761,9 +2769,20 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
             staged.emplace_back(temporary, destination);
         }
         for (const auto& pair : staged) {
-            if (file_exists(pair.second)) {
+            struct stat st {};
+            const bool exists = ::lstat(pair.second.c_str(), &st) == 0;
+            if (exists) {
+                if (!S_ISREG(st.st_mode)) {
+                    throw Error("EXCLUSION_SAVE_FAILED",
+                                "compiled artifact path is not a regular file",
+                                {{"path", pair.second}});
+                }
                 const std::string backup = pair.second + ".bak" + suffix;
-                std::rename(pair.second.c_str(), backup.c_str());
+                if (std::rename(pair.second.c_str(), backup.c_str()) != 0) {
+                    throw Error("EXCLUSION_SAVE_FAILED",
+                                "cannot back up compiled exclusion artifact",
+                                {{"path", pair.second}});
+                }
                 backups.emplace_back(backup, pair.second);
             }
             if (std::rename(pair.first.c_str(), pair.second.c_str()) != 0) {
@@ -2771,10 +2790,11 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                             "cannot publish compiled exclusion artifact",
                             {{"path", pair.second}});
             }
-            published.emplace_back(pair.second, pair.first);
+            published_destinations.push_back(pair.second);
         }
-    } catch (const Error& exc) {
-        for (const auto& pair : published) ::unlink(pair.first.c_str());
+    } catch (...) {
+        for (const auto& pair : staged) ::unlink(pair.first.c_str());
+        for (const auto& path : published_destinations) ::unlink(path.c_str());
         for (const auto& pair : backups) {
             std::rename(pair.first.c_str(), pair.second.c_str());
         }
@@ -3262,6 +3282,7 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
                 if (full_name.find('.') == std::string::npos && !scope.empty()) {
                     full_name = scope + "." + full_name;
                 }
+                record.metric = "assert";
                 record.target_kind = row.value("assertion_kind");
                 record.name = row.value("assertion");
                 record.full_name = full_name;

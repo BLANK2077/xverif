@@ -89,11 +89,14 @@ code coverage export（首次读取同一 VDB/selection/EL 时生成并缓存固
 {"api_version":"xcov.v1","action":"export.code_coverage","target":{"session_id":"cov0"},"args":{"scopes":["uart_tb.u_uart"],"metrics":["line","toggle"],"output":{"path":"coverage_artifacts"}}}
 ```
 
-按导出 gap 添加 exclusion；每个条目必须单独给出原因：
+按导出 gap 的 `coverage_ref` 添加 exclusion；每个条目必须单独给出原因：
 
 ```json
-{"api_version":"xcov.v1","action":"exclude.add","target":{"session_id":"cov0"},"args":{"exports":[{"path":"/abs/path/branch.json","items":[{"gap_id":"B0001","reason":"规格禁止该模式组合"},{"gap_id":"B0002","reason":"该分支仅用于失效保护"}]}]}}
+{"api_version":"xcov.v1","action":"exclude.add","target":{"session_id":"cov0"},"args":{"coverage_refs":[{"coverage_ref":"xcovref.v1:<sha256>","reason":"规格禁止该模式组合"}]}}
 ```
+
+`exports` 形式仅 Python 参考后端（`XVERIF_XCOV_BACKEND=urg`）实现；默认
+C++/UCAPI 后端会返回 `ACTION_NOT_IMPLEMENTED`，请使用 `coverage_refs`。
 
 关闭 session 前先导出 reason-bearing CSV，再导出原生 EL：
 
@@ -167,12 +170,13 @@ assert export（输出目录内保留 `asserts.txt`，并生成 `assert.json`、
   的 `0/1` 同样直接表示 false/true 分支。
 - fsm 使用 `xcov.code_coverage.fsm.v2`：实例内不同 FSM 分段输出，每段先给出 transition
   coverage，再以 `gap_id/kind/object/at` 表格逐行列出 state、transition 或 sequence 缺口。
-- `exclude.add.args.exports` 接受 metric JSON 绝对路径及 `items` 数组；每项必须包含
+- Python 参考后端的 `exclude.add.args.exports` 接受 metric JSON 绝对路径及 `items` 数组；每项必须包含
   `gap_id` 和非空 `reason`。JSON 只包含 `xcov.urg_semantic.v1` 语义身份，导出阶段
   不启动 NPI。真正执行 `exclude.add` 时先用 URG hierarchy 拒绝未知 scope，再惰性
   打开 NPI 并做必要遍历，将所选语义 gap 唯一解析为临时 target；非 FSM 失败整批回滚，
   只有 FSM 允许返回明确的 `partial_success` 和逐 gap 失败原因。
-- `exports` 支持 code、assert 与 functional 的结构化 JSON；不持久化 NPI handle、
+- 默认 C++/UCAPI 后端不支持 `exports`，会显式返回 `ACTION_NOT_IMPLEMENTED`，调用方应使用
+  `coverage_refs`；Python 参考后端的 `exports` 支持 code、assert 与 functional 的结构化 JSON；不持久化 NPI handle、
   traversal path 或数据库内部唯一 ID。旧 artifact 对应的对象若已被排除并从 NPI score
   视图隐藏，应重新导出当前 gap，不能绕过 wrapper 调低层 `handle_by_name` 猜测对象。
   不要构造或发送已删除的 `args.selectors`。`coverage_ref` 只在生成它的 session 内有效。

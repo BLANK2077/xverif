@@ -259,10 +259,12 @@ CSV 用 `# source_file=...` 划分连续源码分组；`reason` 必填，同一
 {"api_version":"xcov.v1","action":"exclude.add","target":{"session_id":"cov0"},"args":{"coverage_refs":[{"coverage_ref":"xcovref.v1:<sha256>","reason":"确认无法在当前配置下触发"}]}}
 ```
 
-`exclude.add` 还可直接消费 `export.code_coverage` 生成的 metric JSON：
+`exclude.add` 默认 C++/UCAPI 后端按 `coverage_ref` 消费 gap；`exports` 形式仅 Python
+参考后端（`XVERIF_XCOV_BACKEND=urg`）实现，C++ 后端会返回 `ACTION_NOT_IMPLEMENTED`：
 
 ```json
-{"api_version":"xcov.v1","action":"exclude.add","target":{"session_id":"cov0"},"args":{"exports":[{"path":"/abs/path/branch.json","items":[{"gap_id":"B0001","reason":"非法输入组合"},{"gap_id":"B0002","reason":"规格禁止路径"}]}]}}
+{"api_version":"xcov.v1","action":"exclude.add","target":{"session_id":"cov0"},"args":{"coverage_refs":[{"coverage_ref":"xcovref.v1:<sha256>","reason":"非法输入组合"}]}}
+```
 
 关闭 session 不允许静默丢失尚未持久化的 reason。存在 dirty reason 时，普通
 `session.close` 返回 `UNPERSISTED_EXCLUSION_REASON` 并保留可继续查询/导出的 live session；

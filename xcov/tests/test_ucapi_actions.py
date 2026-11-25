@@ -2424,6 +2424,8 @@ def test_compile_publish_failure_rolls_back(loop, vdb, tmp_path):
         assert compiled["error"]["code"] in {"EXCLUSION_SAVE_FAILED", "IO_ERROR"}
     finally:
         out_dir.chmod(0o755)
+    assert not [name for name in out_dir.iterdir()
+                if ".tmp." in name.name], list(out_dir.iterdir())
     after = loop.call("metrics.list", {})
     key = lambda row: (row["metric"], row["covered"], row["coverable"])
     assert [key(row) for row in after["data"]["items"]] == \
@@ -2433,6 +2435,33 @@ def test_compile_publish_failure_rolls_back(loop, vdb, tmp_path):
     if closed["ok"]:
         # No record was left behind, so a graceful close is legal too.
         assert closed["summary"]["discarded_reason_count"] == 0
+
+
+def test_compile_refuses_directory_artifact(loop, tmp_path):
+    gap = _full_gap(loop, tmp_path)
+    pristine = loop.call("metrics.list", {})
+    csv_dir = tmp_path / "dir-artifact-csv"
+    _seed_required_csvs(csv_dir)
+    (csv_dir / "code_exclusions.csv").write_text(
+        "# schema_version=xcov-code-exclusions.v1\n"
+        "# coverage_kind=code\n"
+        "scope,metric,line,object,bin,reason\n"
+        f"top.u_core0,toggle,,{gap['full_name']},,dir artifact\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "dir-artifact-output"
+    (out_dir / "container.el").mkdir(parents=True)
+    compiled = loop.call("exclude.csv.compile", {
+        "directory": str(csv_dir), "output_directory": str(out_dir),
+        "allow_absolute_path": True,
+    })
+    assert not compiled["ok"], compiled
+    assert compiled["error"]["code"] == "EXCLUSION_SAVE_FAILED"
+    assert (out_dir / "container.el").is_dir()
+    after = loop.call("metrics.list", {})
+    key = lambda row: (row["metric"], row["covered"], row["coverable"])
+    assert [key(row) for row in after["data"]["items"]] == \
+        [key(row) for row in pristine["data"]["items"]]
 
 
 def test_line_selector_readd_survives_family_remove(xverif_fixture, tmp_path):
@@ -2494,3 +2523,52 @@ def test_exclude_add_exports_is_explicit_error(loop, tmp_path):
     })
     assert not response["ok"], response
     assert response["error"]["code"] == "ACTION_NOT_IMPLEMENTED"
+
+
+def test_assertion_csv_readd_survives_family_remove(xverif_fixture, tmp_path):
+    """CSV-restored assertion reasons must not be cleared by the tombstone of
+    the ref removed before the export."""
+    resources = xverif_fixture("xcov.modinfo_edge_layouts")
+    database = resources / "edge_cases.vdb"
+    if not database.is_dir():
+        pytest.skip(f"fixture VDB missing: {database}")
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs")
+    loop = Loop([str(CPP_BINARY), "--stdio-loop"], env, database)
+    try:
+        assert_dir = tmp_path / "assert-readd"
+        exported = loop.call("export.assert", {
+            "output": {"path": str(assert_dir), "allow_absolute_path": True},
+        })
+        assert exported["ok"], exported
+        gaps = json.loads((assert_dir / "assert.json").read_text())["gaps"]
+        gap = next((gap for gap in gaps if gap.get("coverage_ref")), None)
+        if gap is None:
+            pytest.skip("fixture has no assertion gap")
+        reference = gap["coverage_ref"]
+        assert loop.call("exclude.add", {
+            "coverage_refs": [{"coverage_ref": reference,
+                               "reason": "assert reason"}],
+        })["ok"]
+        csv_dir = tmp_path / "assert-readd-csv"
+        assert loop.call("exclude.csv.export", {
+            "directory": str(csv_dir), "allow_absolute_path": True,
+        })["ok"]
+        assert loop.call("exclude.remove",
+                         {"coverage_refs": [reference]})["ok"]
+        applied = loop.call("exclude.csv.apply", {"directory": str(csv_dir)})
+        assert applied["ok"], applied
+        readd = loop.call("metrics.list", {})
+        assert loop.call("exclude.instance.add", {
+            "items": [{"scope": "route_matrix.u_value_dark",
+                       "reason": "unrelated"}],
+        })["ok"]
+        assert loop.call("exclude.instance.remove", {
+            "items": [{"scope": "route_matrix.u_value_dark"}],
+        })["ok"]
+        after = loop.call("metrics.list", {})
+        key = lambda row: (row["metric"], row["covered"], row["coverable"])
+        assert [key(row) for row in after["data"]["items"]] == \
+            [key(row) for row in readd["data"]["items"]]
+    finally:
+        loop.close()
