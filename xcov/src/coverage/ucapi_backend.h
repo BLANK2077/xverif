@@ -111,6 +111,8 @@ public:
     void refresh_metrics();
     bool locator_for_ref(const std::string& coverage_ref, std::string* scope,
                          std::string* metric, std::string* name) const;
+    /// found=false: ref unknown; excluded reflects the current report-time bit.
+    bool exclusion_state(const std::string& coverage_ref, bool* excluded) const;
     bool set_exclusion(const std::string& coverage_ref, bool excluded,
                        const std::string& reason = std::string());
     /// Exclude every coverable object under one instance subtree.

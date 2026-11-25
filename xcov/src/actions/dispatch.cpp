@@ -1275,9 +1275,17 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
             const std::string reason =
                 entry.is_string() ? std::string()
                                   : entry.value("reason", std::string());
+            bool already = false;
+            const bool known = sess.backend->exclusion_state(ref, &already);
+            if (known && already == adding) {
+                item["status"] = "already_in_state";
+                item["error"] = nullptr;
+                items.push_back(item);
+                continue;
+            }
             const bool applied =
                 sess.backend->set_exclusion(ref, adding, reason);
-            item["status"] = applied ? "changed" : "invalid";
+            item["status"] = applied ? "changed" : (known ? "failed" : "invalid");
             item["error"] = nullptr;
             if (applied && adding) {
                 item["reason"] = reason;
@@ -1765,6 +1773,7 @@ nlohmann::json Dispatcher::action_metrics_list(const nlohmann::json& req) {
     long assert_covered = 0;
     long assert_coverable = 0;
     for (const auto& row : sess.backend->assertions()) {
+        if (row.excluded) continue;
         if (!scope_filter.empty()) {
             const std::size_t dot = row.full_name.rfind('.');
             const std::string scope_name =

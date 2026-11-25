@@ -444,6 +444,13 @@ void UcapiBackend::finalize_scope_metrics() {
                                 }
                                 api.release(blocks);
                             }
+                            const int assert_status =
+                                api.get(persistent, nullptr, test_,
+                                        ucapi::kCovStatus);
+                            const bool assert_excluded =
+                                assert_status >= 0 &&
+                                (assert_status &
+                                 ucapi::kStatusExcludedAtReportTime) != 0;
                             const long hit =
                                 (type == ucapi::kAssertionTypeCoverProperty
                                      ? all_successes
@@ -453,7 +460,7 @@ void UcapiBackend::finalize_scope_metrics() {
                             MetricAggregate& entry =
                                 scopes_[pos->second].metrics[MetricKind::Assert];
                             entry.covered += hit;
-                            entry.coverable += 1;
+                            if (!assert_excluded) entry.coverable += 1;
                         }
                         api.release(persistent);
                     }
@@ -693,7 +700,7 @@ const std::vector<UcapiBackend::FunctionalGap>& UcapiBackend::functional_gaps() 
                                             const long coverable = api.get(
                                                 bin, persistent_variant, test_,
                                                 ucapi::kCoverable);
-                                            if (coverable > 0 && covered == 0) {
+                                            if (coverable > covered) {
                                                 FunctionalGap gap;
                                                 const std::size_t marker =
                                                     variant_full.find("::");
@@ -1002,6 +1009,91 @@ bool UcapiBackend::locator_for_ref(const std::string& coverage_ref_value,
     *scope = std::get<0>(it->second);
     *metric = std::get<1>(it->second);
     *name = std::get<2>(it->second);
+    return true;
+}
+
+bool UcapiBackend::exclusion_state(const std::string& coverage_ref_value,
+                                   bool* excluded) const {
+    const UcapiLibrary& api = UcapiLibrary::instance();
+    auto locator = ref_locators_.find(coverage_ref_value);
+    if (locator == ref_locators_.end()) return false;
+    const std::string& scope_name = std::get<0>(locator->second);
+    const std::string& metric = std::get<1>(locator->second);
+    const std::string& full_name = std::get<2>(locator->second);
+    if (metric == "assert") {
+        ucapi::Handle metrics = api.iterate(test_, ucapi::kMetrics);
+        if (metrics == nullptr) return false;
+        ucapi::Handle m;
+        bool found = false;
+        while (!found && (m = api.scan(metrics)) != nullptr) {
+            if (!api.is_assert_metric(m)) continue;
+            ucapi::Handle objects = api.qualified_iterate(test_, m, ucapi::kObjects);
+            if (objects == nullptr) continue;
+            ucapi::Handle object;
+            while ((object = api.scan(objects)) != nullptr) {
+                ucapi::Handle persistent = api.make_persistent(object);
+                if (safe_str(api.get_str(persistent, ucapi::kFullName)) == full_name) {
+                    const int status =
+                        api.get(persistent, nullptr, test_, ucapi::kCovStatus);
+                    *excluded = status >= 0 &&
+                                (status & ucapi::kStatusExcludedAtReportTime) != 0;
+                    found = true;
+                    api.release(persistent);
+                    break;
+                }
+                api.release(persistent);
+            }
+            api.release(objects);
+        }
+        api.release(metrics);
+        return found;
+    }
+    const ScopeInfo* scope = find_scope(scope_name);
+    if (scope == nullptr || scope->handle == nullptr) return false;
+    ucapi::Handle object = nullptr;
+    ucapi::Handle region = nullptr;
+    ucapi::Handle persistent_metric = nullptr;
+    ucapi::Handle metrics = api.iterate(test_, ucapi::kMetrics);
+    if (metrics == nullptr) return false;
+    ucapi::Handle m;
+    bool found = false;
+    while (!found && (m = api.scan(metrics)) != nullptr) {
+        const std::string key = ucapi_metric_key(safe_str(api.get_str(m, ucapi::kName)));
+        if (key != metric) continue;
+        persistent_metric = api.make_persistent(m);
+        region = api.get_qualified_handle(scope->handle, persistent_metric,
+                                          ucapi::kIdentity);
+        if (region == nullptr) {
+            api.release(persistent_metric);
+            persistent_metric = nullptr;
+            continue;
+        }
+        ucapi::Handle objects = api.iterate(region, ucapi::kObjects);
+        if (objects != nullptr) {
+            ucapi::Handle o;
+            while ((o = api.scan(objects)) != nullptr) {
+                found = find_leaf_in_subtree(api, o, region,
+                                             scope->full_name + ".", full_name, "",
+                                             &object);
+                if (found) break;
+            }
+            api.release(objects);
+        }
+        if (!found) {
+            api.release(region);
+            api.release(persistent_metric);
+            region = nullptr;
+            persistent_metric = nullptr;
+        }
+    }
+    api.release(metrics);
+    if (!found) return false;
+    const int status = api.get(object, region, test_, ucapi::kCovStatus);
+    *excluded = status >= 0 &&
+                (status & ucapi::kStatusExcludedAtReportTime) != 0;
+    api.release(object);
+    api.release(region);
+    api.release(persistent_metric);
     return true;
 }
 
