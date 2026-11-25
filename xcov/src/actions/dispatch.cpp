@@ -1512,6 +1512,25 @@ nlohmann::json Dispatcher::action_export(const nlohmann::json& req) {
 
 namespace {
 
+std::string make_temp_baseline(const char* prefix);
+void remove_temp_baseline(const std::string& path);
+
+void ensure_instance_baseline(Session& sess, const std::string& root) {
+    if (sess.instance_baselines.find(root) != sess.instance_baselines.end()) {
+        return;
+    }
+    const std::string path = make_temp_baseline("xcov-family-");
+    try {
+        sess.backend->save_exclusions(path);
+    } catch (const Error& exc) {
+        remove_temp_baseline(path);
+        throw Error("EXCLUSION_BASELINE_FAILED",
+                    "cannot snapshot the pre-family exclusion state",
+                    {{"cause_message", exc.message()}});
+    }
+    sess.instance_baselines[root] = path;
+}
+
 void merge_instance_delta(Session& sess, const std::string& root,
                           const std::vector<ExclusionKey>& delta) {
     if (delta.empty()) return;
@@ -1751,10 +1770,7 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
                 }
                 items.push_back({{"path", path}, {"status", "loaded"}});
             }
-            if (sess.loaded_el_snapshot.empty()) {
-                sess.loaded_el_snapshot = make_temp_baseline("xcov-loaded-");
-            }
-            sess.backend->save_exclusions(sess.loaded_el_snapshot);
+            sess.removed_refs.clear();
         } catch (...) {
             sess.backend->unload_exclusions();
             sess.backend->load_exclusions(baseline_guard.path);
@@ -1780,10 +1796,10 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
         }
         sess.instance_deltas.clear();
         sess.removed_refs.clear();
-        if (!sess.loaded_el_snapshot.empty()) {
-            remove_temp_baseline(sess.loaded_el_snapshot);
-            sess.loaded_el_snapshot.clear();
+        for (const auto& baseline : sess.instance_baselines) {
+            remove_temp_baseline(baseline.second);
         }
+        sess.instance_baselines.clear();
         // Removing every exclusion also clears the dirty reason set; this
         // mirrors Python clear_exclusions().
         sess.mark_reasons_persisted();
@@ -2518,6 +2534,7 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                 std::size_t changed = 0;
                 std::vector<ExclusionKey> delta;
                 if (target_kind == "instance") {
+                    ensure_instance_baseline(sess, record.expansion_root);
                     changed = sess.backend->exclude_scope(
                         scope, false, reason, &delta);
                     merge_instance_delta(sess, record.expansion_root, delta);
@@ -2698,8 +2715,8 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
                     }
                 }
                 if (expanded.empty()) {
-                    throw Error("EXCLUSION_NOT_OWNED",
-                                "no real instance matches the requested scope",
+                    throw Error("SCOPE_NOT_FOUND",
+                                "instance scope was not found",
                                 {{"scope", scope}});
                 }
                 if (sess.exclusion_policy == "strict" &&
@@ -2728,6 +2745,7 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
                         }
                     }
                 }
+                ensure_instance_baseline(sess, scope);
                 std::vector<ExclusionKey> delta;
                 const std::size_t changed = sess.backend->exclude_scope(
                     scope, recursive, reason, &delta);
@@ -2770,7 +2788,19 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
                 ++remove_matches;
                 std::size_t changed = 0;
                 auto delta_it = sess.instance_deltas.find(scope);
-                if (delta_it != sess.instance_deltas.end()) {
+                auto baseline_it = sess.instance_baselines.find(scope);
+                if (baseline_it != sess.instance_baselines.end()) {
+                    // Bulk restore: reload the pre-add EL instead of clearing
+                    // thousands of leaves one by one (UCAPI recomputes the
+                    // whole exclusion state on each set).
+                    changed = delta_it == sess.instance_deltas.end()
+                                  ? 0
+                                  : delta_it->second.size();
+                    sess.backend->unload_exclusions();
+                    sess.backend->load_exclusions(baseline_it->second);
+                    remove_temp_baseline(baseline_it->second);
+                    sess.instance_baselines.erase(baseline_it);
+                } else if (delta_it != sess.instance_deltas.end()) {
                     changed += sess.backend->clear_exclusion_keys(
                         delta_it->second);
                 } else {
@@ -2785,14 +2815,17 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
                     sess.exclusion_records.erase(key);
                 }
                 sess.instance_deltas.erase(scope);
-                if (!sess.loaded_el_snapshot.empty()) {
-                    // Reload the state captured by exclude.load, then honor
-                    // explicit ref removals and replay reason records.
-                    sess.backend->unload_exclusions();
-                    sess.backend->load_exclusions(sess.loaded_el_snapshot);
-                    for (const auto& ref : sess.removed_refs) {
-                        sess.backend->set_exclusion(ref, false, std::string());
+                // Re-add external EL state (skipping files deleted after load)
+                // and honor explicit ref removals.
+                for (const auto& path : sess.loaded_el_paths) {
+                    try {
+                        sess.backend->load_exclusions(path);
+                    } catch (const Error&) {
+                        // The pre-add baseline may already contain this state.
                     }
+                }
+                for (const auto& ref : sess.removed_refs) {
+                    sess.backend->set_exclusion(ref, false, std::string());
                 }
                 for (const auto& existing : sess.exclusion_records) {
                     if (!reapply_exclusion_record(sess, existing.second)) {
@@ -3067,6 +3100,7 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
                 }
                 std::size_t changed = 0;
                 if (target_kind == "instance") {
+                    ensure_instance_baseline(sess, record.expansion_root);
                     changed = sess.backend->exclude_scope(
                         scope, false, reason, &delta);
                     merge_instance_delta(sess, record.expansion_root, delta);

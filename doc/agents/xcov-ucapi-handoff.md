@@ -39,8 +39,8 @@ Schema/action 元数据是**生成物**：`xcov/xcov/schemas_data/v1/`（63 个 
 由 `xcov/tools/export_schemas.py` / `export_actions.py` 从 Python 定义导出；
 `test_schema_export.py` 校验等价性。**不要手改 JSON**，改 Python 定义后重新导出。
 
-> 2026-11-25 更新：已完成十一轮独立 review 驱动的修复（HEAD 之后另行提交）。
-> `xcov.cpp_actions` 现为 71 个用例；query/sort/overflow、run_manifest、
+> 2026-11-25 更新：已完成十二轮独立 review 驱动的修复（HEAD 之后另行提交）。
+> `xcov.cpp_actions` 现为 73 个用例；query/sort/overflow、run_manifest、
 > session.close dirty reason、CSV line selector/身份、ref 缓存上限均已实现。
 > 详细修复表与最新已知限制见 `doc/agents/xcov-ucapi-plan-v2.md`
 > 「第六轮 review 修复」和「剩余已知限制」。

@@ -2077,3 +2077,37 @@ def test_csv_leaf_after_family_survives_remove(loop, vdb, tmp_path):
             [key(row) for row in expected["data"]["items"]]
     finally:
         family_session.close()
+
+
+def test_family_remove_after_load_is_not_rolled_back(loop, vdb, tmp_path):
+    """Loading an unrelated/empty EL must not make a later family remove
+    restore the family through a stale session snapshot."""
+    empty = tmp_path / "empty.el"
+    empty.write_text("")
+    pristine = loop.call("metrics.list", {})
+    assert pristine["ok"], pristine
+    assert loop.call("exclude.instance.add", {
+        "items": [{"scope": "top.u_core0", "reason": "family"}],
+    })["ok"]
+    assert loop.call("exclude.load", {"paths": [str(empty)]})["ok"]
+    removed = loop.call("exclude.instance.remove", {
+        "items": [{"scope": "top.u_core0"}],
+    })
+    assert removed["ok"], removed
+    after = loop.call("metrics.list", {})
+    key = lambda row: (row["metric"], row["covered"], row["coverable"])
+    assert [key(row) for row in after["data"]["items"]] == \
+        [key(row) for row in pristine["data"]["items"]]
+    el_path = tmp_path / "after-empty-load.el"
+    assert loop.call("export.exclude", {
+        "output": {"path": str(el_path), "allow_absolute_path": True},
+    })["ok"]
+    assert el_path.stat().st_size == 0
+
+
+def test_instance_add_on_synthetic_scope_reports_scope_not_found(loop):
+    response = loop.call("exclude.instance.add", {
+        "items": [{"scope": "top.u_core0.g_pipe", "reason": "synthetic"}],
+    })
+    assert not response["ok"], response
+    assert response["error"]["code"] == "SCOPE_NOT_FOUND"

@@ -387,7 +387,21 @@ handle 释放、assertion delta 记账 3 个 P2。本轮处理：
 | 5 | loaded EL 排除在 remove 后丢失 | exclude.load 结束时保存 session EL snapshot；instance remove 后 reload snapshot，清除 removed_refs，再重放 records |
 | 6 | 0-coverable instance add/remove 不对称（P2） | 记录为已知限制：delta 为空时不建 ownership record，remove 返回 NOT_OWNED；无数据损坏 |
 
-## 剩余已知限制（2026-11-25 第十一轮 review 后）
+## 第十六轮 review 修复（2026-11-25，HEAD 2419ab3 之后）
+
+第十二轮独立 review 发现 2 个 P1：exclude.load 的全局快照把 load 前状态一起
+回滚，导致 instance remove 假成功/永久卡住；以及 instance remove 逐 leaf 清
+status 超线性（5126 leaf 5.4 s）。本轮改为 per-family baseline bulk restore：
+
+| # | 问题 | 处理 |
+|---|---|---|
+| 1 | load 快照全局回滚导致 remove 假成功 | 删除全局 loaded_el_snapshot；instance family add 前保存 per-root baseline EL；remove 时 unload + load baseline（bulk），再 reload loaded_el_paths、清 removed_refs、重放 remaining records |
+| 2 | 逐 leaf clear 超线性（UCAPI 每次 set 重算 exclusion 状态） | baseline bulk restore 替代 clear_exclusion_keys；edge recursive 5126 leaf remove 5.4 s → **0.019 s** |
+| 3 | removed_refs 永久保留污染后续 load | load 成功后清空 removed_refs；remove 时按 ref 清位 |
+| 4 | synthetic generate scope 错误码与 Python 不一致 | instance add 对不存在/无 handle scope 返回 `SCOPE_NOT_FOUND` |
+| 5 | baseline 临时文件生命周期 | unload_all / Session 析构清理 instance_baselines |
+
+## 剩余已知限制（2026-11-25 第十二轮 review 后）
 
 - recursive instance 排除在超大库仍 >60s（`covdb_set_exclude_all_iter` 不可用，只能逐 leaf）。
 - coverpoint/cross 的 exclusion 在 EL 中不产出对象（UCAPI 限制）。
