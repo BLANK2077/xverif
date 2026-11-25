@@ -191,6 +191,39 @@ review 发现的问题与处理：
 - `code_coverage.summary` 的无效排序、`scope.summary` 的 comparator 内重复计算 depth。
 - `payload_format` 在 stdio-loop 里未被读取，json/xout 总是双份渲染。
 
+## 第三轮 review 后的修复（2026-11-25 晚）
+
+| # | 问题 | 处理 |
+|---|---|---|
+| 1 | toggle/condition 的 coverage_ref 精确但 locator 只存 name，命中错对象 | `register_ref` 存完整 full_name；`find_leaf_in_subtree` 按累积路径比较，CSV 的裸 name 作为回退 |
+| 2 | CSV functional apply 控制流 bug（推断 target_kind 后不调用） | 推断与分派拆开，推断后统一调用 `exclude_functional` |
+| 3 | `exclude_leaf` 不置脏 | 加 `invalidate_caches()` |
+| 4 | `metrics.list` 忽略 scope | 按 scope 过滤 scope 集合与 assert/functional |
+| 5 | `scope.summary` 忽略 `metrics` | `scope_row` 接受 selected_metrics |
+| 6 | functional coverpoint/cross no-op | `exclude_leaf_node` 容忍负 status，并检查 `api.set` 结果 |
+| 7 | `exclude.functional.remove` 空实现 | `exclude_functional` 加 `excluded` 参数，remove 走 restore |
+| 8 | functional export 不反映排除 | variant coverable==0 时跳过 |
+| 9 | `exclude.csv.apply` 响应 schema 违反 | items 改为逐行 `{coverage_ref: null, status}`，并记录 `exclusion_records` |
+| 10 | `csv.export` 覆盖已有 functional/assertion/container | 已存在则跳过，不覆盖用户数据 |
+| 11 | `payload_format` 被 request schema 拒绝 | 在 transport 层剥离后再 dispatch |
+| 12 | `exclude.unload_all` 计数假 | before = records 数，after = 0，并清空 records |
+| 13 | 跨容器迭代器比较 UB | 改为 `scope->metrics.end()` |
+| 14 | `refresh_metrics` 释放 instance handle | 拆出 `instance_handles_`，refresh 只释放 metric handle |
+| 15 | `csv.compile` 无 output_directory 写 `/code.el` | 默认用 directory |
+| 16 | `export.code_coverage` 未知 scope 静默 | 抛 `SCOPE_NOT_FOUND` |
+
+已知限制（未修，probe 验证后记录）：
+
+- **recursive instance 排除在超大库上不可用**：`covdb_set_exclude_all_iter` 实测 rc=0 但
+  EL 为空（不产生 exclusion），只能逐 leaf 设置。large_summary（3001 scope / 约 1180 万
+  leaf）上 `exclude.instance.add top recursive=true` 超过 60 秒。单 leaf 正常（0.02s），
+  restore 更慢（逐 leaf 读 status）。
+- **assertion 排除没有可用路径**：`export.assert` 不产出 coverage_ref，`exclude.add` 的
+  `exports` 参数未实现，CSV assertion 行走 `exclude_leaf` 匹配不到 test 级容器。
+- `export.code_coverage` 的 `raw` 字段指向不存在的文件。
+- `sort` / `query` / `limits.overflow` / `max_items=0` 语义未实现（schema 暴露但忽略）。
+- `csv.compile` 仍把全部 kind 写进 `code.el`，另外三个文件为空。
+
 ## 进度表
 
 | 阶段 | 状态 |

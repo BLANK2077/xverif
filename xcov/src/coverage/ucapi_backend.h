@@ -101,7 +101,7 @@ public:
         std::string bin;
         std::string full_name;
     };
-    std::vector<FunctionalGap> functional_gaps() const;
+    const std::vector<FunctionalGap>& functional_gaps() const;
 
     /// Session-local exclusion operations (UCAPI report-time exclusion bits).
     void register_ref(const std::string& coverage_ref, const std::string& scope,
@@ -122,7 +122,8 @@ public:
                                    const std::string& covergroup,
                                    const std::string& target_kind,
                                    const std::string& item,
-                                   const std::string& reason);
+                                   const std::string& reason,
+                                   bool excluded = true);
     void save_exclusions(const std::string& path) const;
     void load_exclusions(const std::string& path);
     void unload_exclusions();
@@ -210,6 +211,9 @@ private:
     std::vector<std::string> top_scopes_;
     std::map<std::string, std::vector<std::string>> children_;
     std::vector<ucapi::Handle> persistent_handles_;
+    // Instance handles must outlive metric rebuilds; keep them separate so
+    // refresh_metrics() never releases a handle still referenced by scopes_.
+    std::vector<ucapi::Handle> instance_handles_;
     // Cached full-scan results; invalidated by every exclusion mutation.
     mutable std::vector<FunctionalGap> functional_gap_cache_;
     mutable bool functional_gap_cache_valid_ = false;

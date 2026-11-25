@@ -91,11 +91,16 @@ int stdio_loop(xcov::Dispatcher& dispatcher) {
         }
         std::string request_id = "req-unknown";
         std::string action;
+        std::string payload_format = "xout";
         nlohmann::json rsp;
         try {
             nlohmann::json req = xcov::parse_request(text);
             request_id = req.value("request_id", std::string("req-unknown"));
             action = req.value("action", std::string());
+            // payload_format is a transport-level hint, not an action argument;
+            // strip it before schema validation.
+            payload_format = req.value("payload_format", std::string("xout"));
+            req.erase("payload_format");
             if (action == "stdio.quit") {
                 nlohmann::json envelope = {
                     {"request_id", request_id},
@@ -120,19 +125,23 @@ int stdio_loop(xcov::Dispatcher& dispatcher) {
             rsp = xcov::error_response(action, request_id,
                                        xcov::Error("INTERNAL_ERROR", exc.what()));
         }
+        // Only render the representation the caller asked for; rendering both
+        // doubles the response cost on large item lists.
         std::string xout;
-        try {
-            xout = xcov::render_transport_xout(rsp);
-        } catch (const std::exception& exc) {
-            xout = std::string("@xcov.v1 error action=") + action +
-                   " request_id=" + request_id + "\n";
+        if (payload_format != "json") {
+            try {
+                xout = xcov::render_transport_xout(rsp);
+            } catch (const std::exception& exc) {
+                xout = std::string("@xcov.v1 error action=") + action +
+                       " request_id=" + request_id + "\n";
+            }
         }
         nlohmann::json envelope = {
             {"request_id", request_id},
             {"ok", rsp.value("ok", false)},
             {"api_version", rsp.value("api_version", std::string("xcov.v1"))},
             {"action", rsp.value("action", action)},
-            {"payload_format", "xout"},
+            {"payload_format", payload_format},
             {"json", rsp},
             {"xout", xout},
         };
