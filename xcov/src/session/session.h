@@ -51,6 +51,7 @@ struct Session {
     // add; family remove restores it and replays remaining records.
     std::string family_baseline;
     std::set<std::string> removed_refs;
+    std::map<std::string, std::string> removed_ref_names;
 
     ~Session();
     // Python's contract: exclusion reasons are "dirty" until a CSV export or

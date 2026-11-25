@@ -2249,3 +2249,152 @@ def test_readded_ref_survives_family_remove(loop, tmp_path):
         [key(row) for row in leaf_state["data"]["items"]]
     assert [key(row) for row in after["data"]["items"]] != \
         [key(row) for row in pristine["data"]["items"]]
+
+
+def _full_gap(loop, tmp_path, scope="top.u_core0"):
+    out_dir = tmp_path / "full-gap"
+    response = loop.call("export.code_coverage", {
+        "scopes": [scope], "metrics": ["toggle"],
+        "output": {"path": str(out_dir), "allow_absolute_path": True},
+    })
+    assert response["ok"], response
+    gaps = json.loads(
+        (out_dir / "instance-0001" / "toggle.json").read_text())["gaps"]
+    return next(gap for gap in gaps if gap.get("coverage_ref"))
+
+
+def test_failed_csv_with_code_row_does_not_poison_baseline(loop, tmp_path):
+    gap = _full_gap(loop, tmp_path)
+    pristine = loop.call("metrics.list", {})
+    csv_dir = tmp_path / "failed-code-instance"
+    _seed_required_csvs(csv_dir)
+    (csv_dir / "code_exclusions.csv").write_text(
+        "# schema_version=xcov-code-exclusions.v1\n"
+        "# coverage_kind=code\n"
+        "scope,metric,line,object,bin,reason\n"
+        f"top.u_core0,toggle,,{gap['full_name']},,poison\n",
+        encoding="utf-8",
+    )
+    (csv_dir / "container_exclusions.csv").write_text(
+        "# schema_version=xcov-container-exclusions.v1\n"
+        "# coverage_kind=container\n"
+        "target_kind,scope,covergroup,item,expansion_root,reason\n"
+        "instance,top.no_such_instance,,,top.no_such_instance,bad\n",
+        encoding="utf-8",
+    )
+    failed = loop.call("exclude.csv.apply", {"directory": str(csv_dir)})
+    assert not failed["ok"], failed
+    assert loop.call("exclude.instance.add", {
+        "items": [{"scope": "top.u_core1", "reason": "unrelated"}],
+    })["ok"]
+    assert loop.call("exclude.instance.remove", {
+        "items": [{"scope": "top.u_core1"}],
+    })["ok"]
+    after = loop.call("metrics.list", {})
+    key = lambda row: (row["metric"], row["covered"], row["coverable"])
+    assert [key(row) for row in after["data"]["items"]] == \
+        [key(row) for row in pristine["data"]["items"]]
+
+
+def test_compile_readd_survives_family_remove(loop, tmp_path):
+    gap = _full_gap(loop, tmp_path)
+    reference = gap["coverage_ref"]
+    assert loop.call("exclude.add", {
+        "coverage_refs": [{"coverage_ref": reference, "reason": "first"}],
+    })["ok"]
+    assert loop.call("exclude.remove",
+                     {"coverage_refs": [reference]})["ok"]
+    csv_dir = tmp_path / "compile-readd"
+    _seed_required_csvs(csv_dir)
+    (csv_dir / "code_exclusions.csv").write_text(
+        "# schema_version=xcov-code-exclusions.v1\n"
+        "# coverage_kind=code\n"
+        "scope,metric,line,object,bin,reason\n"
+        f"top.u_core0,toggle,,{gap['full_name']},,row-reason\n",
+        encoding="utf-8",
+    )
+    el_dir = tmp_path / "compile-readd-el"
+    compiled = loop.call("exclude.csv.compile", {
+        "directory": str(csv_dir), "output_directory": str(el_dir),
+        "allow_absolute_path": True,
+    })
+    assert compiled["ok"], compiled
+    readd = loop.call("metrics.list", {})
+    assert loop.call("exclude.instance.add", {
+        "items": [{"scope": "top.u_core1", "reason": "unrelated"}],
+    })["ok"]
+    assert loop.call("exclude.instance.remove", {
+        "items": [{"scope": "top.u_core1"}],
+    })["ok"]
+    after = loop.call("metrics.list", {})
+    key = lambda row: (row["metric"], row["covered"], row["coverable"])
+    assert [key(row) for row in after["data"]["items"]] == \
+        [key(row) for row in readd["data"]["items"]]
+
+
+def test_failed_transaction_restores_removed_ref_tombstone(loop, tmp_path):
+    gap = _full_gap(loop, tmp_path)
+    reference = gap["coverage_ref"]
+    pristine = loop.call("metrics.list", {})
+    assert loop.call("exclude.add", {
+        "coverage_refs": [{"coverage_ref": reference, "reason": "first"}],
+    })["ok"]
+    assert loop.call("exclude.remove",
+                     {"coverage_refs": [reference]})["ok"]
+    csv_dir = tmp_path / "failed-tombstone"
+    _seed_required_csvs(csv_dir)
+    (csv_dir / "code_exclusions.csv").write_text(
+        "# schema_version=xcov-code-exclusions.v1\n"
+        "# coverage_kind=code\n"
+        "scope,metric,line,object,bin,reason\n"
+        f"top.u_core0,toggle,,{gap['full_name']},,transient\n",
+        encoding="utf-8",
+    )
+    (csv_dir / "container_exclusions.csv").write_text(
+        "# schema_version=xcov-container-exclusions.v1\n"
+        "# coverage_kind=container\n"
+        "target_kind,scope,covergroup,item,expansion_root,reason\n"
+        "instance,top.no_such_instance,,,top.no_such_instance,bad\n",
+        encoding="utf-8",
+    )
+    failed = loop.call("exclude.csv.apply", {"directory": str(csv_dir)})
+    assert not failed["ok"], failed
+    assert loop.call("exclude.instance.add", {
+        "items": [{"scope": "top.u_core1", "reason": "unrelated"}],
+    })["ok"]
+    assert loop.call("exclude.instance.remove", {
+        "items": [{"scope": "top.u_core1"}],
+    })["ok"]
+    after = loop.call("metrics.list", {})
+    key = lambda row: (row["metric"], row["covered"], row["coverable"])
+    assert [key(row) for row in after["data"]["items"]] == \
+        [key(row) for row in pristine["data"]["items"]]
+
+
+def test_csv_record_remove_then_family_round_trip(loop, tmp_path):
+    gap = _full_gap(loop, tmp_path)
+    reference = gap["coverage_ref"]
+    csv_dir = tmp_path / "csv-record-remove"
+    _seed_required_csvs(csv_dir)
+    (csv_dir / "code_exclusions.csv").write_text(
+        "# schema_version=xcov-code-exclusions.v1\n"
+        "# coverage_kind=code\n"
+        "scope,metric,line,object,bin,reason\n"
+        f"top.u_core0,toggle,,{gap['full_name']},,csv reason\n",
+        encoding="utf-8",
+    )
+    assert loop.call("exclude.csv.apply",
+                     {"directory": str(csv_dir)})["ok"]
+    assert loop.call("exclude.remove",
+                     {"coverage_refs": [reference]})["ok"]
+    removed = loop.call("metrics.list", {})
+    assert loop.call("exclude.instance.add", {
+        "items": [{"scope": "top.u_core1", "reason": "unrelated"}],
+    })["ok"]
+    assert loop.call("exclude.instance.remove", {
+        "items": [{"scope": "top.u_core1"}],
+    })["ok"]
+    after = loop.call("metrics.list", {})
+    key = lambda row: (row["metric"], row["covered"], row["coverable"])
+    assert [key(row) for row in after["data"]["items"]] == \
+        [key(row) for row in removed["data"]["items"]]

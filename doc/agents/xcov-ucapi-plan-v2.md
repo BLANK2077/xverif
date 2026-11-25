@@ -426,14 +426,31 @@ add 的 ref 会被 removed_refs 墓碑吞掉。本轮处理：
 |---|---|---|
 | 1 | 失败 CSV 事务污染会话 baseline | CSV apply/compile 入口（任何行执行前）即 `ensure_family_baseline`；失败回滚后 baseline 仍是请求前状态 |
 | 2 | remove→re-add 的排除被 tombstone 清除 | re-add 成功时 erase tombstone；应用 tombstone 时若已有同名 live record 则跳过 |
-| 3 | TMPDIR 不可用时 baseline 硬失败 | `make_temp_baseline` 也纳入 try，失败回退 delta 清除路径（fails soft） |
+| 3 | TMPDIR 不可用时 family baseline 硬失败 | family baseline 创建失败回退 delta 清除路径；事务级 `TempBaselineGuard` 仍 fail-closed（后续已知限制） |
 | 4 | 测试 | 新增失败 CSV 事务 + 无关 family 往返、remove→re-add→family 往返 2 个用例（cpp_actions 78 passed） |
 
 已知限制新增：loaded EL 重放会复活已在 EL 中的 instance/functional 排除（Python 同行为）；
 EL 文件删除后 reload 失败会丢失该文件贡献的排除并留下 loaded entries；多 family remove
 的重放为 O(K²)（20 family 约 9s，3 family 内与 add 同量级）。
 
-## 剩余已知限制（2026-11-25 第十四轮 review 后）
+## 第十九轮 review 修复（2026-11-25，HEAD 2120115 之后）
+
+第十五轮独立 review 发现 4 个 P1：csv.apply 入口未采 baseline；csv.compile 的
+code 行 full_name 双重 scope 且不清理 tombstone；失败事务不回滚 removed_refs；
+live-record 跳过让陈旧 CSV record 否决显式 remove。本轮处理：
+
+| # | 问题 | 处理 |
+|---|---|---|
+| 1 | apply 入口未采 baseline | `exclude.csv.apply` 与 compile 一样在任何行执行前 `ensure_family_baseline` |
+| 2 | compile code 行 full_name 双重 scope / tombstone 未清 | compile code 行按 apply 规范化 full_name；code/assertion 成功路径也清除 tombstone |
+| 3 | 失败事务不回滚 removed_refs | apply/compile rollback 快照并恢复 removed_refs/removed_ref_names |
+| 4 | live-record 跳过否决显式 remove | 删除 live-record 跳过，tombstone 最后生效；re-add 通过对象 full_name 清除 tombstone |
+| 5 | ref locator 关闭/淘汰导致 tombstone 清除失效 | removed_ref_names 保存 remove 时的 full_name，不再依赖 locator 缓存 |
+| 6 | 测试 | 新增失败 CSV(code+instance)、compile re-add、失败事务+tombstone、CSV record remove 4 个用例（cpp_actions 82 passed） |
+
+已知限制新增：事务级 TempBaselineGuard 在 TMPDIR 不可用时 fail-closed（无数据损坏）。
+
+## 剩余已知限制（2026-11-25 第十五轮 review 后）
 
 - recursive instance 排除在超大库仍 >60s（`covdb_set_exclude_all_iter` 不可用，只能逐 leaf）。
 - coverpoint/cross 的 exclusion 在 EL 中不产出对象（UCAPI 限制）。
@@ -455,6 +472,8 @@ EL 文件删除后 reload 失败会丢失该文件贡献的排除并留下 loade
   EL 源文件删除后 reload 失败会丢失该文件贡献的排除并保留 loaded entries。
 - 多 family remove 的重放为 O(K²)：20 个 large leaf family 合计约 9s；3 family
   以内与 add 同量级。
+- 事务级 `TempBaselineGuard` 在 TMPDIR 不可用时 fail-closed（`EXCLUSION_BASELINE_FAILED`，
+  无数据损坏）；只有 family baseline 支持回退。
 
 ## 进度表
 

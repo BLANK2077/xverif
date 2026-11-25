@@ -1517,14 +1517,11 @@ void remove_temp_baseline(const std::string& path);
 
 void clear_removed_ref_tombstone(Session& sess,
                                   const std::string& full_name) {
-    for (auto it = sess.removed_refs.begin();
-         it != sess.removed_refs.end();) {
-        std::string scope;
-        std::string metric;
-        std::string name;
-        if (sess.backend->locator_for_ref(*it, &scope, &metric, &name) &&
-            name == full_name) {
-            it = sess.removed_refs.erase(it);
+    for (auto it = sess.removed_ref_names.begin();
+         it != sess.removed_ref_names.end();) {
+        if (it->second == full_name) {
+            sess.removed_refs.erase(it->first);
+            it = sess.removed_ref_names.erase(it);
         } else {
             ++it;
         }
@@ -1815,6 +1812,7 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
         }
         sess.instance_deltas.clear();
         sess.removed_refs.clear();
+        sess.removed_ref_names.clear();
         if (!sess.family_baseline.empty()) {
             remove_temp_baseline(sess.family_baseline);
             sess.family_baseline.clear();
@@ -1847,9 +1845,19 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
             if (known && already == adding) {
                 item["status"] = "already_in_state";
                 item["error"] = nullptr;
-                if (adding) sess.removed_refs.erase(ref);
+                if (adding) {
+                    sess.removed_refs.erase(ref);
+                    sess.removed_ref_names.erase(ref);
+                }
                 if (!adding) {
                     sess.removed_refs.insert(ref);
+                    std::string r_scope;
+                    std::string r_metric;
+                    std::string r_name;
+                    if (sess.backend->locator_for_ref(ref, &r_scope, &r_metric,
+                                                      &r_name)) {
+                        sess.removed_ref_names[ref] = r_name;
+                    }
                     records_changed |= erase_exclusion_record_by_ref(sess, ref);
                     items.push_back(item);
                     continue;
@@ -1879,7 +1887,10 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
             }
             const bool applied =
                 sess.backend->set_exclusion(ref, adding, reason);
-            if (adding && applied) sess.removed_refs.erase(ref);
+            if (adding && applied) {
+                sess.removed_refs.erase(ref);
+                sess.removed_ref_names.erase(ref);
+            }
             item["status"] = applied ? "changed" : (known ? "failed" : "invalid");
             item["error"] = nullptr;
             if (applied && adding) {
@@ -1902,6 +1913,13 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
                 records_changed |= put_exclusion_record(sess, record);
             } else if (applied) {
                 sess.removed_refs.insert(ref);
+                std::string r_scope;
+                std::string r_metric;
+                std::string r_name;
+                if (sess.backend->locator_for_ref(ref, &r_scope, &r_metric,
+                                                  &r_name)) {
+                    sess.removed_ref_names[ref] = r_name;
+                }
                 records_changed |= erase_exclusion_record_by_ref(sess, ref);
             }
         } catch (const Error& exc) {
@@ -2469,6 +2487,8 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
         sess.exclusion_records;
     const std::map<std::string, std::vector<ExclusionKey>> baseline_deltas =
         sess.instance_deltas;
+    const auto baseline_removed_refs = sess.removed_refs;
+    const auto baseline_removed_names = sess.removed_ref_names;
     auto rollback = [&]() {
         sess.backend->unload_exclusions();
         try {
@@ -2482,6 +2502,8 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
         }
         sess.exclusion_records = baseline_records;
         restore_instance_deltas(sess, baseline_deltas);
+        sess.removed_refs = baseline_removed_refs;
+        sess.removed_ref_names = baseline_removed_names;
     };
     bool records_changed = false;
     std::size_t applied_total = 0;
@@ -2615,6 +2637,7 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                     record.name = row.value("assertion");
                     record.full_name = full_name;
                     records_changed |= put_exclusion_record(sess, record);
+                    clear_removed_ref_tombstone(sess, record.full_name);
                 } else {
                     ++failed;
                 }
@@ -2646,8 +2669,13 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                 record.source_file = row.source_file;
                 record.name = name;
                 record.bin = row.value("bin");
-                record.full_name = scope + "." + name;
+                const std::string prefix = scope + ".";
+                record.full_name =
+                    name.compare(0, prefix.size(), prefix) == 0
+                        ? name
+                        : scope + "." + name;
                 records_changed |= put_exclusion_record(sess, record);
+                clear_removed_ref_tombstone(sess, record.full_name);
             } else {
                 ++failed;
             }
@@ -2859,24 +2887,7 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
                     }
                 }
                 for (const auto& ref : sess.removed_refs) {
-                    std::string ref_scope;
-                    std::string ref_metric;
-                    std::string ref_name;
-                    bool live_record = false;
-                    if (sess.backend->locator_for_ref(
-                            ref, &ref_scope, &ref_metric, &ref_name)) {
-                        for (const auto& existing : sess.exclusion_records) {
-                            if (existing.second.full_name == ref_name) {
-                                live_record = true;
-                                break;
-                            }
-                        }
-                    }
-                    // A tombstone must not override a record that was
-                    // explicitly re-added after the removal.
-                    if (!live_record) {
-                        sess.backend->set_exclusion(ref, false, std::string());
-                    }
+                    sess.backend->set_exclusion(ref, false, std::string());
                 }
                 records_changed = true;
                 row["status"] = changed > 0 ? "changed" : "already_in_state";
@@ -3041,6 +3052,7 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
     }
     const std::map<std::string, CsvDocument> validated_documents =
         load_validated_csv_directory(directory);
+    ensure_family_baseline(sess);
     TempBaselineGuard baseline_guard("xcov-apply-");
     const std::string& baseline_el = baseline_guard.path;
     try {
@@ -3058,6 +3070,8 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
         sess.exclusion_records;
     const std::map<std::string, std::vector<ExclusionKey>> baseline_deltas =
         sess.instance_deltas;
+    const auto baseline_removed_refs = sess.removed_refs;
+    const auto baseline_removed_names = sess.removed_ref_names;
     auto rollback = [&]() {
         sess.backend->unload_exclusions();
         try {
@@ -3071,6 +3085,8 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
         }
         sess.exclusion_records = baseline_records;
         restore_instance_deltas(sess, baseline_deltas);
+        sess.removed_refs = baseline_removed_refs;
+        sess.removed_ref_names = baseline_removed_names;
     };
     nlohmann::json items = nlohmann::json::array();
     bool records_changed = false;
