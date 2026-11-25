@@ -1,5 +1,6 @@
 #include "actions/dispatch.h"
 #include "api/protocol.h"
+#include "api/schema.h"
 #include "core/errors.h"
 #include "core/limits.h"
 
@@ -95,6 +96,7 @@ int stdio_loop(xcov::Dispatcher& dispatcher) {
         nlohmann::json rsp;
         try {
             nlohmann::json req = xcov::parse_request(text);
+            xcov::SchemaCatalog::instance().validate_stdio_request(req);
             request_id = req.value("request_id", std::string("req-unknown"));
             action = req.value("action", std::string());
             // payload_format is a transport-level hint, not an action argument;

@@ -1561,15 +1561,30 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                         scope, false, reason);
                     if (changed > 0) {
                         ++applied;
+                        ExclusionRecord record;
+                        record.kind = "container";
+                        record.reason = reason;
+                        record.scope = scope;
+                        record.name = scope;
+                        record.full_name = scope;
+                        sess.exclusion_records[record.full_name] = record;
                     } else {
                         ++failed;
                     }
                     continue;
                 }
+                const std::string covergroup = row.value("covergroup");
                 const std::size_t changed = sess.backend->exclude_functional(
-                    scope, row.value("covergroup"), target_kind, item, reason);
+                    scope, covergroup, target_kind, item, reason);
                 if (changed > 0) {
                     ++applied;
+                    ExclusionRecord record;
+                    record.kind = "functional";
+                    record.reason = reason;
+                    record.scope = scope;
+                    record.name = covergroup.empty() ? item : covergroup;
+                    record.full_name = scope + "." + record.name;
+                    sess.exclusion_records[record.full_name] = record;
                 } else {
                     ++failed;
                 }
@@ -1685,6 +1700,12 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
             record.full_name = scope + "." + record.name;
             sess.exclusion_records[record.full_name] = record;
         } else if (!adding && row["status"] == "changed") {
+            std::string key_name =
+                instance_action ? scope : item.value("covergroup", std::string());
+            if (key_name.empty() && !instance_action) {
+                key_name = item.value("item", std::string());
+            }
+            sess.exclusion_records.erase(scope + "." + key_name);
             sess.exclusion_records.erase(scope + "." + scope);
         }
         items.push_back(row);
@@ -1815,6 +1836,15 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
                     const std::string covergroup = row.value("covergroup");
                     row_ok = sess.backend->exclude_functional(
                                  scope, covergroup, target_kind, item, reason) > 0;
+                    if (row_ok) {
+                        ExclusionRecord record;
+                        record.kind = "functional";
+                        record.reason = reason;
+                        record.scope = scope;
+                        record.name = covergroup.empty() ? item : covergroup;
+                        record.full_name = scope + "." + record.name;
+                        sess.exclusion_records[record.full_name] = record;
+                    }
                 }
             } else if (kind_name == "assertion") {
                 std::string full_name = row.value("assertion");
@@ -1939,7 +1969,11 @@ nlohmann::json Dispatcher::action_metrics_list(const nlohmann::json& req) {
             {"covered", covered},
             {"coverable", coverable},
             {"missing", coverable > covered ? coverable - covered : 0},
-            {"coverage_pct", coverable > 0 ? 100.0 * covered / coverable : 0.0},
+            {"coverage_pct", coverable > 0
+                                 ? nlohmann::json(py_round(
+                                       100.0 * static_cast<double>(covered) /
+                                           static_cast<double>(coverable), 4))
+                                 : nlohmann::json(nullptr)},
         });
     }
     return ok_response(req, completeness_summary(items.size(), items.size()),

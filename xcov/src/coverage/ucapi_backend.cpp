@@ -1231,7 +1231,6 @@ std::size_t exclude_subtree(const UcapiLibrary& api, ucapi::Handle obj,
 bool UcapiBackend::exclude_assertion(const std::string& full_name,
                                     bool excluded,
                                     const std::string& reason) {
-    invalidate_caches();
     const UcapiLibrary& api = UcapiLibrary::instance();
     ucapi::Handle metrics = api.iterate(test_, ucapi::kMetrics);
     if (metrics == nullptr) return false;
@@ -1253,6 +1252,7 @@ bool UcapiBackend::exclude_assertion(const std::string& full_name,
                                   : (excluded
                                          ? status | ucapi::kStatusExcludedAtReportTime
                                          : status & ~ucapi::kStatusExcludedAtReportTime);
+                invalidate_caches();
                 const int rc = api.set(persistent, nullptr, test_,
                                        ucapi::kCovStatus, updated);
                 if (rc == 0 && excluded && !reason.empty()) {
@@ -1280,7 +1280,6 @@ bool UcapiBackend::exclude_leaf(const std::string& scope_name,
                                 const std::string& metric,
                                 const std::string& name,
                                 const std::string& reason) {
-    invalidate_caches();
     const UcapiLibrary& api = UcapiLibrary::instance();
     const ScopeInfo* scope = find_scope(scope_name);
     if (scope == nullptr || scope->handle == nullptr) return false;
@@ -1289,6 +1288,7 @@ bool UcapiBackend::exclude_leaf(const std::string& scope_name,
     if (!find_leaf_by_locator(api, test_, *scope, metric, name, &object, &region)) {
         return false;
     }
+    invalidate_caches();
     const int status = api.get(object, region, test_, ucapi::kCovStatus);
     const int updated = status | ucapi::kStatusExcludedAtReportTime;
     const int rc = api.set(object, region, test_, ucapi::kCovStatus, updated);
