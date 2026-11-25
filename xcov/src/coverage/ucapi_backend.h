@@ -89,6 +89,7 @@ public:
         long all_successes = 0;
         long failures = 0;
         long incomplete = 0;
+        bool excluded = false;
     };
 
     const std::vector<FunctionalGroup>& functional_groups() const;
@@ -113,6 +114,9 @@ public:
     bool set_exclusion(const std::string& coverage_ref, bool excluded,
                        const std::string& reason = std::string());
     /// Exclude every coverable object under one instance subtree.
+    /// Assertions live on the test handle, not on instance regions.
+    bool exclude_assertion(const std::string& full_name, bool excluded,
+                           const std::string& reason);
     bool exclude_leaf(const std::string& scope_name, const std::string& metric,
                       const std::string& name, const std::string& reason);
     std::size_t exclude_scope(const std::string& scope_name, bool recursive,

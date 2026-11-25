@@ -771,12 +771,13 @@ nlohmann::json Dispatcher::action_assert(const nlohmann::json& req) {
     for (const auto* item : matched) {
         const long success = item->type == 1 ? item->all_successes : item->real_successes;
         const long covered = success > 0 ? 1 : 0;
+        const long coverable = item->excluded ? 0 : 1;
         nlohmann::json row = nlohmann::json::object();
         row["name"] = item->name;
         row["full_name"] = item->full_name;
         row["covered"] = covered;
-        row["coverable"] = 1;
-        row["missing"] = 1 - covered;
+        row["coverable"] = coverable;
+        row["missing"] = coverable > covered ? coverable - covered : 0;
         row["coverage_pct"] = covered > 0 ? 100.0 : 0.0;
         row["status"] = nlohmann::json::array({covered > 0 ? "covered" : "not_covered"});
         row["attempts"] = item->attempts;
@@ -821,6 +822,7 @@ nlohmann::json Dispatcher::action_export(const nlohmann::json& req) {
         nlohmann::json gaps = nlohmann::json::array();
         int index = 0;
         for (const auto& item : sess.backend->assertions()) {
+            if (item.excluded) continue;
             const long success =
                 item.type == 1 ? item.all_successes : item.real_successes;
             if (success > 0) continue;
@@ -828,9 +830,10 @@ nlohmann::json Dispatcher::action_export(const nlohmann::json& req) {
             const std::size_t dot = item.full_name.rfind('.');
             nlohmann::json gap = nlohmann::json::object();
             gap["gap_id"] = "A" + std::string(4 - std::min<std::size_t>(4, std::to_string(index).size()), '0') + std::to_string(index);
-            gap["scope"] = dot == std::string::npos
-                               ? std::string()
-                               : item.full_name.substr(0, dot);
+            const std::string assert_scope =
+                dot == std::string::npos ? std::string()
+                                         : item.full_name.substr(0, dot);
+            gap["scope"] = assert_scope;
             gap["kind"] = item.type == 1 ? "npiCovCoverProperty" : "npiCovAssert";
             gap["name"] = item.name;
             gap["full_name"] = item.full_name;
@@ -842,6 +845,17 @@ nlohmann::json Dispatcher::action_export(const nlohmann::json& req) {
             gap["coverable"] = 1;
             gap["count"] = 0;
             gap["evidence"] = nlohmann::json::object();
+            nlohmann::json ref_row = {
+                {"metric", "assert"},
+                {"scope", assert_scope},
+                {"name", item.name},
+                {"full_name", item.full_name},
+                {"type", "assert"},
+            };
+            const std::string ref_value = coverage_ref(ref_row);
+            gap["coverage_ref"] = ref_value;
+            sess.backend->register_ref(ref_value, assert_scope, "assert",
+                                       item.full_name);
             gaps.push_back(gap);
         }
         const std::string json_path = raw_path + "/assert.json";
