@@ -12,6 +12,7 @@
 namespace xcov {
 
 struct ExclusionRecord {
+    std::string kind;  // code / functional / assertion / container
     std::string coverage_ref;
     std::string reason;
     std::string scope;

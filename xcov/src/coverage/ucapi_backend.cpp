@@ -978,12 +978,33 @@ bool find_leaf_by_locator(const UcapiLibrary& api, ucapi::Handle test,
         if (objects != nullptr) {
             ucapi::Handle object;
             bool found = false;
-            while (!found && (object = api.scan(objects)) != nullptr) {
-                found = find_leaf_in_subtree(api, object, region,
-                                             scope.full_name + ".", name, "",
-                                             out_obj);
+            int name_hits = 0;
+            ucapi::Handle name_hit = nullptr;
+            while ((object = api.scan(objects)) != nullptr) {
+                ucapi::Handle hit = nullptr;
+                const bool exact = find_leaf_in_subtree(
+                    api, object, region, scope.full_name + ".", name, "", &hit);
+                if (exact) {
+                    *out_obj = hit;
+                    found = true;
+                    break;
+                }
+                // Bare-name fallback: only accept a unique match.
+                if (hit == nullptr) continue;
+                ++name_hits;
+                if (name_hits == 1) {
+                    name_hit = hit;
+                } else {
+                    api.release(hit);
+                }
             }
             api.release(objects);
+            if (!found && name_hits == 1 && name_hit != nullptr) {
+                *out_obj = name_hit;
+                found = true;
+            } else if (name_hit != nullptr) {
+                api.release(name_hit);
+            }
             if (found) {
                 *out_region = api.make_persistent(region);
                 api.release(region);

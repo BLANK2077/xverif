@@ -1362,14 +1362,39 @@ nlohmann::json Dispatcher::action_csv_export(const nlohmann::json& req) {
     }
     ensure_directory(directory);
     std::ostringstream code;
+    std::ostringstream functional;
+    std::ostringstream assertion;
+    std::ostringstream container;
     code << "# schema_version=xcov-code-exclusions.v1\n";
     code << "# coverage_kind=code\n";
     code << "scope,metric,line,object,bin,reason\n";
+    functional << "# schema_version=xcov-functional-exclusions.v1\n";
+    functional << "# coverage_kind=functional\n";
+    functional << "scope,line,covergroup,coverpoint,cross,bin,reason\n";
+    assertion << "# schema_version=xcov-assertion-exclusions.v1\n";
+    assertion << "# coverage_kind=assertion\n";
+    assertion << "scope,line,assertion,assertion_kind,reason\n";
+    container << "# schema_version=xcov-container-exclusions.v1\n";
+    container << "# coverage_kind=container\n";
+    container << "target_kind,scope,covergroup,item,expansion_root,reason\n";
     for (const auto& item : sess.exclusion_records) {
         const ExclusionRecord& record = item.second;
-        code << csv_escape(record.scope) << "," << record.metric << ",,"
-             << csv_escape(record.name) << ",,"
-             << csv_escape(record.reason) << "\n";
+        if (record.kind == "functional") {
+            functional << csv_escape(record.scope) << ",,"
+                       << csv_escape(record.name) << ",,,,"
+                       << csv_escape(record.reason) << "\n";
+        } else if (record.kind == "assertion") {
+            assertion << csv_escape(record.scope) << ",,"
+                      << csv_escape(record.name) << ",,"
+                      << csv_escape(record.reason) << "\n";
+        } else if (record.kind == "container") {
+            container << "instance," << csv_escape(record.scope) << ",,,,"
+                      << csv_escape(record.reason) << "\n";
+        } else {
+            code << csv_escape(record.scope) << "," << record.metric << ",,"
+                 << csv_escape(record.name) << ",,"
+                 << csv_escape(record.reason) << "\n";
+        }
     }
     if (sess.exclusion_records.empty()) {
         for (const auto& entry : sess.loaded_el_entries) {
@@ -1389,6 +1414,9 @@ nlohmann::json Dispatcher::action_csv_export(const nlohmann::json& req) {
         }
     }
     write_file(directory + "/code_exclusions.csv", code.str());
+    write_file(directory + "/functional_exclusions.csv", functional.str());
+    write_file(directory + "/assertion_exclusions.csv", assertion.str());
+    write_file(directory + "/container_exclusions.csv", container.str());
     // Only seed the other three files when they do not exist yet; overwriting
     // them with an empty header destroyed user data on every export.
     const std::pair<const char*, const char*> empty_files[] = {
@@ -1441,6 +1469,7 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
         {"container", "container_exclusions.csv"},
     };
     std::size_t applied_total = 0;
+    std::size_t total_failed = 0;
     for (const auto& kind : kinds) {
         const std::string path = directory + "/" + kind.file;
         if (!file_exists(path)) continue;
@@ -1497,6 +1526,7 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
             if (sess.backend->exclude_leaf(scope, metric, name, reason)) {
                 ++applied;
                 ExclusionRecord record;
+                record.kind = kind_name;
                 record.reason = reason;
                 record.scope = scope;
                 record.metric = metric;
@@ -1508,9 +1538,20 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
             }
         }
         applied_total += applied;
+        total_failed += failed;
         items.push_back({{"status", failed == 0 ? "compiled" : "partial"},
                          {"path", path},
                          {"record_count", applied}});
+    }
+    if (total_failed > 0) {
+        // Contract: a partial compile must not publish artifacts; roll the
+        // session back to its pre-compile exclusion state.
+        sess.backend->unload_exclusions();
+        sess.exclusion_records.clear();
+        return ok_response(req, completeness_summary(items.size(), items.size()),
+                           {{"items", items},
+                            {"published", false},
+                            {"failed_count", total_failed}});
     }
     const std::string code_el = output_directory + "/code.el";
     sess.backend->save_exclusions(code_el);
@@ -1701,6 +1742,7 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
             if (row_ok) {
                 ++applied;
                 ExclusionRecord record;
+                record.kind = kind_name;
                 record.reason = reason;
                 record.scope = scope;
                 record.metric = row.value("metric");

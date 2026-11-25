@@ -224,6 +224,34 @@ review 发现的问题与处理：
 - `sort` / `query` / `limits.overflow` / `max_items=0` 语义未实现（schema 暴露但忽略）。
 - `csv.compile` 仍把全部 kind 写进 `code.el`，另外三个文件为空。
 
+## 第四、五轮 review 修复（2026-11-25）
+
+| # | 问题 | 处理 |
+|---|---|---|
+| 1 | `exclusion_policy=strict` 不生效 | 构造时 `covdb_configure(covdbExcludeMode, "strict")` |
+| 2 | assertion 排除后 metrics/scope/codecoverage 三方矛盾 | `finalize_scope_metrics` 与 `metrics.list` 跳过 excluded |
+| 3 | 重复 add/remove 永远 changed | 新增 `exclusion_state`，返回 `already_in_state` |
+| 4 | `exclude_leaf_node` 忽略 set 结果 | set 后校验 status，未生效不计数 |
+| 5 | decision_groups 的 uncovered 伪造 | 只输出真实未覆盖 arm，剩余标 `unattributed` |
+| 6 | `export.assert` 忽略 scope | 按 `args.scope` descendant 过滤 |
+| 7 | `exclude.load` 非原子 | 先 parse 再 load |
+| 8 | functional gap 只收 covered==0 | 改为 `covered < coverable` |
+| 9 | csv.export 把全部记录写进 code 文件 | `ExclusionRecord.kind` + 按 kind 写四个文件 |
+| 10 | csv.compile 失败仍发布 | 任一行失败则 unload + 不发布 + `published:false` |
+| 11 | CSV 裸名多匹配静默排第一个 | 裸名匹配必须唯一，多匹配视为未找到 |
+
+仍未修（记录）：
+
+- coverpoint/cross 排除：status 写入成功但 `export.exclude` 不产出对应对象（UCAPI 限制）
+- functional CSV 的 bin-only 行会退化为整个 covergroup
+- `exclude.add` 的 `exports` 参数未实现；code export 的 `gap_id` 为空
+- `group_by=coverpoint|cross` 返回 ACTION_NOT_IMPLEMENTED（schema 仍宣称支持）
+- `csv.validate` 未校验 enum/空 reason/引号完整性
+- `functional_coverage.summary.missing` 与 `export.functional_coverage.gap_count` 粒度不同
+- `session.close` 未实现 dirty reason / `confirm_discard_reasons`
+- `sort` / `query` / `limits.overflow` / `max_items=0` 未实现
+- `export.code_coverage` 的 `raw` 字段指向不存在的文件
+
 ## 进度表
 
 | 阶段 | 状态 |
