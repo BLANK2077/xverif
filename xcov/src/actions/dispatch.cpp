@@ -1512,6 +1512,17 @@ nlohmann::json Dispatcher::action_export(const nlohmann::json& req) {
 
 namespace {
 
+void merge_instance_delta(Session& sess, const std::string& root,
+                          const std::vector<ExclusionKey>& delta) {
+    if (delta.empty()) return;
+    auto& stored = sess.instance_deltas[root];
+    std::set<const void*> known;
+    for (const auto& key : stored) known.insert(key.object_handle);
+    for (const auto& key : delta) {
+        if (known.insert(key.object_handle).second) stored.push_back(key);
+    }
+}
+
 bool parse_canonical_line(const std::string& text, int* out);
 
 void check_instance_owner_conflict(const Session& sess,
@@ -1544,47 +1555,6 @@ std::string assertion_kind_for_record(const Session& sess,
         return "assertion";
     }
     return "assertion";
-}
-
-bool reapply_exclusion_record(Session& sess, const ExclusionRecord& record) {
-    if (record.kind == "assertion") {
-        return !record.full_name.empty() &&
-               sess.backend->exclude_assertion(record.full_name, true,
-                                               record.reason);
-    }
-    if (record.target_kind == "instance") {
-        const std::size_t changed =
-            sess.backend->exclude_scope(record.scope, false, record.reason);
-        const ScopeInfo* target = sess.backend->find_scope(record.scope);
-        return changed > 0 ||
-               (target != nullptr && target->handle != nullptr);
-    }
-    if (!record.target_kind.empty()) {
-        const std::size_t changed = sess.backend->exclude_functional(
-            record.scope, record.covergroup, record.target_kind, record.item,
-            record.reason);
-        return changed > 0 ||
-               sess.backend->functional_target_exists(
-                   record.scope, record.covergroup, record.target_kind,
-                   record.item);
-    }
-    if (!record.coverage_ref.empty()) {
-        return sess.backend->set_exclusion(record.coverage_ref, true,
-                                           record.reason);
-    }
-    if (record.kind == "code") {
-        if (record.metric == "line" && record.name.empty() &&
-            !record.line.empty()) {
-            int line_no = 0;
-            return parse_canonical_line(record.line, &line_no) &&
-                   sess.backend->exclude_line(record.scope, line_no,
-                                              record.reason,
-                                              record.source_file) > 0;
-        }
-        return sess.backend->exclude_leaf(record.scope, record.metric,
-                                          record.name, record.reason);
-    }
-    return false;
 }
 
 bool same_record(const ExclusionRecord& a, const ExclusionRecord& b) {
@@ -1645,6 +1615,46 @@ void assign_locator_record(const std::string& scope, const std::string& metric,
 
 } // namespace
 
+namespace {
+
+std::string make_temp_baseline(const char* prefix) {
+    const char* configured = std::getenv("TMPDIR");
+    std::string tmpl = configured != nullptr && *configured != '\0'
+                           ? std::string(configured)
+                           : std::string(P_tmpdir);
+    if (tmpl.empty() || tmpl.back() != '/') tmpl.push_back('/');
+    tmpl += prefix;
+    tmpl += "XXXXXX";
+    std::vector<char> buffer(tmpl.begin(), tmpl.end());
+    buffer.push_back('\0');
+    char* directory = ::mkdtemp(buffer.data());
+    if (directory == nullptr) {
+        throw Error("EXCLUSION_BASELINE_FAILED",
+                    "cannot create a temporary exclusion baseline directory");
+    }
+    return std::string(directory) + "/baseline.el";
+}
+
+void remove_temp_baseline(const std::string& path) {
+    if (path.empty()) return;
+    ::unlink(path.c_str());
+    const std::size_t slash = path.find_last_of('/');
+    if (slash != std::string::npos && slash > 0) {
+        ::rmdir(path.substr(0, slash).c_str());
+    }
+}
+
+struct TempBaselineGuard {
+    std::string path;
+    explicit TempBaselineGuard(const char* prefix)
+        : path(make_temp_baseline(prefix)) {}
+    ~TempBaselineGuard() { remove_temp_baseline(path); }
+    TempBaselineGuard(const TempBaselineGuard&) = delete;
+    TempBaselineGuard& operator=(const TempBaselineGuard&) = delete;
+};
+
+}
+
 nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
     Session& sess = session(req);
     const std::string action = req.value("action", std::string());
@@ -1653,17 +1663,36 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
 
     if (action == "exclude.load") {
         const nlohmann::json paths = args.value("paths", nlohmann::json::array());
-        for (const auto& path_value : paths) {
-            const std::string path = path_value.get<std::string>();
-            // Parse first: UCAPI applies the file immediately, so a parse
-            // failure after load would leave the session modified.
-            const ElDocument document = parse_el(path);
-            sess.backend->load_exclusions(path);
-            sess.loaded_el_paths.push_back(path);
-            for (const auto& entry : document.entries) {
-                sess.loaded_el_entries.push_back(entry);
+        TempBaselineGuard baseline_guard("xcov-load-");
+        try {
+            sess.backend->save_exclusions(baseline_guard.path);
+        } catch (const Error& exc) {
+            throw Error("EXCLUSION_BASELINE_FAILED",
+                        "cannot snapshot the current exclusion state before load",
+                        {{"cause_message", exc.message()}});
+        }
+        const auto baseline_entries = sess.loaded_el_entries;
+        const auto baseline_paths = sess.loaded_el_paths;
+        try {
+            for (const auto& path_value : paths) {
+                const std::string path = path_value.get<std::string>();
+                // Parse first so a malformed file is rejected before UCAPI
+                // mutates the database; the request itself is atomic because
+                // any later failure reloads the pre-load baseline.
+                const ElDocument document = parse_el(path);
+                sess.backend->load_exclusions(path);
+                sess.loaded_el_paths.push_back(path);
+                for (const auto& entry : document.entries) {
+                    sess.loaded_el_entries.push_back(entry);
+                }
+                items.push_back({{"path", path}, {"status", "loaded"}});
             }
-            items.push_back({{"path", path}, {"status", "loaded"}});
+        } catch (...) {
+            sess.backend->unload_exclusions();
+            sess.backend->load_exclusions(baseline_guard.path);
+            sess.loaded_el_entries = baseline_entries;
+            sess.loaded_el_paths = baseline_paths;
+            throw;
         }
         return ok_response(req, completeness_summary(items.size(), items.size()),
                            {{"items", items}});
@@ -1678,6 +1707,7 @@ nlohmann::json Dispatcher::action_exclude(const nlohmann::json& req) {
         sess.exclusion_records.clear();
         sess.loaded_el_entries.clear();
         sess.loaded_el_paths.clear();
+        sess.instance_deltas.clear();
         // Removing every exclusion also clears the dirty reason set; this
         // mirrors Python clear_exclusions().
         sess.mark_reasons_persisted();
@@ -1792,42 +1822,6 @@ nlohmann::json Dispatcher::action_export_exclude(const nlohmann::json& req) {
 }
 
 namespace {
-
-std::string make_temp_baseline(const char* prefix) {
-    const char* configured = std::getenv("TMPDIR");
-    std::string tmpl = configured != nullptr && *configured != '\0'
-                           ? std::string(configured)
-                           : std::string(P_tmpdir);
-    if (tmpl.empty() || tmpl.back() != '/') tmpl.push_back('/');
-    tmpl += prefix;
-    tmpl += "XXXXXX";
-    std::vector<char> buffer(tmpl.begin(), tmpl.end());
-    buffer.push_back('\0');
-    char* directory = ::mkdtemp(buffer.data());
-    if (directory == nullptr) {
-        throw Error("EXCLUSION_BASELINE_FAILED",
-                    "cannot create a temporary exclusion baseline directory");
-    }
-    return std::string(directory) + "/baseline.el";
-}
-
-void remove_temp_baseline(const std::string& path) {
-    if (path.empty()) return;
-    ::unlink(path.c_str());
-    const std::size_t slash = path.find_last_of('/');
-    if (slash != std::string::npos && slash > 0) {
-        ::rmdir(path.substr(0, slash).c_str());
-    }
-}
-
-struct TempBaselineGuard {
-    std::string path;
-    explicit TempBaselineGuard(const char* prefix)
-        : path(make_temp_baseline(prefix)) {}
-    ~TempBaselineGuard() { remove_temp_baseline(path); }
-    TempBaselineGuard(const TempBaselineGuard&) = delete;
-    TempBaselineGuard& operator=(const TempBaselineGuard&) = delete;
-};
 
 std::string trim_copy(const std::string& value) {
     std::size_t start = 0;
@@ -2427,9 +2421,20 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                                       : (item.empty() ? covergroup : item);
                     record.full_name = scope + "." + record.name;
                 }
+                if (target_kind == "instance" &&
+                    sess.exclusion_policy == "strict" &&
+                    sess.backend->scope_has_covered_objects(scope, false)) {
+                    throw Error("EXCLUSION_APPLY_FAILED",
+                                "strict instance exclusion refused: the "
+                                "target contains already-covered objects",
+                                {{"scope", scope}});
+                }
                 std::size_t changed = 0;
+                std::vector<ExclusionKey> delta;
                 if (target_kind == "instance") {
-                    changed = sess.backend->exclude_scope(scope, false, reason);
+                    changed = sess.backend->exclude_scope(
+                        scope, false, reason, &delta);
+                    merge_instance_delta(sess, record.expansion_root, delta);
                 } else {
                     changed = sess.backend->exclude_functional(
                         scope, covergroup, target_kind, item, reason);
@@ -2451,7 +2456,14 @@ nlohmann::json Dispatcher::action_csv_compile(const nlohmann::json& req) {
                             sess, scope, record.expansion_root, reason);
                     }
                     ++applied;
-                    records_changed |= put_exclusion_record(sess, record);
+                    const bool already_recorded =
+                        sess.exclusion_records.find(
+                            exclusion_record_key(record)) !=
+                        sess.exclusion_records.end();
+                    if (target_kind != "instance" || already_recorded ||
+                        !delta.empty()) {
+                        records_changed |= put_exclusion_record(sess, record);
+                    }
                 } else {
                     ++failed;
                 }
@@ -2573,7 +2585,6 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
     nlohmann::json items = nlohmann::json::array();
     bool records_changed = false;
     std::size_t remove_matches = 0;
-    std::vector<std::string> restored_scopes;
     try {
     for (const auto& item : args.at("items")) {
         const std::string scope = item.value("scope", std::string());
@@ -2628,9 +2639,19 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
                         }
                     }
                 }
+                std::vector<ExclusionKey> delta;
                 const std::size_t changed = sess.backend->exclude_scope(
-                    scope, recursive, reason);
+                    scope, recursive, reason, &delta);
+                merge_instance_delta(sess, scope, delta);
+                std::set<std::string> changed_scopes;
+                for (const auto& key : delta) {
+                    changed_scopes.insert(key.scope);
+                }
                 for (const auto& target_scope : expanded) {
+                    if (changed_scopes.find(target_scope) ==
+                        changed_scopes.end()) {
+                        continue;
+                    }
                     ExclusionRecord expanded_record = record;
                     expanded_record.scope = target_scope;
                     expanded_record.name = target_scope;
@@ -2657,10 +2678,21 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
                 }
                 ++remove_matches;
                 std::size_t changed = 0;
+                auto delta_it = sess.instance_deltas.find(scope);
+                if (delta_it != sess.instance_deltas.end() &&
+                    !delta_it->second.empty()) {
+                    changed += sess.backend->clear_exclusion_keys(
+                        delta_it->second);
+                } else {
+                    for (const auto& key : owned_keys) {
+                        const ExclusionRecord previous =
+                            sess.exclusion_records.at(key);
+                        changed += sess.backend->restore_scope(previous.scope,
+                                                               false);
+                    }
+                }
+                sess.instance_deltas.erase(scope);
                 for (const auto& key : owned_keys) {
-                    const ExclusionRecord previous = sess.exclusion_records.at(key);
-                    changed += sess.backend->restore_scope(previous.scope, false);
-                    restored_scopes.push_back(previous.scope);
                     sess.exclusion_records.erase(key);
                 }
                 records_changed = true;
@@ -2692,48 +2724,6 @@ nlohmann::json Dispatcher::action_exclude_container(const nlohmann::json& req) {
     if (!adding && instance_action && remove_matches == 0) {
         throw Error("EXCLUSION_NOT_OWNED",
                     "no recorded instance exclusions own the requested roots");
-    }
-    if (!adding && instance_action) {
-        // Exclusions loaded from EL files are not part of the reason-record
-        // map; reload them so an instance-family restore cannot drop them.
-        for (const auto& path : sess.loaded_el_paths) {
-            try {
-                sess.backend->load_exclusions(path);
-            } catch (const Error& exc) {
-                throw Error("EXCLUSION_REAPPLY_FAILED",
-                            "could not reapply a loaded exclusion file after "
-                            "restoring an instance family",
-                            {{"path", path},
-                             {"cause_message", exc.message()}});
-            }
-        }
-        // restore_scope clears every report-time bit in the subtree; reapply
-        // independently-owned leaf/assertion/functional reasons so an
-        // instance-family remove cannot silently drop other owners.
-        for (const auto& existing : sess.exclusion_records) {
-            const ExclusionRecord& record = existing.second;
-            std::string gate_scope = record.scope;
-            if (record.kind == "assertion") {
-                const std::size_t dot = record.full_name.rfind('.');
-                if (dot != std::string::npos) {
-                    gate_scope = record.full_name.substr(0, dot);
-                }
-            }
-            bool in_restored = false;
-            for (const auto& root : restored_scopes) {
-                if (is_descendant(gate_scope, root)) {
-                    in_restored = true;
-                    break;
-                }
-            }
-            if (in_restored && !reapply_exclusion_record(sess, record)) {
-                throw Error("EXCLUSION_REAPPLY_FAILED",
-                            "could not reapply an independently-owned exclusion "
-                            "after restoring an instance family",
-                            {{"scope", record.scope},
-                             {"metric", record.metric}});
-            }
-        }
     }
     if (records_changed) sess.mark_reason_mutation();
     } catch (...) {
@@ -2909,6 +2899,7 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
             const std::string kind_name(kind.kind);
             const std::string line_text = row.value("line");
             bool row_ok = false;
+            std::vector<ExclusionKey> delta;
             ExclusionRecord record;
             record.kind = kind_name;
             record.reason = reason;
@@ -2954,9 +2945,19 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
                                       : (item.empty() ? covergroup : item);
                     record.full_name = scope + "." + record.name;
                 }
+                if (target_kind == "instance" &&
+                    sess.exclusion_policy == "strict" &&
+                    sess.backend->scope_has_covered_objects(scope, false)) {
+                    throw Error("EXCLUSION_APPLY_FAILED",
+                                "strict instance exclusion refused: the "
+                                "target contains already-covered objects",
+                                {{"scope", scope}});
+                }
                 std::size_t changed = 0;
                 if (target_kind == "instance") {
-                    changed = sess.backend->exclude_scope(scope, false, reason);
+                    changed = sess.backend->exclude_scope(
+                        scope, false, reason, &delta);
+                    merge_instance_delta(sess, record.expansion_root, delta);
                 } else {
                     changed = sess.backend->exclude_functional(
                         scope, covergroup, target_kind, item, reason);
@@ -3004,7 +3005,14 @@ nlohmann::json Dispatcher::action_csv_apply(const nlohmann::json& req) {
                     check_instance_owner_conflict(
                         sess, record.scope, record.expansion_root, reason);
                 }
-                records_changed |= put_exclusion_record(sess, record);
+                const bool already_recorded =
+                    sess.exclusion_records.find(
+                        exclusion_record_key(record)) !=
+                    sess.exclusion_records.end();
+                if (record.target_kind != "instance" || already_recorded ||
+                    !delta.empty()) {
+                    records_changed |= put_exclusion_record(sess, record);
+                }
             } else {
                 ++total_failed;
             }

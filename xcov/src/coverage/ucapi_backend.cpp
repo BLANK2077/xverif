@@ -1414,7 +1414,11 @@ namespace {
 std::size_t exclude_subtree(const UcapiLibrary& api, ucapi::Handle obj,
                             ucapi::Handle region, ucapi::Handle test,
                             bool excluded, const std::string& reason,
-                            char* annotation_written, bool strict) {
+                            char* annotation_written, bool strict,
+                            const std::string& scope_name,
+                            const std::string& metric,
+                            const std::string& parent_path,
+                            std::vector<ExclusionKey>* changed_keys) {
     const int type = api.get(obj, region, nullptr, ucapi::kType);
     if (is_leaf_type(type)) {
         if (excluded && strict) {
@@ -1430,6 +1434,20 @@ std::size_t exclude_subtree(const UcapiLibrary& api, ucapi::Handle obj,
         }
         if (updated == status) return 0;
         api.set(obj, region, test, ucapi::kCovStatus, updated);
+        if (changed_keys != nullptr && excluded) {
+            const std::string leaf_name =
+                safe_str(api.get_str(obj, ucapi::kName));
+            ExclusionKey key;
+            key.scope = scope_name;
+            key.metric = metric;
+            key.full_name = scope_name + "." +
+                            (parent_path.empty()
+                                 ? leaf_name
+                                 : parent_path + "." + leaf_name);
+            key.object_handle = api.make_persistent(obj);
+            key.region_handle = api.make_persistent(region);
+            changed_keys->push_back(std::move(key));
+        }
         // Writing one annotation per leaf made recursive instance exclusion
         // quadratic on large designs; one durable annotation per request is
         // enough to carry the reason into the EL.
@@ -1448,9 +1466,13 @@ std::size_t exclude_subtree(const UcapiLibrary& api, ucapi::Handle obj,
     ucapi::Handle kids = api.iterate(obj, ucapi::kObjects);
     if (kids == nullptr) return 0;
     ucapi::Handle kid;
+    const std::string node_name = safe_str(api.get_str(obj, ucapi::kName));
+    const std::string child_path =
+        parent_path.empty() ? node_name : parent_path + "." + node_name;
     while ((kid = api.scan(kids)) != nullptr) {
         changed += exclude_subtree(api, kid, region, test, excluded, reason,
-                                   annotation_written, strict);
+                                   annotation_written, strict, scope_name,
+                                   metric, child_path, changed_keys);
     }
     api.release(kids);
     return changed;
@@ -1515,9 +1537,10 @@ bool UcapiBackend::exclude_assertion(const std::string& full_name,
     return done;
 }
 
-std::size_t UcapiBackend::exclude_assertions(const std::string& scope_name,
-                                            bool recursive, bool excluded,
-                                            const std::string& reason) {
+std::size_t UcapiBackend::exclude_assertions(
+    const std::string& scope_name, bool recursive, bool excluded,
+    const std::string& reason,
+    std::vector<ExclusionKey>* changed_keys) {
     const UcapiLibrary& api = UcapiLibrary::instance();
     ucapi::Handle metrics = api.iterate(test_, ucapi::kMetrics);
     if (metrics == nullptr) return 0;
@@ -1582,6 +1605,15 @@ std::size_t UcapiBackend::exclude_assertions(const std::string& scope_name,
                 api.set(persistent, nullptr, test_, ucapi::kCovStatus,
                         updated) == 0) {
                 ++changed;
+                if (changed_keys != nullptr && excluded) {
+                    ExclusionKey key;
+                    key.scope = owning;
+                    key.metric = "assert";
+                    key.full_name = full;
+                    key.assertion = true;
+                    key.object_handle = api.make_persistent(persistent);
+                    changed_keys->push_back(std::move(key));
+                }
                 if (excluded && !reason.empty() &&
                     annotated_scopes.insert(owning).second) {
                     api.set_annotation(persistent, "cov_comment", reason.c_str());
@@ -1628,6 +1660,63 @@ bool UcapiBackend::exclude_leaf(const std::string& scope_name,
     api.release(object);
     api.release(region);
     return rc == 0;
+}
+
+bool UcapiBackend::restore_leaf(const std::string& scope_name,
+                                const std::string& metric,
+                                const std::string& name) {
+    const UcapiLibrary& api = UcapiLibrary::instance();
+    const ScopeInfo* scope = find_scope(scope_name);
+    if (scope == nullptr || scope->handle == nullptr) return false;
+    ucapi::Handle object = nullptr;
+    ucapi::Handle region = nullptr;
+    if (!find_leaf_by_locator(api, test_, *scope, metric, name, &object,
+                              &region)) {
+        return false;
+    }
+    const int status = api.get(object, region, test_, ucapi::kCovStatus);
+    const int updated = status & ~ucapi::kStatusExcludedAtReportTime;
+    const int rc = updated == status
+                       ? 0
+                       : api.set(object, region, test_, ucapi::kCovStatus,
+                                 updated);
+    api.release(object);
+    api.release(region);
+    invalidate_caches();
+    return rc == 0;
+}
+
+std::size_t UcapiBackend::clear_exclusion_keys(
+    const std::vector<ExclusionKey>& keys) {
+    const UcapiLibrary& api = UcapiLibrary::instance();
+    std::size_t changed = 0;
+    for (const auto& key : keys) {
+        if (key.assertion) {
+            if (exclude_assertion(key.full_name, false, std::string())) {
+                ++changed;
+            }
+            if (key.object_handle != nullptr) api.release(key.object_handle);
+            continue;
+        }
+        if (key.object_handle != nullptr) {
+            const int status =
+                api.get(key.object_handle, key.region_handle, test_,
+                        ucapi::kCovStatus);
+            int updated = status;
+            updated &= ~ucapi::kStatusExcludedAtReportTime;
+            if (updated != status &&
+                api.set(key.object_handle, key.region_handle, test_,
+                        ucapi::kCovStatus, updated) == 0) {
+                ++changed;
+            }
+            api.release(key.object_handle);
+            if (key.region_handle != nullptr) api.release(key.region_handle);
+            continue;
+        }
+        if (restore_leaf(key.scope, key.metric, key.full_name)) ++changed;
+    }
+    if (changed > 0) invalidate_caches();
+    return changed;
 }
 
 std::size_t UcapiBackend::exclude_line(const std::string& scope_name,
@@ -1776,12 +1865,54 @@ bool UcapiBackend::scope_has_covered_objects(const std::string& scope_name,
         api.release(persistent_metric);
     }
     api.release(metrics);
+    if (covered_found) return true;
+    // Assertions live on the test handle; strict instance add must also see
+    // covered assertions owned by the subtree.
+    metrics = api.iterate(test_, ucapi::kMetrics);
+    if (metrics == nullptr) return false;
+    while (!covered_found && (metric = api.scan(metrics)) != nullptr) {
+        if (!api.is_assert_metric(metric)) continue;
+        ucapi::Handle objects =
+            api.qualified_iterate(test_, metric, ucapi::kObjects);
+        if (objects == nullptr) continue;
+        ucapi::Handle object;
+        while (!covered_found && (object = api.scan(objects)) != nullptr) {
+            ucapi::Handle persistent = api.make_persistent(object);
+            const std::string full =
+                safe_str(api.get_str(persistent, ucapi::kFullName));
+            std::string node = full;
+            const std::size_t dot = node.rfind('.');
+            if (dot != std::string::npos) node = node.substr(0, dot);
+            while (!node.empty() && scope_positions_.find(node) ==
+                                        scope_positions_.end()) {
+                const std::size_t parent_dot = node.rfind('.');
+                if (parent_dot == std::string::npos) {
+                    node.clear();
+                    break;
+                }
+                node = node.substr(0, parent_dot);
+            }
+            const bool in_scope =
+                node == scope_name ||
+                (recursive && node.size() > scope_name.size() &&
+                 node.compare(0, scope_name.size(), scope_name) == 0 &&
+                 node[scope_name.size()] == '.');
+            if (in_scope &&
+                api.get(persistent, nullptr, test_, ucapi::kCovered) > 0) {
+                covered_found = true;
+            }
+            api.release(persistent);
+        }
+        api.release(objects);
+    }
+    api.release(metrics);
     return covered_found;
 }
 
-std::size_t UcapiBackend::exclude_scope(const std::string& scope_name,
-                                        bool recursive,
-                                        const std::string& reason) {
+std::size_t UcapiBackend::exclude_scope(
+    const std::string& scope_name, bool recursive,
+    const std::string& reason,
+    std::vector<ExclusionKey>* changed_keys) {
     invalidate_caches();
     const UcapiLibrary& api = UcapiLibrary::instance();
     std::vector<const ScopeInfo*> targets;
@@ -1804,6 +1935,8 @@ std::size_t UcapiBackend::exclude_scope(const std::string& scope_name,
         }
         // One durable annotation per excluded INSTANCE section (one per
         // metric section) instead of one per leaf.
+        const std::string mname =
+            ucapi_metric_key(safe_str(api.get_str(metric, ucapi::kName)));
         std::vector<char> annotation_written(targets.size(), 0);
         ucapi::Handle persistent_metric = api.make_persistent(metric);
         for (std::size_t target_index = 0; target_index < targets.size();
@@ -1822,7 +1955,8 @@ std::size_t UcapiBackend::exclude_scope(const std::string& scope_name,
                     changed += exclude_subtree(
                         api, object, region, test_, true, reason,
                         &annotation_written[target_index],
-                        exclusion_policy_ == "strict");
+                        exclusion_policy_ == "strict", scope->full_name,
+                        ucapi_metric_key(mname), "", changed_keys);
                 }
                 api.release(objects);
             }
@@ -1832,7 +1966,8 @@ std::size_t UcapiBackend::exclude_scope(const std::string& scope_name,
     }
     api.release(metrics);
     (void)reason;
-    changed += exclude_assertions(scope_name, recursive, true, reason);
+    changed += exclude_assertions(scope_name, recursive, true, reason,
+                                  changed_keys);
     return changed;
 }
 
@@ -1869,7 +2004,9 @@ std::size_t UcapiBackend::restore_scope(const std::string& scope_name,
                 ucapi::Handle object;
                 while ((object = api.scan(objects)) != nullptr) {
                     changed += exclude_subtree(api, object, region, test_, false,
-                                               std::string(), nullptr, false);
+                                               std::string(), nullptr, false,
+                                               scope->full_name, "", "",
+                                               nullptr);
                 }
                 api.release(objects);
             }
@@ -1878,7 +2015,8 @@ std::size_t UcapiBackend::restore_scope(const std::string& scope_name,
         api.release(persistent_metric);
     }
     api.release(metrics);
-    changed += exclude_assertions(scope_name, recursive, false, std::string());
+    changed += exclude_assertions(scope_name, recursive, false, std::string(),
+                                  nullptr);
     return changed;
 }
 

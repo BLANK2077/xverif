@@ -332,7 +332,21 @@ kind 统一成 assertion 2 个 P2。本轮处理：
 | 2 | strict 下 instance add 部分生效并返回成功 | 新增 `scope_has_covered_objects` 预检；strict 容器 add 发现子树含 covered leaf 时整请求 `EXCLUSION_APPLY_FAILED`，不写记录/CSV |
 | 3 | ref 来源 assertion 的 assertion_kind 统一记成 assertion | 新增 `assertion_kind_for_record`，按 `AssertionRow.type` 映射 assertion/cover_property/cover_sequence |
 
-## 剩余已知限制（2026-11-25 第七轮 review 后）
+## 第十二轮 review 修复（2026-11-25，HEAD 6bc209b 之后）
+
+第八轮独立 review 复验上一轮 3 项修复后，发现 loaded EL 的整体重放会破坏
+instance remove 语义（已删排除复活、remove 假成功、EL 文件消失后永久失败），
+另有 strict 未覆盖 CSV 入口、load 多文件非原子 2 个 P2。本轮改为「增量句柄」
+模型：
+
+| # | 问题 | 处理 |
+|---|---|---|
+| 1 | loaded EL 整体重放导致 remove 不可靠 | 取消整文件重放；instance add/CSV instance 行记录本次真实变更对象的 persistent UCAPI handles（`ExclusionKey`），remove 只清这些 handles；loaded/独立 leaf/assertion 天然保留；EL 文件删除不影响 remove |
+| 2 | handle 模型前的 delta 用 full_name 去重，FSM/line 同名对象丢失 | delta 去重改用 persistent handle 地址，restore 直接清 handle 的 status bit，不再依赖文本路径 |
+| 3 | strict 只覆盖 direct instance add | strict 预检下沉到 csv.apply/compile 的 instance 行；`scope_has_covered_objects` 同时检查 covered assertion；任一 covered 即整请求 EXCLUSION_APPLY_FAILED |
+| 4 | exclude.load 多文件非原子 | 请求级 EL baseline，任一路径 parse/load 失败 unload+load baseline，并回滚 loaded entries/paths |
+
+## 剩余已知限制（2026-11-25 第八轮 review 后）
 
 - recursive instance 排除在超大库仍 >60s（`covdb_set_exclude_all_iter` 不可用，只能逐 leaf）。
 - coverpoint/cross 的 exclusion 在 EL 中不产出对象（UCAPI 限制）。

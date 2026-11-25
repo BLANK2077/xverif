@@ -1690,3 +1690,162 @@ def test_assertion_ref_csv_keeps_kind(xverif_fixture, tmp_path):
     assert "cover_property" in text, text
     assert "cover reason" in text
     loop.close()
+
+
+def test_loaded_leaf_removal_is_not_resurrected(loop, vdb, tmp_path):
+    """Removing a loaded leaf reason must not be undone by a later instance
+    family round-trip."""
+    reference = _first_gap_ref(loop, tmp_path)
+    assert loop.call("exclude.add", {
+        "coverage_refs": [{"coverage_ref": reference, "reason": "loaded"}],
+    })["ok"]
+    el_path = tmp_path / "loaded-leaf.el"
+    assert loop.call("export.exclude", {
+        "output": {"path": str(el_path), "allow_absolute_path": True},
+    })["ok"]
+
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs-2")
+    fresh = Loop([str(CPP_BINARY), "--stdio-loop"], env, vdb)
+    try:
+        assert fresh.call("exclude.load", {"paths": [str(el_path)]})["ok"]
+        assert fresh.call("exclude.remove", {
+            "coverage_refs": [reference],
+        })["ok"]
+        removed_state = fresh.call("metrics.list", {})
+        assert removed_state["ok"], removed_state
+        assert fresh.call("exclude.instance.add", {
+            "items": [{"scope": "top.u_core1", "reason": "temporary"}],
+        })["ok"]
+        assert fresh.call("exclude.instance.remove", {
+            "items": [{"scope": "top.u_core1"}],
+        })["ok"]
+        after = fresh.call("metrics.list", {})
+        key = lambda row: (row["metric"], row["covered"], row["coverable"])
+        assert [key(row) for row in after["data"]["items"]] == \
+            [key(row) for row in removed_state["data"]["items"]]
+    finally:
+        fresh.close()
+
+
+def test_loaded_instance_el_is_not_falsely_removed(loop, vdb, tmp_path):
+    """An EL-only instance exclusion is external state: instance remove must
+    not report success while leaving the database excluded."""
+    assert loop.call("exclude.instance.add", {
+        "items": [{"scope": "top.u_core0", "reason": "external"}],
+    })["ok"]
+    el_path = tmp_path / "loaded-instance.el"
+    assert loop.call("export.exclude", {
+        "output": {"path": str(el_path), "allow_absolute_path": True},
+    })["ok"]
+
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs-2")
+    fresh = Loop([str(CPP_BINARY), "--stdio-loop"], env, vdb)
+    try:
+        assert fresh.call("exclude.load", {"paths": [str(el_path)]})["ok"]
+        before = fresh.call("metrics.list", {})
+        assert before["ok"], before
+        assert fresh.call("exclude.instance.add", {
+            "items": [{"scope": "top.u_core0", "reason": "external"}],
+        })["ok"]
+        removed = fresh.call("exclude.instance.remove", {
+            "items": [{"scope": "top.u_core0"}],
+        })
+        assert not removed["ok"], removed
+        assert removed["error"]["code"] == "EXCLUSION_NOT_OWNED"
+        after = fresh.call("metrics.list", {})
+        key = lambda row: (row["metric"], row["covered"], row["coverable"])
+        assert [key(row) for row in after["data"]["items"]] == \
+            [key(row) for row in before["data"]["items"]]
+    finally:
+        fresh.close()
+
+
+def test_loaded_el_survives_source_file_deletion(loop, vdb, tmp_path):
+    """remove must not depend on the original EL file still existing."""
+    reference = _first_gap_ref(loop, tmp_path)
+    assert loop.call("exclude.add", {
+        "coverage_refs": [{"coverage_ref": reference, "reason": "loaded"}],
+    })["ok"]
+    el_path = tmp_path / "deleted.el"
+    assert loop.call("export.exclude", {
+        "output": {"path": str(el_path), "allow_absolute_path": True},
+    })["ok"]
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs-2")
+    fresh = Loop([str(CPP_BINARY), "--stdio-loop"], env, vdb)
+    try:
+        assert fresh.call("exclude.load", {"paths": [str(el_path)]})["ok"]
+        before = fresh.call("metrics.list", {})
+        el_path.unlink()
+        assert fresh.call("exclude.instance.add", {
+            "items": [{"scope": "top.u_core1", "reason": "temporary"}],
+        })["ok"]
+        assert fresh.call("exclude.instance.remove", {
+            "items": [{"scope": "top.u_core1"}],
+        })["ok"]
+        after = fresh.call("metrics.list", {})
+        key = lambda row: (row["metric"], row["covered"], row["coverable"])
+        assert [key(row) for row in after["data"]["items"]] == \
+            [key(row) for row in before["data"]["items"]]
+    finally:
+        fresh.close()
+
+
+def test_strict_csv_instance_rows_are_rejected(vdb, tmp_path):
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs")
+    strict = Loop([str(CPP_BINARY), "--stdio-loop"], env, vdb, policy="strict")
+    csv_dir = tmp_path / "strict-csv"
+    try:
+        _seed_required_csvs(csv_dir)
+        (csv_dir / "container_exclusions.csv").write_text(
+            "# schema_version=xcov-container-exclusions.v1\n"
+            "# coverage_kind=container\n"
+            "target_kind,scope,covergroup,item,expansion_root,reason\n"
+            "instance,top.u_core0,,,top.u_core0,strict csv\n",
+            encoding="utf-8",
+        )
+        before = strict.call("metrics.list", {})
+        applied = strict.call("exclude.csv.apply", {"directory": str(csv_dir)})
+        assert not applied["ok"], applied
+        assert applied["error"]["code"] == "EXCLUSION_APPLY_FAILED"
+        compiled = strict.call("exclude.csv.compile", {
+            "directory": str(csv_dir),
+            "output_directory": str(tmp_path / "strict-el"),
+            "allow_absolute_path": True,
+        })
+        assert not compiled["ok"], compiled
+        after = strict.call("metrics.list", {})
+        key = lambda row: (row["metric"], row["covered"], row["coverable"])
+        assert [key(row) for row in after["data"]["items"]] == \
+            [key(row) for row in before["data"]["items"]]
+    finally:
+        strict.close()
+
+
+def test_load_is_atomic_across_multiple_files(loop, vdb, tmp_path):
+    reference = _first_gap_ref(loop, tmp_path)
+    assert loop.call("exclude.add", {
+        "coverage_refs": [{"coverage_ref": reference, "reason": "loaded"}],
+    })["ok"]
+    good = tmp_path / "good.el"
+    assert loop.call("export.exclude", {
+        "output": {"path": str(good), "allow_absolute_path": True},
+    })["ok"]
+    bad = tmp_path / "bad.el"
+    bad.write_text("this is not an exclusion file\n", encoding="utf-8")
+    env = _env()
+    env["XVERIF_XCOV_LOG_DIR"] = str(tmp_path / "logs-2")
+    fresh = Loop([str(CPP_BINARY), "--stdio-loop"], env, vdb)
+    try:
+        before = fresh.call("metrics.list", {})
+        loaded = fresh.call("exclude.load", {"paths": [str(good), str(bad)]})
+        assert not loaded["ok"], loaded
+        after = fresh.call("metrics.list", {})
+        key = lambda row: (row["metric"], row["covered"], row["coverable"])
+        assert [key(row) for row in after["data"]["items"]] == \
+            [key(row) for row in before["data"]["items"]]
+    finally:
+        fresh.close()

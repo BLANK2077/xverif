@@ -54,6 +54,18 @@ struct RefHashKeyHasher {
     }
 };
 
+/// One leaf/assertion newly excluded by an instance-family operation.
+struct ExclusionKey {
+    std::string scope;
+    std::string metric;
+    std::string full_name;
+    bool assertion = false;
+    // Persistent UCAPI handles make the delta independent of non-unique
+    // full_name paths (some FSM/line objects share a textual path).
+    ucapi::Handle object_handle = nullptr;
+    ucapi::Handle region_handle = nullptr;
+};
+
 struct ScopeInfo {
     std::string name;
     std::string full_name;
@@ -150,21 +162,29 @@ public:
                            const std::string& reason);
     bool exclude_leaf(const std::string& scope_name, const std::string& metric,
                       const std::string& name, const std::string& reason);
+    /// Clear one leaf's report-time exclusion (inverse of exclude_leaf).
+    bool restore_leaf(const std::string& scope_name, const std::string& metric,
+                      const std::string& name);
     /// Exclude every line-metric leaf in one instance whose source line matches.
     std::size_t exclude_line(const std::string& scope_name, int line_no,
                              const std::string& reason,
                              const std::string& source_file = std::string());
-    std::size_t exclude_scope(const std::string& scope_name, bool recursive,
-                              const std::string& reason);
+    std::size_t exclude_scope(
+        const std::string& scope_name, bool recursive,
+        const std::string& reason,
+        std::vector<ExclusionKey>* changed_keys = nullptr);
+    /// Clear exactly the objects recorded in an instance-family delta.
+    std::size_t clear_exclusion_keys(const std::vector<ExclusionKey>& keys);
     /// True when any code leaf under the instance subtree is already covered
     /// (used for strict container preflight).
     bool scope_has_covered_objects(const std::string& scope_name,
                                    bool recursive) const;
     /// Exclude/restore assertions owned by one instance subtree (assertions
     /// live on the test handle, so the instance walk cannot reach them).
-    std::size_t exclude_assertions(const std::string& scope_name,
-                                   bool recursive, bool excluded,
-                                   const std::string& reason);
+    std::size_t exclude_assertions(
+        const std::string& scope_name, bool recursive, bool excluded,
+        const std::string& reason,
+        std::vector<ExclusionKey>* changed_keys = nullptr);
     std::size_t restore_scope(const std::string& scope_name, bool recursive);
     bool functional_target_exists(const std::string& scope,
                                   const std::string& covergroup,
